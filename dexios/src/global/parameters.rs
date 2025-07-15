@@ -25,7 +25,7 @@ pub fn get_params(name: &str, sub_matches: &ArgMatches) -> Result<Vec<String>> {
 pub fn get_param(name: &str, sub_matches: &ArgMatches) -> Result<String> {
     let value = sub_matches
         .value_of(name)
-        .with_context(|| format!("No {} provided", name))?
+        .with_context(|| format!("No {name} provided"))?
         .to_string();
     Ok(value)
 }

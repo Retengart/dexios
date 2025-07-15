@@ -17,7 +17,7 @@ pub fn add(input: &str, params: &KeyManipulationParams) -> Result<()> {
             .read(true)
             .write(true)
             .open(input)
-            .with_context(|| format!("Unable to open input file: {}", input))?,
+            .with_context(|| format!("Unable to open input file: {input}"))?,
     );
 
     let (header, _) = Header::deserialize(&mut *input_file.borrow_mut())?;
@@ -61,7 +61,7 @@ pub fn change(input: &str, params: &KeyManipulationParams) -> Result<()> {
             .read(true)
             .write(true)
             .open(input)
-            .with_context(|| format!("Unable to open input file: {}", input))?,
+            .with_context(|| format!("Unable to open input file: {input}"))?,
     );
 
     let (header, _) = Header::deserialize(&mut *input_file.borrow_mut())?;
@@ -105,7 +105,7 @@ pub fn delete(input: &str, key_old: &Key) -> Result<()> {
             .read(true)
             .write(true)
             .open(input)
-            .with_context(|| format!("Unable to open input file: {}", input))?,
+            .with_context(|| format!("Unable to open input file: {input}"))?,
     );
 
     let (header, _) = Header::deserialize(&mut *input_file.borrow_mut())?;
@@ -140,7 +140,7 @@ pub fn verify(input: &str, key: &Key) -> Result<()> {
         OpenOptions::new()
             .read(true)
             .open(input)
-            .with_context(|| format!("Unable to open input file: {}", input))?,
+            .with_context(|| format!("Unable to open input file: {input}"))?,
     );
 
     let (header, _) = Header::deserialize(&mut *input_file.borrow_mut())?;

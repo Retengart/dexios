@@ -53,7 +53,7 @@ pub fn unpack(
 
                 if std::fs::metadata(file_path).is_ok() {
                     let answer = get_answer(
-                        &format!("{} already exists, would you like to overwrite?", file_name),
+                        &format!("{file_name} already exists, would you like to overwrite?"),
                         true,
                         params.force,
                     )

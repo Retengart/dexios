@@ -13,7 +13,7 @@ use domain::utils::hex_encode;
 
 pub fn details(input: &str) -> Result<()> {
     let mut input_file =
-        File::open(input).with_context(|| format!("Unable to open input file: {}", input))?;
+        File::open(input).with_context(|| format!("Unable to open input file: {input}"))?;
 
     let header_result = Header::deserialize(&mut input_file);
 
@@ -46,7 +46,7 @@ pub fn details(input: &str) -> Result<()> {
         }
         HeaderVersion::V4 | HeaderVersion::V5 => {
             for (i, keyslot) in header.keyslots.unwrap().iter().enumerate() {
-                println!("Keyslot {}:", i);
+                println!("Keyslot {i}:");
                 println!("  Hashing Algorithm: {}", keyslot.hash_algorithm);
                 println!("  Salt: {} (hex)", hex_encode(&keyslot.salt));
                 println!(
@@ -103,7 +103,7 @@ pub fn restore(input: &str, output: &str) -> Result<()> {
             .read(true)
             .write(true)
             .open(output)
-            .with_context(|| format!("Unable to open output file: {}", output))?,
+            .with_context(|| format!("Unable to open output file: {output}"))?,
     );
 
     let req = domain::header::restore::Request {
@@ -126,7 +126,7 @@ pub fn strip(input: &str) -> Result<()> {
             .read(true)
             .write(true)
             .open(input)
-            .with_context(|| format!("Unable to open input file: {}", input))?,
+            .with_context(|| format!("Unable to open input file: {input}"))?,
     );
 
     let req = domain::header::strip::Request {

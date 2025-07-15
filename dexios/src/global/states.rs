@@ -95,7 +95,7 @@ impl Key {
             }
             Key::Keyfile(path) => {
                 let mut reader = std::fs::File::open(path)
-                    .with_context(|| format!("Unable to read file: {}", path))?;
+                    .with_context(|| format!("Unable to read file: {path}"))?;
                 let secret = get_bytes(&mut reader)?;
                 if secret.is_empty() {
                     return Err(anyhow::anyhow!(format!("Keyfile '{}' is empty", path)));

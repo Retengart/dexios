@@ -257,7 +257,7 @@ pub mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
+            Ok(()) => {
                 assert_eq!(output_content, V4_ENCRYPTED_CONTENT.to_vec());
             }
             Err(e) => {
@@ -289,7 +289,7 @@ pub mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
+            Ok(()) => {
                 assert_eq!(output_content, V5_ENCRYPTED_CONTENT.to_vec());
             }
             Err(e) => {
@@ -324,7 +324,7 @@ pub mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
+            Ok(()) => {
                 assert_eq!(output_content, V5_ENCRYPTED_FULL_DETACHED_CONTENT.to_vec());
                 assert_eq!(output_header, V5_ENCRYPTED_DETACHED_HEADER.to_vec());
             }

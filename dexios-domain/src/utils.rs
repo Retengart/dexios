@@ -35,10 +35,13 @@ mod test {
 
 #[must_use]
 pub fn hex_encode(bytes: &[u8]) -> String {
+    use std::fmt::Write;
     bytes
         .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect::<String>()
+        .fold(String::new(), |mut acc, b| {
+            write!(&mut acc, "{b:02x}").expect("Writing to String should never fail");
+            acc
+        })
 }
 
 #[cfg(test)]

@@ -16,7 +16,9 @@ pub struct CryptoParams {
 }
 
 pub struct PackParams {
+    #[allow(dead_code)]
     pub dir_mode: DirectoryMode,
+    #[allow(dead_code)]
     pub print_mode: PrintMode,
     pub erase_source: EraseSourceDir,
     pub compression: Compression,

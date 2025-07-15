@@ -563,7 +563,7 @@ mod tests {
             .unwrap();
 
         match stor.flush_file(&file) {
-            Ok(_) => {
+            Ok(()) => {
                 let im_file = stor.files().get(file.path()).cloned();
                 assert_eq!(
                     im_file,
@@ -586,7 +586,7 @@ mod tests {
         let file_path = file.path().to_path_buf();
 
         match stor.remove_file(file) {
-            Ok(_) => {
+            Ok(()) => {
                 let im_file = stor.files().get(&file_path).cloned();
                 assert_eq!(im_file, None);
             }
@@ -603,7 +603,7 @@ mod tests {
         let file_path = file.path().to_path_buf();
 
         match stor.remove_file(file) {
-            Ok(_) => {
+            Ok(()) => {
                 let im_file = stor.files().get(&file_path).cloned();
                 assert_eq!(im_file, None);
             }
