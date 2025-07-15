@@ -111,19 +111,19 @@ jobs:
 
       - if: matrix.os == 'ubuntu-latest'
         name: Upload Binary as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: dexios-linux-amd64
           path: target/release/dexios
       - if: matrix.os == 'macos-latest'
         name: Upload Binary as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: dexios-macos-amd64
           path: target/release/dexios
       - if: matrix.os == 'windows-latest'
         name: Upload Binary as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: dexios-windows-amd64
           path: target/release/dexios.exe
