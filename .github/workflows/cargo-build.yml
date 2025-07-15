@@ -18,26 +18,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - uses: actions-rs/toolchain@v1
+    - name: Setup Rust toolchain with clippy
+      uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         toolchain: stable
-        override: true
         components: clippy
 
-    - name: Restore cargo cache
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-stable-${{ hashFiles('Cargo.lock') }}
-
     - name: Clippy
-      uses: actions-rs/cargo@v1
-      with:
-        command: clippy
-        args: --no-deps
+      run: cargo clippy --no-deps
 
   check:
     name: check (ubuntu-latest, stable)
@@ -45,24 +33,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - uses: actions-rs/toolchain@v1
+    - name: Setup Rust toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         toolchain: stable
 
-    - name: Restore cargo cache
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-stable-${{ hashFiles('Cargo.lock') }}
-
     - name: Check
-      uses: actions-rs/cargo@v1
-      with:
-        command: check
-        args: --release
+      run: cargo check --release
 
   build:
     strategy:
@@ -79,27 +56,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Toolchain
-        uses: actions-rs/toolchain@v1
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          profile: minimal
           toolchain: ${{ matrix.rust }}
-          override: true
-
-      - name: Restore cargo cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ matrix.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('Cargo.lock') }}
 
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release
+        run: cargo build --release
 
       - if: matrix.os != 'windows-latest'
         name: Strip
