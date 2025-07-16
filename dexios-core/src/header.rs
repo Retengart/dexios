@@ -60,11 +60,11 @@ pub enum HeaderVersion {
 impl std::fmt::Display for HeaderVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            HeaderVersion::V1 => write!(f, "V1"),
-            HeaderVersion::V2 => write!(f, "V2"),
-            HeaderVersion::V3 => write!(f, "V3"),
-            HeaderVersion::V4 => write!(f, "V4"),
-            HeaderVersion::V5 => write!(f, "V5"),
+            Self::V1 => write!(f, "V1"),
+            Self::V2 => write!(f, "V2"),
+            Self::V3 => write!(f, "V3"),
+            Self::V4 => write!(f, "V4"),
+            Self::V5 => write!(f, "V5"),
         }
     }
 }
@@ -116,8 +116,8 @@ pub enum HashingAlgorithm {
 impl std::fmt::Display for HashingAlgorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            HashingAlgorithm::Argon2id(i) => write!(f, "Argon2id (param v{})", i),
-            HashingAlgorithm::Blake3Balloon(i) => write!(f, "BLAKE3-Balloon (param v{})", i),
+            Self::Argon2id(i) => write!(f, "Argon2id (param v{i})"),
+            Self::Blake3Balloon(i) => write!(f, "BLAKE3-Balloon (param v{i})"),
         }
     }
 }
@@ -130,7 +130,7 @@ impl HashingAlgorithm {
         salt: &[u8; SALT_LEN],
     ) -> Result<Protected<[u8; 32]>, anyhow::Error> {
         match self {
-            HashingAlgorithm::Argon2id(i) => match i {
+            Self::Argon2id(i) => match i {
                 1 => argon2id_hash(raw_key, salt, &HeaderVersion::V1),
                 2 => argon2id_hash(raw_key, salt, &HeaderVersion::V2),
                 3 => argon2id_hash(raw_key, salt, &HeaderVersion::V3),
@@ -138,7 +138,7 @@ impl HashingAlgorithm {
                     "argon2id is not supported with the parameters provided."
                 )),
             },
-            HashingAlgorithm::Blake3Balloon(i) => match i {
+            Self::Blake3Balloon(i) => match i {
                 4 => balloon_hash(raw_key, salt, &HeaderVersion::V4),
                 5 => balloon_hash(raw_key, salt, &HeaderVersion::V5),
                 _ => Err(anyhow::anyhow!(
@@ -475,7 +475,7 @@ impl Header {
         };
 
         Ok((
-            Header {
+            Self {
                 header_type,
                 nonce,
                 salt: Some(salt),

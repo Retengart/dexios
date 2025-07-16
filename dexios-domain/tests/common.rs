@@ -10,6 +10,7 @@ pub struct TestFileStorage {
 }
 
 impl TestFileStorage {
+    #[must_use]
     pub fn new(test_case_n: u32) -> Self {
         Self {
             inner: FileStorage,
@@ -79,7 +80,8 @@ pub fn add_bar_foo_folder_with_hidden(stor: &TestFileStorage) -> Result<(), Erro
     Ok(())
 }
 
-pub fn sorted_file_names(file_names: Vec<&PathBuf>) -> Vec<&str> {
+#[must_use]
+pub fn sorted_file_names<'a>(file_names: &[&'a PathBuf]) -> Vec<&'a str> {
     let mut keys = file_names
         .iter()
         .map(|k| k.to_str().unwrap())

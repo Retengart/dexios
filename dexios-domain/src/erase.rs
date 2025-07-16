@@ -18,9 +18,9 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::OpenFile => f.write_str("Unable to open file"),
-            Error::Overwrite(inner) => write!(f, "Unable to overwrite file: {inner}"),
-            Error::RemoveFile => f.write_str("Unable to remove file"),
+            Self::OpenFile => f.write_str("Unable to open file"),
+            Self::Overwrite(inner) => write!(f, "Unable to overwrite file: {inner}"),
+            Self::RemoveFile => f.write_str("Unable to remove file"),
         }
     }
 }

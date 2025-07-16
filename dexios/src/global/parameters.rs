@@ -44,18 +44,15 @@ pub fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
 
     let force = forcemode(sub_matches);
 
-    let erase = if sub_matches.is_present("erase") {
-        let result = sub_matches
-            .value_of("erase")
-            .context("No amount of passes specified")?
-            .parse();
-
-        if let Ok(value) = result {
-            EraseMode::EraseFile(value)
-        } else {
-            warn!("No amount of passes provided - using the default.");
-            EraseMode::EraseFile(1)
-        }
+    let erase_mode = if sub_matches.is_present("erase") {
+        let result = sub_matches.value_of("erase").unwrap().parse::<i32>();
+        result.map_or_else(
+            |_| {
+                warn!("No amount of passes provided - using the default.");
+                EraseMode::EraseFile(1)
+            },
+            EraseMode::EraseFile,
+        )
     } else {
         EraseMode::IgnoreFile
     };
@@ -76,7 +73,7 @@ pub fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
     Ok(CryptoParams {
         hash_mode,
         force,
-        erase,
+        erase: erase_mode,
         key,
         header_location,
         hashing_algorithm,
@@ -100,26 +97,18 @@ pub fn algorithm(sub_matches: &ArgMatches) -> Algorithm {
     }
 }
 
-pub fn erase_params(sub_matches: &ArgMatches) -> Result<(i32, ForceMode)> {
+pub fn erase_params(sub_matches: &ArgMatches) -> (i32, ForceMode) {
     let passes = if sub_matches.is_present("passes") {
-        let result = sub_matches
-            .value_of("passes")
-            .context("No amount of passes specified")?
-            .parse::<i32>();
-        if let Ok(value) = result {
-            value
-        } else {
+        let result = sub_matches.value_of("passes").unwrap().parse::<i32>();
+        result.unwrap_or_else(|_| {
             warn!("Unable to read number of passes provided - using the default.");
             1
-        }
+        })
     } else {
-        warn!("Number of passes not provided - using the default.");
         1
     };
-
     let force = forcemode(sub_matches);
-
-    Ok((passes, force))
+    (passes, force)
 }
 
 pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams)> {

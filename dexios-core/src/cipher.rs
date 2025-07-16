@@ -57,19 +57,19 @@ impl Ciphers {
                 let cipher = Aes256Gcm::new_from_slice(key.expose())
                     .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
 
-                Ciphers::Aes256Gcm(Box::new(cipher))
+                Self::Aes256Gcm(Box::new(cipher))
             }
             Algorithm::XChaCha20Poly1305 => {
                 let cipher = XChaCha20Poly1305::new_from_slice(key.expose())
                     .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
 
-                Ciphers::XChaCha(Box::new(cipher))
+                Self::XChaCha(Box::new(cipher))
             }
             Algorithm::DeoxysII256 => {
                 let cipher = DeoxysII256::new_from_slice(key.expose())
                     .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
 
-                Ciphers::DeoxysII(Box::new(cipher))
+                Self::DeoxysII(Box::new(cipher))
             }
         };
 
@@ -86,9 +86,9 @@ impl Ciphers {
         plaintext: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         match self {
-            Ciphers::Aes256Gcm(c) => c.encrypt(nonce.as_ref().into(), plaintext),
-            Ciphers::XChaCha(c) => c.encrypt(nonce.as_ref().into(), plaintext),
-            Ciphers::DeoxysII(c) => c.encrypt(nonce.as_ref().into(), plaintext),
+            Self::Aes256Gcm(c) => c.encrypt(nonce.as_ref().into(), plaintext),
+            Self::XChaCha(c) => c.encrypt(nonce.as_ref().into(), plaintext),
+            Self::DeoxysII(c) => c.encrypt(nonce.as_ref().into(), plaintext),
         }
     }
 
@@ -99,9 +99,9 @@ impl Ciphers {
         buffer: &mut dyn aead::Buffer,
     ) -> Result<(), aead::Error> {
         match self {
-            Ciphers::Aes256Gcm(c) => c.encrypt_in_place(nonce.as_ref().into(), aad, buffer),
-            Ciphers::XChaCha(c) => c.encrypt_in_place(nonce.as_ref().into(), aad, buffer),
-            Ciphers::DeoxysII(c) => c.encrypt_in_place(nonce.as_ref().into(), aad, buffer),
+            Self::Aes256Gcm(c) => c.encrypt_in_place(nonce.as_ref().into(), aad, buffer),
+            Self::XChaCha(c) => c.encrypt_in_place(nonce.as_ref().into(), aad, buffer),
+            Self::DeoxysII(c) => c.encrypt_in_place(nonce.as_ref().into(), aad, buffer),
         }
     }
 
@@ -116,9 +116,9 @@ impl Ciphers {
         ciphertext: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         match self {
-            Ciphers::Aes256Gcm(c) => c.decrypt(nonce.as_ref().into(), ciphertext),
-            Ciphers::XChaCha(c) => c.decrypt(nonce.as_ref().into(), ciphertext),
-            Ciphers::DeoxysII(c) => c.decrypt(nonce.as_ref().into(), ciphertext),
+            Self::Aes256Gcm(c) => c.decrypt(nonce.as_ref().into(), ciphertext),
+            Self::XChaCha(c) => c.decrypt(nonce.as_ref().into(), ciphertext),
+            Self::DeoxysII(c) => c.decrypt(nonce.as_ref().into(), ciphertext),
         }
     }
 }

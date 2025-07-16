@@ -25,14 +25,14 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::InitializeChiphers => f.write_str("Cannot initialize chiphers"),
-            Error::InitializeStreams => f.write_str("Cannot initialize streams"),
-            Error::DeserializeHeader => f.write_str("Cannot deserialize header"),
-            Error::ReadEncryptedData => f.write_str("Unable to read encrypted data"),
-            Error::DecryptMasterKey => f.write_str("Cannot decrypt master key"),
-            Error::DecryptData => f.write_str("Unable to decrypt data"),
-            Error::WriteData => f.write_str("Unable to write data"),
-            Error::RewindDataReader => f.write_str("Unable to rewind the reader"),
+            Self::InitializeChiphers => f.write_str("Cannot initialize chiphers"),
+            Self::InitializeStreams => f.write_str("Cannot initialize streams"),
+            Self::DeserializeHeader => f.write_str("Cannot deserialize header"),
+            Self::ReadEncryptedData => f.write_str("Unable to read encrypted data"),
+            Self::DecryptMasterKey => f.write_str("Cannot decrypt master key"),
+            Self::DecryptData => f.write_str("Unable to decrypt data"),
+            Self::WriteData => f.write_str("Unable to write data"),
+            Self::RewindDataReader => f.write_str("Unable to rewind the reader"),
         }
     }
 }
@@ -177,7 +177,7 @@ mod tests {
 
         match execute(req) {
             Ok(()) => {
-                assert_eq!(output_content, "Hello world".as_bytes().to_vec());
+                assert_eq!(output_content, b"Hello world".to_vec());
             }
             _ => unreachable!(),
         }
@@ -201,7 +201,7 @@ mod tests {
 
         match execute(req) {
             Ok(()) => {
-                assert_eq!(output_content, "Hello world".as_bytes().to_vec());
+                assert_eq!(output_content, b"Hello world".to_vec());
             }
             _ => unreachable!(),
         }
@@ -228,7 +228,7 @@ mod tests {
 
         match execute(req) {
             Ok(()) => {
-                assert_eq!(output_content, "Hello world".as_bytes().to_vec());
+                assert_eq!(output_content, b"Hello world".to_vec());
             }
             _ => unreachable!(),
         }
@@ -255,7 +255,7 @@ mod tests {
 
         match execute(req) {
             Ok(()) => {
-                assert_eq!(output_content, "Hello world".as_bytes().to_vec());
+                assert_eq!(output_content, b"Hello world".to_vec());
             }
             _ => unreachable!(),
         }

@@ -29,13 +29,13 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::CreateArchive => f.write_str("Unable to create archive"),
-            Error::AddDirToArchive => f.write_str("Unable to add directory to archive"),
-            Error::AddFileToArchive => f.write_str("Unable to add file to archive"),
-            Error::FinishArchive => f.write_str("Unable to finish archive"),
-            Error::ReadData => f.write_str("Unable to read data"),
-            Error::WriteData => f.write_str("Unable to write data"),
-            Error::Encrypt(inner) => write!(f, "Unable to encrypt archive: {inner}"),
+            Self::CreateArchive => f.write_str("Unable to create archive"),
+            Self::AddDirToArchive => f.write_str("Unable to add directory to archive"),
+            Self::AddFileToArchive => f.write_str("Unable to add file to archive"),
+            Self::FinishArchive => f.write_str("Unable to finish archive"),
+            Self::ReadData => f.write_str("Unable to read data"),
+            Self::WriteData => f.write_str("Unable to write data"),
+            Self::Encrypt(inner) => write!(f, "Unable to encrypt archive: {inner}"),
         }
     }
 }

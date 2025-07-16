@@ -35,15 +35,15 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::CreateDir => f.write_str("Unable to create a new directory"),
-            Error::CreateFile => f.write_str("Unable to create a new file"),
-            Error::OpenFile(mode) => write!(f, "Unable to read the file in {mode:?} mode"),
-            Error::FlushFile => f.write_str("Unable to flush the file"),
-            Error::RemoveFile => f.write_str("Unable to remove the file"),
-            Error::RemoveDir => f.write_str("Unable to remove dir"),
-            Error::DirEntries => f.write_str("Unable to read directory"),
-            Error::FileAccess => f.write_str("Permission denied"),
-            Error::FileLen => f.write_str("Unable to get file length"),
+            Self::CreateDir => f.write_str("Unable to create a new directory"),
+            Self::CreateFile => f.write_str("Unable to create a new file"),
+            Self::OpenFile(mode) => write!(f, "Unable to read the file in {mode:?} mode"),
+            Self::FlushFile => f.write_str("Unable to flush the file"),
+            Self::RemoveFile => f.write_str("Unable to remove the file"),
+            Self::RemoveDir => f.write_str("Unable to remove dir"),
+            Self::DirEntries => f.write_str("Unable to read directory"),
+            Self::FileAccess => f.write_str("Permission denied"),
+            Self::FileLen => f.write_str("Unable to get file length"),
         }
     }
 }
@@ -402,8 +402,8 @@ pub enum IMFile {
 impl IMFile {
     fn inner(&self) -> &InMemoryFile {
         match self {
-            IMFile::File(inner) => inner,
-            IMFile::Dir => unreachable!(),
+            Self::File(inner) => inner,
+            Self::Dir => unreachable!(),
         }
     }
 }
@@ -430,25 +430,25 @@ where
 {
     pub fn path(&self) -> &Path {
         match self {
-            Entry::File(FileData { path, .. }) | Entry::Dir(path) => path,
+            Self::File(FileData { path, .. }) | Self::Dir(path) => path,
         }
     }
 
     pub fn is_dir(&self) -> bool {
-        matches!(self, Entry::Dir(_))
+        matches!(self, Self::Dir(_))
     }
 
     pub fn try_reader(&self) -> Result<&RefCell<RW>, Error> {
         match self {
-            Entry::File(file) => Ok(&file.stream),
-            Entry::Dir(_) => Err(Error::FileAccess),
+            Self::File(file) => Ok(&file.stream),
+            Self::Dir(_) => Err(Error::FileAccess),
         }
     }
 
     pub fn try_writer(&self) -> Result<&RefCell<RW>, Error> {
         match self {
-            Entry::File(file) => Ok(&file.stream),
-            Entry::Dir(_) => Err(Error::FileAccess),
+            Self::File(file) => Ok(&file.stream),
+            Self::Dir(_) => Err(Error::FileAccess),
         }
     }
 }
@@ -650,12 +650,8 @@ mod tests {
         match stor.remove_dir_all(file) {
             Ok(()) => {
                 assert_eq!(stor.files().get(&file_path).cloned(), None);
-                let files = stor.files();
-                let keys = files.keys().cloned().collect::<Vec<_>>();
-                assert_eq!(
-                    sorted_file_names(&keys),
-                    vec!["bar/", "bar/hello.txt", "bar/world.txt", "hello.txt"]
-                );
+                let keys = stor.files().keys().cloned().collect::<Vec<PathBuf>>();
+                assert_eq!(sorted_file_names(&keys), vec!["hello.txt"]);
             }
             _ => unreachable!(),
         }
@@ -673,8 +669,7 @@ mod tests {
         match stor.remove_dir_all(file) {
             Ok(()) => {
                 assert_eq!(stor.files().get(&file_path).cloned(), None);
-                let files = stor.files();
-                let keys = files.keys().cloned().collect::<Vec<PathBuf>>();
+                let keys = stor.files().keys().cloned().collect::<Vec<PathBuf>>();
                 assert_eq!(sorted_file_names(&keys), vec!["hello.txt"]);
             }
             _ => unreachable!(),

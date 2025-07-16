@@ -100,7 +100,7 @@ impl EncryptionStreams {
                     .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
 
                 let stream = EncryptorLE31::from_aead(cipher, nonce.into());
-                EncryptionStreams::Aes256Gcm(Box::new(stream))
+                Self::Aes256Gcm(Box::new(stream))
             }
             Algorithm::XChaCha20Poly1305 => {
                 if nonce.len() != 20 {
@@ -111,7 +111,7 @@ impl EncryptionStreams {
                     .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
 
                 let stream = EncryptorLE31::from_aead(cipher, nonce.into());
-                EncryptionStreams::XChaCha20Poly1305(Box::new(stream))
+                Self::XChaCha20Poly1305(Box::new(stream))
             }
             Algorithm::DeoxysII256 => {
                 if nonce.len() != 11 {
@@ -122,7 +122,7 @@ impl EncryptionStreams {
                     .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
 
                 let stream = EncryptorLE31::from_aead(cipher, nonce.into());
-                EncryptionStreams::DeoxysII256(Box::new(stream))
+                Self::DeoxysII256(Box::new(stream))
             }
         };
 
@@ -138,9 +138,9 @@ impl EncryptionStreams {
         payload: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         match self {
-            EncryptionStreams::Aes256Gcm(s) => s.encrypt_next(payload),
-            EncryptionStreams::XChaCha20Poly1305(s) => s.encrypt_next(payload),
-            EncryptionStreams::DeoxysII256(s) => s.encrypt_next(payload),
+            Self::Aes256Gcm(s) => s.encrypt_next(payload),
+            Self::XChaCha20Poly1305(s) => s.encrypt_next(payload),
+            Self::DeoxysII256(s) => s.encrypt_next(payload),
         }
     }
 
@@ -152,9 +152,9 @@ impl EncryptionStreams {
         payload: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         match self {
-            EncryptionStreams::Aes256Gcm(s) => s.encrypt_last(payload),
-            EncryptionStreams::XChaCha20Poly1305(s) => s.encrypt_last(payload),
-            EncryptionStreams::DeoxysII256(s) => s.encrypt_last(payload),
+            Self::Aes256Gcm(s) => s.encrypt_last(payload),
+            Self::XChaCha20Poly1305(s) => s.encrypt_last(payload),
+            Self::DeoxysII256(s) => s.encrypt_last(payload),
         }
     }
 
@@ -274,21 +274,21 @@ impl DecryptionStreams {
                     .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
 
                 let stream = DecryptorLE31::from_aead(cipher, nonce.into());
-                DecryptionStreams::Aes256Gcm(Box::new(stream))
+                Self::Aes256Gcm(Box::new(stream))
             }
             Algorithm::XChaCha20Poly1305 => {
                 let cipher = XChaCha20Poly1305::new_from_slice(key.expose())
                     .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
 
                 let stream = DecryptorLE31::from_aead(cipher, nonce.into());
-                DecryptionStreams::XChaCha20Poly1305(Box::new(stream))
+                Self::XChaCha20Poly1305(Box::new(stream))
             }
             Algorithm::DeoxysII256 => {
                 let cipher = DeoxysII256::new_from_slice(key.expose())
                     .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
 
                 let stream = DecryptorLE31::from_aead(cipher, nonce.into());
-                DecryptionStreams::DeoxysII256(Box::new(stream))
+                Self::DeoxysII256(Box::new(stream))
             }
         };
 
@@ -306,9 +306,9 @@ impl DecryptionStreams {
         payload: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         match self {
-            DecryptionStreams::Aes256Gcm(s) => s.decrypt_next(payload),
-            DecryptionStreams::XChaCha20Poly1305(s) => s.decrypt_next(payload),
-            DecryptionStreams::DeoxysII256(s) => s.decrypt_next(payload),
+            Self::Aes256Gcm(s) => s.decrypt_next(payload),
+            Self::XChaCha20Poly1305(s) => s.decrypt_next(payload),
+            Self::DeoxysII256(s) => s.decrypt_next(payload),
         }
     }
 
@@ -322,9 +322,9 @@ impl DecryptionStreams {
         payload: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         match self {
-            DecryptionStreams::Aes256Gcm(s) => s.decrypt_last(payload),
-            DecryptionStreams::XChaCha20Poly1305(s) => s.decrypt_last(payload),
-            DecryptionStreams::DeoxysII256(s) => s.decrypt_last(payload),
+            Self::Aes256Gcm(s) => s.decrypt_last(payload),
+            Self::XChaCha20Poly1305(s) => s.decrypt_last(payload),
+            Self::DeoxysII256(s) => s.decrypt_last(payload),
         }
     }
 

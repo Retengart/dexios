@@ -85,7 +85,7 @@ impl Key {
     // it has a check for if the keyfile is empty or not
     pub fn get_secret(&self, pass_state: &PasswordState) -> Result<Protected<Vec<u8>>> {
         let secret = match self {
-            Key::Keyfile(path) if path == "-" => {
+            Self::Keyfile(path) if path == "-" => {
                 let mut reader = std::io::stdin();
                 let secret = get_bytes(&mut reader)?;
                 if secret.is_empty() {
@@ -93,7 +93,7 @@ impl Key {
                 }
                 secret
             }
-            Key::Keyfile(path) => {
+            Self::Keyfile(path) => {
                 let mut reader = std::fs::File::open(path)
                     .with_context(|| format!("Unable to read file: {path}"))?;
                 let secret = get_bytes(&mut reader)?;
@@ -102,13 +102,13 @@ impl Key {
                 }
                 secret
             }
-            Key::Env => Protected::new(
+            Self::Env => Protected::new(
                 std::env::var("DEXIOS_KEY")
                     .context("Unable to read DEXIOS_KEY from environment variable")?
                     .into_bytes(),
             ),
-            Key::User => get_password(pass_state)?,
-            Key::Generate(i) => {
+            Self::User => get_password(pass_state)?,
+            Self::Generate(i) => {
                 let passphrase = generate_passphrase(i);
                 warn!("Your generated passphrase is: {}", passphrase.expose());
                 let key = Protected::new(passphrase.expose().clone().into_bytes());
@@ -130,30 +130,34 @@ impl Key {
         keyfile_descriptor: &str,
     ) -> Result<Self> {
         let key = if sub_matches.is_present(keyfile_descriptor) && params.keyfile {
-            Key::Keyfile(
+            Self::Keyfile(
                 sub_matches
                     .value_of(keyfile_descriptor)
                     .context("No keyfile/invalid text provided")?
                     .to_string(),
             )
         } else if std::env::var("DEXIOS_KEY").is_ok() && params.env {
-            Key::Env
-        } else if let (Ok(true), true) = (
-            sub_matches.try_contains_id("autogenerate"),
-            params.autogenerate,
+            Self::Env
+        } else if matches!(
+            (
+                sub_matches.try_contains_id("autogenerate"),
+                params.autogenerate
+            ),
+            (Ok(true), true)
         ) {
             let result = sub_matches
                 .value_of("autogenerate")
                 .context("No amount of words specified")?
                 .parse::<i32>();
-            if let Ok(value) = result {
-                Key::Generate(value)
-            } else {
-                warn!("No amount of words specified - using the default.");
-                Key::Generate(7)
-            }
+            result.map_or_else(
+                |_| {
+                    warn!("No amount of words specified - using the default.");
+                    Self::Generate(7)
+                },
+                Self::Generate,
+            )
         } else if params.user {
-            Key::User
+            Self::User
         } else {
             return Err(anyhow::anyhow!(
                 "No key sources found with the parameters/arguments provided"
@@ -174,7 +178,7 @@ pub struct KeyParams {
 
 impl KeyParams {
     pub fn default() -> Self {
-        KeyParams {
+        Self {
             user: true,
             env: true,
             autogenerate: true,

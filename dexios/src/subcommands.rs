@@ -46,7 +46,7 @@ pub fn decrypt(sub_matches: &ArgMatches) -> Result<()> {
 }
 
 pub fn erase(sub_matches: &ArgMatches) -> Result<()> {
-    let (passes, force) = erase_params(sub_matches)?;
+    let (passes, force) = erase_params(sub_matches);
 
     erase::secure_erase(&get_param("input", sub_matches)?, passes, force)
 }

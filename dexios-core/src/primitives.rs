@@ -35,9 +35,9 @@ pub static ALGORITHMS: [Algorithm; ALGORITHMS_LEN] = [
 impl std::fmt::Display for Algorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Algorithm::Aes256Gcm => write!(f, "AES-256-GCM"),
-            Algorithm::XChaCha20Poly1305 => write!(f, "XChaCha20-Poly1305"),
-            Algorithm::DeoxysII256 => write!(f, "Deoxys-II-256"),
+            Self::Aes256Gcm => write!(f, "AES-256-GCM"),
+            Self::XChaCha20Poly1305 => write!(f, "XChaCha20-Poly1305"),
+            Self::DeoxysII256 => write!(f, "Deoxys-II-256"),
         }
     }
 }
@@ -52,14 +52,14 @@ pub enum Mode {
 impl std::fmt::Display for Mode {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Mode::MemoryMode => write!(f, "Memory Mode"),
-            Mode::StreamMode => write!(f, "Stream Mode"),
+            Self::MemoryMode => write!(f, "Memory Mode"),
+            Self::StreamMode => write!(f, "Stream Mode"),
         }
     }
 }
 
-/// This can be used to generate a nonce for encryption
-/// It requires both the algorithm and the mode, so it can correctly determine the nonce length
+/// This can be used to generate a nonce for encryption.
+/// It requires both the algorithm and the mode, so it can correctly determine the nonce length.
 /// This nonce can be passed directly to `EncryptionStreams::initialize()`
 ///
 /// # Examples

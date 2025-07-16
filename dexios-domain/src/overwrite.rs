@@ -20,10 +20,10 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::ResetCursorPosition => f.write_str("Unable to reset cursor position"),
-            Error::OverwriteWithRandomBytes => f.write_str("Unable to overwrite with random bytes"),
-            Error::OverwriteWithZeros => f.write_str("Unable to overwrite with zeros"),
-            Error::FlushFile => f.write_str("Unable to flush"),
+            Self::ResetCursorPosition => f.write_str("Unable to reset cursor position"),
+            Self::OverwriteWithRandomBytes => f.write_str("Unable to overwrite with random bytes"),
+            Self::OverwriteWithZeros => f.write_str("Unable to overwrite with zeros"),
+            Self::FlushFile => f.write_str("Unable to flush"),
         }
     }
 }
