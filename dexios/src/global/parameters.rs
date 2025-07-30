@@ -7,7 +7,7 @@ use crate::global::structs::PackParams;
 use crate::warn;
 use anyhow::{Context, Result};
 use clap::ArgMatches;
-use core::header::{HashingAlgorithm, ARGON2ID_LATEST, BLAKE3BALLOON_LATEST};
+use core::header::{HashingAlgorithm, BLAKE3BALLOON_LATEST};
 use core::primitives::Algorithm;
 
 use super::states::{Compression, DirectoryMode, Key, KeyParams, PrintMode};
@@ -81,20 +81,14 @@ pub fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
 }
 
 pub fn hashing_algorithm(sub_matches: &ArgMatches) -> HashingAlgorithm {
-    if sub_matches.is_present("argon") {
-        HashingAlgorithm::Argon2id(ARGON2ID_LATEST)
-    } else {
-        HashingAlgorithm::Blake3Balloon(BLAKE3BALLOON_LATEST)
-    }
+    // Always use BLAKE3-Balloon
+    HashingAlgorithm::Blake3Balloon(BLAKE3BALLOON_LATEST)
 }
 
 // gets the algorithm, primarily for encrypt functions
 pub fn algorithm(sub_matches: &ArgMatches) -> Algorithm {
-    if sub_matches.is_present("aes") {
-        Algorithm::Aes256Gcm
-    } else {
-        Algorithm::XChaCha20Poly1305
-    }
+    // Always use XChaCha20-Poly1305
+    Algorithm::XChaCha20Poly1305
 }
 
 pub fn erase_params(sub_matches: &ArgMatches) -> (i32, ForceMode) {

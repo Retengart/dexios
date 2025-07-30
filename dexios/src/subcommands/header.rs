@@ -34,15 +34,15 @@ pub fn details(input: &str) -> Result<()> {
     match header.header_type.version {
         HeaderVersion::V1 => {
             println!("Salt: {} (hex)", hex_encode(&header.salt.unwrap()));
-            println!("Hashing Algorithm: {}", HashingAlgorithm::Argon2id(1));
+            println!("Hashing Algorithm: {}", HashingAlgorithm::Blake3Balloon(1));
         }
         HeaderVersion::V2 => {
             println!("Salt: {} (hex)", hex_encode(&header.salt.unwrap()));
-            println!("Hashing Algorithm: {}", HashingAlgorithm::Argon2id(2));
+            println!("Hashing Algorithm: {}", HashingAlgorithm::Blake3Balloon(2));
         }
         HeaderVersion::V3 => {
             println!("Salt: {} (hex)", hex_encode(&header.salt.unwrap()));
-            println!("Hashing Algorithm: {}", HashingAlgorithm::Argon2id(3));
+            println!("Hashing Algorithm: {}", HashingAlgorithm::Blake3Balloon(3));
         }
         HeaderVersion::V4 | HeaderVersion::V5 => {
             for (i, keyslot) in header.keyslots.unwrap().iter().enumerate() {

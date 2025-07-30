@@ -33,7 +33,7 @@
 //!
 
 use crate::{
-    key::{argon2id_hash, balloon_hash},
+    key::balloon_hash,
     protected::Protected,
 };
 
@@ -102,21 +102,18 @@ pub struct Header {
     pub keyslots: Option<Vec<Keyslot>>,
 }
 
-pub const ARGON2ID_LATEST: i32 = 3;
 pub const BLAKE3BALLOON_LATEST: i32 = 5;
 
 /// This is in place to make `Keyslot` handling a **lot** easier
-/// You may use the constants `ARGON2ID_LATEST` and `BLAKE3BALLOON_LATEST` for defining versions
+/// You may use the constant `BLAKE3BALLOON_LATEST` for defining versions
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum HashingAlgorithm {
-    Argon2id(i32),
     Blake3Balloon(i32),
 }
 
 impl std::fmt::Display for HashingAlgorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::Argon2id(i) => write!(f, "Argon2id (param v{i})"),
             Self::Blake3Balloon(i) => write!(f, "BLAKE3-Balloon (param v{i})"),
         }
     }
@@ -130,16 +127,8 @@ impl HashingAlgorithm {
         salt: &[u8; SALT_LEN],
     ) -> Result<Protected<[u8; 32]>, anyhow::Error> {
         match self {
-            Self::Argon2id(i) => match i {
-                1 => argon2id_hash(raw_key, salt, &HeaderVersion::V1),
-                2 => argon2id_hash(raw_key, salt, &HeaderVersion::V2),
-                3 => argon2id_hash(raw_key, salt, &HeaderVersion::V3),
-                _ => Err(anyhow::anyhow!(
-                    "argon2id is not supported with the parameters provided."
-                )),
-            },
             Self::Blake3Balloon(i) => match i {
-                4 => balloon_hash(raw_key, salt, &HeaderVersion::V4),
+                1 | 2 | 3 | 4 => balloon_hash(raw_key, salt, &HeaderVersion::V4),
                 5 => balloon_hash(raw_key, salt, &HeaderVersion::V5),
                 _ => Err(anyhow::anyhow!(
                     "Balloon hashing is not supported with the parameters provided."
@@ -164,15 +153,12 @@ impl Keyslot {
     #[must_use]
     pub fn serialize(&self) -> [u8; 2] {
         match self.hash_algorithm {
-            HashingAlgorithm::Argon2id(i) => match i {
+            HashingAlgorithm::Blake3Balloon(i) => match i {
                 1 => [0xDF, 0xA1],
                 2 => [0xDF, 0xA2],
                 3 => [0xDF, 0xA3],
-                _ => [0x00, 0x00],
-            },
-            HashingAlgorithm::Blake3Balloon(i) => match i {
-                4 => [0xDF, 0xB4],
-                5 => [0xDF, 0xB5],
+                4 => [0xDF, 0xA4],
+                5 => [0xDF, 0xA5],
                 _ => [0x00, 0x00],
             },
         }
@@ -290,8 +276,6 @@ impl Header {
 
         let algorithm = match algorithm_bytes {
             [0x0E, 0x01] => Algorithm::XChaCha20Poly1305,
-            [0x0E, 0x02] => Algorithm::Aes256Gcm,
-            [0x0E, 0x03] => Algorithm::DeoxysII256,
             _ => return Err(anyhow::anyhow!("Error getting encryption mode from header")),
         };
 
@@ -428,11 +412,11 @@ impl Header {
                         .context("Unable to read keyslot padding from header")?;
 
                     let hash_algorithm = match identifier {
-                        [0xDF, 0xA1] => HashingAlgorithm::Argon2id(1),
-                        [0xDF, 0xA2] => HashingAlgorithm::Argon2id(2),
-                        [0xDF, 0xA3] => HashingAlgorithm::Argon2id(3),
-                        [0xDF, 0xB4] => HashingAlgorithm::Blake3Balloon(4),
-                        [0xDF, 0xB5] => HashingAlgorithm::Blake3Balloon(5),
+                        [0xDF, 0xA1] => HashingAlgorithm::Blake3Balloon(1),
+                        [0xDF, 0xA2] => HashingAlgorithm::Blake3Balloon(2),
+                        [0xDF, 0xA3] => HashingAlgorithm::Blake3Balloon(3),
+                        [0xDF, 0xA4] => HashingAlgorithm::Blake3Balloon(4),
+                        [0xDF, 0xA5] => HashingAlgorithm::Blake3Balloon(5),
                         _ => return Err(anyhow::anyhow!("Key hashing algorithm not identified")),
                     };
 
@@ -492,14 +476,6 @@ impl Header {
         match self.header_type.algorithm {
             Algorithm::XChaCha20Poly1305 => {
                 let info: [u8; 2] = [0x0E, 0x01];
-                info
-            }
-            Algorithm::Aes256Gcm => {
-                let info: [u8; 2] = [0x0E, 0x02];
-                info
-            }
-            Algorithm::DeoxysII256 => {
-                let info: [u8; 2] = [0x0E, 0x03];
                 info
             }
         }
