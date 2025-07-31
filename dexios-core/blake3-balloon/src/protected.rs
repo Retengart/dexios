@@ -105,8 +105,15 @@ where
     /// let password = secret.into_inner();
     /// ```
     #[must_use]
-    pub fn into_inner(self) -> T {
-        self.data
+    pub fn into_inner(self) -> T 
+    where
+        T: Clone,
+    {
+        // Clone the data since we can't move out of a Drop type
+        let data = self.data.clone();
+        // Prevent the drop from zeroizing the original data
+        std::mem::forget(self);
+        data
     }
 }
 

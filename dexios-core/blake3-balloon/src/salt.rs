@@ -3,7 +3,6 @@
 //! This module provides utilities for generating cryptographically secure
 //! random salts for use with BLAKE3-Balloon password hashing.
 
-#[cfg(feature = "salt-generation")]
 use crate::params::SALT_LEN;
 
 /// Generates a cryptographically secure random salt

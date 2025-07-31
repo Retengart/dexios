@@ -19,13 +19,20 @@ pub enum Blake3BalloonError {
     /// Invalid parameter version provided
     #[error("Unsupported parameter version: {version}. Supported versions: {supported:?}")]
     UnsupportedVersion {
+        /// The unsupported version that was provided
         version: u32,
+        /// List of supported versions
         supported: Vec<u32>,
     },
 
     /// Invalid salt length
     #[error("Invalid salt length: expected {expected} bytes, got {actual} bytes")]
-    InvalidSaltLength { expected: usize, actual: usize },
+    InvalidSaltLength { 
+        /// The expected salt length in bytes
+        expected: usize, 
+        /// The actual salt length in bytes
+        actual: usize 
+    },
 
     /// Invalid password length (empty password)
     #[error("Password cannot be empty")]
@@ -33,7 +40,7 @@ pub enum Blake3BalloonError {
 
     /// Internal balloon hash crate error
     #[error("Balloon hash internal error: {0}")]
-    BalloonHashError(#[from] balloon_hash::Error),
+    BalloonHashError(String),
 }
 
 /// Result type alias for BLAKE3-Balloon operations
