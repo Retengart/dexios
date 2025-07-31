@@ -221,8 +221,6 @@ impl Header {
         };
 
         let header_length: usize = match version {
-            HeaderVersion::V1 | HeaderVersion::V2 | HeaderVersion::V3 => 64,
-            HeaderVersion::V4 => 128,
             HeaderVersion::V5 => 416,
         };
 
@@ -268,70 +266,6 @@ impl Header {
         let mut nonce = vec![0u8; nonce_len];
 
         let keyslots: Option<Vec<Keyslot>> = match header_type.version {
-            HeaderVersion::V1 | HeaderVersion::V3 => {
-                cursor
-                    .read_exact(&mut salt)
-                    .context("Unable to read salt from header")?;
-                cursor
-                    .read_exact(&mut [0; 16])
-                    .context("Unable to read empty bytes from header")?;
-                cursor
-                    .read_exact(&mut nonce)
-                    .context("Unable to read nonce from header")?;
-                cursor
-                    .read_exact(&mut vec![0u8; 26 - nonce_len])
-                    .context("Unable to read final padding from header")?;
-
-                None
-            }
-            HeaderVersion::V2 => {
-                cursor
-                    .read_exact(&mut salt)
-                    .context("Unable to read salt from header")?;
-                cursor
-                    .read_exact(&mut nonce)
-                    .context("Unable to read nonce from header")?;
-                cursor
-                    .read_exact(&mut vec![0u8; 26 - nonce_len])
-                    .context("Unable to read empty bytes from header")?;
-                cursor
-                    .read_exact(&mut [0u8; 16])
-                    .context("Unable to read final padding from header")?;
-
-                None
-            }
-            HeaderVersion::V4 => {
-                let mut master_key_encrypted = [0u8; 48];
-                let master_key_nonce_len = get_nonce_len(&algorithm, &Mode::MemoryMode);
-                let mut master_key_nonce = vec![0u8; master_key_nonce_len];
-                cursor
-                    .read_exact(&mut salt)
-                    .context("Unable to read salt from header")?;
-                cursor
-                    .read_exact(&mut nonce)
-                    .context("Unable to read nonce from header")?;
-                cursor
-                    .read_exact(&mut vec![0u8; 26 - nonce_len])
-                    .context("Unable to read padding from header")?;
-                cursor
-                    .read_exact(&mut master_key_encrypted)
-                    .context("Unable to read encrypted master key from header")?;
-                cursor
-                    .read_exact(&mut master_key_nonce)
-                    .context("Unable to read master key nonce from header")?;
-                cursor
-                    .read_exact(&mut vec![0u8; 32 - master_key_nonce_len])
-                    .context("Unable to read padding from header")?;
-
-                let keyslot = Keyslot {
-                    encrypted_key: master_key_encrypted,
-                    hash_algorithm: HashingAlgorithm::Blake3Balloon(4),
-                    nonce: master_key_nonce.clone(),
-                    salt,
-                };
-                let keyslots = vec![keyslot];
-                Some(keyslots)
-            }
             HeaderVersion::V5 => {
                 cursor
                     .read_exact(&mut nonce)
@@ -379,9 +313,6 @@ impl Header {
                         .context("Unable to read keyslot padding from header")?;
 
                     let hash_algorithm = match identifier {
-                        [0xDF, 0xA1] => HashingAlgorithm::Argon2id(1),
-                        [0xDF, 0xA2] => HashingAlgorithm::Argon2id(2),
-                        [0xDF, 0xA3] => HashingAlgorithm::Argon2id(3),
                         [0xDF, 0xB4] => HashingAlgorithm::Blake3Balloon(4),
                         [0xDF, 0xB5] => HashingAlgorithm::Blake3Balloon(5),
                         _ => return Err(anyhow::anyhow!("Key hashing algorithm not identified")),
@@ -402,22 +333,6 @@ impl Header {
         };
 
         let aad = match header_type.version {
-            HeaderVersion::V1 | HeaderVersion::V2 => Vec::<u8>::new(),
-            HeaderVersion::V3 => full_header_bytes.clone(),
-            HeaderVersion::V4 => {
-                let master_key_nonce_len = get_nonce_len(&algorithm, &Mode::MemoryMode);
-                let mut aad = Vec::new();
-
-                // this is for the version/algorithm/mode/salt/nonce
-                aad.extend_from_slice(&full_header_bytes[..48]);
-
-                // this is for the padding that's appended to the end of the master key's nonce
-                // the master key/master key nonce aren't included as they may change
-                // the master key nonce length will be fixed, as otherwise the algorithm has changed
-                // and that requires re-encrypting anyway
-                aad.extend_from_slice(&full_header_bytes[(96 + master_key_nonce_len)..]);
-                aad
-            }
             HeaderVersion::V5 => {
                 let mut aad = Vec::new();
                 aad.extend_from_slice(&full_header_bytes[..32]);
