@@ -4,5 +4,6 @@ resolver = "3"
 members = [
     "dexios",
     "dexios-core",
+    "dexios-core/blake3-balloon",
     "dexios-domain",
 ]
