@@ -8,9 +8,9 @@ homepage = "https://github.com/brxken128/dexios"
 repository = "https://github.com/brxken128/dexios/tree/master/dexios-core"
 documentation = "https://docs.rs/dexios-core/latest/dexios_core/"
 categories = ["cryptography", "encoding", "data-structures"]
-rust-version = "1.57"
+rust-version = "1.85.0"
 keywords = ["encryption", "secure"]
-edition = "2021"
+edition = "2024"
 license = "BSD-2-Clause"
 
 # this is for sites other than crates.io, who may still use it
