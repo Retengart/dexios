@@ -11,6 +11,37 @@ use core::header::{Header, HeaderVersion};
 use domain::storage::Storage;
 use domain::utils::hex_encode;
 
+#[must_use]
+pub fn get_header_string_from_reader(reader: &mut impl std::io::Read) -> String {
+    let header = Header::deserialize(reader);
+
+    header.map_or_else(
+        |e| format!("Unable to read header: {e}"),
+        |(header, _)| get_header_string(header),
+    )
+}
+
+#[must_use]
+pub fn get_header_string(header: &Header) -> String {
+    let mut lines = vec![
+        format!("Header version: {}", header.header_type.version),
+        format!("Algorithm: {}", header.header_type.algorithm),
+        format!("Mode: {}", header.header_type.mode),
+    ];
+
+    if let Some(keyslots) = &header.keyslots {
+        for (i, keyslot) in keyslots.iter().enumerate() {
+            lines.push(format!(
+                "Keyslot {}: {} Hashing Algorithm",
+                i + 1,
+                keyslot.hash_algorithm
+            ));
+        }
+    }
+
+    lines.join("\n")
+}
+
 pub fn details(input: &str) -> Result<()> {
     let mut input_file =
         File::open(input).with_context(|| format!("Unable to open input file: {input}"))?;
@@ -31,30 +62,17 @@ pub fn details(input: &str) -> Result<()> {
     println!("Encryption nonce: {} (hex)", hex_encode(&header.nonce));
     println!("AAD: {} (hex)", hex_encode(&aad));
 
-    match header.header_type.version {
-        HeaderVersion::V1 => {
-            println!("Salt: {} (hex)", hex_encode(&header.salt.unwrap()));
-            println!("Hashing Algorithm: {}", HashingAlgorithm::Argon2id(1));
-        }
-        HeaderVersion::V2 => {
-            println!("Salt: {} (hex)", hex_encode(&header.salt.unwrap()));
-            println!("Hashing Algorithm: {}", HashingAlgorithm::Argon2id(2));
-        }
-        HeaderVersion::V3 => {
-            println!("Salt: {} (hex)", hex_encode(&header.salt.unwrap()));
-            println!("Hashing Algorithm: {}", HashingAlgorithm::Argon2id(3));
-        }
-        HeaderVersion::V4 | HeaderVersion::V5 => {
-            for (i, keyslot) in header.keyslots.unwrap().iter().enumerate() {
-                println!("Keyslot {i}:");
-                println!("  Hashing Algorithm: {}", keyslot.hash_algorithm);
-                println!("  Salt: {} (hex)", hex_encode(&keyslot.salt));
-                println!(
-                    "  Master Key: {} (hex, encrypted)",
-                    hex_encode(&keyslot.encrypted_key)
-                );
-                println!("  Master Key Nonce: {} (hex)", hex_encode(&keyslot.nonce));
-            }
+    // V5 headers have keyslots
+    if let Some(keyslots) = header.keyslots {
+        for (i, keyslot) in keyslots.iter().enumerate() {
+            println!("Keyslot {i}:");
+            println!("  Hashing Algorithm: {}", keyslot.hash_algorithm);
+            println!("  Salt: {} (hex)", hex_encode(&keyslot.salt));
+            println!(
+                "  Master Key: {} (hex, encrypted)",
+                hex_encode(&keyslot.encrypted_key)
+            );
+            println!("  Master Key Nonce: {} (hex)", hex_encode(&keyslot.nonce));
         }
     }
 

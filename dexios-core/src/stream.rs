@@ -10,7 +10,7 @@
 //! // obviously the key should contain data, not be an empty vec
 //! let raw_key = Protected::new(vec![0u8; 128]);
 //! let salt = gen_salt();
-//! let key = balloon_hash(raw_key, &salt, &HeaderVersion::V4).unwrap();
+//! let key = balloon_hash(raw_key, &salt, &HeaderVersion::V5).unwrap();
 //!
 //! // this nonce should be read from somewhere, not generated
 //! let nonce = gen_nonce(&Algorithm::XChaCha20Poly1305, &Mode::StreamMode);
@@ -32,10 +32,8 @@ use aead::{
     stream::{DecryptorLE31, EncryptorLE31},
     KeyInit, Payload,
 };
-use aes_gcm::Aes256Gcm;
 use anyhow::Context;
 use chacha20poly1305::XChaCha20Poly1305;
-use deoxys::DeoxysII256;
 // use rand::{prelude::StdRng, Rng, SeedableRng, RngCore};
 use zeroize::Zeroize;
 
@@ -46,18 +44,14 @@ use crate::protected::Protected;
 ///
 /// It has definitions for all AEADs supported by `dexios-core`
 pub enum EncryptionStreams {
-    Aes256Gcm(Box<EncryptorLE31<Aes256Gcm>>),
     XChaCha20Poly1305(Box<EncryptorLE31<XChaCha20Poly1305>>),
-    DeoxysII256(Box<EncryptorLE31<DeoxysII256>>),
 }
 
 /// This `enum` contains streams for that are used solely for decryption
 ///
 /// It has definitions for all AEADs supported by `dexios-core`
 pub enum DecryptionStreams {
-    Aes256Gcm(Box<DecryptorLE31<Aes256Gcm>>),
     XChaCha20Poly1305(Box<DecryptorLE31<XChaCha20Poly1305>>),
-    DeoxysII256(Box<DecryptorLE31<DeoxysII256>>),
 }
 
 impl EncryptionStreams {
@@ -79,7 +73,7 @@ impl EncryptionStreams {
     /// // obviously the key should contain data, not be an empty vec
     /// let raw_key = Protected::new(vec![0u8; 128]);
     /// let salt = gen_salt();
-    /// let key = balloon_hash(raw_key, &salt, &HeaderVersion::V4).unwrap();
+    /// let key = balloon_hash(raw_key, &salt, &HeaderVersion::V5).unwrap();
     ///
     /// let nonce = gen_nonce(&Algorithm::XChaCha20Poly1305, &Mode::StreamMode);
     /// let encrypt_stream = EncryptionStreams::initialize(key, &nonce, &Algorithm::XChaCha20Poly1305).unwrap();
@@ -91,17 +85,6 @@ impl EncryptionStreams {
         algorithm: &Algorithm,
     ) -> anyhow::Result<Self> {
         let streams = match algorithm {
-            Algorithm::Aes256Gcm => {
-                if nonce.len() != 8 {
-                    return Err(anyhow::anyhow!("Nonce is not the correct length"));
-                }
-
-                let cipher = Aes256Gcm::new_from_slice(key.expose())
-                    .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
-
-                let stream = EncryptorLE31::from_aead(cipher, nonce.into());
-                Self::Aes256Gcm(Box::new(stream))
-            }
             Algorithm::XChaCha20Poly1305 => {
                 if nonce.len() != 20 {
                     return Err(anyhow::anyhow!("Nonce is not the correct length"));
@@ -112,17 +95,6 @@ impl EncryptionStreams {
 
                 let stream = EncryptorLE31::from_aead(cipher, nonce.into());
                 Self::XChaCha20Poly1305(Box::new(stream))
-            }
-            Algorithm::DeoxysII256 => {
-                if nonce.len() != 11 {
-                    return Err(anyhow::anyhow!("Nonce is not the correct length"));
-                }
-
-                let cipher = DeoxysII256::new_from_slice(key.expose())
-                    .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
-
-                let stream = EncryptorLE31::from_aead(cipher, nonce.into());
-                Self::DeoxysII256(Box::new(stream))
             }
         };
 
@@ -138,9 +110,7 @@ impl EncryptionStreams {
         payload: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         match self {
-            Self::Aes256Gcm(s) => s.encrypt_next(payload),
             Self::XChaCha20Poly1305(s) => s.encrypt_next(payload),
-            Self::DeoxysII256(s) => s.encrypt_next(payload),
         }
     }
 
@@ -152,9 +122,7 @@ impl EncryptionStreams {
         payload: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         match self {
-            Self::Aes256Gcm(s) => s.encrypt_last(payload),
             Self::XChaCha20Poly1305(s) => s.encrypt_last(payload),
-            Self::DeoxysII256(s) => s.encrypt_last(payload),
         }
     }
 
@@ -162,7 +130,7 @@ impl EncryptionStreams {
     ///
     /// Every single block is provided with the AAD
     ///
-    /// Valid AAD must be provided if you are using `HeaderVersion::V3` and above. It must be empty if the `HeaderVersion` is lower.
+    /// Valid AAD must be provided if you are using `HeaderVersion::V5`. It must be empty if the `HeaderVersion` is lower.
     ///
     /// You are free to use a custom AAD, just ensure that it is present for decryption, or else you will receive an error.
     ///
@@ -255,7 +223,7 @@ impl DecryptionStreams {
     /// // obviously the key should contain data, not be an empty vec
     /// let raw_key = Protected::new(vec![0u8; 128]);
     /// let salt = gen_salt();
-    /// let key = balloon_hash(raw_key, &salt, &HeaderVersion::V4).unwrap();
+    /// let key = balloon_hash(raw_key, &salt, &HeaderVersion::V5).unwrap();
     ///
     /// // this nonce should be read from somewhere, not generated
     /// let nonce = gen_nonce(&Algorithm::XChaCha20Poly1305, &Mode::StreamMode);
@@ -269,26 +237,12 @@ impl DecryptionStreams {
         algorithm: &Algorithm,
     ) -> anyhow::Result<Self> {
         let streams = match algorithm {
-            Algorithm::Aes256Gcm => {
-                let cipher = Aes256Gcm::new_from_slice(key.expose())
-                    .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
-
-                let stream = DecryptorLE31::from_aead(cipher, nonce.into());
-                Self::Aes256Gcm(Box::new(stream))
-            }
             Algorithm::XChaCha20Poly1305 => {
                 let cipher = XChaCha20Poly1305::new_from_slice(key.expose())
                     .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
 
                 let stream = DecryptorLE31::from_aead(cipher, nonce.into());
                 Self::XChaCha20Poly1305(Box::new(stream))
-            }
-            Algorithm::DeoxysII256 => {
-                let cipher = DeoxysII256::new_from_slice(key.expose())
-                    .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
-
-                let stream = DecryptorLE31::from_aead(cipher, nonce.into());
-                Self::DeoxysII256(Box::new(stream))
             }
         };
 
@@ -306,9 +260,7 @@ impl DecryptionStreams {
         payload: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         match self {
-            Self::Aes256Gcm(s) => s.decrypt_next(payload),
             Self::XChaCha20Poly1305(s) => s.decrypt_next(payload),
-            Self::DeoxysII256(s) => s.decrypt_next(payload),
         }
     }
 
@@ -322,9 +274,7 @@ impl DecryptionStreams {
         payload: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         match self {
-            Self::Aes256Gcm(s) => s.decrypt_last(payload),
             Self::XChaCha20Poly1305(s) => s.decrypt_last(payload),
-            Self::DeoxysII256(s) => s.decrypt_last(payload),
         }
     }
 
@@ -332,7 +282,7 @@ impl DecryptionStreams {
     ///
     /// Every single block is provided with the AAD
     ///
-    /// Valid AAD must be provided if you are using `HeaderVersion::V3` and above. It must be empty if the `HeaderVersion` is lower. Whatever you provided as AAD while encrypting must be present during decryption, or else you will receive an error.
+    /// Valid AAD must be provided if you are using `HeaderVersion::V5`. Whatever you provided as AAD while encrypting must be present during decryption, or else you will receive an error.
     ///
     /// This does not handle writing the header.
     ///

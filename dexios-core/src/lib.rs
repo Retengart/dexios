@@ -1,37 +1,38 @@
-//! ## What is it?
+//! This is a library for encrypting/decrypting, password hashing, and for managing encrypted file headers.
 //!
-//! Dexios-Core is a library used for managing cryptographic functions and headers that adhere to the Dexios format.
+//! It contains the core functionality of [`Dexios`](https://github.com/brxken128/dexios)
 //!
-//! ## Security
+//! The documentation here at crates.io is always up-to-date with the newest release.
+//! If you'd like to view the documentation for the current code in the repository,
+//! please see [brxken128.github.io/dexios](https://brxken128.github.io/dexios).
 //!
-//! Dexios-Core uses modern, secure and audited<sup>1</sup> AEADs for encryption and decryption.
+//! This library uses XChaCha20-Poly1305 for authenticated encryption with additional data.
 //!
-//! You may find the audits for both AES-256-GCM and XChaCha20-Poly1305 on [the NCC Group's website](https://research.nccgroup.com/2020/02/26/public-report-rustcrypto-aes-gcm-and-chacha20poly1305-implementation-review/).
+//! You may find the audit for XChaCha20-Poly1305 on [the NCC Group's website](https://research.nccgroup.com/2020/02/26/public-report-rustcrypto-aes-gcm-and-chacha20poly1305-implementation-review/).
 //!
-//! <sup>1</sup> Deoxys-II-256 does not have an official audit, so use it at your own risk
+//! # Core Modules
 //!
-//! ## Who uses Dexios-Core?
+//! * [`cipher`] for regular encryption/decryption
+//! * [`header`] for Dexios header manipulation (serializing/deserializing, AAD generation)
+//! * [`key`] for password hashing
+//! * [`primitives`] for shared constants and types
+//! * [`stream`] for encrypting/decrypting in stream mode (low memory usage)
 //!
-//! This library is implemented by [Dexios](https://github.com/brxken128/dexios), a secure command-line file
-//! encryption utility.
+//! # General Workflow
 //!
-//! Dexios-Core makes it easy to integrate the Dexios format into your own projects (and if there's a feature that you'd like to see, please don't hesitate to [open a Github issue](https://github.com/brxken128/dexios-core/issues)).
+//! This is used as the backend for [`Dexios`](https://github.com/brxken128/dexios), but anyone can use the library.
 //!
-//! ## Donating
+//! Please remember that Dexios-Core is provided as-is, and I cannot guarantee that it's bug-free.
+//! It uses components that are deemed secure by many (XChaCha20-Poly1305, BLAKE3-Balloon hashing).
 //!
-//! If you like my work, and want to help support Dexios, or Dexios-Core, feel free to donate! This is not necessary by any means, so please don't feel obliged to do so.
+//! # Donation
+//! If you like my work, and want to help support it, please consider donating to me so I can continue working on Free and Open Source projects!
 //!
-//! ```text
-//! XMR: 84zSGS18aHtT3CZjZUnnWpCsz1wmA5f65G6BXisbrvAiH7PxZpP8GorbdjAQYRtfeiANZywwUPjZcHu8eXJeWdafJQFK46G
+//! You may donate to one of the addresses below. Thank you!
+//!
 //! BTC: bc1q8x0r7khrfj40qd0zr5xv3t9nl92rz2387pu48u
-//! ETH: 0x9630f95F11dFa8703b71DbF746E5c83A31A3F2DD
-//! ```
 //!
-//! You can read more about Dexios, Dexios-Core and the technical details [in the project's main documentation](https://brxken128.github.io/dexios/)!
-//!
-//! ## Thank you!
-//!
-//! Dexios-Core exclusively uses AEADs provided by the [RustCrypto Team](https://github.com/RustCrypto), so I'd like to give them a huge thank you for their hard work (this wouldn't have been possible without them!)
+//! XMR: 83szwpRt61GbGe9tLNneYk8cZCpoeBfSjFFMifKCSpHoHgNDUFEBD5SfL9NxHvKi5pUPhetRCvdptfyiYeCpRpNR2FgsKHj
 #![forbid(unsafe_code)]
 #![warn(clippy::all)]
 
