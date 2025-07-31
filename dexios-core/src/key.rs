@@ -45,21 +45,14 @@ pub fn balloon_hash(
     salt: &[u8; SALT_LEN],
     version: &HeaderVersion,
 ) -> Result<Protected<[u8; 32]>> {
-    use balloon_hash::Balloon;
+    use blake3_balloon::{hash_password_secure, Version};
 
-    let params = match version {
-        HeaderVersion::V5 => balloon_hash::Params::new(278_528, 1, 1)
-            .map_err(|_| anyhow::anyhow!("Error initialising balloon hashing parameters"))?,
+    let blake3_version = match version {
+        HeaderVersion::V5 => Version::V1,
     };
 
-    let mut key = [0u8; 32];
-    let balloon = Balloon::<blake3::Hasher>::new(balloon_hash::Algorithm::Balloon, params, None);
-    let result = balloon.hash_into(raw_key.expose(), salt, &mut key);
+    let key = hash_password_secure(raw_key.expose().to_vec(), salt, blake3_version)?;
     drop(raw_key);
-
-    if result.is_err() {
-        return Err(anyhow::anyhow!("Error while hashing your key"));
-    }
 
     Ok(Protected::new(key))
 }
