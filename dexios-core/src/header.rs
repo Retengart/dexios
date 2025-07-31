@@ -262,7 +262,7 @@ impl Header {
         };
 
         let nonce_len = get_nonce_len(&header_type.algorithm, &header_type.mode);
-        let mut salt = [0u8; 16];
+        let salt = [0u8; 16];
         let mut nonce = vec![0u8; nonce_len];
 
         let keyslots: Option<Vec<Keyslot>> = match header_type.version {
