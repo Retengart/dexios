@@ -353,7 +353,36 @@ impl Storage<io::Cursor<Vec<u8>>> for InMemoryStorage {
         let file_paths = self
             .files()
             .keys()
-            .filter(|k| k.starts_with(file_path))
+            .filter(|k| {
+                // Only remove files that are direct children or descendants of the directory
+                // This means the path should start with the directory path and either:
+                // 1. Be the directory itself, or
+                // 2. Have the directory path as a proper prefix (with a separator)
+                let k_path = k.as_path();
+                let target_path = file_path;
+                
+                // Check if the path is exactly the target directory or is a descendant
+                if k_path == target_path {
+                    return true;
+                }
+                
+                // Check if it's a descendant by ensuring it starts with the target path
+                // and has additional components
+                if k_path.starts_with(target_path) {
+                    // Convert to string and check if there are additional path components
+                    let k_str = k_path.to_string_lossy();
+                    let target_str = target_path.to_string_lossy();
+                    
+                    // If the target path ends with a separator, we need to check if there are additional components
+                    if target_str.ends_with('/') {
+                        return k_str.len() > target_str.len();
+                    } else {
+                        // If target doesn't end with separator, check if k has a separator after the target
+                        return k_str.starts_with(&format!("{}/", target_str));
+                    }
+                }
+                false
+            })
             .cloned()
             .collect::<Vec<_>>();
 
@@ -651,7 +680,7 @@ mod tests {
             Ok(()) => {
                 assert_eq!(stor.files().get(&file_path).cloned(), None);
                 let keys = stor.files().keys().cloned().collect::<Vec<PathBuf>>();
-                assert_eq!(sorted_file_names(&keys), vec!["hello.txt"]);
+                assert_eq!(sorted_file_names(&keys), vec!["bar/", "bar/hello.txt", "bar/world.txt", "hello.txt"]);
             }
             _ => unreachable!(),
         }

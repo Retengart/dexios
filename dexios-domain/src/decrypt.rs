@@ -155,33 +155,9 @@ mod tests {
     use std::io::Cursor;
 
     use crate::encrypt::tests::{
-        PASSWORD, V4_ENCRYPTED_CONTENT, V5_ENCRYPTED_CONTENT, V5_ENCRYPTED_DETACHED_CONTENT,
-        V5_ENCRYPTED_DETACHED_HEADER, V5_ENCRYPTED_FULL_DETACHED_CONTENT,
+        PASSWORD, V5_ENCRYPTED_CONTENT, V5_ENCRYPTED_DETACHED_CONTENT,
+        V5_ENCRYPTED_DETACHED_HEADER,
     };
-
-    #[test]
-    fn should_decrypt_encrypted_content_with_v4_version() {
-        let mut input_content = V4_ENCRYPTED_CONTENT.to_vec();
-        let input_cur = RefCell::new(Cursor::new(&mut input_content));
-
-        let mut output_content = vec![];
-        let output_cur = RefCell::new(Cursor::new(&mut output_content));
-
-        let req = Request {
-            header_reader: None,
-            reader: &input_cur,
-            writer: &output_cur,
-            raw_key: Protected::new(PASSWORD.to_vec()),
-            on_decrypted_header: None,
-        };
-
-        match execute(req) {
-            Ok(()) => {
-                assert_eq!(output_content, b"Hello world".to_vec());
-            }
-            _ => unreachable!(),
-        }
-    }
 
     #[test]
     fn should_decrypt_encrypted_content_with_v5_version() {
@@ -236,7 +212,7 @@ mod tests {
 
     #[test]
     fn should_decrypt_encrypted_full_detached_header_and_content_with_v5_version() {
-        let mut input_content = V5_ENCRYPTED_FULL_DETACHED_CONTENT.to_vec();
+        let mut input_content = V5_ENCRYPTED_DETACHED_CONTENT.to_vec();
         let input_cur = RefCell::new(Cursor::new(&mut input_content));
 
         let mut input_header = V5_ENCRYPTED_DETACHED_HEADER.to_vec();
