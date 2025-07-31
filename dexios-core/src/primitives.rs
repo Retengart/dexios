@@ -123,7 +123,5 @@ pub fn gen_master_key() -> Protected<[u8; MASTER_KEY_LEN]> {
 ///
 #[must_use]
 pub fn gen_salt() -> [u8; SALT_LEN] {
-    let mut salt = [0u8; SALT_LEN];
-    ThreadRng::default().fill_bytes(&mut salt);
-    salt
+    blake3_balloon::generate_salt()
 }

@@ -13,6 +13,7 @@
 use anyhow::Result;
 use rand::{prelude::StdRng, Rng, SeedableRng};
 use zeroize::Zeroize;
+use blake3_balloon::{Blake3BalloonHasher, ParameterVersion as Blake3BalloonVersion};
 
 use crate::cipher::Ciphers;
 use crate::header::{Header, HeaderVersion};
@@ -45,23 +46,22 @@ pub fn balloon_hash(
     salt: &[u8; SALT_LEN],
     version: &HeaderVersion,
 ) -> Result<Protected<[u8; 32]>> {
-    use balloon_hash::Balloon;
-
-    let params = match version {
-        HeaderVersion::V5 => balloon_hash::Params::new(278_528, 1, 1)
-            .map_err(|_| anyhow::anyhow!("Error initialising balloon hashing parameters"))?,
+    let blake3_version = match version {
+        HeaderVersion::V5 => Blake3BalloonVersion::V5,
     };
 
-    let mut key = [0u8; 32];
-    let balloon = Balloon::<blake3::Hasher>::new(balloon_hash::Algorithm::Balloon, params, None);
-    let result = balloon.hash_into(raw_key.expose(), salt, &mut key);
+    let hasher = Blake3BalloonHasher::new(blake3_version);
+    
+    // Convert our Protected type to the blake3_balloon Protected type
+    let blake3_protected = blake3_balloon::Protected::new(raw_key.expose().clone());
     drop(raw_key);
 
-    if result.is_err() {
-        return Err(anyhow::anyhow!("Error while hashing your key"));
-    }
+    let result = hasher
+        .hash_protected_password(blake3_protected, salt)
+        .map_err(|e| anyhow::anyhow!("Error while hashing your key: {}", e))?;
 
-    Ok(Protected::new(key))
+    // Convert back to our Protected type
+    Ok(Protected::new(*result.expose()))
 }
 
 /// This is a helper function for retrieving the key used for encrypting the data
