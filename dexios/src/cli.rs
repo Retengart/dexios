@@ -265,12 +265,6 @@ pub fn get_matches() -> clap::ArgMatches {
                     .takes_value(false)
                     .help("Force all actions"),
             )
-            .arg(
-                Arg::new("aes")
-                    .long("aes")
-                    .takes_value(false)
-                    .help("Use AES-256-GCM for encryption"),
-            )
         )
         .subcommand(
             Command::new("unpack")
