@@ -2,6 +2,7 @@
 
 .envrc
 .direnv/
+.idea/
 
 /notes.md
 /dexios/CHANGELOG.md
