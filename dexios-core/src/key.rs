@@ -73,7 +73,7 @@ pub fn balloon_hash(
 /// In header versions >= V4, this function will iterate through all available keyslots, looking for a match. If it finds a match, it will return the decrypted master key.
 #[allow(clippy::module_name_repetitions)]
 pub fn decrypt_master_key(
-    raw_key: Protected<Vec<u8>>,
+    raw_key: &Protected<Vec<u8>>,
     header: &Header,
     // TODO: use custom error instead of anyhow
 ) -> Result<Protected<[u8; MASTER_KEY_LEN]>> {

@@ -53,6 +53,7 @@ impl std::fmt::Display for Mode {
 }
 
 /// This can be used to generate a nonce for encryption.
+/// 
 /// It requires both the algorithm and the mode, so it can correctly determine the nonce length.
 /// This nonce can be passed directly to `EncryptionStreams::initialize()`
 ///

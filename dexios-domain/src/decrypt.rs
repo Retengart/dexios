@@ -106,7 +106,7 @@ where
                 .map_err(|_| Error::ReadEncryptedData)?;
 
             let master_key =
-                decrypt_master_key(req.raw_key, &header).map_err(|_| Error::DecryptMasterKey)?;
+                decrypt_master_key(&req.raw_key, &header).map_err(|_| Error::DecryptMasterKey)?;
 
             let ciphers = Ciphers::initialize(master_key, &header.header_type.algorithm)
                 .map_err(|_| Error::InitializeChiphers)?;
@@ -127,7 +127,7 @@ where
         }
         Mode::StreamMode => {
             let master_key =
-                decrypt_master_key(req.raw_key, &header).map_err(|_| Error::DecryptMasterKey)?;
+                decrypt_master_key(&req.raw_key, &header).map_err(|_| Error::DecryptMasterKey)?;
 
             let streams = DecryptionStreams::initialize(
                 master_key,

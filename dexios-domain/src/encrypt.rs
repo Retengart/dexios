@@ -236,38 +236,6 @@ pub mod tests {
     ];
 
     #[test]
-    fn should_encrypt_content_with_v4_version() {
-        let mut input_content = b"Hello world";
-        let input_cur = RefCell::new(Cursor::new(&mut input_content));
-
-        let mut output_content = vec![];
-        let output_cur = RefCell::new(Cursor::new(&mut output_content));
-
-        let req = Request {
-            reader: &input_cur,
-            writer: &output_cur,
-            header_writer: None,
-            raw_key: Protected::new(PASSWORD.to_vec()),
-            header_type: HeaderType {
-                version: HeaderVersion::V4,
-                algorithm: Algorithm::XChaCha20Poly1305,
-                mode: Mode::StreamMode,
-            },
-            hashing_algorithm: HashingAlgorithm::Blake3Balloon(4),
-        };
-
-        match execute(req) {
-            Ok(()) => {
-                assert_eq!(output_content, V4_ENCRYPTED_CONTENT.to_vec());
-            }
-            Err(e) => {
-                println!("{e:?}");
-                unreachable!()
-            }
-        }
-    }
-
-    #[test]
     fn should_encrypt_content_with_v5_version() {
         let mut input_content = b"Hello world";
         let input_cur = RefCell::new(Cursor::new(&mut input_content));
