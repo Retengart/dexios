@@ -33,7 +33,7 @@
 //!
 
 use crate::{
-    key::{argon2id_hash, balloon_hash},
+    key::balloon_hash,
     protected::Protected,
 };
 
@@ -50,20 +50,12 @@ pub const HEADER_VERSION: HeaderVersion = HeaderVersion::V5;
 #[allow(clippy::module_name_repetitions)]
 #[derive(PartialEq, Eq, Clone, Copy, PartialOrd)]
 pub enum HeaderVersion {
-    V1,
-    V2,
-    V3,
-    V4,
     V5,
 }
 
 impl std::fmt::Display for HeaderVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::V1 => write!(f, "V1"),
-            Self::V2 => write!(f, "V2"),
-            Self::V3 => write!(f, "V3"),
-            Self::V4 => write!(f, "V4"),
             Self::V5 => write!(f, "V5"),
         }
     }
@@ -102,21 +94,18 @@ pub struct Header {
     pub keyslots: Option<Vec<Keyslot>>,
 }
 
-pub const ARGON2ID_LATEST: i32 = 3;
 pub const BLAKE3BALLOON_LATEST: i32 = 5;
 
 /// This is in place to make `Keyslot` handling a **lot** easier
-/// You may use the constants `ARGON2ID_LATEST` and `BLAKE3BALLOON_LATEST` for defining versions
+/// You may use the constant `BLAKE3BALLOON_LATEST` for defining versions
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum HashingAlgorithm {
-    Argon2id(i32),
     Blake3Balloon(i32),
 }
 
 impl std::fmt::Display for HashingAlgorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::Argon2id(i) => write!(f, "Argon2id (param v{i})"),
             Self::Blake3Balloon(i) => write!(f, "BLAKE3-Balloon (param v{i})"),
         }
     }
@@ -130,16 +119,7 @@ impl HashingAlgorithm {
         salt: &[u8; SALT_LEN],
     ) -> Result<Protected<[u8; 32]>, anyhow::Error> {
         match self {
-            Self::Argon2id(i) => match i {
-                1 => argon2id_hash(raw_key, salt, &HeaderVersion::V1),
-                2 => argon2id_hash(raw_key, salt, &HeaderVersion::V2),
-                3 => argon2id_hash(raw_key, salt, &HeaderVersion::V3),
-                _ => Err(anyhow::anyhow!(
-                    "argon2id is not supported with the parameters provided."
-                )),
-            },
             Self::Blake3Balloon(i) => match i {
-                4 => balloon_hash(raw_key, salt, &HeaderVersion::V4),
                 5 => balloon_hash(raw_key, salt, &HeaderVersion::V5),
                 _ => Err(anyhow::anyhow!(
                     "Balloon hashing is not supported with the parameters provided."
@@ -164,14 +144,7 @@ impl Keyslot {
     #[must_use]
     pub fn serialize(&self) -> [u8; 2] {
         match self.hash_algorithm {
-            HashingAlgorithm::Argon2id(i) => match i {
-                1 => [0xDF, 0xA1],
-                2 => [0xDF, 0xA2],
-                3 => [0xDF, 0xA3],
-                _ => [0x00, 0x00],
-            },
             HashingAlgorithm::Blake3Balloon(i) => match i {
-                4 => [0xDF, 0xB4],
                 5 => [0xDF, 0xB5],
                 _ => [0x00, 0x00],
             },
@@ -199,22 +172,6 @@ impl Header {
     /// It converts a `HeaderVersion` into the associated raw bytes
     fn serialize_version(&self) -> [u8; 2] {
         match self.header_type.version {
-            HeaderVersion::V1 => {
-                let info: [u8; 2] = [0xDE, 0x01];
-                info
-            }
-            HeaderVersion::V2 => {
-                let info: [u8; 2] = [0xDE, 0x02];
-                info
-            }
-            HeaderVersion::V3 => {
-                let info: [u8; 2] = [0xDE, 0x03];
-                info
-            }
-            HeaderVersion::V4 => {
-                let info: [u8; 2] = [0xDE, 0x04];
-                info
-            }
             HeaderVersion::V5 => {
                 let info: [u8; 2] = [0xDE, 0x05];
                 info
@@ -259,12 +216,8 @@ impl Header {
             .context("Unable to seek back to start of header")?;
 
         let version = match version_bytes {
-            [0xDE, 0x01] => HeaderVersion::V1,
-            [0xDE, 0x02] => HeaderVersion::V2,
-            [0xDE, 0x03] => HeaderVersion::V3,
-            [0xDE, 0x04] => HeaderVersion::V4,
             [0xDE, 0x05] => HeaderVersion::V5,
-            _ => return Err(anyhow::anyhow!("Error getting version from header")),
+            _ => return Err(anyhow::anyhow!("Error getting version from header - only V5 headers are supported")),
         };
 
         let header_length: usize = match version {
@@ -290,9 +243,7 @@ impl Header {
 
         let algorithm = match algorithm_bytes {
             [0x0E, 0x01] => Algorithm::XChaCha20Poly1305,
-            [0x0E, 0x02] => Algorithm::Aes256Gcm,
-            [0x0E, 0x03] => Algorithm::DeoxysII256,
-            _ => return Err(anyhow::anyhow!("Error getting encryption mode from header")),
+            _ => return Err(anyhow::anyhow!("Error getting encryption mode from header - only XChaCha20Poly1305 is supported")),
         };
 
         let mut mode_bytes = [0u8; 2];
@@ -494,14 +445,6 @@ impl Header {
                 let info: [u8; 2] = [0x0E, 0x01];
                 info
             }
-            Algorithm::Aes256Gcm => {
-                let info: [u8; 2] = [0x0E, 0x02];
-                info
-            }
-            Algorithm::DeoxysII256 => {
-                let info: [u8; 2] = [0x0E, 0x03];
-                info
-            }
         }
     }
 
@@ -519,47 +462,6 @@ impl Header {
                 info
             }
         }
-    }
-
-    /// This is a private function (called by `serialize()`)
-    ///
-    /// It serializes V3 headers
-    fn serialize_v3(&self, tag: &HeaderTag) -> Vec<u8> {
-        let padding =
-            vec![0u8; 26 - get_nonce_len(&self.header_type.algorithm, &self.header_type.mode)];
-        let mut header_bytes = Vec::<u8>::new();
-        header_bytes.extend_from_slice(&tag.version);
-        header_bytes.extend_from_slice(&tag.algorithm);
-        header_bytes.extend_from_slice(&tag.mode);
-        header_bytes.extend_from_slice(&self.salt.unwrap());
-        header_bytes.extend_from_slice(&[0; 16]);
-        header_bytes.extend_from_slice(&self.nonce);
-        header_bytes.extend_from_slice(&padding);
-        header_bytes
-    }
-
-    /// This is a private function (called by `serialize()`)
-    ///
-    /// It serializes V4 headers
-    fn serialize_v4(&self, tag: &HeaderTag) -> Vec<u8> {
-        let padding =
-            vec![0u8; 26 - get_nonce_len(&self.header_type.algorithm, &self.header_type.mode)];
-        let padding2 =
-            vec![0u8; 32 - get_nonce_len(&self.header_type.algorithm, &Mode::MemoryMode)];
-
-        let keyslot = self.keyslots.clone().unwrap();
-
-        let mut header_bytes = Vec::<u8>::new();
-        header_bytes.extend_from_slice(&tag.version);
-        header_bytes.extend_from_slice(&tag.algorithm);
-        header_bytes.extend_from_slice(&tag.mode);
-        header_bytes.extend_from_slice(&self.salt.unwrap_or(keyslot[0].salt));
-        header_bytes.extend_from_slice(&self.nonce);
-        header_bytes.extend_from_slice(&padding);
-        header_bytes.extend_from_slice(&keyslot[0].encrypted_key);
-        header_bytes.extend_from_slice(&keyslot[0].nonce);
-        header_bytes.extend_from_slice(&padding2);
-        header_bytes
     }
 
     /// This is a private function (called by `serialize()`)
@@ -605,7 +507,7 @@ impl Header {
     ///
     /// NOTE: This should **NOT** be used for validating or creating AAD.
     ///
-    /// It only has support for V3 headers and above
+    /// It only supports V5 headers
     ///
     /// Create AAD with `create_aad()`.
     ///
@@ -620,14 +522,6 @@ impl Header {
     pub fn serialize(&self) -> Result<Vec<u8>> {
         let tag = self.get_tag();
         match self.header_type.version {
-            HeaderVersion::V1 => Err(anyhow::anyhow!(
-                "Serializing V1 headers has been deprecated"
-            )),
-            HeaderVersion::V2 => Err(anyhow::anyhow!(
-                "Serializing V2 headers has been deprecated"
-            )),
-            HeaderVersion::V3 => Ok(self.serialize_v3(&tag)),
-            HeaderVersion::V4 => Ok(self.serialize_v4(&tag)),
             HeaderVersion::V5 => Ok(self.serialize_v5(&tag)),
         }
     }
@@ -635,15 +529,13 @@ impl Header {
     #[must_use]
     pub fn get_size(&self) -> u64 {
         match self.header_type.version {
-            HeaderVersion::V1 | HeaderVersion::V2 | HeaderVersion::V3 => 64,
-            HeaderVersion::V4 => 128,
             HeaderVersion::V5 => 416,
         }
     }
 
     /// This is for creating AAD
     ///
-    /// It only has support for V3 headers and above
+    /// It only supports V5 headers
     ///
     /// It will return the bytes used for AAD
     ///
@@ -651,39 +543,6 @@ impl Header {
     pub fn create_aad(&self) -> Result<Vec<u8>> {
         let tag = self.get_tag();
         match self.header_type.version {
-            HeaderVersion::V1 => Err(anyhow::anyhow!(
-                "Serializing V1 headers has been deprecated"
-            )),
-            HeaderVersion::V2 => Err(anyhow::anyhow!(
-                "Serializing V2 headers has been deprecated"
-            )),
-            HeaderVersion::V3 => Ok(self.serialize_v3(&tag)),
-            HeaderVersion::V4 => {
-                let padding =
-                    vec![
-                        0u8;
-                        26 - get_nonce_len(&self.header_type.algorithm, &self.header_type.mode)
-                    ];
-                let master_key_nonce_len =
-                    get_nonce_len(&self.header_type.algorithm, &Mode::MemoryMode);
-                let padding2 = vec![0u8; 32 - master_key_nonce_len];
-                let mut header_bytes = Vec::<u8>::new();
-                header_bytes.extend_from_slice(&tag.version);
-                header_bytes.extend_from_slice(&tag.algorithm);
-                header_bytes.extend_from_slice(&tag.mode);
-                header_bytes.extend_from_slice(
-                    &self.salt.unwrap_or(
-                        self.keyslots.as_ref().ok_or_else(|| {
-                            anyhow::anyhow!("Cannot find a salt within the keyslot/header.")
-                        })?[0]
-                            .salt,
-                    ),
-                );
-                header_bytes.extend_from_slice(&self.nonce);
-                header_bytes.extend_from_slice(&padding);
-                header_bytes.extend_from_slice(&padding2);
-                Ok(header_bytes)
-            }
             HeaderVersion::V5 => {
                 let mut header_bytes = Vec::<u8>::new();
                 header_bytes.extend_from_slice(&tag.version);

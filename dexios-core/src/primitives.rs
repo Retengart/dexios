@@ -13,14 +13,12 @@ pub const SALT_LEN: usize = 16; // bytes
 
 pub const MASTER_KEY_LEN: usize = 32;
 pub const ENCRYPTED_MASTER_KEY_LEN: usize = 48;
-pub const ALGORITHMS_LEN: usize = 3;
+pub const ALGORITHMS_LEN: usize = 1;
 
 /// This is an `enum` containing all AEADs supported by `dexios-core`
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum Algorithm {
-    Aes256Gcm,
     XChaCha20Poly1305,
-    DeoxysII256,
 }
 
 /// This is an array containing all AEADs supported by `dexios-core`.
@@ -28,16 +26,12 @@ pub enum Algorithm {
 /// It can be used by and end-user application to show a list of AEADs that they may use
 pub static ALGORITHMS: [Algorithm; ALGORITHMS_LEN] = [
     Algorithm::XChaCha20Poly1305,
-    Algorithm::Aes256Gcm,
-    Algorithm::DeoxysII256,
 ];
 
 impl std::fmt::Display for Algorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::Aes256Gcm => write!(f, "AES-256-GCM"),
             Self::XChaCha20Poly1305 => write!(f, "XChaCha20-Poly1305"),
-            Self::DeoxysII256 => write!(f, "Deoxys-II-256"),
         }
     }
 }
@@ -85,9 +79,7 @@ pub fn gen_nonce(algorithm: &Algorithm, mode: &Mode) -> Vec<u8> {
 #[must_use]
 pub fn get_nonce_len(algorithm: &Algorithm, mode: &Mode) -> usize {
     let mut nonce_len = match algorithm {
-        Algorithm::Aes256Gcm => 12,
         Algorithm::XChaCha20Poly1305 => 24,
-        Algorithm::DeoxysII256 => 15,
     };
 
     if mode == &Mode::StreamMode {
@@ -119,7 +111,7 @@ pub fn gen_master_key() -> Protected<[u8; MASTER_KEY_LEN]> {
 
 /// Generates a salt, of the specified `SALT_LEN`
 ///
-/// This salt can be directly passed to `argon2id_hash()` or `balloon_hash()`
+/// This salt can be directly passed to `balloon_hash()`
 ///
 /// # Examples
 ///
