@@ -81,8 +81,8 @@ pub fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
 }
 
 pub fn hashing_algorithm(_sub_matches: &ArgMatches) -> HashingAlgorithm {
-    // Always use Blake3Balloon with latest parameters
-    HashingAlgorithm::Blake3Balloon(BLAKE3BALLOON_LATEST)
+    // Always use Blake3Balloon
+    HashingAlgorithm::Blake3Balloon
 }
 
 // gets the algorithm, primarily for encrypt functions
