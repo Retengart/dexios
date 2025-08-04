@@ -2,7 +2,7 @@
 name = "dexios-gui"
 description = "Secure, fast and authenticated file encryption with a GUI frontend."
 version = "0.0.0"
-edition = "2021"
+edition = "2024"
 license = "BSD-2-Clause"
 keywords = ["encryption", "secure"]
 categories = ["cryptography"]

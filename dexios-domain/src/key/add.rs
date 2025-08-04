@@ -85,7 +85,6 @@ where
     // recreate header and inherit everything (except keyslots)
     let header_new = Header {
         nonce: header.nonce,
-        salt: header.salt,
         keyslots: Some(keyslots),
         header_type: header.header_type,
     };

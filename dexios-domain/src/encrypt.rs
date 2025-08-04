@@ -107,7 +107,6 @@ where
     let header = Header {
         header_type: req.header_type,
         nonce: header_nonce,
-        salt: None,
         keyslots: Some(keyslots),
     };
 

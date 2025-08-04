@@ -265,12 +265,6 @@ pub fn get_matches() -> clap::ArgMatches {
                     .takes_value(false)
                     .help("Force all actions"),
             )
-            .arg(
-                Arg::new("aes")
-                    .long("aes")
-                    .takes_value(false)
-                    .help("Use AES-256-GCM for encryption"),
-            )
         )
         .subcommand(
             Command::new("unpack")
@@ -363,12 +357,6 @@ pub fn get_matches() -> clap::ArgMatches {
                                 .conflicts_with("keyfile"),
                         )
                         .arg(
-                            Arg::new("argon")
-                                .long("argon")
-                                .takes_value(false)
-                                .help("Use argon2id for password hashing"),
-                        )
-                        .arg(
                             Arg::new("keyfile-old")
                                 .short('k')
                                 .long("keyfile-old")
@@ -395,12 +383,6 @@ pub fn get_matches() -> clap::ArgMatches {
                                 .takes_value(true)
                                 .required(true)
                                 .help("The encrypted file/header file"),
-                        )
-                        .arg(
-                            Arg::new("argon")
-                                .long("argon")
-                                .takes_value(false)
-                                .help("Use argon2id for password hashing"),
                         )
                         .arg(
                             Arg::new("autogenerate")

@@ -90,7 +90,6 @@ struct HeaderTag {
 pub struct Header {
     pub header_type: HeaderType,
     pub nonce: Vec<u8>,
-    pub salt: Option<[u8; SALT_LEN]>, // option as v4+ use the keyslots
     pub keyslots: Option<Vec<Keyslot>>,
 }
 
@@ -262,7 +261,6 @@ impl Header {
         };
 
         let nonce_len = get_nonce_len(&header_type.algorithm, &header_type.mode);
-        let mut salt = [0u8; 16];
         let mut nonce = vec![0u8; nonce_len];
 
         let keyslots: Option<Vec<Keyslot>> = match header_type.version {
@@ -344,7 +342,6 @@ impl Header {
             Self {
                 header_type,
                 nonce,
-                salt: Some(salt),
                 keyslots,
             },
             aad,

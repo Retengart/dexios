@@ -2,7 +2,7 @@
 name = "dexios-domain"
 description = "A library that contains the inner-workings and core logic for Dexios."
 version = "1.0.1"
-edition = "2021"
+edition = "2024"
 license = "BSD-2-Clause"
 keywords = ["encryption", "secure"]
 categories = ["cryptography", "encoding", "data-structures"]
