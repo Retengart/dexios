@@ -130,7 +130,7 @@ impl EncryptionStreams {
     ///
     /// Every single block is provided with the AAD
     ///
-    /// Valid AAD must be provided if you are using `HeaderVersion::V3` and above. It must be empty if the `HeaderVersion` is lower.
+    /// Valid AAD must be provided for V5 headers. It must match the AAD used during encryption.
     ///
     /// You are free to use a custom AAD, just ensure that it is present for decryption, or else you will receive an error.
     ///
@@ -282,7 +282,7 @@ impl DecryptionStreams {
     ///
     /// Every single block is provided with the AAD
     ///
-    /// Valid AAD must be provided if you are using `HeaderVersion::V3` and above. It must be empty if the `HeaderVersion` is lower. Whatever you provided as AAD while encrypting must be present during decryption, or else you will receive an error.
+    /// Valid AAD must be provided for V5 headers. It must match the AAD used during encryption. Whatever you provided as AAD while encrypting must be present during decryption, or else you will receive an error.
     ///
     /// This does not handle writing the header.
     ///

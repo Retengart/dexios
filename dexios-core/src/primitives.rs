@@ -13,20 +13,12 @@ pub const SALT_LEN: usize = 16; // bytes
 
 pub const MASTER_KEY_LEN: usize = 32;
 pub const ENCRYPTED_MASTER_KEY_LEN: usize = 48;
-pub const ALGORITHMS_LEN: usize = 1;
 
 /// This is an `enum` containing all AEADs supported by `dexios-core`
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum Algorithm {
     XChaCha20Poly1305,
 }
-
-/// This is an array containing all AEADs supported by `dexios-core`.
-///
-/// It can be used by and end-user application to show a list of AEADs that they may use
-pub static ALGORITHMS: [Algorithm; ALGORITHMS_LEN] = [
-    Algorithm::XChaCha20Poly1305,
-];
 
 impl std::fmt::Display for Algorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {

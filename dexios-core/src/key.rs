@@ -66,11 +66,9 @@ pub fn balloon_hash(
 
 /// This is a helper function for retrieving the key used for encrypting the data
 ///
-/// In header versions below V4, this is just the hashed password
+/// In header version V5, this is a cryptographically-secure random value
 ///
-/// In header versions >= V4, this is a cryptographically-secure random value
-///
-/// In header versions >= V4, this function will iterate through all available keyslots, looking for a match. If it finds a match, it will return the decrypted master key.
+/// In header version V5, this function will iterate through all available keyslots, looking for a match. If it finds a match, it will return the decrypted master key.
 #[allow(clippy::module_name_repetitions)]
 pub fn decrypt_master_key(
     raw_key: &Protected<Vec<u8>>,

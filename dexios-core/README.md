@@ -12,7 +12,7 @@ that adhere to the Dexios format.
 Dexios-Core uses modern, secure and audited<sup>1</sup> AEADs for encryption and
 decryption.
 
-You may find the audits for both AES-256-GCM and XChaCha20-Poly1305 on
+You may find the audits for XChaCha20-Poly1305 on
 [the NCC Group's website](https://research.nccgroup.com/2020/02/26/public-report-rustcrypto-aes-gcm-and-chacha20poly1305-implementation-review/).
 
 <sup>1</sup> Deoxys-II-256 does not have an official audit, so use it at your
@@ -32,7 +32,7 @@ information to help you get started!
 ## Features
 
 - Convenience functions for encrypting/decrypting
-- 3 AEADs (XChaCha20-Poly1305, AES-256-GCM, Deoxys-II-256)
+- 1 AEAD (XChaCha20-Poly1305)
 - Easy management of encrypted headers (no more worrying about where to store a
   nonce!)
 - Easy `balloon` hashing with secure parameters and BLAKE3

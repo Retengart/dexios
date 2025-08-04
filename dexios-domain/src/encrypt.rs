@@ -161,17 +161,6 @@ pub mod tests {
 
     pub const PASSWORD: &[u8; 8] = b"12345678";
 
-    pub const V4_ENCRYPTED_CONTENT: [u8; 155] = [
-        222, 4, 14, 1, 12, 1, 58, 206, 16, 183, 233, 128, 23, 223, 81, 30, 214, 132, 32, 104, 51,
-        119, 173, 240, 60, 45, 230, 243, 58, 160, 69, 50, 217, 192, 66, 223, 124, 190, 148, 91, 92,
-        129, 0, 0, 0, 0, 0, 0, 147, 32, 67, 18, 249, 211, 189, 86, 187, 159, 234, 160, 94, 80, 72,
-        68, 231, 114, 132, 105, 164, 177, 26, 217, 46, 168, 97, 110, 34, 27, 13, 16, 14, 111, 3,
-        109, 218, 232, 212, 78, 188, 55, 91, 106, 97, 74, 238, 210, 173, 240, 60, 45, 230, 243, 58,
-        160, 69, 50, 217, 192, 66, 223, 124, 190, 148, 91, 92, 129, 50, 126, 110, 254, 0, 0, 0, 0,
-        0, 0, 0, 0, 14, 110, 105, 217, 74, 171, 173, 103, 11, 136, 119, 98, 145, 17, 70, 84, 144,
-        143, 154, 244, 82, 201, 85, 13, 187, 85, 89,
-    ];
-
     pub const V5_ENCRYPTED_CONTENT: [u8; 443] = [
         222, 5, 14, 1, 12, 1, 173, 240, 60, 45, 230, 243, 58, 160, 69, 50, 217, 192, 66, 223, 124,
         190, 148, 91, 92, 129, 0, 0, 0, 0, 0, 0, 223, 181, 71, 240, 140, 106, 41, 36, 82, 150, 105,
@@ -252,7 +241,7 @@ pub mod tests {
                 algorithm: Algorithm::XChaCha20Poly1305,
                 mode: Mode::StreamMode,
             },
-            hashing_algorithm: HashingAlgorithm::Blake3Balloon(5),
+            hashing_algorithm: HashingAlgorithm::Blake3Balloon,
         };
 
         match execute(req) {
@@ -287,7 +276,7 @@ pub mod tests {
                 algorithm: Algorithm::XChaCha20Poly1305,
                 mode: Mode::StreamMode,
             },
-            hashing_algorithm: HashingAlgorithm::Blake3Balloon(5),
+            hashing_algorithm: HashingAlgorithm::Blake3Balloon,
         };
 
         match execute(req) {

@@ -7,7 +7,7 @@ use crate::global::structs::PackParams;
 use crate::warn;
 use anyhow::{Context, Result};
 use clap::ArgMatches;
-use core::header::{HashingAlgorithm, BLAKE3BALLOON_LATEST};
+use core::header::HashingAlgorithm;
 use core::primitives::Algorithm;
 
 use super::states::{Compression, DirectoryMode, Key, KeyParams, PrintMode};

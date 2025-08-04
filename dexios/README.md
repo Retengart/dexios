@@ -9,9 +9,8 @@
 
 ## Dexios - What is it?
 
-Dexios is a fast, secure, and open source command-line encryption tool. It's
-written entirely in Rust and prioritises security, performance and convenience
-the most. It uses modern cryptographic AEADs (XChaCha20-Poly1305 and AES-256-GCM),
+Dexios is a secure, fast and authenticated command-line encryption tool that you can trust
+the most. It uses modern cryptographic AEADs (XChaCha20-Poly1305),
 with audited backends to ensure the safety and integrity of your data. It's
 extremely easy to use Dexios before uploading your files to a
 cloud service, to ensure that no prying eyes can read them.

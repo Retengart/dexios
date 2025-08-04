@@ -93,19 +93,16 @@ pub struct Header {
     pub keyslots: Option<Vec<Keyslot>>,
 }
 
-pub const BLAKE3BALLOON_LATEST: i32 = 5;
-
 /// This is in place to make `Keyslot` handling a **lot** easier
-/// You may use the constant `BLAKE3BALLOON_LATEST` for defining versions
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum HashingAlgorithm {
-    Blake3Balloon(i32),
+    Blake3Balloon,
 }
 
 impl std::fmt::Display for HashingAlgorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::Blake3Balloon(i) => write!(f, "BLAKE3-Balloon (param v{i})"),
+            Self::Blake3Balloon => write!(f, "BLAKE3-Balloon (param v5)"),
         }
     }
 }
@@ -118,17 +115,12 @@ impl HashingAlgorithm {
         salt: &[u8; SALT_LEN],
     ) -> Result<Protected<[u8; 32]>, anyhow::Error> {
         match self {
-            Self::Blake3Balloon(i) => match i {
-                5 => balloon_hash(raw_key, salt, &HeaderVersion::V5),
-                _ => Err(anyhow::anyhow!(
-                    "Balloon hashing is not supported with the parameters provided."
-                )),
-            },
+            Self::Blake3Balloon => balloon_hash(raw_key, salt, &HeaderVersion::V5),
         }
     }
 }
 
-/// This defines a keyslot that is used with header V4 and above.
+/// This defines a keyslot that is used with header V5.
 /// A keyslot contains information about the key, and the encrypted key itself
 #[derive(Clone)]
 pub struct Keyslot {
@@ -143,10 +135,7 @@ impl Keyslot {
     #[must_use]
     pub fn serialize(&self) -> [u8; 2] {
         match self.hash_algorithm {
-            HashingAlgorithm::Blake3Balloon(i) => match i {
-                5 => [0xDF, 0xB5],
-                _ => [0x00, 0x00],
-            },
+            HashingAlgorithm::Blake3Balloon => [0xDF, 0xB5],
         }
     }
 }
@@ -180,13 +169,11 @@ impl Header {
 
     /// This is used for deserializing raw bytes from a reader into a `Header` struct
     ///
-    /// This also returns the AAD, read from the header. AAD is only generated in `HeaderVersion::V3` and above - it will be blank in older versions.
+    /// This also returns the AAD, read from the header. AAD is generated for V5 headers.
     ///
     /// The AAD needs to be passed to decryption functions in order to validate the header, and decrypt the data.
     ///
-    /// The AAD for older versions is empty as no AAD is the default for AEADs, and the header validation was not in place prior to V3.
-    ///
-    /// NOTE: This leaves the cursor at 64 bytes into the buffer, as that is the size of the header
+    /// NOTE: This leaves the cursor at 416 bytes into the buffer, as that is the size of the header
     ///
     /// # Examples
     ///
@@ -311,8 +298,7 @@ impl Header {
                         .context("Unable to read keyslot padding from header")?;
 
                     let hash_algorithm = match identifier {
-                        [0xDF, 0xB4] => HashingAlgorithm::Blake3Balloon(4),
-                        [0xDF, 0xB5] => HashingAlgorithm::Blake3Balloon(5),
+                        [0xDF, 0xB5] => HashingAlgorithm::Blake3Balloon,
                         _ => return Err(anyhow::anyhow!("Key hashing algorithm not identified")),
                     };
 

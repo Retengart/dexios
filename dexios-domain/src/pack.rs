@@ -225,7 +225,7 @@ mod tests {
                 algorithm: Algorithm::XChaCha20Poly1305,
                 mode: Mode::StreamMode,
             },
-            hashing_algorithm: HashingAlgorithm::Blake3Balloon(5),
+            hashing_algorithm: HashingAlgorithm::Blake3Balloon,
         };
 
         match execute(stor, req) {

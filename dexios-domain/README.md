@@ -10,11 +10,9 @@ Dexios-Domain is a library used for managing the core logic behind Dexios, and a
 
 Dexios-Domain is built on top of Dexios-Core - which uses modern, secure and audited<sup>1</sup> AEADs for encryption and decryption.
 
-You may find the audits for both AES-256-GCM and XChaCha20-Poly1305 on [the NCC Group's website](https://research.nccgroup.com/2020/02/26/public-report-rustcrypto-aes-gcm-and-chacha20poly1305-implementation-review/).
+You may find the audits for XChaCha20-Poly1305 on [the NCC Group's website](https://research.nccgroup.com/2020/02/26/public-report-rustcrypto-aes-gcm-and-chacha20poly1305-implementation-review/).
 
-<sup>1</sup> Deoxys-II-256 does not have an official audit, so use it at your own risk
-
-## Who uses Dexios-Domain?
+## What does Dexios-Domain provide?
 
 This library is implemented by [Dexios](https://github.com/brxken128/dexios), a secure command-line file
 encryption utility.
