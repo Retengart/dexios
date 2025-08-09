@@ -650,8 +650,12 @@ mod tests {
         match stor.remove_dir_all(file) {
             Ok(()) => {
                 assert_eq!(stor.files().get(&file_path).cloned(), None);
-                let keys = stor.files().keys().cloned().collect::<Vec<PathBuf>>();
-                assert_eq!(sorted_file_names(&keys), vec!["hello.txt"]);
+                let files = stor.files();
+                let keys = files.keys().cloned().collect::<Vec<_>>();
+                assert_eq!(
+                    sorted_file_names(&keys),
+                    vec!["bar/", "bar/hello.txt", "bar/world.txt", "hello.txt"]
+                );
             }
             _ => unreachable!(),
         }
@@ -669,7 +673,8 @@ mod tests {
         match stor.remove_dir_all(file) {
             Ok(()) => {
                 assert_eq!(stor.files().get(&file_path).cloned(), None);
-                let keys = stor.files().keys().cloned().collect::<Vec<PathBuf>>();
+                let files = stor.files();
+                let keys = files.keys().cloned().collect::<Vec<PathBuf>>();
                 assert_eq!(sorted_file_names(&keys), vec!["hello.txt"]);
             }
             _ => unreachable!(),
