@@ -32,7 +32,7 @@ use aead::{
     stream::{DecryptorLE31, EncryptorLE31},
     KeyInit, Payload,
 };
-use aes_gcm::Aes256Gcm;
+use aes_gcm_siv::Aes256GcmSiv;
 use anyhow::Context;
 use chacha20poly1305::XChaCha20Poly1305;
 // use rand::{prelude::StdRng, Rng, SeedableRng, RngCore};
@@ -45,7 +45,7 @@ use crate::protected::Protected;
 ///
 /// It has definitions for all AEADs supported by `dexios-core`
 pub enum EncryptionStreams {
-    Aes256Gcm(Box<EncryptorLE31<Aes256Gcm>>),
+    Aes256GcmSiv(Box<EncryptorLE31<Aes256GcmSiv>>),
     XChaCha20Poly1305(Box<EncryptorLE31<XChaCha20Poly1305>>),
 }
 
@@ -53,7 +53,7 @@ pub enum EncryptionStreams {
 ///
 /// It has definitions for all AEADs supported by `dexios-core`
 pub enum DecryptionStreams {
-    Aes256Gcm(Box<DecryptorLE31<Aes256Gcm>>),
+    Aes256GcmSiv(Box<DecryptorLE31<Aes256GcmSiv>>),
     XChaCha20Poly1305(Box<DecryptorLE31<XChaCha20Poly1305>>),
 }
 
@@ -88,16 +88,16 @@ impl EncryptionStreams {
         algorithm: &Algorithm,
     ) -> anyhow::Result<Self> {
         let streams = match algorithm {
-            Algorithm::Aes256Gcm => {
+            Algorithm::Aes256GcmSiv => {
                 if nonce.len() != 8 {
                     return Err(anyhow::anyhow!("Nonce is not the correct length"));
                 }
 
-                let cipher = Aes256Gcm::new_from_slice(key.expose())
+                let cipher = Aes256GcmSiv::new_from_slice(key.expose())
                     .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
 
                 let stream = EncryptorLE31::from_aead(cipher, nonce.into());
-                EncryptionStreams::Aes256Gcm(Box::new(stream))
+                EncryptionStreams::Aes256GcmSiv(Box::new(stream))
             }
             Algorithm::XChaCha20Poly1305 => {
                 if nonce.len() != 20 {
@@ -124,7 +124,7 @@ impl EncryptionStreams {
         payload: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         match self {
-            Self::Aes256Gcm(s) => s.encrypt_next(payload),
+            Self::Aes256GcmSiv(s) => s.encrypt_next(payload),
             Self::XChaCha20Poly1305(s) => s.encrypt_next(payload),
         }
     }
@@ -137,7 +137,7 @@ impl EncryptionStreams {
         payload: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         match self {
-            Self::Aes256Gcm(s) => s.encrypt_last(payload),
+            Self::Aes256GcmSiv(s) => s.encrypt_last(payload),
             Self::XChaCha20Poly1305(s) => s.encrypt_last(payload),
         }
     }
@@ -253,12 +253,12 @@ impl DecryptionStreams {
         algorithm: &Algorithm,
     ) -> anyhow::Result<Self> {
         let streams = match algorithm {
-            Algorithm::Aes256Gcm => {
-                let cipher = Aes256Gcm::new_from_slice(key.expose())
+            Algorithm::Aes256GcmSiv => {
+                let cipher = Aes256GcmSiv::new_from_slice(key.expose())
                     .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
 
                 let stream = DecryptorLE31::from_aead(cipher, nonce.into());
-                DecryptionStreams::Aes256Gcm(Box::new(stream))
+                DecryptionStreams::Aes256GcmSiv(Box::new(stream))
             }
             Algorithm::XChaCha20Poly1305 => {
                 let cipher = XChaCha20Poly1305::new_from_slice(key.expose())
@@ -283,7 +283,7 @@ impl DecryptionStreams {
         payload: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         match self {
-            Self::Aes256Gcm(s) => s.decrypt_next(payload),
+            Self::Aes256GcmSiv(s) => s.decrypt_next(payload),
             Self::XChaCha20Poly1305(s) => s.decrypt_next(payload),
         }
     }
@@ -298,7 +298,7 @@ impl DecryptionStreams {
         payload: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         match self {
-            Self::Aes256Gcm(s) => s.decrypt_last(payload),
+            Self::Aes256GcmSiv(s) => s.decrypt_last(payload),
             Self::XChaCha20Poly1305(s) => s.decrypt_last(payload),
         }
     }

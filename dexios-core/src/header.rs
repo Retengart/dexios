@@ -33,7 +33,7 @@
 //!
 
 use crate::{
-    key::{argon2id_hash, balloon_hash},
+    key::balloon_hash,
     protected::Protected,
 };
 
@@ -94,21 +94,18 @@ pub struct Header {
     pub keyslots: Option<Vec<Keyslot>>,
 }
 
-pub const ARGON2ID_LATEST: i32 = 3;
-pub const BLAKE3BALLOON_LATEST: i32 = 5;
+pub const BLAKE3BALLOON_LATEST: u8 = 5;
 
 /// This is in place to make `Keyslot` handling a **lot** easier
-/// You may use the constants `ARGON2ID_LATEST` and `BLAKE3BALLOON_LATEST` for defining versions
+/// You may use the constants `BLAKE3BALLOON_LATEST` for defining versions
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum HashingAlgorithm {
-    Argon2id(i32),
-    Blake3Balloon(i32),
+    Blake3Balloon(u8),
 }
 
 impl std::fmt::Display for HashingAlgorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::Argon2id(i) => write!(f, "Argon2id (param v{})", i),
             Self::Blake3Balloon(i) => write!(f, "BLAKE3-Balloon (param v{})", i),
         }
     }
@@ -122,12 +119,6 @@ impl HashingAlgorithm {
         salt: &[u8; SALT_LEN],
     ) -> Result<Protected<[u8; 32]>, anyhow::Error> {
         match self {
-            HashingAlgorithm::Argon2id(i) => match i {
-                3 => argon2id_hash(raw_key, salt, &HeaderVersion::V5),
-                _ => Err(anyhow::anyhow!(
-                    "argon2id is not supported with the parameters provided."
-                )),
-            },
             HashingAlgorithm::Blake3Balloon(i) => match i {
                 5 => balloon_hash(raw_key, salt, &HeaderVersion::V5),
                 _ => Err(anyhow::anyhow!(
@@ -153,14 +144,7 @@ impl Keyslot {
     #[must_use]
     pub fn serialize(&self) -> [u8; 2] {
         match self.hash_algorithm {
-            HashingAlgorithm::Argon2id(i) => match i {
-                1 => [0xDF, 0xA1],
-                2 => [0xDF, 0xA2],
-                3 => [0xDF, 0xA3],
-                _ => [0x00, 0x00],
-            },
             HashingAlgorithm::Blake3Balloon(i) => match i {
-                4 => [0xDF, 0xB4],
                 5 => [0xDF, 0xB5],
                 _ => [0x00, 0x00],
             },
@@ -257,7 +241,7 @@ impl Header {
 
         let algorithm = match algorithm_bytes {
             [0x0E, 0x01] => Algorithm::XChaCha20Poly1305,
-            [0x0E, 0x02] => Algorithm::Aes256Gcm,
+            [0x0E, 0x02] => Algorithm::Aes256GcmSiv,
             _ => return Err(anyhow::anyhow!("Error getting encryption mode from header")),
         };
 
@@ -279,7 +263,7 @@ impl Header {
         };
 
         let nonce_len = get_nonce_len(&header_type.algorithm, &header_type.mode);
-        let mut salt = [0u8; 16];
+        let salt = [0u8; 16];
         let mut nonce = vec![0u8; nonce_len];
 
         let keyslots: Option<Vec<Keyslot>> = match header_type.version {
@@ -330,8 +314,6 @@ impl Header {
                         .context("Unable to read keyslot padding from header")?;
 
                     let hash_algorithm = match identifier {
-                        [0xDF, 0xA3] => HashingAlgorithm::Argon2id(3),
-                        [0xDF, 0xB4] => HashingAlgorithm::Blake3Balloon(4),
                         [0xDF, 0xB5] => HashingAlgorithm::Blake3Balloon(5),
                         _ => return Err(anyhow::anyhow!("Key hashing algorithm not identified")),
                     };
@@ -378,7 +360,7 @@ impl Header {
                 let info: [u8; 2] = [0x0E, 0x01];
                 info
             }
-            Algorithm::Aes256Gcm => {
+            Algorithm::Aes256GcmSiv => {
                 let info: [u8; 2] = [0x0E, 0x02];
                 info
             }

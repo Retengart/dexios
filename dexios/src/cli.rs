@@ -50,12 +50,6 @@ pub fn get_matches() -> clap::ArgMatches {
                 .help("Return a BLAKE3 hash of the encrypted file"),
         )
         .arg(
-            Arg::new("argon")
-                .long("argon")
-                .takes_value(false)
-                .help("Use argon2id for password hashing"),
-        )
-        .arg(
             Arg::new("autogenerate")
                 .long("auto")
                 .value_name("# of words")
@@ -84,7 +78,7 @@ pub fn get_matches() -> clap::ArgMatches {
             Arg::new("aes")
                 .long("aes")
                 .takes_value(false)
-                .help("Use AES-256-GCM for encryption"),
+                .help("Use AES-256-GCM-SIV for encryption"),
         );
 
     let decrypt = Command::new("decrypt")
@@ -217,12 +211,6 @@ pub fn get_matches() -> clap::ArgMatches {
                     .help("Securely erase every file from the source directory, before deleting the directory")
             )
             .arg(
-                Arg::new("argon")
-                    .long("argon")
-                    .takes_value(false)
-                    .help("Use argon2id for password hashing"),
-            )
-            .arg(
                 Arg::new("verbose")
                     .short('v')
                     .long("verbose")
@@ -287,7 +275,7 @@ pub fn get_matches() -> clap::ArgMatches {
                 Arg::new("aes")
                     .long("aes")
                     .takes_value(false)
-                    .help("Use AES-256-GCM for encryption"),
+                    .help("Use AES-256-GCM-SIV for encryption"),
             )
         )
         .subcommand(
@@ -381,12 +369,6 @@ pub fn get_matches() -> clap::ArgMatches {
                                 .conflicts_with("keyfile"),
                         )
                         .arg(
-                            Arg::new("argon")
-                                .long("argon")
-                                .takes_value(false)
-                                .help("Use argon2id for password hashing"),
-                        )
-                        .arg(
                             Arg::new("keyfile-old")
                                 .short('k')
                                 .long("keyfile-old")
@@ -413,12 +395,6 @@ pub fn get_matches() -> clap::ArgMatches {
                                 .takes_value(true)
                                 .required(true)
                                 .help("The encrypted file/header file"),
-                        )
-                        .arg(
-                            Arg::new("argon")
-                                .long("argon")
-                                .takes_value(false)
-                                .help("Use argon2id for password hashing"),
                         )
                         .arg(
                             Arg::new("autogenerate")

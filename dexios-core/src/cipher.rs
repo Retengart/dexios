@@ -21,7 +21,7 @@
 //! ```
 
 use aead::{Aead, AeadInPlace, KeyInit, Payload};
-use aes_gcm::Aes256Gcm;
+use aes_gcm_siv::Aes256GcmSiv;
 use chacha20poly1305::XChaCha20Poly1305;
 
 use crate::primitives::Algorithm;
@@ -29,7 +29,7 @@ use crate::protected::Protected;
 
 /// This `enum` defines all possible cipher types, for each AEAD that is supported by `dexios-core`
 pub enum Ciphers {
-    Aes256Gcm(Box<Aes256Gcm>),
+    Aes256GcmSiv(Box<Aes256GcmSiv>),
     XChaCha(Box<XChaCha20Poly1305>),
 }
 
@@ -38,7 +38,7 @@ impl Ciphers {
     ///
     /// The returned `Cipher` can be used for both encryption and decryption
     ///
-    /// You just need to provide the `argon2id`/`balloon` hashed key, and the algorithm to use
+    /// You just need to provide the`balloon` hashed key, and the algorithm to use
     ///
     /// # Examples
     /// ```rust,ignore
@@ -51,11 +51,11 @@ impl Ciphers {
     ///
     pub fn initialize(key: Protected<[u8; 32]>, algorithm: &Algorithm) -> anyhow::Result<Self> {
         let cipher = match algorithm {
-            Algorithm::Aes256Gcm => {
-                let cipher = Aes256Gcm::new_from_slice(key.expose())
+            Algorithm::Aes256GcmSiv => {
+                let cipher = Aes256GcmSiv::new_from_slice(key.expose())
                     .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
 
-                Ciphers::Aes256Gcm(Box::new(cipher))
+                Ciphers::Aes256GcmSiv(Box::new(cipher))
             }
             Algorithm::XChaCha20Poly1305 => {
                 let cipher = XChaCha20Poly1305::new_from_slice(key.expose())
@@ -78,7 +78,7 @@ impl Ciphers {
         plaintext: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         match self {
-            Self::Aes256Gcm(c) => c.encrypt(nonce.as_ref().into(), plaintext),
+            Self::Aes256GcmSiv(c) => c.encrypt(nonce.as_ref().into(), plaintext),
             Self::XChaCha(c) => c.encrypt(nonce.as_ref().into(), plaintext),
         }
     }
@@ -90,7 +90,7 @@ impl Ciphers {
         buffer: &mut dyn aead::Buffer,
     ) -> Result<(), aead::Error> {
         match self {
-            Self::Aes256Gcm(c) => c.encrypt_in_place(nonce.as_ref().into(), aad, buffer),
+            Self::Aes256GcmSiv(c) => c.encrypt_in_place(nonce.as_ref().into(), aad, buffer),
             Self::XChaCha(c) => c.encrypt_in_place(nonce.as_ref().into(), aad, buffer),
         }
     }
@@ -106,7 +106,7 @@ impl Ciphers {
         ciphertext: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         match self {
-            Self::Aes256Gcm(c) => c.decrypt(nonce.as_ref().into(), ciphertext),
+            Self::Aes256GcmSiv(c) => c.decrypt(nonce.as_ref().into(), ciphertext),
             Self::XChaCha(c) => c.decrypt(nonce.as_ref().into(), ciphertext),
         }
     }
