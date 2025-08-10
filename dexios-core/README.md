@@ -32,12 +32,11 @@ information to help you get started!
 ## Features
 
 - Convenience functions for encrypting/decrypting
-- 3 AEADs (XChaCha20-Poly1305, AES-256-GCM, Deoxys-II-256)
+- 2 AEADs (XChaCha20-Poly1305, AES-256-GCM)
 - Easy management of encrypted headers (no more worrying about where to store a
   nonce!)
 - Easy `argon2id` hashing with secure parameters
 - Easy `balloon` hashing with secure parameters and BLAKE3
-- Frequent updates and feature additions!
 
 ## Donating
 

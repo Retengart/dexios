@@ -24,12 +24,12 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::WriteData => f.write_str("Unable to write data"),
-            Error::OpenArchive => f.write_str("Unable to open archive"),
-            Error::OpenArchivedFile => f.write_str("Unable to open archived file"),
-            Error::ResetCursorPosition => f.write_str("Unable to reset cursor position"),
-            Error::Storage(inner) => write!(f, "Storage error: {inner}"),
-            Error::Decrypt(inner) => write!(f, "Decrypt error: {inner}"),
+            Self::WriteData => f.write_str("Unable to write data"),
+            Self::OpenArchive => f.write_str("Unable to open archive"),
+            Self::OpenArchivedFile => f.write_str("Unable to open archived file"),
+            Self::ResetCursorPosition => f.write_str("Unable to reset cursor position"),
+            Self::Storage(inner) => write!(f, "Storage error: {inner}"),
+            Self::Decrypt(inner) => write!(f, "Decrypt error: {inner}"),
         }
     }
 }

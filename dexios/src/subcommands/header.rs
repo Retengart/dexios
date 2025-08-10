@@ -32,19 +32,7 @@ pub fn details(input: &str) -> Result<()> {
     println!("AAD: {} (hex)", hex_encode(&aad));
 
     match header.header_type.version {
-        HeaderVersion::V1 => {
-            println!("Salt: {} (hex)", hex_encode(&header.salt.unwrap()));
-            println!("Hashing Algorithm: {}", HashingAlgorithm::Argon2id(1));
-        }
-        HeaderVersion::V2 => {
-            println!("Salt: {} (hex)", hex_encode(&header.salt.unwrap()));
-            println!("Hashing Algorithm: {}", HashingAlgorithm::Argon2id(2));
-        }
-        HeaderVersion::V3 => {
-            println!("Salt: {} (hex)", hex_encode(&header.salt.unwrap()));
-            println!("Hashing Algorithm: {}", HashingAlgorithm::Argon2id(3));
-        }
-        HeaderVersion::V4 | HeaderVersion::V5 => {
+        HeaderVersion::V5 => {
             for (i, keyslot) in header.keyslots.unwrap().iter().enumerate() {
                 println!("Keyslot {}:", i);
                 println!("  Hashing Algorithm: {}", keyslot.hash_algorithm);

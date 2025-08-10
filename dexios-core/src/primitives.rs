@@ -13,14 +13,13 @@ pub const SALT_LEN: usize = 16; // bytes
 
 pub const MASTER_KEY_LEN: usize = 32;
 pub const ENCRYPTED_MASTER_KEY_LEN: usize = 48;
-pub const ALGORITHMS_LEN: usize = 3;
+pub const ALGORITHMS_LEN: usize = 2;
 
 /// This is an `enum` containing all AEADs supported by `dexios-core`
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum Algorithm {
     Aes256Gcm,
     XChaCha20Poly1305,
-    DeoxysII256,
 }
 
 /// This is an array containing all AEADs supported by `dexios-core`.
@@ -29,15 +28,13 @@ pub enum Algorithm {
 pub static ALGORITHMS: [Algorithm; ALGORITHMS_LEN] = [
     Algorithm::XChaCha20Poly1305,
     Algorithm::Aes256Gcm,
-    Algorithm::DeoxysII256,
 ];
 
 impl std::fmt::Display for Algorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Algorithm::Aes256Gcm => write!(f, "AES-256-GCM"),
-            Algorithm::XChaCha20Poly1305 => write!(f, "XChaCha20-Poly1305"),
-            Algorithm::DeoxysII256 => write!(f, "Deoxys-II-256"),
+            Self::Aes256Gcm => write!(f, "AES-256-GCM"),
+            Self::XChaCha20Poly1305 => write!(f, "XChaCha20-Poly1305"),
         }
     }
 }
@@ -52,13 +49,14 @@ pub enum Mode {
 impl std::fmt::Display for Mode {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Mode::MemoryMode => write!(f, "Memory Mode"),
-            Mode::StreamMode => write!(f, "Stream Mode"),
+            Self::MemoryMode => write!(f, "Memory Mode"),
+            Self::StreamMode => write!(f, "Stream Mode"),
         }
     }
 }
 
-/// This can be used to generate a nonce for encryption
+/// This can be used to generate a nonce for encryption.
+///
 /// It requires both the algorithm and the mode, so it can correctly determine the nonce length
 /// This nonce can be passed directly to `EncryptionStreams::initialize()`
 ///
@@ -87,7 +85,6 @@ pub fn get_nonce_len(algorithm: &Algorithm, mode: &Mode) -> usize {
     let mut nonce_len = match algorithm {
         Algorithm::Aes256Gcm => 12,
         Algorithm::XChaCha20Poly1305 => 24,
-        Algorithm::DeoxysII256 => 15,
     };
 
     if mode == &Mode::StreamMode {

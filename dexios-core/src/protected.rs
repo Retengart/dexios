@@ -52,7 +52,7 @@ where
     T: Zeroize,
 {
     pub fn new(value: T) -> Self {
-        Protected { data: value }
+        Self { data: value }
     }
 
     pub fn expose(&self) -> &T {

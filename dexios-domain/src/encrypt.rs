@@ -26,14 +26,14 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::ResetCursorPosition => f.write_str("Unable to reset cursor position"),
-            Error::HashKey => f.write_str("Cannot hash raw key"),
-            Error::EncryptMasterKey => f.write_str("Cannot encrypt master key"),
-            Error::EncryptFile => f.write_str("Cannot encrypt file"),
-            Error::WriteHeader => f.write_str("Cannot write header"),
-            Error::InitializeStreams => f.write_str("Cannot initialize streams"),
-            Error::InitializeChiphers => f.write_str("Cannot initialize chiphers"),
-            Error::CreateAad => f.write_str("Cannot create AAD"),
+            Self::ResetCursorPosition => f.write_str("Unable to reset cursor position"),
+            Self::HashKey => f.write_str("Cannot hash raw key"),
+            Self::EncryptMasterKey => f.write_str("Cannot encrypt master key"),
+            Self::EncryptFile => f.write_str("Cannot encrypt file"),
+            Self::WriteHeader => f.write_str("Cannot write header"),
+            Self::InitializeStreams => f.write_str("Cannot initialize streams"),
+            Self::InitializeChiphers => f.write_str("Cannot initialize chiphers"),
+            Self::CreateAad => f.write_str("Cannot create AAD"),
         }
     }
 }
@@ -162,17 +162,6 @@ pub mod tests {
 
     pub const PASSWORD: &[u8; 8] = b"12345678";
 
-    pub const V4_ENCRYPTED_CONTENT: [u8; 155] = [
-        222, 4, 14, 1, 12, 1, 58, 206, 16, 183, 233, 128, 23, 223, 81, 30, 214, 132, 32, 104, 51,
-        119, 173, 240, 60, 45, 230, 243, 58, 160, 69, 50, 217, 192, 66, 223, 124, 190, 148, 91, 92,
-        129, 0, 0, 0, 0, 0, 0, 147, 32, 67, 18, 249, 211, 189, 86, 187, 159, 234, 160, 94, 80, 72,
-        68, 231, 114, 132, 105, 164, 177, 26, 217, 46, 168, 97, 110, 34, 27, 13, 16, 14, 111, 3,
-        109, 218, 232, 212, 78, 188, 55, 91, 106, 97, 74, 238, 210, 173, 240, 60, 45, 230, 243, 58,
-        160, 69, 50, 217, 192, 66, 223, 124, 190, 148, 91, 92, 129, 50, 126, 110, 254, 0, 0, 0, 0,
-        0, 0, 0, 0, 14, 110, 105, 217, 74, 171, 173, 103, 11, 136, 119, 98, 145, 17, 70, 84, 144,
-        143, 154, 244, 82, 201, 85, 13, 187, 85, 89,
-    ];
-
     pub const V5_ENCRYPTED_CONTENT: [u8; 443] = [
         222, 5, 14, 1, 12, 1, 173, 240, 60, 45, 230, 243, 58, 160, 69, 50, 217, 192, 66, 223, 124,
         190, 148, 91, 92, 129, 0, 0, 0, 0, 0, 0, 223, 181, 71, 240, 140, 106, 41, 36, 82, 150, 105,
@@ -236,38 +225,6 @@ pub mod tests {
     ];
 
     #[test]
-    fn should_encrypt_content_with_v4_version() {
-        let mut input_content = b"Hello world";
-        let input_cur = RefCell::new(Cursor::new(&mut input_content));
-
-        let mut output_content = vec![];
-        let output_cur = RefCell::new(Cursor::new(&mut output_content));
-
-        let req = Request {
-            reader: &input_cur,
-            writer: &output_cur,
-            header_writer: None,
-            raw_key: Protected::new(PASSWORD.to_vec()),
-            header_type: HeaderType {
-                version: HeaderVersion::V4,
-                algorithm: Algorithm::XChaCha20Poly1305,
-                mode: Mode::StreamMode,
-            },
-            hashing_algorithm: HashingAlgorithm::Blake3Balloon(4),
-        };
-
-        match execute(req) {
-            Ok(_) => {
-                assert_eq!(output_content, V4_ENCRYPTED_CONTENT.to_vec());
-            }
-            Err(e) => {
-                println!("{e:?}");
-                unreachable!()
-            }
-        }
-    }
-
-    #[test]
     fn should_encrypt_content_with_v5_version() {
         let mut input_content = b"Hello world";
         let input_cur = RefCell::new(Cursor::new(&mut input_content));
@@ -289,7 +246,7 @@ pub mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
+            Ok(()) => {
                 assert_eq!(output_content, V5_ENCRYPTED_CONTENT.to_vec());
             }
             Err(e) => {
@@ -324,7 +281,7 @@ pub mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
+            Ok(()) => {
                 assert_eq!(output_content, V5_ENCRYPTED_FULL_DETACHED_CONTENT.to_vec());
                 assert_eq!(output_header, V5_ENCRYPTED_DETACHED_HEADER.to_vec());
             }

@@ -47,21 +47,6 @@ pub fn argon2id_hash(
     use argon2::Params;
 
     let params = match version {
-        HeaderVersion::V1 => {
-            // 8MiB of memory, 8 iterations, 4 levels of parallelism
-            Params::new(8192, 8, 4, Some(Params::DEFAULT_OUTPUT_LEN))
-                .map_err(|_| anyhow::anyhow!("Error initialising argon2id parameters"))?
-        }
-        HeaderVersion::V2 => {
-            // 256MiB of memory, 8 iterations, 4 levels of parallelism
-            Params::new(262_144, 8, 4, Some(Params::DEFAULT_OUTPUT_LEN))
-                .map_err(|_| anyhow::anyhow!("Error initialising argon2id parameters"))?
-        }
-        HeaderVersion::V3 => {
-            // 256MiB of memory, 10 iterations, 4 levels of parallelism
-            Params::new(262_144, 10, 4, Some(Params::DEFAULT_OUTPUT_LEN))
-                .map_err(|_| anyhow::anyhow!("Error initialising argon2id parameters"))?
-        }
         HeaderVersion::V4 | HeaderVersion::V5 => {
             return Err(anyhow::anyhow!(
                 "argon2id is not supported on header versions above V3."
@@ -110,14 +95,7 @@ pub fn balloon_hash(
     use balloon_hash::Balloon;
 
     let params = match version {
-        HeaderVersion::V1 | HeaderVersion::V2 | HeaderVersion::V3 => {
-            return Err(anyhow::anyhow!(
-                "Balloon hashing is not supported in header versions below V4."
-            ));
-        }
-        HeaderVersion::V4 => balloon_hash::Params::new(262_144, 1, 1)
-            .map_err(|_| anyhow::anyhow!("Error initialising balloon hashing parameters"))?,
-        HeaderVersion::V5 => balloon_hash::Params::new(278_528, 1, 1)
+        HeaderVersion::V5 => balloon_hash::Params::new(278_528, 4, 1)
             .map_err(|_| anyhow::anyhow!("Error initialising balloon hashing parameters"))?,
     };
 
@@ -147,21 +125,6 @@ pub fn decrypt_master_key(
     // TODO: use custom error instead of anyhow
 ) -> Result<Protected<[u8; MASTER_KEY_LEN]>> {
     match header.header_type.version {
-        HeaderVersion::V1 | HeaderVersion::V2 | HeaderVersion::V3 => {
-            argon2id_hash(raw_key, &header.salt.ok_or_else(|| anyhow::anyhow!("Missing salt within the header!"))?, &header.header_type.version)
-        }
-        HeaderVersion::V4 => {
-            let keyslots = header.keyslots.as_ref().ok_or_else(|| anyhow::anyhow!("Unable to find a keyslot!"))?;
-            let keyslot = keyslots.first().ok_or_else(|| anyhow::anyhow!("Unable to find a match with the key you provided (maybe you supplied the wrong key?)"))?;
-            let key = keyslot.hash_algorithm.hash(raw_key, &keyslot.salt)?;
-
-            let cipher = Ciphers::initialize(key, &header.header_type.algorithm)?;
-            cipher
-                .decrypt(&keyslot.nonce, keyslot.encrypted_key.as_slice())
-                .map(vec_to_arr)
-                .map(Protected::new)
-                .map_err(|_| anyhow::anyhow!("Cannot decrypt master key"))
-        }
         HeaderVersion::V5 => {
             header
                 .keyslots

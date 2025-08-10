@@ -109,7 +109,7 @@ fn should_write_content_to_file() {
         .unwrap();
 
     match stor.flush_file(&file) {
-        Ok(_) => {
+        Ok(()) => {
             let mut file_buf = vec![];
             fs::File::open("hello_7.txt")
                 .unwrap()
@@ -131,7 +131,7 @@ fn should_remove_a_file_in_read_mode() {
     let file = stor.write_file("hello_8.txt").unwrap();
 
     match stor.remove_file(file) {
-        Ok(_) => match fs::File::open("hello_8.txt") {
+        Ok(()) => match fs::File::open("hello_8.txt") {
             Err(_) => {}
             _ => unreachable!(),
         },
@@ -147,7 +147,7 @@ fn should_remove_a_file_in_write_mode() {
     let file = stor.write_file("hello_9.txt").unwrap();
 
     match stor.remove_file(file) {
-        Ok(_) => match fs::File::open("hello_9.txt") {
+        Ok(()) => match fs::File::open("hello_9.txt") {
             Err(_) => {}
             _ => unreachable!(),
         },

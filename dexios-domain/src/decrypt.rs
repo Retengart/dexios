@@ -25,14 +25,14 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::InitializeChiphers => f.write_str("Cannot initialize chiphers"),
-            Error::InitializeStreams => f.write_str("Cannot initialize streams"),
-            Error::DeserializeHeader => f.write_str("Cannot deserialize header"),
-            Error::ReadEncryptedData => f.write_str("Unable to read encrypted data"),
-            Error::DecryptMasterKey => f.write_str("Cannot decrypt master key"),
-            Error::DecryptData => f.write_str("Unable to decrypt data"),
-            Error::WriteData => f.write_str("Unable to write data"),
-            Error::RewindDataReader => f.write_str("Unable to rewind the reader"),
+            Self::InitializeChiphers => f.write_str("Cannot initialize chiphers"),
+            Self::InitializeStreams => f.write_str("Cannot initialize streams"),
+            Self::DeserializeHeader => f.write_str("Cannot deserialize header"),
+            Self::ReadEncryptedData => f.write_str("Unable to read encrypted data"),
+            Self::DecryptMasterKey => f.write_str("Cannot decrypt master key"),
+            Self::DecryptData => f.write_str("Unable to decrypt data"),
+            Self::WriteData => f.write_str("Unable to write data"),
+            Self::RewindDataReader => f.write_str("Unable to rewind the reader"),
         }
     }
 }
@@ -155,33 +155,9 @@ mod tests {
     use std::io::Cursor;
 
     use crate::encrypt::tests::{
-        PASSWORD, V4_ENCRYPTED_CONTENT, V5_ENCRYPTED_CONTENT, V5_ENCRYPTED_DETACHED_CONTENT,
+        PASSWORD, V5_ENCRYPTED_CONTENT, V5_ENCRYPTED_DETACHED_CONTENT,
         V5_ENCRYPTED_DETACHED_HEADER, V5_ENCRYPTED_FULL_DETACHED_CONTENT,
     };
-
-    #[test]
-    fn should_decrypt_encrypted_content_with_v4_version() {
-        let mut input_content = V4_ENCRYPTED_CONTENT.to_vec();
-        let input_cur = RefCell::new(Cursor::new(&mut input_content));
-
-        let mut output_content = vec![];
-        let output_cur = RefCell::new(Cursor::new(&mut output_content));
-
-        let req = Request {
-            header_reader: None,
-            reader: &input_cur,
-            writer: &output_cur,
-            raw_key: Protected::new(PASSWORD.to_vec()),
-            on_decrypted_header: None,
-        };
-
-        match execute(req) {
-            Ok(_) => {
-                assert_eq!(output_content, "Hello world".as_bytes().to_vec());
-            }
-            _ => unreachable!(),
-        }
-    }
 
     #[test]
     fn should_decrypt_encrypted_content_with_v5_version() {
@@ -200,8 +176,8 @@ mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
-                assert_eq!(output_content, "Hello world".as_bytes().to_vec());
+            Ok(()) => {
+                assert_eq!(output_content, b"Hello world".to_vec());
             }
             _ => unreachable!(),
         }
@@ -227,8 +203,8 @@ mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
-                assert_eq!(output_content, "Hello world".as_bytes().to_vec());
+            Ok(()) => {
+                assert_eq!(output_content, b"Hello world".to_vec());
             }
             _ => unreachable!(),
         }
@@ -254,8 +230,8 @@ mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
-                assert_eq!(output_content, "Hello world".as_bytes().to_vec());
+            Ok(()) => {
+                assert_eq!(output_content, b"Hello world".to_vec());
             }
             _ => unreachable!(),
         }

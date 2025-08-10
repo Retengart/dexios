@@ -11,27 +11,20 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions-rs/toolchain@v1
+    - uses: actions/checkout@v4
+    
+    - name: Setup Rust toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
-          toolchain: stable
-    - name: Restore cargo cache
-      uses: actions/cache@v2.1.7
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-stable-${{ hashFiles('Cargo.lock') }}
+        toolchain: stable
+        
     - name: Build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        args: --release
+      run: cargo build --release
+      
     - name: Strip
       run: strip target/release/dexios
     - name: Upload Binary as artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: dexios
         path: target/release/dexios
@@ -40,9 +33,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: dexios
         path: target/release/dexios
@@ -66,9 +59,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: dexios
         path: target/release/dexios
@@ -100,9 +93,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: dexios
         path: target/release/dexios
@@ -122,9 +115,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: dexios
         path: target/release/dexios
@@ -138,9 +131,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: dexios
         path: target/release/dexios
@@ -165,7 +158,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: dexios
         path: target/release/dexios
@@ -189,9 +182,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: dexios
         path: target/release/dexios
@@ -215,9 +208,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: dexios
         path: target/release/dexios
@@ -241,9 +234,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: dexios
         path: target/release/dexios
@@ -269,9 +262,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: dexios
         path: target/release/dexios
