@@ -87,7 +87,7 @@ mod tests {
         )]
         let capacity = (BLOCK_SIZE as f32 * 1.5) as usize;
         let mut buf = Vec::with_capacity(capacity);
-        rand::thread_rng().fill_bytes(&mut buf);
+        rand::rng().fill_bytes(&mut buf);
 
         let orig_buf = buf.clone();
         let reader = Cursor::new(&mut buf);

@@ -1,7 +1,7 @@
 //! This module handles key-related functionality within `dexios-core`
 //!
 use anyhow::Result;
-use rand::{prelude::StdRng, Rng, SeedableRng};
+use rand::Rng;
 use zeroize::Zeroize;
 
 use crate::cipher::Ciphers;
@@ -38,7 +38,7 @@ pub fn balloon_hash(
     use balloon_hash::Balloon;
 
     let params = match version {
-        HeaderVersion::V5 => balloon_hash::Params::new(557_056, 2, 1)
+        HeaderVersion::V5 => balloon_hash::Params::new(400_000, 2, 1)
             .map_err(|_| anyhow::anyhow!("Error initialising balloon hashing parameters"))?,
     };
 
@@ -114,8 +114,10 @@ pub fn generate_passphrase(total_words: &i32) -> Protected<String> {
 
     let mut passphrase = String::new();
 
+    // Use a fast, thread-local CSPRNG and reuse it across iterations (rand 0.9: rng())
+    let mut rng = rand::rng();
     for i in 0..*total_words {
-        let index = StdRng::from_entropy().gen_range(0..=words.len());
+        let index = rng.random_range(0..words.len());
         let word = words[index];
         passphrase.push_str(word);
         if i < total_words - 1 {

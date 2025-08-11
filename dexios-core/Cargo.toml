@@ -38,6 +38,6 @@ balloon-hash = "0.4.0"
 blake3 = { version = "1.8.2", features = ["traits-preview"] }
 
 # for generating random bytes
-rand = "0.8.5"
+rand = "0.9"
 
 indicatif = { version = "0.18.0", optional = true }

@@ -46,7 +46,7 @@ pub fn execute<W: Write + Seek>(req: Request<'_, W>) -> Result<(), Error> {
 
         for block_size in blocks.into_iter().take_while(|bs| *bs > 0) {
             let mut block_buf = Vec::with_capacity(block_size);
-            rand::thread_rng().fill_bytes(&mut block_buf);
+            rand::rng().fill_bytes(&mut block_buf);
             writer
                 .write_all(&block_buf)
                 .map_err(|_| Error::OverwriteWithRandomBytes)?;
@@ -69,7 +69,7 @@ mod tests {
 
     fn make_test(capacity: usize, passes: i32) {
         let mut buf = Vec::with_capacity(capacity);
-        rand::thread_rng().fill_bytes(&mut buf);
+        rand::rng().fill_bytes(&mut buf);
 
         let writer = Cursor::new(&mut buf);
 
