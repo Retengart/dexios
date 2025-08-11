@@ -20,6 +20,7 @@ pub enum Error {
     DecryptData,
     WriteData,
     RewindDataReader,
+    UnsupportedMode,
 }
 
 impl std::fmt::Display for Error {
@@ -33,6 +34,7 @@ impl std::fmt::Display for Error {
             Self::DecryptData => f.write_str("Unable to decrypt data"),
             Self::WriteData => f.write_str("Unable to write data"),
             Self::RewindDataReader => f.write_str("Unable to rewind the reader"),
+            Self::UnsupportedMode => f.write_str("Unsupported header mode (memory mode is not supported)"),
         }
     }
 }
@@ -98,33 +100,7 @@ where
     }
 
     match header.header_type.mode {
-        Mode::MemoryMode => {
-            let mut encrypted_data = Vec::new();
-            req.reader
-                .borrow_mut()
-                .read_to_end(&mut encrypted_data)
-                .map_err(|_| Error::ReadEncryptedData)?;
-
-            let master_key =
-                decrypt_master_key(req.raw_key, &header).map_err(|_| Error::DecryptMasterKey)?;
-
-            let ciphers = Ciphers::initialize(master_key, &header.header_type.algorithm)
-                .map_err(|_| Error::InitializeChiphers)?;
-
-            let payload = core::Payload {
-                aad: &aad,
-                msg: &encrypted_data,
-            };
-
-            let decrypted_bytes = ciphers
-                .decrypt(&header.nonce, payload)
-                .map_err(|_| Error::DecryptData)?;
-
-            req.writer
-                .borrow_mut()
-                .write_all(&decrypted_bytes)
-                .map_err(|_| Error::WriteData)?;
-        }
+        Mode::MemoryMode => return Err(Error::UnsupportedMode),
         Mode::StreamMode => {
             let master_key =
                 decrypt_master_key(req.raw_key, &header).map_err(|_| Error::DecryptMasterKey)?;
