@@ -13,14 +13,14 @@ pub fn get_matches() -> clap::ArgMatches {
         .arg(
             Arg::new("input")
                 .value_name("input")
-                .takes_value(true)
+                .num_args(1)
                 .required(true)
                 .help("The file to encrypt"),
         )
         .arg(
             Arg::new("output")
                 .value_name("output")
-                .takes_value(true)
+                .num_args(1)
                 .required(true)
                 .help("The output file"),
         )
@@ -29,33 +29,31 @@ pub fn get_matches() -> clap::ArgMatches {
                 .short('k')
                 .long("keyfile")
                 .value_name("file")
-                .takes_value(true)
+                .num_args(1)
                 .help("Use a keyfile instead of a password"),
         )
         .arg(
             Arg::new("erase")
                 .long("erase")
                 .value_name("# of passes")
-                .takes_value(true)
+                .num_args(0..=1)
                 .require_equals(true)
                 .help("Securely erase the input file once complete (default is 1 pass)")
-                .min_values(0)
                 .default_missing_value("1"),
         )
         .arg(
             Arg::new("hash")
                 .short('H')
                 .long("hash")
-                .takes_value(false)
+                .action(clap::ArgAction::SetTrue)
                 .help("Return a BLAKE3 hash of the encrypted file"),
         )
         .arg(
             Arg::new("autogenerate")
                 .long("auto")
                 .value_name("# of words")
-                .min_values(0)
+                .num_args(0..=1)
                 .default_missing_value("7")
-                .takes_value(true)
                 .require_equals(true)
                 .help("Autogenerate a passphrase (default is 7 words)")
                 .conflicts_with("keyfile"),
@@ -64,20 +62,20 @@ pub fn get_matches() -> clap::ArgMatches {
             Arg::new("header")
                 .long("header")
                 .value_name("file")
-                .takes_value(true)
+                .num_args(1)
                 .help("Store the header separately from the file"),
         )
         .arg(
             Arg::new("force")
                 .short('f')
                 .long("force")
-                .takes_value(false)
+                .action(clap::ArgAction::SetTrue)
                 .help("Force all actions"),
         )
         .arg(
             Arg::new("aes")
                 .long("aes")
-                .takes_value(false)
+                .action(clap::ArgAction::SetTrue)
                 .help("Use AES-256-GCM-SIV for encryption"),
         );
 
@@ -87,14 +85,14 @@ pub fn get_matches() -> clap::ArgMatches {
         .arg(
             Arg::new("input")
                 .value_name("input")
-                .takes_value(true)
+                .num_args(1)
                 .required(true)
                 .help("The file to decrypt"),
         )
         .arg(
             Arg::new("output")
                 .value_name("output")
-                .takes_value(true)
+                .num_args(1)
                 .required(true)
                 .help("The output file"),
         )
@@ -103,38 +101,37 @@ pub fn get_matches() -> clap::ArgMatches {
                 .short('k')
                 .long("keyfile")
                 .value_name("file")
-                .takes_value(true)
+                .num_args(1)
                 .help("Use a keyfile instead of a password"),
         )
         .arg(
             Arg::new("header")
                 .long("header")
                 .value_name("file")
-                .takes_value(true)
+                .num_args(1)
                 .help("Use a header file that was dumped"),
         )
         .arg(
             Arg::new("erase")
                 .long("erase")
                 .value_name("# of passes")
-                .takes_value(true)
+                .num_args(0..=1)
                 .require_equals(true)
                 .help("Securely erase the input file once complete (default is 1 pass)")
-                .min_values(0)
                 .default_missing_value("1"),
         )
         .arg(
             Arg::new("hash")
                 .short('H')
                 .long("hash")
-                .takes_value(false)
+                .action(clap::ArgAction::SetTrue)
                 .help("Return a BLAKE3 hash of the encrypted file"),
         )
         .arg(
             Arg::new("force")
                 .short('f')
                 .long("force")
-                .takes_value(false)
+                .action(clap::ArgAction::SetTrue)
                 .help("Force all actions"),
         );
 
@@ -152,7 +149,7 @@ pub fn get_matches() -> clap::ArgMatches {
                 .arg(
                     Arg::new("input")
                         .value_name("input")
-                        .takes_value(true)
+                        .num_args(1)
                         .required(true)
                         .help("The file to erase"),
                 )
@@ -160,17 +157,16 @@ pub fn get_matches() -> clap::ArgMatches {
                     Arg::new("force")
                         .short('f')
                         .long("force")
-                        .takes_value(false)
+                        .action(clap::ArgAction::SetTrue)
                         .help("Force all actions"),
                 )
                 .arg(
                     Arg::new("passes")
                         .long("passes")
                         .value_name("# of passes")
-                        .takes_value(true)
+                        .num_args(0..=1)
                         .require_equals(true)
                         .help("Specify the number of passes (default is 1)")
-                        .min_values(0)
                         .default_missing_value("1"),
                 ),
         )
@@ -178,11 +174,10 @@ pub fn get_matches() -> clap::ArgMatches {
             Command::new("hash").about("Hash files with BLAKE3").arg(
                 Arg::new("input")
                     .value_name("input")
-                    .takes_value(true)
+                    .num_args(1..)
                     .required(true)
                     .help("The file(s) to hash")
-                    .min_values(1)
-                    .multiple_occurrences(true),
+                ,
             ),
         )
         .subcommand(
@@ -192,38 +187,36 @@ pub fn get_matches() -> clap::ArgMatches {
             .arg(
                 Arg::new("input")
                     .value_name("input")
-                    .takes_value(true)
-                    .multiple_values(true)
+                    .num_args(1..)
                     .required(true)
                     .help("The directory to encrypt"),
             )
             .arg(
                 Arg::new("output")
                     .value_name("output")
-                    .takes_value(true)
+                    .num_args(1)
                     .required(true)
                     .help("The output file"),
             )
             .arg(
                 Arg::new("erase")
                     .long("erase")
-                    .takes_value(false)
+                    .action(clap::ArgAction::SetTrue)
                     .help("Securely erase every file from the source directory, before deleting the directory")
             )
             .arg(
                 Arg::new("verbose")
                     .short('v')
                     .long("verbose")
-                    .takes_value(false)
+                    .action(clap::ArgAction::SetTrue)
                     .help("Show a detailed output"),
             )
             .arg(
                 Arg::new("autogenerate")
                     .long("auto")
                     .value_name("# of words")
-                    .min_values(0)
+                    .num_args(0..=1)
                     .default_missing_value("7")
-                    .takes_value(true)
                     .require_equals(true)
                     .help("Autogenerate a passphrase (default is 7 words)")
                     .conflicts_with("keyfile"),
@@ -232,21 +225,21 @@ pub fn get_matches() -> clap::ArgMatches {
                 Arg::new("header")
                     .long("header")
                     .value_name("file")
-                    .takes_value(true)
+                    .num_args(1)
                     .help("Store the header separately from the file"),
             )
             .arg(
                 Arg::new("zstd")
                     .short('z')
                     .long("zstd")
-                    .takes_value(false)
+                    .action(clap::ArgAction::SetTrue)
                     .help("Use ZSTD compression"),
             )
             .arg(
                 Arg::new("recursive")
                     .short('r')
                     .long("recursive")
-                    .takes_value(false)
+                    .action(clap::ArgAction::SetTrue)
                     .help("Index files and folders within other folders (index recursively)"),
             )
             .arg(
@@ -254,27 +247,27 @@ pub fn get_matches() -> clap::ArgMatches {
                     .short('k')
                     .long("keyfile")
                     .value_name("file")
-                    .takes_value(true)
+                    .num_args(1)
                     .help("Use a keyfile instead of a password"),
             )
             .arg(
                 Arg::new("hash")
                     .short('H')
                     .long("hash")
-                    .takes_value(false)
+                    .action(clap::ArgAction::SetTrue)
                     .help("Return a BLAKE3 hash of the encrypted file"),
             )
             .arg(
                 Arg::new("force")
                     .short('f')
                     .long("force")
-                    .takes_value(false)
+                    .action(clap::ArgAction::SetTrue)
                     .help("Force all actions"),
             )
             .arg(
                 Arg::new("aes")
                     .long("aes")
-                    .takes_value(false)
+                    .action(clap::ArgAction::SetTrue)
                     .help("Use AES-256-GCM-SIV for encryption"),
             )
         )
@@ -285,14 +278,14 @@ pub fn get_matches() -> clap::ArgMatches {
                 .arg(
                     Arg::new("input")
                         .value_name("input")
-                        .takes_value(true)
+                        .num_args(1)
                         .required(true)
                         .help("The file to decrypt"),
                 )
                 .arg(
                     Arg::new("output")
                         .value_name("output")
-                        .takes_value(true)
+                        .num_args(1)
                         .required(true)
                         .help("The output file"),
                 )
@@ -301,45 +294,44 @@ pub fn get_matches() -> clap::ArgMatches {
                         .short('k')
                         .long("keyfile")
                         .value_name("file")
-                        .takes_value(true)
+                        .num_args(1)
                         .help("Use a keyfile instead of a password"),
                 )
                 .arg(
                     Arg::new("header")
                         .long("header")
                         .value_name("file")
-                        .takes_value(true)
+                        .num_args(1)
                         .help("Use a header file that was dumped"),
                 )
                 .arg(
                     Arg::new("erase")
                         .long("erase")
                         .value_name("# of passes")
-                        .takes_value(true)
+                        .num_args(0..=1)
                         .require_equals(true)
                         .help("Securely erase the input file once complete (default is 1 pass)")
-                        .min_values(0)
                         .default_missing_value("1"),
                 )
                 .arg(
                     Arg::new("verbose")
                         .short('v')
                         .long("verbose")
-                        .takes_value(false)
+                        .action(clap::ArgAction::SetTrue)
                         .help("Show a detailed output"),
                 )
                 .arg(
                     Arg::new("hash")
                         .short('H')
                         .long("hash")
-                        .takes_value(false)
+                        .action(clap::ArgAction::SetTrue)
                         .help("Return a BLAKE3 hash of the encrypted file"),
                 )
                 .arg(
                     Arg::new("force")
                         .short('f')
                         .long("force")
-                        .takes_value(false)
+                        .action(clap::ArgAction::SetTrue)
                         .help("Force all actions"),
                 )
         )
@@ -353,7 +345,7 @@ pub fn get_matches() -> clap::ArgMatches {
                         .arg(
                             Arg::new("input")
                                 .value_name("input")
-                                .takes_value(true)
+                                .num_args(1)
                                 .required(true)
                                 .help("The encrypted file/header file"),
                         )
@@ -361,9 +353,8 @@ pub fn get_matches() -> clap::ArgMatches {
                             Arg::new("autogenerate")
                                 .long("auto")
                                 .value_name("# of words")
-                                .min_values(0)
+                                .num_args(0..=1)
                                 .default_missing_value("7")
-                                .takes_value(true)
                                 .require_equals(true)
                                 .help("Autogenerate a passphrase (default is 7 words)")
                                 .conflicts_with("keyfile"),
@@ -373,7 +364,7 @@ pub fn get_matches() -> clap::ArgMatches {
                                 .short('k')
                                 .long("keyfile-old")
                                 .value_name("file")
-                                .takes_value(true)
+                                .num_args(1)
                                 .help("Use an old keyfile to decrypt the master key"),
                         )
                         .arg(
@@ -381,7 +372,7 @@ pub fn get_matches() -> clap::ArgMatches {
                                 .short('n')
                                 .long("keyfile-new")
                                 .value_name("file")
-                                .takes_value(true)
+                                .num_args(1)
                                 .help("Use a keyfile as the new key"),
                         ),
                 )
@@ -392,7 +383,7 @@ pub fn get_matches() -> clap::ArgMatches {
                         .arg(
                             Arg::new("input")
                                 .value_name("input")
-                                .takes_value(true)
+                                .num_args(1)
                                 .required(true)
                                 .help("The encrypted file/header file"),
                         )
@@ -400,9 +391,8 @@ pub fn get_matches() -> clap::ArgMatches {
                             Arg::new("autogenerate")
                                 .long("auto")
                                 .value_name("# of words")
-                                .min_values(0)
+                                .num_args(0..=1)
                                 .default_missing_value("7")
-                                .takes_value(true)
                                 .require_equals(true)
                                 .help("Autogenerate a passphrase (default is 7 words)")
                                 .conflicts_with("keyfile"),
@@ -412,7 +402,7 @@ pub fn get_matches() -> clap::ArgMatches {
                                 .short('k')
                                 .long("keyfile-old")
                                 .value_name("file")
-                                .takes_value(true)
+                                .num_args(1)
                                 .help("Use an old keyfile to decrypt the master key"),
                         )
                         .arg(
@@ -420,7 +410,7 @@ pub fn get_matches() -> clap::ArgMatches {
                                 .short('n')
                                 .long("keyfile-new")
                                 .value_name("file")
-                                .takes_value(true)
+                                .num_args(1)
                                 .help("Use a keyfile as the new key"),
                         ),
                 )
@@ -431,7 +421,7 @@ pub fn get_matches() -> clap::ArgMatches {
                         .arg(
                             Arg::new("input")
                                 .value_name("input")
-                                .takes_value(true)
+                                .num_args(1)
                                 .required(true)
                                 .help("The encrypted file/header file"),
                         )
@@ -440,7 +430,7 @@ pub fn get_matches() -> clap::ArgMatches {
                                 .short('k')
                                 .long("keyfile")
                                 .value_name("file")
-                                .takes_value(true)
+                                .num_args(1)
                                 .help("Use a keyfile to identify the key you want to delete"),
                         ),
                 )
@@ -451,7 +441,7 @@ pub fn get_matches() -> clap::ArgMatches {
                         .arg(
                             Arg::new("input")
                                 .value_name("input")
-                                .takes_value(true)
+                                .num_args(1)
                                 .required(true)
                                 .help("The encrypted file/header file"),
                         )
@@ -460,7 +450,7 @@ pub fn get_matches() -> clap::ArgMatches {
                                 .short('k')
                                 .long("keyfile")
                                 .value_name("file")
-                                .takes_value(true)
+                                .num_args(1)
                                 .help("Verify a keyfile"),
                         ),
                 )
@@ -476,14 +466,14 @@ pub fn get_matches() -> clap::ArgMatches {
                         .arg(
                             Arg::new("input")
                                 .value_name("input")
-                                .takes_value(true)
+                                .num_args(1)
                                 .required(true)
                                 .help("The encrypted file"),
                         )
                         .arg(
                             Arg::new("output")
                                 .value_name("output")
-                                .takes_value(true)
+                                .num_args(1)
                                 .required(true)
                                 .help("The output file"),
                         )
@@ -491,7 +481,7 @@ pub fn get_matches() -> clap::ArgMatches {
                             Arg::new("force")
                                 .short('f')
                                 .long("force")
-                                .takes_value(false)
+                                .action(clap::ArgAction::SetTrue)
                                 .help("Force all actions"),
                         ),
                 )
@@ -502,14 +492,14 @@ pub fn get_matches() -> clap::ArgMatches {
                         .arg(
                             Arg::new("input")
                                 .value_name("input")
-                                .takes_value(true)
+                                .num_args(1)
                                 .required(true)
                                 .help("The dumped header file"),
                         )
                         .arg(
                             Arg::new("output")
                                 .value_name("output")
-                                .takes_value(true)
+                                .num_args(1)
                                 .required(true)
                                 .help("The encrypted file"),
                         ),
@@ -521,7 +511,7 @@ pub fn get_matches() -> clap::ArgMatches {
                         .arg(
                             Arg::new("input")
                                 .value_name("input")
-                                .takes_value(true)
+                                .num_args(1)
                                 .required(true)
                                 .help("The encrypted file"),
                         ),
@@ -533,7 +523,7 @@ pub fn get_matches() -> clap::ArgMatches {
                         .arg(
                             Arg::new("input")
                                 .value_name("input")
-                                .takes_value(true)
+                                .num_args(1)
                                 .required(true)
                                 .help("The encrypted/header file"),
                         ),

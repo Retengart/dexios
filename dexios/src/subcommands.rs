@@ -69,7 +69,7 @@ pub fn unpack(sub_matches: &ArgMatches) -> Result<()> {
 
     let crypto_params = parameter_handler(sub_matches)?;
 
-    let print_mode = if sub_matches.is_present("verbose") {
+    let print_mode = if sub_matches.get_flag("verbose") {
         PrintMode::Verbose
     } else {
         PrintMode::Quiet
@@ -84,12 +84,10 @@ pub fn unpack(sub_matches: &ArgMatches) -> Result<()> {
 }
 
 pub fn hash_stream(sub_matches: &ArgMatches) -> Result<()> {
-    let files: Vec<String> = if sub_matches.is_present("input") {
-        let list: Vec<&str> = sub_matches.values_of("input").unwrap().collect();
-        list.iter().map(std::string::ToString::to_string).collect()
-    } else {
-        Vec::new()
-    };
+    let files: Vec<String> = sub_matches
+        .get_many::<String>("input")
+        .map(|vals| vals.cloned().collect())
+        .unwrap_or_default();
 
     hashing::hash_stream(&files)
 }
