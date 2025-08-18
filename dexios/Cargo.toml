@@ -1,6 +1,6 @@
 [package]
 name = "dexios"
-version = "8.8.1"
+version = "9.0.0"
 authors = ["brxken128 <brxken128@tutanota.com>"]
 readme = "README.md"
 edition = "2024"
@@ -24,7 +24,7 @@ rand = "0.9"
 domain = { package = "dexios-domain", version = "1.0.1", path = "../dexios-domain" }
 core = { package = "dexios-core", path = "../dexios-core", version = "1.2.0" }
 
-clap = { version = "4.5.43", features = ["cargo"] }
+clap = { version = "4.5", features = ["cargo"] }
 anyhow = "1.0.98"
 
 zip = { version = "0.6.6", default-features = false, features = ["zstd"] }

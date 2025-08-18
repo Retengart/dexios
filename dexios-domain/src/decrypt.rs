@@ -3,7 +3,6 @@
 use std::cell::RefCell;
 use std::io::{Read, Seek, Write};
 
-use core::cipher::Ciphers;
 use core::header::{Header, HeaderType};
 use core::key::decrypt_master_key;
 use core::primitives::Mode;

@@ -229,11 +229,11 @@ pub fn get_matches() -> clap::ArgMatches {
                     .help("Store the header separately from the file"),
             )
             .arg(
-                Arg::new("zstd")
-                    .short('z')
-                    .long("zstd")
+                Arg::new("no-compression")
+                    .short('n')
+                    .long("no-compression")
                     .action(clap::ArgAction::SetTrue)
-                    .help("Use ZSTD compression"),
+                    .help("Disable ZSTD compression (compression is enabled by default)"),
             )
             .arg(
                 Arg::new("recursive")

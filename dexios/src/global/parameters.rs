@@ -80,7 +80,7 @@ pub fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
     })
 }
 
-pub fn hashing_algorithm(sub_matches: &ArgMatches) -> HashingAlgorithm {
+pub fn hashing_algorithm(_sub_matches: &ArgMatches) -> HashingAlgorithm {
         HashingAlgorithm::Blake3Balloon(BLAKE3BALLOON_LATEST)
 }
 
@@ -171,10 +171,10 @@ pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams
         EraseSourceDir::Retain
     };
 
-    let compression = if sub_matches.get_flag("zstd") {
-        Compression::Zstd
-    } else {
+    let compression = if sub_matches.get_flag("no-compression") {
         Compression::None
+    } else {
+        Compression::Zstd
     };
 
     let pack_params = PackParams {
