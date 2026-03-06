@@ -18,7 +18,7 @@ homepage = "https://github.com/brxken128/dexios"
 anyhow = "1.0.102"
 blake3 = "1.8.3"
 rand = "0.8.5"
-clap = { version = "3.2.21", features = ["cargo"] }
+clap = { version = "4.5.60", features = ["cargo"] }
 rpassword = "7.4.0"
 zip = { version = "0.6.3", default-features = false, features = ["zstd"] }
 aes-gcm = "0.10.3"
