@@ -244,8 +244,25 @@ impl InMemoryStorage {
 
 #[cfg(test)]
 impl Storage<io::Cursor<Vec<u8>>> for InMemoryStorage {
-    fn create_dir_all<P: AsRef<Path>>(&self, _path: P) -> Result<(), Error> {
-        todo!();
+    fn create_dir_all<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
+        let mut dirs = path
+            .as_ref()
+            .ancestors()
+            .filter(|path| !path.as_os_str().is_empty())
+            .map(Path::to_path_buf)
+            .collect::<Vec<_>>();
+        dirs.reverse();
+
+        for dir in dirs {
+            let existing = self.files().get(&dir).cloned();
+            match existing {
+                Some(IMFile::Dir) => continue,
+                Some(IMFile::File(_)) => return Err(Error::CreateDir),
+                None => self.save_file(dir, IMFile::Dir),
+            }
+        }
+
+        Ok(())
     }
 
     fn create_file<P: AsRef<Path>>(&self, path: P) -> Result<Entry<io::Cursor<Vec<u8>>>, Error> {
