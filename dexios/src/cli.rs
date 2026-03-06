@@ -575,21 +575,21 @@ mod tests {
     fn encrypt_command_accepts_header_and_auto() {
         let matches = super::build_cli()
             .try_get_matches_from([
-                "dexios",
-                "encrypt",
-                "--header",
-                "file.hdr",
-                "--argon",
-                "--auto=7",
-                "in.bin",
+                "dexios", "encrypt", "--header", "file.hdr", "--argon", "--auto=7", "in.bin",
                 "out.enc",
             ])
             .expect("CLI should parse");
 
         let (name, sub) = matches.subcommand().expect("subcommand");
         assert_eq!(name, "encrypt");
-        assert_eq!(sub.get_one::<String>("input").map(String::as_str), Some("in.bin"));
-        assert_eq!(sub.get_one::<String>("output").map(String::as_str), Some("out.enc"));
+        assert_eq!(
+            sub.get_one::<String>("input").map(String::as_str),
+            Some("in.bin")
+        );
+        assert_eq!(
+            sub.get_one::<String>("output").map(String::as_str),
+            Some("out.enc")
+        );
         assert_eq!(
             sub.get_one::<String>("header").map(String::as_str),
             Some("file.hdr")
@@ -620,14 +620,7 @@ mod tests {
     #[test]
     fn pack_command_accepts_multiple_paths_and_zstd() {
         let matches = super::build_cli()
-            .try_get_matches_from([
-                "dexios",
-                "pack",
-                "--zstd",
-                "dir-a",
-                "dir-b",
-                "archive.dex",
-            ])
+            .try_get_matches_from(["dexios", "pack", "--zstd", "dir-a", "dir-b", "archive.dex"])
             .expect("CLI should parse");
 
         let (name, sub) = matches.subcommand().expect("subcommand");
