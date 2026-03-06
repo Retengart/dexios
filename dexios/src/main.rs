@@ -33,32 +33,32 @@ fn main() -> Result<()> {
         Some(("hash", sub_matches)) => {
             subcommands::hash_stream(sub_matches)?;
         }
-        Some(("header", sub_matches)) => match sub_matches.subcommand_name() {
-            Some("dump") => {
+        Some(("header", sub_matches)) => match sub_matches.subcommand() {
+            Some(("dump", _)) => {
                 subcommands::header_dump(sub_matches)?;
             }
-            Some("restore") => {
+            Some(("restore", _)) => {
                 subcommands::header_restore(sub_matches)?;
             }
-            Some("strip") => {
+            Some(("strip", _)) => {
                 subcommands::header_strip(sub_matches)?;
             }
-            Some("details") => {
+            Some(("details", _)) => {
                 subcommands::header_details(sub_matches)?;
             }
             _ => (),
         },
-        Some(("key", sub_matches)) => match sub_matches.subcommand_name() {
-            Some("change") => {
+        Some(("key", sub_matches)) => match sub_matches.subcommand() {
+            Some(("change", _)) => {
                 subcommands::key_change(sub_matches)?;
             }
-            Some("add") => {
+            Some(("add", _)) => {
                 subcommands::key_add(sub_matches)?;
             }
-            Some("del") => {
+            Some(("del", _)) => {
                 subcommands::key_del(sub_matches)?;
             }
-            Some("verify") => {
+            Some(("verify", _)) => {
                 subcommands::key_verify(sub_matches)?;
             }
             _ => (),
