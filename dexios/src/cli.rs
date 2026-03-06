@@ -6,7 +6,7 @@ pub mod prompt;
 // it's long, and clunky, but i feel that's just the nature of the clap builder api
 // it returns the ArgMatches so that a match statement can send everything to the correct place
 #[allow(clippy::too_many_lines)]
-pub fn get_matches() -> clap::ArgMatches {
+pub fn build_cli() -> Command<'static> {
     let encrypt = Command::new("encrypt")
         .short_flag('e')
         .about("Encrypt a file")
@@ -378,7 +378,7 @@ pub fn get_matches() -> clap::ArgMatches {
                                 .takes_value(true)
                                 .require_equals(true)
                                 .help("Autogenerate a passphrase (default is 7 words)")
-                                .conflicts_with("keyfile"),
+                                .conflicts_with("keyfile-new"),
                         )
                         .arg(
                             Arg::new("argon")
@@ -429,7 +429,7 @@ pub fn get_matches() -> clap::ArgMatches {
                                 .takes_value(true)
                                 .require_equals(true)
                                 .help("Autogenerate a passphrase (default is 7 words)")
-                                .conflicts_with("keyfile"),
+                                .conflicts_with("keyfile-new"),
                         )
                         .arg(
                             Arg::new("keyfile-old")
@@ -563,5 +563,117 @@ pub fn get_matches() -> clap::ArgMatches {
                         ),
                 ),
         )
-        .get_matches()
+}
+
+pub fn get_matches() -> clap::ArgMatches {
+    build_cli().get_matches()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn encrypt_command_accepts_header_and_auto() {
+        let matches = super::build_cli()
+            .try_get_matches_from([
+                "dexios",
+                "encrypt",
+                "--header",
+                "file.hdr",
+                "--argon",
+                "--auto=7",
+                "in.bin",
+                "out.enc",
+            ])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "encrypt");
+        assert_eq!(sub.get_one::<String>("input").map(String::as_str), Some("in.bin"));
+        assert_eq!(sub.get_one::<String>("output").map(String::as_str), Some("out.enc"));
+        assert_eq!(
+            sub.get_one::<String>("header").map(String::as_str),
+            Some("file.hdr")
+        );
+        assert_eq!(
+            sub.get_one::<String>("autogenerate").map(String::as_str),
+            Some("7")
+        );
+        assert!(sub.is_present("argon"));
+    }
+
+    #[test]
+    fn hash_command_accepts_multiple_inputs() {
+        let matches = super::build_cli()
+            .try_get_matches_from(["dexios", "hash", "one.bin", "two.bin"])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "hash");
+        let values = sub
+            .get_many::<String>("input")
+            .expect("multiple input files")
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(values, ["one.bin", "two.bin"]);
+    }
+
+    #[test]
+    fn pack_command_accepts_multiple_paths_and_zstd() {
+        let matches = super::build_cli()
+            .try_get_matches_from([
+                "dexios",
+                "pack",
+                "--zstd",
+                "dir-a",
+                "dir-b",
+                "archive.dex",
+            ])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "pack");
+        let values = sub
+            .get_many::<String>("input")
+            .expect("multiple input paths")
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(values, ["dir-a", "dir-b"]);
+        assert_eq!(
+            sub.get_one::<String>("output").map(String::as_str),
+            Some("archive.dex")
+        );
+        assert!(sub.is_present("zstd"));
+    }
+
+    #[test]
+    fn key_add_command_accepts_old_and_new_keyfiles() {
+        let matches = super::build_cli()
+            .try_get_matches_from([
+                "dexios",
+                "key",
+                "add",
+                "-k",
+                "old.key",
+                "-n",
+                "new.key",
+                "cipher.enc",
+            ])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "key");
+        let add = sub.subcommand_matches("add").expect("key add");
+        assert_eq!(
+            add.get_one::<String>("keyfile-old").map(String::as_str),
+            Some("old.key")
+        );
+        assert_eq!(
+            add.get_one::<String>("keyfile-new").map(String::as_str),
+            Some("new.key")
+        );
+        assert_eq!(
+            add.get_one::<String>("input").map(String::as_str),
+            Some("cipher.enc")
+        );
+    }
 }
