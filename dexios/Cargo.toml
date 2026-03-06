@@ -3,15 +3,15 @@ name = "dexios"
 version = "8.8.1"
 authors = ["brxken128 <brxken128@tutanota.com>"]
 readme = "README.md"
-edition = "2021"
+edition.workspace = true
 description = "Secure, fast and authenticated command-line encryption of files with modern algorithms and an audited encryption backend."
 keywords = ["encryption", "utility", "file", "command-line", "secure"]
 categories = ["cryptography", "command-line-utilities"]
 repository = "https://github.com/brxken128/dexios/tree/master/dexios"
-homepage = "https://github.com/brxken128/dexios"
+homepage.workspace = true
 documentation = "https://brxken128.github.io/dexios"
-license = "BSD-2-Clause"
-rust-version = "1.60.0"
+license.workspace = true
+rust-version.workspace = true
 
 # this is for sites other than crates.io, who may still use it
 [badges]
