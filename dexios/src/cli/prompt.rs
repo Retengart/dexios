@@ -1,13 +1,13 @@
 use anyhow::{Context, Result};
-use std::io::{self, stdin, Write};
+use std::io::{self, Write, stdin};
 
 use crate::{
     global::states::{ForceMode, PasswordState},
     question, warn,
 };
 
-use core::protected::Protected;
 use core::Zeroize;
+use core::protected::Protected;
 
 // this handles user-interactivity, specifically getting a "yes" or "no" answer from the user
 // it requires the question itself, if the default is true/false

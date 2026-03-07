@@ -5,7 +5,7 @@ use std::io::{Read, Seek, Write};
 
 use core::cipher::Ciphers;
 use core::header::{HashingAlgorithm, Header, HeaderType, Keyslot};
-use core::primitives::{Mode, ENCRYPTED_MASTER_KEY_LEN};
+use core::primitives::{ENCRYPTED_MASTER_KEY_LEN, Mode};
 use core::protected::Protected;
 use core::stream::EncryptionStreams;
 
@@ -257,7 +257,7 @@ pub mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
+            Ok(()) => {
                 assert_eq!(output_content, V4_ENCRYPTED_CONTENT.to_vec());
             }
             Err(e) => {
@@ -289,7 +289,7 @@ pub mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
+            Ok(()) => {
                 assert_eq!(output_content, V5_ENCRYPTED_CONTENT.to_vec());
             }
             Err(e) => {
@@ -324,7 +324,7 @@ pub mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
+            Ok(()) => {
                 assert_eq!(output_content, V5_ENCRYPTED_FULL_DETACHED_CONTENT.to_vec());
                 assert_eq!(output_header, V5_ENCRYPTED_DETACHED_HEADER.to_vec());
             }

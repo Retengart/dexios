@@ -2,21 +2,25 @@ name: Dexios Tests
 
 on:
   workflow_dispatch:
-    branches: [ master ]
+    branches: [ main ]
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
+
 env:
   CARGO_TERM_COLOR: always
+  DEXIOS_BIN: ${{ github.workspace }}/target/release/dexios
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions-rs/toolchain@v1
-      with:
-          toolchain: stable
+    - uses: actions/checkout@v6.0.2
+    - name: Install Rust toolchain
+      run: rustup toolchain install stable --profile minimal
+    - name: Select Rust toolchain
+      run: rustup default stable
     - name: Restore cargo cache
-      uses: actions/cache@v2.1.7
+      uses: actions/cache@v5.0.3
       with:
         path: |
           ~/.cargo/registry
@@ -24,272 +28,352 @@ jobs:
           target
         key: ${{ runner.os }}-cargo-stable-${{ hashFiles('Cargo.lock') }}
     - name: Build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        args: --release
+      run: cargo build --release -p dexios
     - name: Strip
       run: strip target/release/dexios
     - name: Upload Binary as artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v7.0.0
       with:
         name: dexios
         path: target/release/dexios
         retention-days: 1
+
   stream-mode:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6.0.2
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v8.0.0
       with:
         name: dexios
-        path: target/release/dexios
+        path: target/release
     - name: Make Binary Executable
-      run: chmod +x /home/runner/work/dexios/dexios/target/release/dexios/dexios
+      run: |
+        test -f "$DEXIOS_BIN"
+        chmod +x "$DEXIOS_BIN"
     - name: Generate test file
       run: dd if=/dev/urandom of=100MB.bin bs=1M count=100
     - name: Generate keyfile
       run: dd if=/dev/urandom of=keyfile bs=1 count=4096
+    - name: Save plaintext hash
+      run: sha256sum 100MB.bin > 100MB.bin.sha256
     - name: Encrypt in stream mode (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -eHfk keyfile 100MB.bin 100MB.enc
+      run: '"$DEXIOS_BIN" -eHfk keyfile 100MB.bin 100MB.enc'
     - name: Decrypt in stream mode (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -dHfk keyfile 100MB.enc 100MB.bin
+      run: '"$DEXIOS_BIN" -dHfk keyfile 100MB.enc 100MB.bin'
+    - name: Verify decrypted plaintext (XChaCha20-Poly1305)
+      run: sha256sum -c 100MB.bin.sha256
     - name: Generate test file
       run: dd if=/dev/urandom of=100MB.bin bs=1M count=100
+    - name: Save plaintext hash (AES-256-GCM)
+      run: sha256sum 100MB.bin > 100MB.bin.sha256
     - name: Encrypt in stream mode (AES-256-GCM)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -eHfk keyfile --aes 100MB.bin 100MB.enc
+      run: '"$DEXIOS_BIN" -eHfk keyfile --aes 100MB.bin 100MB.enc'
     - name: Decrypt in stream mode (AES-256-GCM)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -dHfk keyfile 100MB.enc 100MB.bin
+      run: '"$DEXIOS_BIN" -dHfk keyfile 100MB.enc 100MB.bin'
+    - name: Verify decrypted plaintext (AES-256-GCM)
+      run: sha256sum -c 100MB.bin.sha256
+
   header-tests:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6.0.2
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v8.0.0
       with:
         name: dexios
-        path: target/release/dexios
+        path: target/release
     - name: Make Binary Executable
-      run: chmod +x /home/runner/work/dexios/dexios/target/release/dexios/dexios
+      run: |
+        test -f "$DEXIOS_BIN"
+        chmod +x "$DEXIOS_BIN"
     - name: Generate test file
       run: dd if=/dev/urandom of=100MB.bin bs=1M count=100
     - name: Generate keyfile
       run: dd if=/dev/urandom of=keyfile bs=1 count=4096
+    - name: Save plaintext hash
+      run: sha256sum 100MB.bin > 100MB.bin.sha256
     - name: Encrypt in stream mode (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -eHfk keyfile 100MB.bin 100MB.enc
+      run: '"$DEXIOS_BIN" -eHfk keyfile 100MB.bin 100MB.enc'
     - name: Dump Header
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios header dump 100MB.enc 100MB.enc.header
+      run: '"$DEXIOS_BIN" header dump 100MB.enc 100MB.enc.header'
     - name: Strip Header
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios header strip 100MB.enc
+      run: '"$DEXIOS_BIN" header strip 100MB.enc'
     - name: Restore Header
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios header restore 100MB.enc.header 100MB.enc
+      run: '"$DEXIOS_BIN" header restore 100MB.enc.header 100MB.enc'
     - name: Decrypt in stream mode (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -dHfk keyfile 100MB.enc 100MB.bin
+      run: '"$DEXIOS_BIN" -dHfk keyfile 100MB.enc 100MB.bin'
+    - name: Verify restored-header plaintext
+      run: sha256sum -c 100MB.bin.sha256
     - name: Strip Header
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios header strip 100MB.enc
+      run: '"$DEXIOS_BIN" header strip 100MB.enc'
     - name: Decrypt in stream mode with detached header (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -dHfk keyfile --header 100MB.enc.header 100MB.enc 100MB.bin
+      run: '"$DEXIOS_BIN" -dHfk keyfile --header 100MB.enc.header 100MB.enc 100MB.bin'
+    - name: Verify detached-header plaintext
+      run: sha256sum -c 100MB.bin.sha256
+    - name: Save plaintext hash for detached-header encrypt
+      run: sha256sum 100MB.bin > 100MB.detached.sha256
     - name: Encrypt in stream mode to detached header (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -eHfk keyfile --header 100MB.header 100MB.bin 100MB.enc
+      run: '"$DEXIOS_BIN" -eHfk keyfile --header 100MB.header 100MB.bin 100MB.enc'
     - name: Decrypt in stream mode with detached header (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -dHfk keyfile --header 100MB.header 100MB.enc 100MB.bin
+      run: '"$DEXIOS_BIN" -dHfk keyfile --header 100MB.header 100MB.enc 100MB.bin'
+    - name: Verify detached-header roundtrip plaintext
+      run: sha256sum -c 100MB.detached.sha256
+
   hash-standalone-mode:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6.0.2
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v8.0.0
       with:
         name: dexios
-        path: target/release/dexios
+        path: target/release
     - name: Make Binary Executable
-      run: chmod +x /home/runner/work/dexios/dexios/target/release/dexios/dexios
+      run: |
+        test -f "$DEXIOS_BIN"
+        chmod +x "$DEXIOS_BIN"
+    - name: Install b3sum
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y b3sum
     - name: Generate test file
       run: dd if=/dev/urandom of=100MB.bin bs=1M count=100
     - name: Generate keyfile
       run: dd if=/dev/urandom of=keyfile bs=1 count=4096
     - name: Encrypt in stream mode (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -eHfk keyfile 100MB.bin 100MB.enc
+      run: '"$DEXIOS_BIN" -eHfk keyfile 100MB.bin 100MB.enc'
     - name: Decrypt in stream mode (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -dHfk keyfile 100MB.enc 100MB.bin
-    - name: Standalone Hash Mode (with output hashes above to confirm it works)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios hash 100MB.enc
+      run: '"$DEXIOS_BIN" -dHfk keyfile 100MB.enc 100MB.bin'
+    - name: Verify standalone hash output
+      run: |
+        expected_hash="$(b3sum 100MB.enc | awk '{print $1}')"
+        actual_hash="$("$DEXIOS_BIN" hash 100MB.enc | awk 'END { print $3 }')"
+        test "$actual_hash" = "$expected_hash"
+
   erase:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6.0.2
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v8.0.0
       with:
         name: dexios
-        path: target/release/dexios
+        path: target/release
     - name: Make Binary Executable
-      run: chmod +x /home/runner/work/dexios/dexios/target/release/dexios/dexios
+      run: |
+        test -f "$DEXIOS_BIN"
+        chmod +x "$DEXIOS_BIN"
     - name: Generate test file
       run: dd if=/dev/urandom of=100MB.bin bs=1M count=100
     - name: Erase file (standalone mode)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios erase 100MB.bin
+      run: '"$DEXIOS_BIN" erase 100MB.bin'
+
   large-file:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6.0.2
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v8.0.0
       with:
         name: dexios
-        path: target/release/dexios
+        path: target/release
     - name: Make Binary Executable
-      run: chmod +x /home/runner/work/dexios/dexios/target/release/dexios/dexios
+      run: |
+        test -f "$DEXIOS_BIN"
+        chmod +x "$DEXIOS_BIN"
     - name: Generate test file
       run: dd if=/dev/urandom of=1GB.bin bs=1M count=1000
     - name: Generate keyfile
       run: dd if=/dev/urandom of=keyfile bs=1 count=4096
+    - name: Save plaintext hash (XChaCha20-Poly1305)
+      run: sha256sum 1GB.bin > 1GB.bin.sha256
     - name: Encrypt 1GB file (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -eHfk keyfile 1GB.bin 1GB.enc
+      run: '"$DEXIOS_BIN" -eHfk keyfile 1GB.bin 1GB.enc'
     - name: Decrypt 1GB file (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -dHfk keyfile 1GB.enc 1GB.bin
+      run: '"$DEXIOS_BIN" -dHfk keyfile 1GB.enc 1GB.bin'
+    - name: Verify decrypted 1GB plaintext (XChaCha20-Poly1305)
+      run: sha256sum -c 1GB.bin.sha256
     - name: Generate test file
       run: dd if=/dev/urandom of=1GB.bin bs=1M count=1000
+    - name: Save plaintext hash (AES-256-GCM)
+      run: sha256sum 1GB.bin > 1GB.bin.sha256
     - name: Encrypt 1GB file (AES-256-GCM)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -eHfk keyfile --aes 1GB.bin 1GB.enc
+      run: '"$DEXIOS_BIN" -eHfk keyfile --aes 1GB.bin 1GB.enc'
     - name: Decrypt 1GB file (AES-256-GCM)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -dHfk keyfile 1GB.enc 1GB.bin
+      run: '"$DEXIOS_BIN" -dHfk keyfile 1GB.enc 1GB.bin'
+    - name: Verify decrypted 1GB plaintext (AES-256-GCM)
+      run: sha256sum -c 1GB.bin.sha256
+
   small-file:
     needs: build
     runs-on: ubuntu-latest
     steps:
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v8.0.0
       with:
         name: dexios
-        path: target/release/dexios
+        path: target/release
     - name: Make Binary Executable
-      run: chmod +x /home/runner/work/dexios/dexios/target/release/dexios/dexios
+      run: |
+        test -f "$DEXIOS_BIN"
+        chmod +x "$DEXIOS_BIN"
     - name: Generate test file
       run: dd if=/dev/urandom of=1KB.bin bs=1 count=1024
     - name: Generate keyfile
       run: dd if=/dev/urandom of=keyfile bs=1 count=4096
+    - name: Save plaintext hash (XChaCha20-Poly1305)
+      run: sha256sum 1KB.bin > 1KB.bin.sha256
     - name: Encrypt 1KB file (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -eHfk keyfile 1KB.bin 1KB.enc
+      run: '"$DEXIOS_BIN" -eHfk keyfile 1KB.bin 1KB.enc'
     - name: Decrypt 1KB file (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -dHfk keyfile 1KB.enc 1KB.bin
+      run: '"$DEXIOS_BIN" -dHfk keyfile 1KB.enc 1KB.bin'
+    - name: Verify decrypted 1KB plaintext (XChaCha20-Poly1305)
+      run: sha256sum -c 1KB.bin.sha256
     - name: Generate test file
       run: dd if=/dev/urandom of=1KB.bin bs=1 count=1024
+    - name: Save plaintext hash (AES-256-GCM)
+      run: sha256sum 1KB.bin > 1KB.bin.sha256
     - name: Encrypt 1KB file (AES-256-GCM)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -eHfk keyfile --aes 1KB.bin 1KB.enc
+      run: '"$DEXIOS_BIN" -eHfk keyfile --aes 1KB.bin 1KB.enc'
     - name: Decrypt 1KB file (AES-256-GCM)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -dHfk keyfile 1KB.enc 1KB.bin
+      run: '"$DEXIOS_BIN" -dHfk keyfile 1KB.enc 1KB.bin'
+    - name: Verify decrypted 1KB plaintext (AES-256-GCM)
+      run: sha256sum -c 1KB.bin.sha256
+
   pack:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6.0.2
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v8.0.0
       with:
         name: dexios
-        path: target/release/dexios
+        path: target/release
     - name: Make Binary Executable
-      run: chmod +x /home/runner/work/dexios/dexios/target/release/dexios/dexios
+      run: |
+        test -f "$DEXIOS_BIN"
+        chmod +x "$DEXIOS_BIN"
     - name: Make Directory
       run: mkdir test
     - name: Generate test files
       run: dd if=/dev/urandom of=test/1.bin bs=1M count=10 && dd if=/dev/urandom of=test/2.bin bs=1M count=10 && dd if=/dev/urandom of=test/3.bin bs=1M count=10 && dd if=/dev/urandom of=test/4.bin bs=1M count=10
     - name: Generate keyfile
       run: dd if=/dev/urandom of=keyfile bs=1 count=4096
+    - name: Save source manifest
+      run: find test -type f -print0 | sort -z | xargs -0 sha256sum > test.manifest
     - name: Pack+Encrypt test directory (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios pack -fk keyfile test/ output.zip
+      run: '"$DEXIOS_BIN" pack -fk keyfile test/ output.zip'
     - name: Remove Directory
       run: rm -rf test/
     - name: Decrypt+Unpack archive (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios unpack -fk keyfile output.zip .
-    - name: List files in directory
-      run: ls -lla test/
+      run: '"$DEXIOS_BIN" unpack -fk keyfile output.zip .'
+    - name: Save unpacked manifest
+      run: find test -type f -print0 | sort -z | xargs -0 sha256sum > test.after.manifest
+    - name: Verify unpacked files
+      run: diff -u test.manifest test.after.manifest
+
   key-add:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6.0.2
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v8.0.0
       with:
         name: dexios
-        path: target/release/dexios
+        path: target/release
     - name: Make Binary Executable
-      run: chmod +x /home/runner/work/dexios/dexios/target/release/dexios/dexios
+      run: |
+        test -f "$DEXIOS_BIN"
+        chmod +x "$DEXIOS_BIN"
     - name: Generate test file
       run: dd if=/dev/urandom of=100MB.bin bs=1M count=100
     - name: Generate keyfile
       run: dd if=/dev/urandom of=keyfile bs=1 count=4096
     - name: Generate keyfile for test
       run: dd if=/dev/urandom of=keyfile-new bs=1 count=4096
+    - name: Save plaintext hash
+      run: sha256sum 100MB.bin > 100MB.bin.sha256
     - name: Encrypt in stream mode (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -eHfk keyfile 100MB.bin 100MB.enc
+      run: '"$DEXIOS_BIN" -eHfk keyfile 100MB.bin 100MB.enc'
     - name: Add new key (from new keyfile)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios key add -k keyfile -n keyfile-new 100MB.enc
+      run: '"$DEXIOS_BIN" key add -k keyfile -n keyfile-new 100MB.enc'
     - name: Decrypt in stream mode with added key (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -dHfk keyfile-new 100MB.enc 100MB.bin
+      run: '"$DEXIOS_BIN" -dHfk keyfile-new 100MB.enc 100MB.bin'
+    - name: Verify decrypted plaintext
+      run: sha256sum -c 100MB.bin.sha256
     - name: Show header details
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios header details 100MB.enc
+      run: '"$DEXIOS_BIN" header details 100MB.enc'
+
   key-del:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6.0.2
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v8.0.0
       with:
         name: dexios
-        path: target/release/dexios
+        path: target/release
     - name: Make Binary Executable
-      run: chmod +x /home/runner/work/dexios/dexios/target/release/dexios/dexios
+      run: |
+        test -f "$DEXIOS_BIN"
+        chmod +x "$DEXIOS_BIN"
     - name: Generate test file
       run: dd if=/dev/urandom of=100MB.bin bs=1M count=100
     - name: Generate keyfile
       run: dd if=/dev/urandom of=keyfile bs=1 count=4096
     - name: Generate keyfile for test
       run: dd if=/dev/urandom of=keyfile-new bs=1 count=4096
+    - name: Save plaintext hash
+      run: sha256sum 100MB.bin > 100MB.bin.sha256
     - name: Encrypt in stream mode (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -eHfk keyfile 100MB.bin 100MB.enc
+      run: '"$DEXIOS_BIN" -eHfk keyfile 100MB.bin 100MB.enc'
     - name: Add new key (from new keyfile)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios key add -k keyfile -n keyfile-new 100MB.enc
+      run: '"$DEXIOS_BIN" key add -k keyfile -n keyfile-new 100MB.enc'
     - name: Delete the original key
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios key del -k keyfile 100MB.enc
+      run: '"$DEXIOS_BIN" key del -k keyfile 100MB.enc'
     - name: Decrypt in stream mode with added key (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -dHfk keyfile-new 100MB.enc 100MB.bin
+      run: '"$DEXIOS_BIN" -dHfk keyfile-new 100MB.enc 100MB.bin'
+    - name: Verify decrypted plaintext
+      run: sha256sum -c 100MB.bin.sha256
     - name: Show header details
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios header details 100MB.enc
+      run: '"$DEXIOS_BIN" header details 100MB.enc'
+
   key-change:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6.0.2
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v8.0.0
       with:
         name: dexios
-        path: target/release/dexios
+        path: target/release
     - name: Make Binary Executable
-      run: chmod +x /home/runner/work/dexios/dexios/target/release/dexios/dexios
+      run: chmod +x "$DEXIOS_BIN"
     - name: Generate test file
       run: dd if=/dev/urandom of=100MB.bin bs=1M count=100
     - name: Generate keyfile
       run: dd if=/dev/urandom of=keyfile bs=1 count=4096
     - name: Generate keyfile for test
       run: dd if=/dev/urandom of=keyfile-new bs=1 count=4096
+    - name: Save plaintext hash
+      run: sha256sum 100MB.bin > 100MB.bin.sha256
     - name: Encrypt in stream mode (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -eHfk keyfile 100MB.bin 100MB.enc
+      run: '"$DEXIOS_BIN" -eHfk keyfile 100MB.bin 100MB.enc'
     - name: Change the key (from new keyfile)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios key change -k keyfile -n keyfile-new 100MB.enc
+      run: '"$DEXIOS_BIN" key change -k keyfile -n keyfile-new 100MB.enc'
     - name: Decrypt in stream mode with changed key (XChaCha20-Poly1305)
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios -dHfk keyfile-new 100MB.enc 100MB.bin
+      run: '"$DEXIOS_BIN" -dHfk keyfile-new 100MB.enc 100MB.bin'
+    - name: Verify decrypted plaintext
+      run: sha256sum -c 100MB.bin.sha256
     - name: Show header details
-      run: /home/runner/work/dexios/dexios/target/release/dexios/dexios header details 100MB.enc
-      
-      
+      run: '"$DEXIOS_BIN" header details 100MB.enc'

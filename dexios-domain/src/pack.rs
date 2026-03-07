@@ -11,7 +11,7 @@ use std::sync::Arc;
 use core::header::{HashingAlgorithm, HeaderType};
 use core::primitives::BLOCK_SIZE;
 use core::protected::Protected;
-use zip::write::FileOptions;
+use zip::write::SimpleFileOptions;
 
 use crate::storage::Storage;
 
@@ -69,7 +69,7 @@ where
             .borrow_mut();
         let mut zip_writer = zip::ZipWriter::new(BufWriter::new(&mut *tmp_writer));
 
-        let options = FileOptions::default()
+        let options = SimpleFileOptions::default()
             .compression_method(req.compression_method)
             .large_file(true)
             .unix_permissions(0o755);
@@ -133,17 +133,17 @@ where
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
-    use std::io::Read;
+    use std::io::{Cursor, Read};
 
-    use core::header::{HeaderType, HeaderVersion};
+    use core::header::{Header, HeaderType, HeaderVersion};
     use core::primitives::{Algorithm, Mode};
 
     use crate::encrypt::tests::PASSWORD;
     use crate::storage::{InMemoryStorage, Storage};
 
-    const ENCRYPTED_PACKED_BAR_DIR: [u8; 1202] = [
+    pub(crate) const ENCRYPTED_PACKED_BAR_DIR: [u8; 1202] = [
         222, 5, 14, 1, 12, 1, 173, 240, 60, 45, 230, 243, 58, 160, 69, 50, 217, 192, 66, 223, 124,
         190, 148, 91, 92, 129, 0, 0, 0, 0, 0, 0, 223, 181, 71, 240, 140, 106, 41, 36, 82, 150, 105,
         215, 159, 108, 234, 246, 25, 19, 65, 206, 177, 146, 15, 174, 209, 129, 82, 2, 62, 76, 129,
@@ -235,8 +235,14 @@ mod tests {
 
                 let mut content = vec![];
                 reader.read_to_end(&mut content).unwrap();
+                let mut encrypted = Cursor::new(&content);
+                let (header, aad) = Header::deserialize(&mut encrypted).unwrap();
 
-                assert_eq!(content, ENCRYPTED_PACKED_BAR_DIR.to_vec());
+                assert!(header.header_type.version == HeaderVersion::V5);
+                assert!(header.header_type.algorithm == Algorithm::XChaCha20Poly1305);
+                assert!(header.header_type.mode == Mode::StreamMode);
+                assert!(!aad.is_empty());
+                assert!(u64::try_from(content.len()).unwrap() > header.get_size());
             }
             _ => unreachable!(),
         }

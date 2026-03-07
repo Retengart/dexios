@@ -2,11 +2,11 @@ name: Build and Upload
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
   workflow_dispatch:
-    branches: [ master ]
+    branches: [ main ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -16,16 +16,16 @@ jobs:
     name: clippy (ubuntu-latest, stable)
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6.0.2
 
-    - uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        override: true
-        components: clippy
+    - name: Install Rust toolchain
+      run: rustup toolchain install stable --profile minimal --component clippy
+
+    - name: Select Rust toolchain
+      run: rustup default stable
 
     - name: Restore cargo cache
-      uses: actions/cache@v2.1.7
+      uses: actions/cache@v5.0.3
       with:
         path: |
           ~/.cargo/registry
@@ -34,23 +34,22 @@ jobs:
         key: ${{ runner.os }}-cargo-stable-${{ hashFiles('Cargo.lock') }}
 
     - name: Clippy
-      uses: actions-rs/cargo@v1
-      with:
-        command: clippy
-        args: --no-deps
+      run: cargo clippy --workspace --all-targets --all-features --no-deps
 
   check:
     name: check (ubuntu-latest, stable)
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6.0.2
 
-    - uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
+    - name: Install Rust toolchain
+      run: rustup toolchain install stable --profile minimal
+
+    - name: Select Rust toolchain
+      run: rustup default stable
 
     - name: Restore cargo cache
-      uses: actions/cache@v2.1.7
+      uses: actions/cache@v5.0.3
       with:
         path: |
           ~/.cargo/registry
@@ -59,10 +58,7 @@ jobs:
         key: ${{ runner.os }}-cargo-stable-${{ hashFiles('Cargo.lock') }}
 
     - name: Check
-      uses: actions-rs/cargo@v1
-      with:
-        command: check
-        args: --release
+      run: cargo check --workspace --all-targets --release
 
   build:
     strategy:
@@ -77,17 +73,16 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6.0.2
 
-      - name: Toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: ${{ matrix.rust }}
-          override: true
+      - name: Install Rust toolchain
+        run: rustup toolchain install ${{ matrix.rust }} --profile minimal
+
+      - name: Select Rust toolchain
+        run: rustup default ${{ matrix.rust }}
 
       - name: Restore cargo cache
-        uses: actions/cache@v2.1.7
+        uses: actions/cache@v5.0.3
         with:
           path: |
             ~/.cargo/registry
@@ -96,10 +91,7 @@ jobs:
           key: ${{ matrix.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('Cargo.lock') }}
 
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release
+        run: cargo build --release
 
       - if: matrix.os != 'windows-latest'
         name: Strip
@@ -111,19 +103,19 @@ jobs:
 
       - if: matrix.os == 'ubuntu-latest'
         name: Upload Binary as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: dexios-linux-amd64
           path: target/release/dexios
       - if: matrix.os == 'macos-latest'
         name: Upload Binary as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: dexios-macos-amd64
           path: target/release/dexios
       - if: matrix.os == 'windows-latest'
         name: Upload Binary as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: dexios-windows-amd64
           path: target/release/dexios.exe

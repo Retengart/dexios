@@ -2,7 +2,7 @@
 //!
 //! This will not be effective on flash storage, and if you are planning to release a program that uses this function, I'd recommend putting the default number of passes to 1.
 
-use rand::RngCore;
+use rand::Rng;
 use std::cell::RefCell;
 use std::fmt;
 use std::io::{Seek, Write};
@@ -41,12 +41,12 @@ pub fn execute<W: Write + Seek>(req: Request<'_, W>) -> Result<(), Error> {
     for _ in 0..req.passes {
         writer.rewind().map_err(|_| Error::ResetCursorPosition)?;
 
-        let mut blocks = vec![BLOCK_SIZE].repeat(req.buf_capacity / BLOCK_SIZE);
+        let mut blocks = [BLOCK_SIZE].repeat(req.buf_capacity / BLOCK_SIZE);
         blocks.push(req.buf_capacity % BLOCK_SIZE);
 
         for block_size in blocks.into_iter().take_while(|bs| *bs > 0) {
             let mut block_buf = Vec::with_capacity(block_size);
-            rand::thread_rng().fill_bytes(&mut block_buf);
+            rand::rng().fill_bytes(&mut block_buf);
             writer
                 .write_all(&block_buf)
                 .map_err(|_| Error::OverwriteWithRandomBytes)?;
@@ -69,7 +69,7 @@ mod tests {
 
     fn make_test(capacity: usize, passes: i32) {
         let mut buf = Vec::with_capacity(capacity);
-        rand::thread_rng().fill_bytes(&mut buf);
+        rand::rng().fill_bytes(&mut buf);
 
         let writer = Cursor::new(&mut buf);
 
@@ -80,9 +80,9 @@ mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
+            Ok(()) => {
                 assert_eq!(buf.len(), capacity);
-                assert_eq!(buf, vec![0].repeat(capacity));
+                assert_eq!(buf, [0].repeat(capacity));
             }
             _ => unreachable!(),
         }

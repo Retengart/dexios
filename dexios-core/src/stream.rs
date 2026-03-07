@@ -29,8 +29,8 @@
 use std::io::{Read, Write};
 
 use aead::{
-    stream::{DecryptorLE31, EncryptorLE31},
     KeyInit, Payload,
+    stream::{DecryptorLE31, EncryptorLE31},
 };
 use aes_gcm::Aes256Gcm;
 use anyhow::Context;
