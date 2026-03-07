@@ -668,4 +668,145 @@ mod tests {
             Some("cipher.enc")
         );
     }
+
+    #[test]
+    fn key_change_command_accepts_argon_and_old_new_keyfiles() {
+        let matches = super::build_cli()
+            .try_get_matches_from([
+                "dexios",
+                "key",
+                "change",
+                "--argon",
+                "-k",
+                "old.key",
+                "-n",
+                "new.key",
+                "cipher.enc",
+            ])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "key");
+        let change = sub.subcommand_matches("change").expect("key change");
+        assert!(change.get_flag("argon"));
+        assert_eq!(
+            change.get_one::<String>("keyfile-old").map(String::as_str),
+            Some("old.key")
+        );
+        assert_eq!(
+            change.get_one::<String>("keyfile-new").map(String::as_str),
+            Some("new.key")
+        );
+        assert_eq!(
+            change.get_one::<String>("input").map(String::as_str),
+            Some("cipher.enc")
+        );
+    }
+
+    #[test]
+    fn key_del_command_accepts_input_and_keyfile() {
+        let matches = super::build_cli()
+            .try_get_matches_from(["dexios", "key", "del", "-k", "keyfile.bin", "cipher.enc"])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "key");
+        let del = sub.subcommand_matches("del").expect("key del");
+        assert_eq!(
+            del.get_one::<String>("keyfile").map(String::as_str),
+            Some("keyfile.bin")
+        );
+        assert_eq!(
+            del.get_one::<String>("input").map(String::as_str),
+            Some("cipher.enc")
+        );
+    }
+
+    #[test]
+    fn key_verify_command_accepts_input_and_keyfile() {
+        let matches = super::build_cli()
+            .try_get_matches_from(["dexios", "key", "verify", "-k", "keyfile.bin", "cipher.enc"])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "key");
+        let verify = sub.subcommand_matches("verify").expect("key verify");
+        assert_eq!(
+            verify.get_one::<String>("keyfile").map(String::as_str),
+            Some("keyfile.bin")
+        );
+        assert_eq!(
+            verify.get_one::<String>("input").map(String::as_str),
+            Some("cipher.enc")
+        );
+    }
+
+    #[test]
+    fn header_dump_command_accepts_input_output_and_force() {
+        let matches = super::build_cli()
+            .try_get_matches_from(["dexios", "header", "dump", "-f", "cipher.enc", "dump.hdr"])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "header");
+        let dump = sub.subcommand_matches("dump").expect("header dump");
+        assert!(dump.get_flag("force"));
+        assert_eq!(
+            dump.get_one::<String>("input").map(String::as_str),
+            Some("cipher.enc")
+        );
+        assert_eq!(
+            dump.get_one::<String>("output").map(String::as_str),
+            Some("dump.hdr")
+        );
+    }
+
+    #[test]
+    fn header_restore_command_accepts_input_and_output() {
+        let matches = super::build_cli()
+            .try_get_matches_from(["dexios", "header", "restore", "dump.hdr", "cipher.enc"])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "header");
+        let restore = sub.subcommand_matches("restore").expect("header restore");
+        assert_eq!(
+            restore.get_one::<String>("input").map(String::as_str),
+            Some("dump.hdr")
+        );
+        assert_eq!(
+            restore.get_one::<String>("output").map(String::as_str),
+            Some("cipher.enc")
+        );
+    }
+
+    #[test]
+    fn header_strip_command_accepts_input() {
+        let matches = super::build_cli()
+            .try_get_matches_from(["dexios", "header", "strip", "cipher.enc"])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "header");
+        let strip = sub.subcommand_matches("strip").expect("header strip");
+        assert_eq!(
+            strip.get_one::<String>("input").map(String::as_str),
+            Some("cipher.enc")
+        );
+    }
+
+    #[test]
+    fn header_details_command_accepts_input() {
+        let matches = super::build_cli()
+            .try_get_matches_from(["dexios", "header", "details", "cipher.enc"])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "header");
+        let details = sub.subcommand_matches("details").expect("header details");
+        assert_eq!(
+            details.get_one::<String>("input").map(String::as_str),
+            Some("cipher.enc")
+        );
+    }
 }
