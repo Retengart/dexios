@@ -2,9 +2,9 @@
 
 #[cfg(test)]
 mod test {
-    use core::primitives::{get_nonce_len, Algorithm, Mode, MASTER_KEY_LEN, SALT_LEN};
+    use core::primitives::{Algorithm, MASTER_KEY_LEN, Mode, SALT_LEN, get_nonce_len};
     use core::protected::Protected;
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     const SALT_SEED: u64 = 123_456;
     const NONCE_SEED: u64 = SALT_SEED + 1;

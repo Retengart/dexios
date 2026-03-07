@@ -8,8 +8,9 @@ use std::path::PathBuf;
 #[test]
 fn should_create_a_new_file() {
     let stor = TestFileStorage::new(1);
+    let create_result = stor.create_file("hello_1.txt");
 
-    match stor.create_file("hello_1.txt") {
+    match create_result {
         Ok(_) => match fs::File::open("hello_1.txt") {
             Ok(_) => {}
             _ => unreachable!(),
@@ -22,8 +23,9 @@ fn should_create_a_new_file() {
 fn should_throw_an_error_if_file_already_exist() {
     let stor = TestFileStorage::new(2);
     add_hello_txt(&stor).unwrap();
+    let create_result = stor.create_file("hello_2.txt");
 
-    match stor.create_file("hello_2.txt") {
+    match create_result {
         Err(Error::CreateFile) => {}
         _ => unreachable!(),
     }
@@ -32,8 +34,9 @@ fn should_throw_an_error_if_file_already_exist() {
 #[test]
 fn should_not_open_file_to_read() {
     let stor = TestFileStorage::new(3);
+    let read_result = stor.read_file("hello_3.txt");
 
-    match stor.read_file("hello_3.txt") {
+    match read_result {
         Err(Error::OpenFile(FileMode::Read)) => {}
         _ => unreachable!(),
     }
@@ -42,8 +45,9 @@ fn should_not_open_file_to_read() {
 #[test]
 fn should_not_open_file_to_write() {
     let stor = TestFileStorage::new(4);
+    let write_result = stor.write_file("hello_4.txt");
 
-    match stor.write_file("hello_4.txt") {
+    match write_result {
         Err(Error::OpenFile(FileMode::Write)) => {}
         _ => unreachable!(),
     }
@@ -53,8 +57,9 @@ fn should_not_open_file_to_write() {
 fn should_open_exist_file_in_read_mode() {
     let stor = TestFileStorage::new(5);
     add_hello_txt(&stor).unwrap();
+    let read_result = stor.read_file("hello_5.txt");
 
-    match stor.read_file("hello_5.txt") {
+    match read_result {
         Ok(file) => {
             let mut file_buf = vec![];
             file.try_reader()
@@ -74,8 +79,9 @@ fn should_open_exist_file_in_read_mode() {
 fn should_open_exist_file_in_write_mode() {
     let stor = TestFileStorage::new(6);
     add_hello_txt(&stor).unwrap();
+    let write_result = stor.write_file("hello_6.txt");
 
-    match stor.write_file("hello_6.txt") {
+    match write_result {
         Ok(file) => {
             file.try_writer()
                 .unwrap()
@@ -175,8 +181,9 @@ fn should_get_file_length() {
 fn should_open_dir() {
     let stor = TestFileStorage::new(11);
     add_bar_foo_folder(&stor).unwrap();
+    let read_result = stor.read_file("bar_11/foo/");
 
-    match stor.read_file("bar_11/foo/") {
+    match read_result {
         Ok(Entry::Dir(path)) => assert_eq!(path, PathBuf::from("bar_11/foo/")),
         _ => unreachable!(),
     }
@@ -223,8 +230,9 @@ fn should_return_file_names_of_dir_subfiles() {
     add_bar_foo_folder(&stor).unwrap();
 
     let file = stor.read_file("bar_14/").unwrap();
+    let read_dir_result = stor.read_dir(&file);
 
-    match stor.read_dir(&file) {
+    match read_dir_result {
         Ok(files) => {
             let file_names = files
                 .iter()
@@ -253,8 +261,9 @@ fn should_include_hidden_files_names() {
     add_bar_foo_folder_with_hidden(&stor).unwrap();
 
     let file = stor.read_file("bar_15/").unwrap();
+    let read_dir_result = stor.read_dir(&file);
 
-    match stor.read_dir(&file) {
+    match read_dir_result {
         Ok(files) => {
             let file_names = files
                 .iter()

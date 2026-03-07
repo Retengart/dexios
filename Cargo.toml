@@ -6,10 +6,10 @@ members = [
     "dexios-core",
     "dexios-domain",
 ]
-resolver = "2"
+resolver = "3"
 
 [workspace.package]
-edition = "2021"
+edition = "2024"
 rust-version = "1.93"
 license = "BSD-2-Clause"
 homepage = "https://github.com/brxken128/dexios"

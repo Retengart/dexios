@@ -65,7 +65,7 @@ pub fn argon2id_hash(
         HeaderVersion::V4 | HeaderVersion::V5 => {
             return Err(anyhow::anyhow!(
                 "argon2id is not supported on header versions above V3."
-            ))
+            ));
         }
     };
 
