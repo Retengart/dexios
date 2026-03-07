@@ -3,7 +3,10 @@ name = "dexios-core"
 description = "A library for encrypting/decrypting, password hashing, and for managing encrypted file headers that adhere to the Dexios format."
 version = "1.2.0"
 readme = "README.md"
-authors = ["brxken128 <brxken128@tutanota.com>"]
+authors = [
+    "brxken128 <brxken128@tutanota.com>",
+    "Retengart <119082209+Retengart@users.noreply.github.com>",
+]
 homepage.workspace = true
 repository = "https://github.com/brxken128/dexios/tree/master/dexios-core"
 documentation = "https://docs.rs/dexios-core/latest/dexios_core/"
