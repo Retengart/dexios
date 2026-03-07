@@ -10,8 +10,8 @@ fn assert_argon2_vector(version: HeaderVersion, salt: [u8; 16], expected: [u8; 3
 }
 
 fn assert_balloon_vector(version: HeaderVersion, salt: [u8; 16], expected: [u8; 32]) {
-    let key =
-        balloon_hash(Protected::new(b"test-password".to_vec()), &salt, &version).expect("balloon hash");
+    let key = balloon_hash(Protected::new(b"test-password".to_vec()), &salt, &version)
+        .expect("balloon hash");
 
     assert_eq!(key.expose(), &expected);
 }
@@ -22,8 +22,8 @@ fn argon2id_v1_matches_known_vector() {
         HeaderVersion::V1,
         [1u8; 16],
         [
-            235, 25, 229, 163, 131, 5, 207, 223, 87, 2, 224, 123, 68, 166, 74, 100, 210, 164,
-            130, 29, 62, 86, 80, 221, 103, 49, 102, 222, 58, 208, 243, 103,
+            235, 25, 229, 163, 131, 5, 207, 223, 87, 2, 224, 123, 68, 166, 74, 100, 210, 164, 130,
+            29, 62, 86, 80, 221, 103, 49, 102, 222, 58, 208, 243, 103,
         ],
     );
 }
