@@ -2,7 +2,7 @@ use dexios_core::header::{HashingAlgorithm, HeaderVersion};
 use dexios_core::key::{argon2id_hash, balloon_hash};
 use dexios_core::protected::Protected;
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Deserialize)]
 struct VectorFile {
@@ -49,6 +49,12 @@ fn decode_hex<const N: usize>(hex: &str) -> [u8; N] {
 #[test]
 fn kdf_vector_file_contains_expected_cases() {
     let vectors = load_vectors();
+    let mut seen_pairs = BTreeSet::new();
+
+    for vector in &vectors {
+        assert!(seen_pairs.insert((vector.algorithm.as_str(), vector.version.as_str())));
+    }
+
     assert!(
         vectors
             .iter()
@@ -92,8 +98,12 @@ fn assert_argon2_vector(version: HeaderVersion, version_id: &str) {
     let vector = find_vector(&vectors, "argon2id", version_id);
     let salt = decode_hex::<16>(&vector.salt_hex);
     let expected = decode_hex::<32>(&vector.expected_hex);
-    let key = argon2id_hash(Protected::new(vector.password.as_bytes().to_vec()), &salt, &version)
-        .expect("argon2 hash");
+    let key = argon2id_hash(
+        Protected::new(vector.password.as_bytes().to_vec()),
+        &salt,
+        &version,
+    )
+    .expect("argon2 hash");
 
     assert_eq!(key.expose(), &expected);
 }
@@ -103,8 +113,12 @@ fn assert_balloon_vector(version: HeaderVersion, version_id: &str) {
     let vector = find_vector(&vectors, "balloon", version_id);
     let salt = decode_hex::<16>(&vector.salt_hex);
     let expected = decode_hex::<32>(&vector.expected_hex);
-    let key = balloon_hash(Protected::new(vector.password.as_bytes().to_vec()), &salt, &version)
-        .expect("balloon hash");
+    let key = balloon_hash(
+        Protected::new(vector.password.as_bytes().to_vec()),
+        &salt,
+        &version,
+    )
+    .expect("balloon hash");
 
     assert_eq!(key.expose(), &expected);
 }
