@@ -37,7 +37,7 @@ use crate::{
     protected::Protected,
 };
 
-use super::primitives::{get_nonce_len, Algorithm, Mode, ENCRYPTED_MASTER_KEY_LEN, SALT_LEN};
+use super::primitives::{Algorithm, ENCRYPTED_MASTER_KEY_LEN, Mode, SALT_LEN, get_nonce_len};
 use anyhow::{Context, Result};
 use std::io::{Cursor, Read, Seek, Write};
 

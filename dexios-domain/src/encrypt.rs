@@ -5,7 +5,7 @@ use std::io::{Read, Seek, Write};
 
 use core::cipher::Ciphers;
 use core::header::{HashingAlgorithm, Header, HeaderType, Keyslot};
-use core::primitives::{Mode, ENCRYPTED_MASTER_KEY_LEN};
+use core::primitives::{ENCRYPTED_MASTER_KEY_LEN, Mode};
 use core::protected::Protected;
 use core::stream::EncryptionStreams;
 
