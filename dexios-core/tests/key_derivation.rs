@@ -1,4 +1,4 @@
-use dexios_core::header::HeaderVersion;
+use dexios_core::header::{HashingAlgorithm, HeaderVersion};
 use dexios_core::key::{argon2id_hash, balloon_hash};
 use dexios_core::protected::Protected;
 use serde::Deserialize;
@@ -109,6 +109,18 @@ fn assert_balloon_vector(version: HeaderVersion, version_id: &str) {
     assert_eq!(key.expose(), &expected);
 }
 
+fn assert_mapping_vector(algorithm: HashingAlgorithm, algorithm_name: &str, version_id: &str) {
+    let vectors = load_vectors();
+    let vector = find_vector(&vectors, algorithm_name, version_id);
+    let salt = decode_hex::<16>(&vector.salt_hex);
+    let expected = decode_hex::<32>(&vector.expected_hex);
+    let key = algorithm
+        .hash(Protected::new(vector.password.as_bytes().to_vec()), &salt)
+        .expect("mapped KDF hash");
+
+    assert_eq!(key.expose(), &expected);
+}
+
 #[test]
 fn argon2id_v1_matches_known_vector() {
     assert_argon2_vector(HeaderVersion::V1, "V1");
@@ -132,4 +144,33 @@ fn balloon_hash_v4_matches_known_vector() {
 #[test]
 fn balloon_hash_v5_matches_known_vector() {
     assert_balloon_vector(HeaderVersion::V5, "V5");
+}
+
+#[test]
+fn hashing_algorithm_argon2id_routes_versions_1_through_3() {
+    assert_mapping_vector(HashingAlgorithm::Argon2id(1), "argon2id", "V1");
+    assert_mapping_vector(HashingAlgorithm::Argon2id(2), "argon2id", "V2");
+    assert_mapping_vector(HashingAlgorithm::Argon2id(3), "argon2id", "V3");
+}
+
+#[test]
+fn hashing_algorithm_balloon_routes_versions_4_and_5() {
+    assert_mapping_vector(HashingAlgorithm::Blake3Balloon(4), "balloon", "V4");
+    assert_mapping_vector(HashingAlgorithm::Blake3Balloon(5), "balloon", "V5");
+}
+
+#[test]
+fn hashing_algorithm_rejects_unsupported_versions() {
+    let salt = [9u8; 16];
+
+    assert!(
+        HashingAlgorithm::Argon2id(99)
+            .hash(Protected::new(b"test-password".to_vec()), &salt)
+            .is_err()
+    );
+    assert!(
+        HashingAlgorithm::Blake3Balloon(99)
+            .hash(Protected::new(b"test-password".to_vec()), &salt)
+            .is_err()
+    );
 }
