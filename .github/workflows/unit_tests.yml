@@ -19,7 +19,7 @@ jobs:
           # - windows-latest
           - macos-latest
         rust:
-          - "1.93"
+          - "1.88"
           - stable
           - beta
           - nightly
@@ -43,4 +43,4 @@ jobs:
           key: ${{ matrix.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('Cargo.lock') }}
 
       - name: Run tests
-        run: cargo +${{ matrix.rust }} test --workspace --all-features --release --verbose
+        run: cargo test --workspace --all-features --release --verbose
