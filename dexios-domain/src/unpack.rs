@@ -138,6 +138,9 @@ pub fn execute<RW: Read + Write + Seek>(
             .iter()
             .filter(|(_, _, is_dir)| !*is_dir)
             .try_for_each(|(full_path, i, _)| {
+                if let Some(parent_dir) = full_path.parent() {
+                    stor.create_dir_all(parent_dir).map_err(Error::Storage)?;
+                }
                 let mut zip_file = archive.by_index(*i).map_err(|_| Error::OpenArchivedFile)?;
                 let file = stor
                     .create_file(full_path)
