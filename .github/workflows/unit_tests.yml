@@ -2,9 +2,9 @@ name: Unit tests
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -19,7 +19,6 @@ jobs:
           # - windows-latest
           - macos-latest
         rust:
-          - "1.88"
           - stable
           - beta
           - nightly

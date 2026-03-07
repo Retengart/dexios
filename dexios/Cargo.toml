@@ -1,7 +1,10 @@
 [package]
 name = "dexios"
-version = "8.8.1"
-authors = ["brxken128 <brxken128@tutanota.com>"]
+version = "8.9.0"
+authors = [
+    "brxken128 <brxken128@tutanota.com>",
+    "Retengart <119082209+Retengart@users.noreply.github.com>",
+]
 readme = "README.md"
 edition.workspace = true
 description = "Secure, fast and authenticated command-line encryption of files with modern algorithms and an audited encryption backend."

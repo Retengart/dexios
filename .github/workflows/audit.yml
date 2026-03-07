@@ -12,9 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
       - name: Install Rust toolchain
-        run: rustup toolchain install 1.88 --profile minimal
+        run: rustup toolchain install stable --profile minimal
       - name: Select Rust toolchain
-        run: rustup default 1.88
+        run: rustup default stable
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked --version 0.22.1
       - name: Run cargo-audit

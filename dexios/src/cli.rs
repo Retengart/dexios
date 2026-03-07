@@ -146,7 +146,7 @@ pub fn build_cli() -> Command {
 
     Command::new("dexios")
         .version(clap::crate_version!())
-        .author("brxken128 <brxken128@tutanota.com>")
+        .author(clap::crate_authors!("\n"))
         .about("Secure, fast and modern command-line encryption of files.")
         .subcommand_required(true)
         .arg_required_else_help(true)

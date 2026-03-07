@@ -366,7 +366,7 @@ dependencies = [
 
 [[package]]
 name = "dexios"
-version = "8.8.1"
+version = "8.9.0"
 dependencies = [
  "anyhow",
  "blake3",
