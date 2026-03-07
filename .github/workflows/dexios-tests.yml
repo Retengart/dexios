@@ -276,12 +276,16 @@ jobs:
       run: dd if=/dev/urandom of=keyfile bs=1 count=4096
     - name: Generate keyfile for test
       run: dd if=/dev/urandom of=keyfile-new bs=1 count=4096
+    - name: Save plaintext hash
+      run: sha256sum 100MB.bin > 100MB.bin.sha256
     - name: Encrypt in stream mode (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -eHfk keyfile 100MB.bin 100MB.enc'
     - name: Add new key (from new keyfile)
       run: '"$DEXIOS_BIN" key add -k keyfile -n keyfile-new 100MB.enc'
     - name: Decrypt in stream mode with added key (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -dHfk keyfile-new 100MB.enc 100MB.bin'
+    - name: Verify decrypted plaintext
+      run: sha256sum -c 100MB.bin.sha256
     - name: Show header details
       run: '"$DEXIOS_BIN" header details 100MB.enc'
 
@@ -305,6 +309,8 @@ jobs:
       run: dd if=/dev/urandom of=keyfile bs=1 count=4096
     - name: Generate keyfile for test
       run: dd if=/dev/urandom of=keyfile-new bs=1 count=4096
+    - name: Save plaintext hash
+      run: sha256sum 100MB.bin > 100MB.bin.sha256
     - name: Encrypt in stream mode (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -eHfk keyfile 100MB.bin 100MB.enc'
     - name: Add new key (from new keyfile)
@@ -313,6 +319,8 @@ jobs:
       run: '"$DEXIOS_BIN" key del -k keyfile 100MB.enc'
     - name: Decrypt in stream mode with added key (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -dHfk keyfile-new 100MB.enc 100MB.bin'
+    - name: Verify decrypted plaintext
+      run: sha256sum -c 100MB.bin.sha256
     - name: Show header details
       run: '"$DEXIOS_BIN" header details 100MB.enc'
 
@@ -334,11 +342,15 @@ jobs:
       run: dd if=/dev/urandom of=keyfile bs=1 count=4096
     - name: Generate keyfile for test
       run: dd if=/dev/urandom of=keyfile-new bs=1 count=4096
+    - name: Save plaintext hash
+      run: sha256sum 100MB.bin > 100MB.bin.sha256
     - name: Encrypt in stream mode (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -eHfk keyfile 100MB.bin 100MB.enc'
     - name: Change the key (from new keyfile)
       run: '"$DEXIOS_BIN" key change -k keyfile -n keyfile-new 100MB.enc'
     - name: Decrypt in stream mode with changed key (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -dHfk keyfile-new 100MB.enc 100MB.bin'
+    - name: Verify decrypted plaintext
+      run: sha256sum -c 100MB.bin.sha256
     - name: Show header details
       run: '"$DEXIOS_BIN" header details 100MB.enc'
