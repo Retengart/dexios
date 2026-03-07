@@ -129,20 +129,21 @@ impl Key {
         params: &KeyParams,
         keyfile_descriptor: &str,
     ) -> Result<Self> {
-        let key = if sub_matches.get_one::<String>(keyfile_descriptor).is_some() && params.keyfile {
-            Key::Keyfile(
-                sub_matches
-                    .get_one::<String>(keyfile_descriptor)
-                    .context("No keyfile/invalid text provided")?
-                    .to_string(),
-            )
+        let keyfile = sub_matches
+            .try_get_one::<String>(keyfile_descriptor)
+            .ok()
+            .flatten();
+        let autogenerate = sub_matches
+            .try_get_one::<String>("autogenerate")
+            .ok()
+            .flatten();
+
+        let key = if let (Some(path), true) = (keyfile, params.keyfile) {
+            Key::Keyfile(path.to_string())
         } else if std::env::var("DEXIOS_KEY").is_ok() && params.env {
             Key::Env
-        } else if sub_matches.get_one::<String>("autogenerate").is_some() && params.autogenerate {
-            let result = sub_matches
-                .get_one::<String>("autogenerate")
-                .context("No amount of words specified")?
-                .parse::<i32>();
+        } else if let (Some(words), true) = (autogenerate, params.autogenerate) {
+            let result = words.parse::<i32>();
             if let Ok(value) = result {
                 Key::Generate(value)
             } else {
