@@ -1,5 +1,30 @@
 // TODO(pleshevskiy): dedup these utils
 
+use std::fmt::Write as _;
+
+#[must_use]
+pub fn hex_encode(bytes: &[u8]) -> String {
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        write!(&mut encoded, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    encoded
+}
+
+#[cfg(test)]
+pub use test::gen_master_key;
+#[cfg(test)]
+pub use test::gen_nonce;
+#[cfg(test)]
+pub use test::gen_salt;
+
+#[cfg(not(test))]
+pub use core::primitives::gen_master_key;
+#[cfg(not(test))]
+pub use core::primitives::gen_nonce;
+#[cfg(not(test))]
+pub use core::primitives::gen_salt;
+
 #[cfg(test)]
 mod test {
     use core::primitives::{Algorithm, MASTER_KEY_LEN, Mode, SALT_LEN, get_nonce_len};
@@ -32,22 +57,3 @@ mod test {
         Protected::new(master_key)
     }
 }
-
-#[must_use]
-pub fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
-}
-
-#[cfg(test)]
-pub use test::gen_master_key;
-#[cfg(test)]
-pub use test::gen_nonce;
-#[cfg(test)]
-pub use test::gen_salt;
-
-#[cfg(not(test))]
-pub use core::primitives::gen_master_key;
-#[cfg(not(test))]
-pub use core::primitives::gen_nonce;
-#[cfg(not(test))]
-pub use core::primitives::gen_salt;

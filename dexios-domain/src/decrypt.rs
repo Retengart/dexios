@@ -170,7 +170,7 @@ mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
+            Ok(()) => {
                 assert_eq!(output_content, "Hello world".as_bytes().to_vec());
             }
             _ => unreachable!(),
@@ -194,7 +194,7 @@ mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
+            Ok(()) => {
                 assert_eq!(output_content, "Hello world".as_bytes().to_vec());
             }
             _ => unreachable!(),
@@ -221,7 +221,7 @@ mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
+            Ok(()) => {
                 assert_eq!(output_content, "Hello world".as_bytes().to_vec());
             }
             _ => unreachable!(),
@@ -248,7 +248,7 @@ mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
+            Ok(()) => {
                 assert_eq!(output_content, "Hello world".as_bytes().to_vec());
             }
             _ => unreachable!(),

@@ -41,7 +41,7 @@ pub fn execute<W: Write + Seek>(req: Request<'_, W>) -> Result<(), Error> {
     for _ in 0..req.passes {
         writer.rewind().map_err(|_| Error::ResetCursorPosition)?;
 
-        let mut blocks = vec![BLOCK_SIZE].repeat(req.buf_capacity / BLOCK_SIZE);
+        let mut blocks = [BLOCK_SIZE].repeat(req.buf_capacity / BLOCK_SIZE);
         blocks.push(req.buf_capacity % BLOCK_SIZE);
 
         for block_size in blocks.into_iter().take_while(|bs| *bs > 0) {
@@ -80,9 +80,9 @@ mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
+            Ok(()) => {
                 assert_eq!(buf.len(), capacity);
-                assert_eq!(buf, vec![0].repeat(capacity));
+                assert_eq!(buf, [0].repeat(capacity));
             }
             _ => unreachable!(),
         }

@@ -72,7 +72,7 @@ mod tests {
             passes: 2,
         };
         match execute(stor.clone(), req) {
-            Ok(_) => assert_eq!(stor.files().get(&PathBuf::from("hello.txt")), None),
+            Ok(()) => assert_eq!(stor.files().get(&PathBuf::from("hello.txt")), None),
             _ => unreachable!(),
         }
     }
