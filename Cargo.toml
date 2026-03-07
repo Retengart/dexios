@@ -17,16 +17,16 @@ homepage = "https://github.com/brxken128/dexios"
 [workspace.dependencies]
 anyhow = "1.0.102"
 blake3 = "1.8.3"
-rand = "0.8.5"
+rand = "0.10.0"
 clap = { version = "4.5.60", features = ["cargo"] }
 rpassword = "7.4.0"
-zip = { version = "0.6.3", default-features = false, features = ["zstd"] }
+zip = { version = "8.2.0", default-features = false, features = ["zstd"] }
 aes-gcm = "0.10.3"
 chacha20poly1305 = "0.10.1"
 deoxys = "0.1.0"
 aead = { version = "0.5.2", features = ["stream"] }
 zeroize = "1.8.2"
-argon2 = "0.4.1"
-balloon-hash = "0.3.0"
-indicatif = "0.16.2"
+argon2 = "0.5.3"
+balloon-hash = "0.4.0"
+indicatif = "0.18.4"
 walkdir = "2.5.0"

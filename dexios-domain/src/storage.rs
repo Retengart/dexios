@@ -1,4 +1,4 @@
-use rand::distributions::{Alphanumeric, DistString};
+use rand::distr::{Alphanumeric, SampleString};
 use std::cell::RefCell;
 use std::fs;
 use std::io::{Read, Seek, Write};
@@ -57,7 +57,7 @@ where
     // TODO(pleshevskiy): return a new struct that will be removed on drop.
     fn create_temp_file(&self) -> Result<Entry<RW>, Error> {
         let mut path = std::env::temp_dir();
-        let file_name = Alphanumeric.sample_string(&mut rand::thread_rng(), 16);
+        let file_name = Alphanumeric.sample_string(&mut rand::rng(), 16);
         path.push(file_name);
 
         self.create_file(path)
