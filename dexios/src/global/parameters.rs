@@ -84,7 +84,14 @@ pub fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
 }
 
 pub fn hashing_algorithm(sub_matches: &ArgMatches) -> HashingAlgorithm {
-    if sub_matches.get_flag("argon") {
+    let use_argon = sub_matches
+        .try_get_one::<bool>("argon")
+        .ok()
+        .flatten()
+        .copied()
+        .unwrap_or(false);
+
+    if use_argon {
         HashingAlgorithm::Argon2id(ARGON2ID_LATEST)
     } else {
         HashingAlgorithm::Blake3Balloon(BLAKE3BALLOON_LATEST)
@@ -235,4 +242,70 @@ pub fn key_manipulation_params(sub_matches: &ArgMatches) -> Result<KeyManipulati
         key_new,
         hashing_algorithm,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::build_cli;
+
+    #[test]
+    fn decrypt_key_init_falls_back_to_user_without_autogenerate_arg() {
+        let matches = build_cli()
+            .try_get_matches_from(["dexios", "decrypt", "cipher.enc", "plain.txt"])
+            .expect("CLI should parse");
+        let (_, sub_matches) = matches.subcommand().expect("subcommand");
+
+        let key = Key::init(
+            sub_matches,
+            &KeyParams {
+                user: true,
+                env: false,
+                autogenerate: true,
+                keyfile: true,
+            },
+            "keyfile",
+        )
+        .expect("key selection");
+
+        assert!(key == Key::User);
+    }
+
+    #[test]
+    fn decrypt_parameter_handler_defaults_to_blake3_balloon() {
+        let matches = build_cli()
+            .try_get_matches_from([
+                "dexios",
+                "decrypt",
+                "-k",
+                "keyfile",
+                "cipher.enc",
+                "plain.txt",
+            ])
+            .expect("CLI should parse");
+        let (_, sub_matches) = matches.subcommand().expect("subcommand");
+
+        let params = parameter_handler(sub_matches).expect("params");
+
+        assert!(params.hashing_algorithm == HashingAlgorithm::Blake3Balloon(BLAKE3BALLOON_LATEST));
+    }
+
+    #[test]
+    fn unpack_parameter_handler_defaults_to_blake3_balloon() {
+        let matches = build_cli()
+            .try_get_matches_from([
+                "dexios",
+                "unpack",
+                "-k",
+                "keyfile",
+                "archive.enc",
+                "out-dir",
+            ])
+            .expect("CLI should parse");
+        let (_, sub_matches) = matches.subcommand().expect("subcommand");
+
+        let params = parameter_handler(sub_matches).expect("params");
+
+        assert!(params.hashing_algorithm == HashingAlgorithm::Blake3Balloon(BLAKE3BALLOON_LATEST));
+    }
 }
