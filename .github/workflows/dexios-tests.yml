@@ -2,9 +2,9 @@ name: Dexios Tests
 
 on:
   workflow_dispatch:
-    branches: [ master ]
+    branches: [ main ]
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -144,8 +144,11 @@ jobs:
       run: '"$DEXIOS_BIN" -eHfk keyfile 100MB.bin 100MB.enc'
     - name: Decrypt in stream mode (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -dHfk keyfile 100MB.enc 100MB.bin'
-    - name: Standalone Hash Mode (with output hashes above to confirm it works)
-      run: '"$DEXIOS_BIN" hash 100MB.enc'
+    - name: Verify standalone hash output
+      run: |
+        expected_hash="$(b3sum 100MB.enc | awk '{print $1}')"
+        actual_hash="$("$DEXIOS_BIN" hash 100MB.enc | awk 'END { print $3 }')"
+        test "$actual_hash" = "$expected_hash"
 
   erase:
     needs: build
@@ -184,16 +187,24 @@ jobs:
       run: dd if=/dev/urandom of=1GB.bin bs=1M count=1000
     - name: Generate keyfile
       run: dd if=/dev/urandom of=keyfile bs=1 count=4096
+    - name: Save plaintext hash (XChaCha20-Poly1305)
+      run: sha256sum 1GB.bin > 1GB.bin.sha256
     - name: Encrypt 1GB file (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -eHfk keyfile 1GB.bin 1GB.enc'
     - name: Decrypt 1GB file (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -dHfk keyfile 1GB.enc 1GB.bin'
+    - name: Verify decrypted 1GB plaintext (XChaCha20-Poly1305)
+      run: sha256sum -c 1GB.bin.sha256
     - name: Generate test file
       run: dd if=/dev/urandom of=1GB.bin bs=1M count=1000
+    - name: Save plaintext hash (AES-256-GCM)
+      run: sha256sum 1GB.bin > 1GB.bin.sha256
     - name: Encrypt 1GB file (AES-256-GCM)
       run: '"$DEXIOS_BIN" -eHfk keyfile --aes 1GB.bin 1GB.enc'
     - name: Decrypt 1GB file (AES-256-GCM)
       run: '"$DEXIOS_BIN" -dHfk keyfile 1GB.enc 1GB.bin'
+    - name: Verify decrypted 1GB plaintext (AES-256-GCM)
+      run: sha256sum -c 1GB.bin.sha256
 
   small-file:
     needs: build
@@ -212,16 +223,24 @@ jobs:
       run: dd if=/dev/urandom of=1KB.bin bs=1 count=1024
     - name: Generate keyfile
       run: dd if=/dev/urandom of=keyfile bs=1 count=4096
+    - name: Save plaintext hash (XChaCha20-Poly1305)
+      run: sha256sum 1KB.bin > 1KB.bin.sha256
     - name: Encrypt 1KB file (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -eHfk keyfile 1KB.bin 1KB.enc'
     - name: Decrypt 1KB file (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -dHfk keyfile 1KB.enc 1KB.bin'
+    - name: Verify decrypted 1KB plaintext (XChaCha20-Poly1305)
+      run: sha256sum -c 1KB.bin.sha256
     - name: Generate test file
       run: dd if=/dev/urandom of=1KB.bin bs=1 count=1024
+    - name: Save plaintext hash (AES-256-GCM)
+      run: sha256sum 1KB.bin > 1KB.bin.sha256
     - name: Encrypt 1KB file (AES-256-GCM)
       run: '"$DEXIOS_BIN" -eHfk keyfile --aes 1KB.bin 1KB.enc'
     - name: Decrypt 1KB file (AES-256-GCM)
       run: '"$DEXIOS_BIN" -dHfk keyfile 1KB.enc 1KB.bin'
+    - name: Verify decrypted 1KB plaintext (AES-256-GCM)
+      run: sha256sum -c 1KB.bin.sha256
 
   pack:
     needs: build
