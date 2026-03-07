@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rust: stable
+            binary_path: target/release-lto/dexios
+            asset_suffix: linux-amd64
+            asset_ext: ""
+            artifact_name: dexios-linux-amd64
+          - os: macos-latest
+            rust: stable
+            binary_path: target/release-lto/dexios
+            asset_suffix: macos-amd64
+            asset_ext: ""
+            artifact_name: dexios-macos-amd64
+          - os: windows-latest
+            rust: stable
+            binary_path: target/release-lto/dexios.exe
+            asset_suffix: windows-amd64
+            asset_ext: ".exe"
+            artifact_name: dexios-windows-amd64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install ${{ matrix.rust }} --profile minimal
+
+      - name: Select Rust toolchain
+        run: rustup default ${{ matrix.rust }}
+
+      - name: Build dexios release binary
+        run: cargo build --profile release-lto -p dexios
+
+      - name: Rename and checksum release asset
+        shell: bash
+        run: |
+          asset_name="dexios-${GITHUB_REF_NAME}-${{ matrix.asset_suffix }}${{ matrix.asset_ext }}"
+          mkdir -p release-assets
+          mv "${{ matrix.binary_path }}" "release-assets/${asset_name}"
+          cd release-assets
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            shasum -a 256 "$asset_name" > "$asset_name.sha256"
+          else
+            sha256sum "$asset_name" > "$asset_name.sha256"
+          fi
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v7.0.0
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            release-assets/dexios-${{ github.ref_name }}-${{ matrix.asset_suffix }}${{ matrix.asset_ext }}
+            release-assets/dexios-${{ github.ref_name }}-${{ matrix.asset_suffix }}${{ matrix.asset_ext }}.sha256
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v8.0.0
+        with:
+          path: release-assets
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mapfile -t files < <(find release-assets -type f | sort)
+          test "${#files[@]}" -gt 0
+          gh release create "$GITHUB_REF_NAME" "${files[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes
