@@ -2,7 +2,7 @@ use crate::cli::prompt::overwrite_check;
 use crate::global::states::{EraseMode, HashMode, HeaderLocation, PasswordState};
 use crate::global::structs::CryptoParams;
 use anyhow::Result;
-use core::header::{HeaderType, HEADER_VERSION};
+use core::header::{HEADER_VERSION, HeaderType};
 use core::primitives::{Algorithm, Mode};
 use std::process::exit;
 use std::sync::Arc;

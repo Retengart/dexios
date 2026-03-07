@@ -1,9 +1,9 @@
+use core::Zeroize;
 use core::key::vec_to_arr;
 use core::primitives::Algorithm;
 use core::primitives::ENCRYPTED_MASTER_KEY_LEN;
 use core::primitives::MASTER_KEY_LEN;
 use core::protected::Protected;
-use core::Zeroize;
 use core::{cipher::Ciphers, header::Keyslot};
 
 pub mod add;

@@ -67,20 +67,14 @@ where
             #[allow(clippy::cast_possible_truncation)]
             let mut header_bytes = vec![0u8; header.get_size() as usize];
 
-            req.reader
-                .borrow_mut()
-                .read_exact(&mut header_bytes)
-                .or_else(|e| {
-                    if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                        Ok(())
-                    } else {
-                        Err(e)
-                    }
-                })
-                .map_err(|_| Error::ReadEncryptedData)?;
+            let needs_rewind = match req.reader.borrow_mut().read_exact(&mut header_bytes) {
+                Ok(()) => !header_bytes.into_iter().all(|b| b == 0),
+                Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => true,
+                Err(_) => return Err(Error::ReadEncryptedData),
+            };
 
-            if !header_bytes.into_iter().all(|b| b == 0) {
-                // And return the cursor position to the start if it wasn't found
+            if needs_rewind {
+                // Return the cursor position to the start if no detached zero header was found.
                 req.reader
                     .borrow_mut()
                     .rewind()
@@ -176,7 +170,7 @@ mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
+            Ok(()) => {
                 assert_eq!(output_content, "Hello world".as_bytes().to_vec());
             }
             _ => unreachable!(),
@@ -200,7 +194,7 @@ mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
+            Ok(()) => {
                 assert_eq!(output_content, "Hello world".as_bytes().to_vec());
             }
             _ => unreachable!(),
@@ -227,7 +221,7 @@ mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
+            Ok(()) => {
                 assert_eq!(output_content, "Hello world".as_bytes().to_vec());
             }
             _ => unreachable!(),
@@ -254,7 +248,7 @@ mod tests {
         };
 
         match execute(req) {
-            Ok(_) => {
+            Ok(()) => {
                 assert_eq!(output_content, "Hello world".as_bytes().to_vec());
             }
             _ => unreachable!(),

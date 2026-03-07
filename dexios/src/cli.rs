@@ -1,4 +1,4 @@
-use clap::{Arg, Command};
+use clap::{Arg, ArgAction, Command};
 
 pub mod prompt;
 
@@ -6,21 +6,21 @@ pub mod prompt;
 // it's long, and clunky, but i feel that's just the nature of the clap builder api
 // it returns the ArgMatches so that a match statement can send everything to the correct place
 #[allow(clippy::too_many_lines)]
-pub fn get_matches() -> clap::ArgMatches {
+pub fn build_cli() -> Command {
     let encrypt = Command::new("encrypt")
         .short_flag('e')
         .about("Encrypt a file")
         .arg(
             Arg::new("input")
                 .value_name("input")
-                .takes_value(true)
+                .action(ArgAction::Set)
                 .required(true)
                 .help("The file to encrypt"),
         )
         .arg(
             Arg::new("output")
                 .value_name("output")
-                .takes_value(true)
+                .action(ArgAction::Set)
                 .required(true)
                 .help("The output file"),
         )
@@ -29,39 +29,39 @@ pub fn get_matches() -> clap::ArgMatches {
                 .short('k')
                 .long("keyfile")
                 .value_name("file")
-                .takes_value(true)
+                .action(ArgAction::Set)
                 .help("Use a keyfile instead of a password"),
         )
         .arg(
             Arg::new("erase")
                 .long("erase")
                 .value_name("# of passes")
-                .takes_value(true)
+                .action(ArgAction::Set)
                 .require_equals(true)
                 .help("Securely erase the input file once complete (default is 1 pass)")
-                .min_values(0)
+                .num_args(0..=1)
                 .default_missing_value("1"),
         )
         .arg(
             Arg::new("hash")
                 .short('H')
                 .long("hash")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .help("Return a BLAKE3 hash of the encrypted file"),
         )
         .arg(
             Arg::new("argon")
                 .long("argon")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .help("Use argon2id for password hashing"),
         )
         .arg(
             Arg::new("autogenerate")
                 .long("auto")
                 .value_name("# of words")
-                .min_values(0)
+                .num_args(0..=1)
                 .default_missing_value("7")
-                .takes_value(true)
+                .action(ArgAction::Set)
                 .require_equals(true)
                 .help("Autogenerate a passphrase (default is 7 words)")
                 .conflicts_with("keyfile"),
@@ -70,20 +70,20 @@ pub fn get_matches() -> clap::ArgMatches {
             Arg::new("header")
                 .long("header")
                 .value_name("file")
-                .takes_value(true)
+                .action(ArgAction::Set)
                 .help("Store the header separately from the file"),
         )
         .arg(
             Arg::new("force")
                 .short('f')
                 .long("force")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .help("Force all actions"),
         )
         .arg(
             Arg::new("aes")
                 .long("aes")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .help("Use AES-256-GCM for encryption"),
         );
 
@@ -93,14 +93,14 @@ pub fn get_matches() -> clap::ArgMatches {
         .arg(
             Arg::new("input")
                 .value_name("input")
-                .takes_value(true)
+                .action(ArgAction::Set)
                 .required(true)
                 .help("The file to decrypt"),
         )
         .arg(
             Arg::new("output")
                 .value_name("output")
-                .takes_value(true)
+                .action(ArgAction::Set)
                 .required(true)
                 .help("The output file"),
         )
@@ -109,44 +109,44 @@ pub fn get_matches() -> clap::ArgMatches {
                 .short('k')
                 .long("keyfile")
                 .value_name("file")
-                .takes_value(true)
+                .action(ArgAction::Set)
                 .help("Use a keyfile instead of a password"),
         )
         .arg(
             Arg::new("header")
                 .long("header")
                 .value_name("file")
-                .takes_value(true)
+                .action(ArgAction::Set)
                 .help("Use a header file that was dumped"),
         )
         .arg(
             Arg::new("erase")
                 .long("erase")
                 .value_name("# of passes")
-                .takes_value(true)
+                .action(ArgAction::Set)
                 .require_equals(true)
                 .help("Securely erase the input file once complete (default is 1 pass)")
-                .min_values(0)
+                .num_args(0..=1)
                 .default_missing_value("1"),
         )
         .arg(
             Arg::new("hash")
                 .short('H')
                 .long("hash")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .help("Return a BLAKE3 hash of the encrypted file"),
         )
         .arg(
             Arg::new("force")
                 .short('f')
                 .long("force")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .help("Force all actions"),
         );
 
     Command::new("dexios")
         .version(clap::crate_version!())
-        .author("brxken128 <brxken128@tutanota.com>")
+        .author(clap::crate_authors!("\n"))
         .about("Secure, fast and modern command-line encryption of files.")
         .subcommand_required(true)
         .arg_required_else_help(true)
@@ -158,7 +158,7 @@ pub fn get_matches() -> clap::ArgMatches {
                 .arg(
                     Arg::new("input")
                         .value_name("input")
-                        .takes_value(true)
+                        .action(ArgAction::Set)
                         .required(true)
                         .help("The file to erase"),
                 )
@@ -166,17 +166,17 @@ pub fn get_matches() -> clap::ArgMatches {
                     Arg::new("force")
                         .short('f')
                         .long("force")
-                        .takes_value(false)
+                        .action(ArgAction::SetTrue)
                         .help("Force all actions"),
                 )
                 .arg(
                     Arg::new("passes")
                         .long("passes")
                         .value_name("# of passes")
-                        .takes_value(true)
+                        .action(ArgAction::Set)
                         .require_equals(true)
                         .help("Specify the number of passes (default is 1)")
-                        .min_values(0)
+                        .num_args(0..=1)
                         .default_missing_value("1"),
                 ),
         )
@@ -184,11 +184,10 @@ pub fn get_matches() -> clap::ArgMatches {
             Command::new("hash").about("Hash files with BLAKE3").arg(
                 Arg::new("input")
                     .value_name("input")
-                    .takes_value(true)
+                    .action(ArgAction::Set)
                     .required(true)
                     .help("The file(s) to hash")
-                    .min_values(1)
-                    .multiple_occurrences(true),
+                    .num_args(1..),
             ),
         )
         .subcommand(
@@ -198,44 +197,44 @@ pub fn get_matches() -> clap::ArgMatches {
             .arg(
                 Arg::new("input")
                     .value_name("input")
-                    .takes_value(true)
-                    .multiple_values(true)
+                    .action(ArgAction::Set)
+                    .num_args(1..)
                     .required(true)
                     .help("The directory to encrypt"),
             )
             .arg(
                 Arg::new("output")
                     .value_name("output")
-                    .takes_value(true)
+                    .action(ArgAction::Set)
                     .required(true)
                     .help("The output file"),
             )
             .arg(
                 Arg::new("erase")
                     .long("erase")
-                    .takes_value(false)
+                    .action(ArgAction::SetTrue)
                     .help("Securely erase every file from the source directory, before deleting the directory")
             )
             .arg(
                 Arg::new("argon")
                     .long("argon")
-                    .takes_value(false)
+                    .action(ArgAction::SetTrue)
                     .help("Use argon2id for password hashing"),
             )
             .arg(
                 Arg::new("verbose")
                     .short('v')
                     .long("verbose")
-                    .takes_value(false)
+                    .action(ArgAction::SetTrue)
                     .help("Show a detailed output"),
             )
             .arg(
                 Arg::new("autogenerate")
                     .long("auto")
                     .value_name("# of words")
-                    .min_values(0)
+                    .num_args(0..=1)
                     .default_missing_value("7")
-                    .takes_value(true)
+                    .action(ArgAction::Set)
                     .require_equals(true)
                     .help("Autogenerate a passphrase (default is 7 words)")
                     .conflicts_with("keyfile"),
@@ -244,21 +243,21 @@ pub fn get_matches() -> clap::ArgMatches {
                 Arg::new("header")
                     .long("header")
                     .value_name("file")
-                    .takes_value(true)
+                    .action(ArgAction::Set)
                     .help("Store the header separately from the file"),
             )
             .arg(
                 Arg::new("zstd")
                     .short('z')
                     .long("zstd")
-                    .takes_value(false)
+                    .action(ArgAction::SetTrue)
                     .help("Use ZSTD compression"),
             )
             .arg(
                 Arg::new("recursive")
                     .short('r')
                     .long("recursive")
-                    .takes_value(false)
+                    .action(ArgAction::SetTrue)
                     .help("Index files and folders within other folders (index recursively)"),
             )
             .arg(
@@ -266,27 +265,27 @@ pub fn get_matches() -> clap::ArgMatches {
                     .short('k')
                     .long("keyfile")
                     .value_name("file")
-                    .takes_value(true)
+                    .action(ArgAction::Set)
                     .help("Use a keyfile instead of a password"),
             )
             .arg(
                 Arg::new("hash")
                     .short('H')
                     .long("hash")
-                    .takes_value(false)
+                    .action(ArgAction::SetTrue)
                     .help("Return a BLAKE3 hash of the encrypted file"),
             )
             .arg(
                 Arg::new("force")
                     .short('f')
                     .long("force")
-                    .takes_value(false)
+                    .action(ArgAction::SetTrue)
                     .help("Force all actions"),
             )
             .arg(
                 Arg::new("aes")
                     .long("aes")
-                    .takes_value(false)
+                    .action(ArgAction::SetTrue)
                     .help("Use AES-256-GCM for encryption"),
             )
         )
@@ -297,14 +296,14 @@ pub fn get_matches() -> clap::ArgMatches {
                 .arg(
                     Arg::new("input")
                         .value_name("input")
-                        .takes_value(true)
+                        .action(ArgAction::Set)
                         .required(true)
                         .help("The file to decrypt"),
                 )
                 .arg(
                     Arg::new("output")
                         .value_name("output")
-                        .takes_value(true)
+                        .action(ArgAction::Set)
                         .required(true)
                         .help("The output file"),
                 )
@@ -313,45 +312,45 @@ pub fn get_matches() -> clap::ArgMatches {
                         .short('k')
                         .long("keyfile")
                         .value_name("file")
-                        .takes_value(true)
+                        .action(ArgAction::Set)
                         .help("Use a keyfile instead of a password"),
                 )
                 .arg(
                     Arg::new("header")
                         .long("header")
                         .value_name("file")
-                        .takes_value(true)
+                        .action(ArgAction::Set)
                         .help("Use a header file that was dumped"),
                 )
                 .arg(
                     Arg::new("erase")
                         .long("erase")
                         .value_name("# of passes")
-                        .takes_value(true)
+                        .action(ArgAction::Set)
                         .require_equals(true)
                         .help("Securely erase the input file once complete (default is 1 pass)")
-                        .min_values(0)
+                        .num_args(0..=1)
                         .default_missing_value("1"),
                 )
                 .arg(
                     Arg::new("verbose")
                         .short('v')
                         .long("verbose")
-                        .takes_value(false)
+                        .action(ArgAction::SetTrue)
                         .help("Show a detailed output"),
                 )
                 .arg(
                     Arg::new("hash")
                         .short('H')
                         .long("hash")
-                        .takes_value(false)
+                        .action(ArgAction::SetTrue)
                         .help("Return a BLAKE3 hash of the encrypted file"),
                 )
                 .arg(
                     Arg::new("force")
                         .short('f')
                         .long("force")
-                        .takes_value(false)
+                        .action(ArgAction::SetTrue)
                         .help("Force all actions"),
                 )
         )
@@ -365,7 +364,7 @@ pub fn get_matches() -> clap::ArgMatches {
                         .arg(
                             Arg::new("input")
                                 .value_name("input")
-                                .takes_value(true)
+                                .action(ArgAction::Set)
                                 .required(true)
                                 .help("The encrypted file/header file"),
                         )
@@ -373,17 +372,17 @@ pub fn get_matches() -> clap::ArgMatches {
                             Arg::new("autogenerate")
                                 .long("auto")
                                 .value_name("# of words")
-                                .min_values(0)
+                                .num_args(0..=1)
                                 .default_missing_value("7")
-                                .takes_value(true)
+                                .action(ArgAction::Set)
                                 .require_equals(true)
                                 .help("Autogenerate a passphrase (default is 7 words)")
-                                .conflicts_with("keyfile"),
+                                .conflicts_with("keyfile-new"),
                         )
                         .arg(
                             Arg::new("argon")
                                 .long("argon")
-                                .takes_value(false)
+                                .action(ArgAction::SetTrue)
                                 .help("Use argon2id for password hashing"),
                         )
                         .arg(
@@ -391,7 +390,7 @@ pub fn get_matches() -> clap::ArgMatches {
                                 .short('k')
                                 .long("keyfile-old")
                                 .value_name("file")
-                                .takes_value(true)
+                                .action(ArgAction::Set)
                                 .help("Use an old keyfile to decrypt the master key"),
                         )
                         .arg(
@@ -399,7 +398,7 @@ pub fn get_matches() -> clap::ArgMatches {
                                 .short('n')
                                 .long("keyfile-new")
                                 .value_name("file")
-                                .takes_value(true)
+                                .action(ArgAction::Set)
                                 .help("Use a keyfile as the new key"),
                         ),
                 )
@@ -410,33 +409,33 @@ pub fn get_matches() -> clap::ArgMatches {
                         .arg(
                             Arg::new("input")
                                 .value_name("input")
-                                .takes_value(true)
+                                .action(ArgAction::Set)
                                 .required(true)
                                 .help("The encrypted file/header file"),
                         )
                         .arg(
                             Arg::new("argon")
                                 .long("argon")
-                                .takes_value(false)
+                                .action(ArgAction::SetTrue)
                                 .help("Use argon2id for password hashing"),
                         )
                         .arg(
                             Arg::new("autogenerate")
                                 .long("auto")
                                 .value_name("# of words")
-                                .min_values(0)
+                                .num_args(0..=1)
                                 .default_missing_value("7")
-                                .takes_value(true)
+                                .action(ArgAction::Set)
                                 .require_equals(true)
                                 .help("Autogenerate a passphrase (default is 7 words)")
-                                .conflicts_with("keyfile"),
+                                .conflicts_with("keyfile-new"),
                         )
                         .arg(
                             Arg::new("keyfile-old")
                                 .short('k')
                                 .long("keyfile-old")
                                 .value_name("file")
-                                .takes_value(true)
+                                .action(ArgAction::Set)
                                 .help("Use an old keyfile to decrypt the master key"),
                         )
                         .arg(
@@ -444,7 +443,7 @@ pub fn get_matches() -> clap::ArgMatches {
                                 .short('n')
                                 .long("keyfile-new")
                                 .value_name("file")
-                                .takes_value(true)
+                                .action(ArgAction::Set)
                                 .help("Use a keyfile as the new key"),
                         ),
                 )
@@ -455,7 +454,7 @@ pub fn get_matches() -> clap::ArgMatches {
                         .arg(
                             Arg::new("input")
                                 .value_name("input")
-                                .takes_value(true)
+                                .action(ArgAction::Set)
                                 .required(true)
                                 .help("The encrypted file/header file"),
                         )
@@ -464,7 +463,7 @@ pub fn get_matches() -> clap::ArgMatches {
                                 .short('k')
                                 .long("keyfile")
                                 .value_name("file")
-                                .takes_value(true)
+                                .action(ArgAction::Set)
                                 .help("Use a keyfile to identify the key you want to delete"),
                         ),
                 )
@@ -475,7 +474,7 @@ pub fn get_matches() -> clap::ArgMatches {
                         .arg(
                             Arg::new("input")
                                 .value_name("input")
-                                .takes_value(true)
+                                .action(ArgAction::Set)
                                 .required(true)
                                 .help("The encrypted file/header file"),
                         )
@@ -484,7 +483,7 @@ pub fn get_matches() -> clap::ArgMatches {
                                 .short('k')
                                 .long("keyfile")
                                 .value_name("file")
-                                .takes_value(true)
+                                .action(ArgAction::Set)
                                 .help("Verify a keyfile"),
                         ),
                 )
@@ -500,14 +499,14 @@ pub fn get_matches() -> clap::ArgMatches {
                         .arg(
                             Arg::new("input")
                                 .value_name("input")
-                                .takes_value(true)
+                                .action(ArgAction::Set)
                                 .required(true)
                                 .help("The encrypted file"),
                         )
                         .arg(
                             Arg::new("output")
                                 .value_name("output")
-                                .takes_value(true)
+                                .action(ArgAction::Set)
                                 .required(true)
                                 .help("The output file"),
                         )
@@ -515,7 +514,7 @@ pub fn get_matches() -> clap::ArgMatches {
                             Arg::new("force")
                                 .short('f')
                                 .long("force")
-                                .takes_value(false)
+                                .action(ArgAction::SetTrue)
                                 .help("Force all actions"),
                         ),
                 )
@@ -526,14 +525,14 @@ pub fn get_matches() -> clap::ArgMatches {
                         .arg(
                             Arg::new("input")
                                 .value_name("input")
-                                .takes_value(true)
+                                .action(ArgAction::Set)
                                 .required(true)
                                 .help("The dumped header file"),
                         )
                         .arg(
                             Arg::new("output")
                                 .value_name("output")
-                                .takes_value(true)
+                                .action(ArgAction::Set)
                                 .required(true)
                                 .help("The encrypted file"),
                         ),
@@ -545,7 +544,7 @@ pub fn get_matches() -> clap::ArgMatches {
                         .arg(
                             Arg::new("input")
                                 .value_name("input")
-                                .takes_value(true)
+                                .action(ArgAction::Set)
                                 .required(true)
                                 .help("The encrypted file"),
                         ),
@@ -557,11 +556,257 @@ pub fn get_matches() -> clap::ArgMatches {
                         .arg(
                             Arg::new("input")
                                 .value_name("input")
-                                .takes_value(true)
+                                .action(ArgAction::Set)
                                 .required(true)
                                 .help("The encrypted/header file"),
                         ),
                 ),
         )
-        .get_matches()
+}
+
+pub fn get_matches() -> clap::ArgMatches {
+    build_cli().get_matches()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn encrypt_command_accepts_header_and_auto() {
+        let matches = super::build_cli()
+            .try_get_matches_from([
+                "dexios", "encrypt", "--header", "file.hdr", "--argon", "--auto=7", "in.bin",
+                "out.enc",
+            ])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "encrypt");
+        assert_eq!(
+            sub.get_one::<String>("input").map(String::as_str),
+            Some("in.bin")
+        );
+        assert_eq!(
+            sub.get_one::<String>("output").map(String::as_str),
+            Some("out.enc")
+        );
+        assert_eq!(
+            sub.get_one::<String>("header").map(String::as_str),
+            Some("file.hdr")
+        );
+        assert_eq!(
+            sub.get_one::<String>("autogenerate").map(String::as_str),
+            Some("7")
+        );
+        assert!(sub.get_flag("argon"));
+    }
+
+    #[test]
+    fn hash_command_accepts_multiple_inputs() {
+        let matches = super::build_cli()
+            .try_get_matches_from(["dexios", "hash", "one.bin", "two.bin"])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "hash");
+        let values = sub
+            .get_many::<String>("input")
+            .expect("multiple input files")
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(values, ["one.bin", "two.bin"]);
+    }
+
+    #[test]
+    fn pack_command_accepts_multiple_paths_and_zstd() {
+        let matches = super::build_cli()
+            .try_get_matches_from(["dexios", "pack", "--zstd", "dir-a", "dir-b", "archive.dex"])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "pack");
+        let values = sub
+            .get_many::<String>("input")
+            .expect("multiple input paths")
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(values, ["dir-a", "dir-b"]);
+        assert_eq!(
+            sub.get_one::<String>("output").map(String::as_str),
+            Some("archive.dex")
+        );
+        assert!(sub.get_flag("zstd"));
+    }
+
+    #[test]
+    fn key_add_command_accepts_old_and_new_keyfiles() {
+        let matches = super::build_cli()
+            .try_get_matches_from([
+                "dexios",
+                "key",
+                "add",
+                "-k",
+                "old.key",
+                "-n",
+                "new.key",
+                "cipher.enc",
+            ])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "key");
+        let add = sub.subcommand_matches("add").expect("key add");
+        assert_eq!(
+            add.get_one::<String>("keyfile-old").map(String::as_str),
+            Some("old.key")
+        );
+        assert_eq!(
+            add.get_one::<String>("keyfile-new").map(String::as_str),
+            Some("new.key")
+        );
+        assert_eq!(
+            add.get_one::<String>("input").map(String::as_str),
+            Some("cipher.enc")
+        );
+    }
+
+    #[test]
+    fn key_change_command_accepts_argon_and_old_new_keyfiles() {
+        let matches = super::build_cli()
+            .try_get_matches_from([
+                "dexios",
+                "key",
+                "change",
+                "--argon",
+                "-k",
+                "old.key",
+                "-n",
+                "new.key",
+                "cipher.enc",
+            ])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "key");
+        let change = sub.subcommand_matches("change").expect("key change");
+        assert!(change.get_flag("argon"));
+        assert_eq!(
+            change.get_one::<String>("keyfile-old").map(String::as_str),
+            Some("old.key")
+        );
+        assert_eq!(
+            change.get_one::<String>("keyfile-new").map(String::as_str),
+            Some("new.key")
+        );
+        assert_eq!(
+            change.get_one::<String>("input").map(String::as_str),
+            Some("cipher.enc")
+        );
+    }
+
+    #[test]
+    fn key_del_command_accepts_input_and_keyfile() {
+        let matches = super::build_cli()
+            .try_get_matches_from(["dexios", "key", "del", "-k", "keyfile.bin", "cipher.enc"])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "key");
+        let del = sub.subcommand_matches("del").expect("key del");
+        assert_eq!(
+            del.get_one::<String>("keyfile").map(String::as_str),
+            Some("keyfile.bin")
+        );
+        assert_eq!(
+            del.get_one::<String>("input").map(String::as_str),
+            Some("cipher.enc")
+        );
+    }
+
+    #[test]
+    fn key_verify_command_accepts_input_and_keyfile() {
+        let matches = super::build_cli()
+            .try_get_matches_from(["dexios", "key", "verify", "-k", "keyfile.bin", "cipher.enc"])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "key");
+        let verify = sub.subcommand_matches("verify").expect("key verify");
+        assert_eq!(
+            verify.get_one::<String>("keyfile").map(String::as_str),
+            Some("keyfile.bin")
+        );
+        assert_eq!(
+            verify.get_one::<String>("input").map(String::as_str),
+            Some("cipher.enc")
+        );
+    }
+
+    #[test]
+    fn header_dump_command_accepts_input_output_and_force() {
+        let matches = super::build_cli()
+            .try_get_matches_from(["dexios", "header", "dump", "-f", "cipher.enc", "dump.hdr"])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "header");
+        let dump = sub.subcommand_matches("dump").expect("header dump");
+        assert!(dump.get_flag("force"));
+        assert_eq!(
+            dump.get_one::<String>("input").map(String::as_str),
+            Some("cipher.enc")
+        );
+        assert_eq!(
+            dump.get_one::<String>("output").map(String::as_str),
+            Some("dump.hdr")
+        );
+    }
+
+    #[test]
+    fn header_restore_command_accepts_input_and_output() {
+        let matches = super::build_cli()
+            .try_get_matches_from(["dexios", "header", "restore", "dump.hdr", "cipher.enc"])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "header");
+        let restore = sub.subcommand_matches("restore").expect("header restore");
+        assert_eq!(
+            restore.get_one::<String>("input").map(String::as_str),
+            Some("dump.hdr")
+        );
+        assert_eq!(
+            restore.get_one::<String>("output").map(String::as_str),
+            Some("cipher.enc")
+        );
+    }
+
+    #[test]
+    fn header_strip_command_accepts_input() {
+        let matches = super::build_cli()
+            .try_get_matches_from(["dexios", "header", "strip", "cipher.enc"])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "header");
+        let strip = sub.subcommand_matches("strip").expect("header strip");
+        assert_eq!(
+            strip.get_one::<String>("input").map(String::as_str),
+            Some("cipher.enc")
+        );
+    }
+
+    #[test]
+    fn header_details_command_accepts_input() {
+        let matches = super::build_cli()
+            .try_get_matches_from(["dexios", "header", "details", "cipher.enc"])
+            .expect("CLI should parse");
+
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "header");
+        let details = sub.subcommand_matches("details").expect("header details");
+        assert_eq!(
+            details.get_one::<String>("input").map(String::as_str),
+            Some("cipher.enc")
+        );
+    }
 }

@@ -37,6 +37,15 @@ This repo also contains the Dexios-Core and Dexios-Domain libraries
 managing headers and cryptographic functions. This allows us to keep them
 isolated, and ensure that security-critical pieces of code remain maintainable.
 
+## Development
+
+Dexios currently requires Rust `1.88` or newer.
+
+```bash
+cargo build --workspace
+cargo test --workspace --all-features --release --verbose
+```
+
 You may view more information about [Dexios](dexios/README.md),
 [Dexios-Core](dexios-core/README.md) and [Dexios-Domain](dexios-domain/README.md) in their respective folders. You can also
 [view the documentation](https://brxken128.github.io/dexios/) for the technical

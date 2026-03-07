@@ -1,0 +1,84 @@
+[[vector]]
+id = "argon2id-v1"
+algorithm = "argon2id"
+version = "V1"
+password = "test-password"
+salt_hex = "01010101010101010101010101010101"
+expected_hex = "eb19e5a38305cfdf5702e07b44a64a64d2a4821d3e5650dd673166de3ad0f367"
+provenance = "Generated on 2026-03-07 with Python argon2-cffi 25.1.0 via argon2.low_level.hash_secret_raw(Type.ID), independent from Dexios."
+source_kind = "python-library"
+source_name = "argon2-cffi"
+source_version = "25.1.0"
+source_entrypoint = "argon2.low_level.hash_secret_raw"
+params_memory_kib = 8192
+params_time_cost = 8
+params_parallelism = 4
+params_hash_len = 32
+
+[[vector]]
+id = "argon2id-v2"
+algorithm = "argon2id"
+version = "V2"
+password = "test-password"
+salt_hex = "02020202020202020202020202020202"
+expected_hex = "56a28d044c52130168f4e8f6500ff7e3df0a987fd337ab4dc4b2b67337de3a28"
+provenance = "Generated on 2026-03-07 with Python argon2-cffi 25.1.0 via argon2.low_level.hash_secret_raw(Type.ID), independent from Dexios."
+source_kind = "python-library"
+source_name = "argon2-cffi"
+source_version = "25.1.0"
+source_entrypoint = "argon2.low_level.hash_secret_raw"
+params_memory_kib = 262144
+params_time_cost = 8
+params_parallelism = 4
+params_hash_len = 32
+
+[[vector]]
+id = "argon2id-v3"
+algorithm = "argon2id"
+version = "V3"
+password = "test-password"
+salt_hex = "03030303030303030303030303030303"
+expected_hex = "d49ccf1e57a8d4a38a039adec6a48f67665d9b3262e571a6c95be7647cf1248b"
+provenance = "Generated on 2026-03-07 with Python argon2-cffi 25.1.0 via argon2.low_level.hash_secret_raw(Type.ID), independent from Dexios."
+source_kind = "python-library"
+source_name = "argon2-cffi"
+source_version = "25.1.0"
+source_entrypoint = "argon2.low_level.hash_secret_raw"
+params_memory_kib = 262144
+params_time_cost = 10
+params_parallelism = 4
+params_hash_len = 32
+
+[[vector]]
+id = "balloon-v4"
+algorithm = "balloon"
+version = "V4"
+password = "test-password"
+salt_hex = "04040404040404040404040404040404"
+expected_hex = "f64030b995bc14913df5e8c7d4d75b136c82a8def9cbf3c6824240da6fbd4f0b"
+provenance = "Generated on 2026-03-07 from the independent Python implementation at github.com/nachonavarro/balloon-hashing (commit 8e28a7822113f1e8ef56b175550210c1a8e36c1a), adapted locally to use Python blake3 1.0.8 as the hash primitive with delta=3."
+source_kind = "python-script"
+source_name = "balloon-hashing"
+source_repo = "https://github.com/nachonavarro/balloon-hashing"
+source_commit = "8e28a7822113f1e8ef56b175550210c1a8e36c1a"
+source_hash_primitive = "blake3 1.0.8"
+params_space_cost = 262144
+params_time_cost = 1
+params_delta = 3
+
+[[vector]]
+id = "balloon-v5"
+algorithm = "balloon"
+version = "V5"
+password = "test-password"
+salt_hex = "05050505050505050505050505050505"
+expected_hex = "b09fdf12ae43dd737a7007f0deb7c3c1692bcb2497f52a845d7bf9d5e3f1ac23"
+provenance = "Generated on 2026-03-07 from the independent Python implementation at github.com/nachonavarro/balloon-hashing (commit 8e28a7822113f1e8ef56b175550210c1a8e36c1a), adapted locally to use Python blake3 1.0.8 as the hash primitive with delta=3."
+source_kind = "python-script"
+source_name = "balloon-hashing"
+source_repo = "https://github.com/nachonavarro/balloon-hashing"
+source_commit = "8e28a7822113f1e8ef56b175550210c1a8e36c1a"
+source_hash_primitive = "blake3 1.0.8"
+params_space_cost = 278528
+params_time_cost = 1
+params_delta = 3

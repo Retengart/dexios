@@ -1,4 +1,4 @@
-use rand::distributions::{Alphanumeric, DistString};
+use rand::distr::{Alphanumeric, SampleString};
 use std::cell::RefCell;
 use std::fs;
 use std::io::{Read, Seek, Write};
@@ -57,7 +57,7 @@ where
     // TODO(pleshevskiy): return a new struct that will be removed on drop.
     fn create_temp_file(&self) -> Result<Entry<RW>, Error> {
         let mut path = std::env::temp_dir();
-        let file_name = Alphanumeric.sample_string(&mut rand::thread_rng(), 16);
+        let file_name = Alphanumeric.sample_string(&mut rand::rng(), 16);
         path.push(file_name);
 
         self.create_file(path)
@@ -244,8 +244,25 @@ impl InMemoryStorage {
 
 #[cfg(test)]
 impl Storage<io::Cursor<Vec<u8>>> for InMemoryStorage {
-    fn create_dir_all<P: AsRef<Path>>(&self, _path: P) -> Result<(), Error> {
-        todo!();
+    fn create_dir_all<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
+        let mut dirs = path
+            .as_ref()
+            .ancestors()
+            .filter(|path| !path.as_os_str().is_empty())
+            .map(Path::to_path_buf)
+            .collect::<Vec<_>>();
+        dirs.reverse();
+
+        for dir in dirs {
+            let existing = self.files().get(&dir).cloned();
+            match existing {
+                Some(IMFile::Dir) => {}
+                Some(IMFile::File(_)) => return Err(Error::CreateDir),
+                None => self.save_file(dir, IMFile::Dir),
+            }
+        }
+
+        Ok(())
     }
 
     fn create_file<P: AsRef<Path>>(&self, path: P) -> Result<Entry<io::Cursor<Vec<u8>>>, Error> {
@@ -563,7 +580,7 @@ mod tests {
             .unwrap();
 
         match stor.flush_file(&file) {
-            Ok(_) => {
+            Ok(()) => {
                 let im_file = stor.files().get(file.path()).cloned();
                 assert_eq!(
                     im_file,
@@ -586,7 +603,7 @@ mod tests {
         let file_path = file.path().to_path_buf();
 
         match stor.remove_file(file) {
-            Ok(_) => {
+            Ok(()) => {
                 let im_file = stor.files().get(&file_path).cloned();
                 assert_eq!(im_file, None);
             }
@@ -603,7 +620,7 @@ mod tests {
         let file_path = file.path().to_path_buf();
 
         match stor.remove_file(file) {
-            Ok(_) => {
+            Ok(()) => {
                 let im_file = stor.files().get(&file_path).cloned();
                 assert_eq!(im_file, None);
             }

@@ -15,6 +15,7 @@ pub struct CryptoParams {
     pub hashing_algorithm: HashingAlgorithm,
 }
 
+#[allow(dead_code)]
 pub struct PackParams {
     pub dir_mode: DirectoryMode,
     pub print_mode: PrintMode,

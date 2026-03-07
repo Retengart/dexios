@@ -138,6 +138,9 @@ pub fn execute<RW: Read + Write + Seek>(
             .iter()
             .filter(|(_, _, is_dir)| !*is_dir)
             .try_for_each(|(full_path, i, _)| {
+                if let Some(parent_dir) = full_path.parent() {
+                    stor.create_dir_all(parent_dir).map_err(Error::Storage)?;
+                }
                 let mut zip_file = archive.by_index(*i).map_err(|_| Error::OpenArchivedFile)?;
                 let file = stor
                     .create_file(full_path)
@@ -148,6 +151,7 @@ pub fn execute<RW: Read + Write + Seek>(
                     &mut *file.try_writer().map_err(Error::Storage)?.borrow_mut(),
                 )
                 .map_err(|_| Error::WriteData)?;
+                stor.flush_file(&file).map_err(Error::Storage)?;
                 Ok(())
             })?;
     }
@@ -169,9 +173,140 @@ pub fn execute<RW: Read + Write + Seek>(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use core::header::{HashingAlgorithm, HeaderType, HeaderVersion};
+    use core::primitives::{Algorithm, Mode};
+    use core::protected::Protected;
+
+    use crate::encrypt::tests::PASSWORD;
+    use crate::pack;
+    use crate::pack::tests::ENCRYPTED_PACKED_BAR_DIR;
+    use crate::storage::{IMFile, InMemoryFile, InMemoryStorage, Storage};
+
+    fn pack_bar_directory(
+        stor: Arc<InMemoryStorage>,
+        output_path: &str,
+        header_path: Option<&str>,
+    ) {
+        stor.add_hello_txt();
+        stor.add_bar_foo_folder_with_hidden();
+
+        let file = stor.read_file("bar/").unwrap();
+        let mut compress_files = stor.read_dir(&file).unwrap();
+        compress_files.sort_by(|a, b| a.path().cmp(b.path()));
+
+        let output_file = stor.create_file(output_path).unwrap();
+        let header_file = header_path.map(|path| stor.create_file(path).unwrap());
+
+        let req = pack::Request {
+            compress_files,
+            compression_method: zip::CompressionMethod::Stored,
+            writer: output_file.try_writer().unwrap(),
+            header_writer: header_file.as_ref().map(|file| file.try_writer().unwrap()),
+            raw_key: Protected::new(PASSWORD.to_vec()),
+            header_type: HeaderType {
+                version: HeaderVersion::V5,
+                algorithm: Algorithm::XChaCha20Poly1305,
+                mode: Mode::StreamMode,
+            },
+            hashing_algorithm: HashingAlgorithm::Blake3Balloon(5),
+        };
+
+        pack::execute(stor.clone(), req).unwrap();
+        stor.flush_file(&output_file).unwrap();
+        if let Some(header_file) = header_file {
+            stor.flush_file(&header_file).unwrap();
+        }
+    }
+
+    fn assert_text(stor: &InMemoryStorage, path: &str, expected: &str) {
+        let file = stor.files().get(&PathBuf::from(path)).cloned();
+        match file {
+            Some(IMFile::File(InMemoryFile { buf, .. })) => {
+                assert_eq!(buf, expected.as_bytes());
+            }
+            _ => panic!("missing file: {path}"),
+        }
+    }
+
     #[test]
-    #[ignore = "not yet implemented"]
-    fn should_unpack_encrypted_archive() {
-        todo!()
+    fn should_unpack_encrypted_archive_with_embedded_header() {
+        let stor = Arc::new(InMemoryStorage::default());
+        pack_bar_directory(stor.clone(), "archive.enc", None);
+
+        let archive = stor.read_file("archive.enc").unwrap();
+        let req = Request {
+            reader: archive.try_reader().unwrap(),
+            header_reader: None,
+            raw_key: Protected::new(PASSWORD.to_vec()),
+            output_dir_path: PathBuf::from("out"),
+            on_decrypted_header: None,
+            on_archive_info: None,
+            on_zip_file: None,
+        };
+
+        execute(stor.clone(), req).unwrap();
+
+        assert_text(&stor, "out/bar/.hello.txt", "hello");
+        assert_text(&stor, "out/bar/world.txt", "world");
+        assert_text(&stor, "out/bar/.foo/world.txt", "world");
+    }
+
+    #[test]
+    fn should_unpack_encrypted_archive_with_detached_header() {
+        let stor = Arc::new(InMemoryStorage::default());
+        pack_bar_directory(stor.clone(), "archive-detached.enc", Some("archive.hdr"));
+
+        let archive = stor.read_file("archive-detached.enc").unwrap();
+        let header = stor.read_file("archive.hdr").unwrap();
+        let req = Request {
+            reader: archive.try_reader().unwrap(),
+            header_reader: Some(header.try_reader().unwrap()),
+            raw_key: Protected::new(PASSWORD.to_vec()),
+            output_dir_path: PathBuf::from("out-detached"),
+            on_decrypted_header: None,
+            on_archive_info: None,
+            on_zip_file: None,
+        };
+
+        execute(stor.clone(), req).unwrap();
+
+        assert_text(&stor, "out-detached/bar/.hello.txt", "hello");
+        assert_text(&stor, "out-detached/bar/world.txt", "world");
+        assert_text(&stor, "out-detached/bar/.foo/world.txt", "world");
+    }
+
+    #[test]
+    fn should_unpack_legacy_master_generated_archive_fixture() {
+        let stor = Arc::new(InMemoryStorage::default());
+        let archive = stor.create_file("legacy.enc").unwrap();
+        archive
+            .try_writer()
+            .unwrap()
+            .borrow_mut()
+            .write_all(&ENCRYPTED_PACKED_BAR_DIR)
+            .unwrap();
+        stor.flush_file(&archive).unwrap();
+        let archive = stor.read_file("legacy.enc").unwrap();
+
+        let req = Request {
+            reader: archive.try_reader().unwrap(),
+            header_reader: None,
+            raw_key: Protected::new(PASSWORD.to_vec()),
+            output_dir_path: PathBuf::from("legacy-out"),
+            on_decrypted_header: None,
+            on_archive_info: None,
+            on_zip_file: None,
+        };
+
+        execute(stor.clone(), req).unwrap();
+
+        assert_text(&stor, "legacy-out/bar/.hello.txt", "hello");
+        assert_text(&stor, "legacy-out/bar/world.txt", "world");
+        assert_text(&stor, "legacy-out/bar/.foo/world.txt", "world");
     }
 }

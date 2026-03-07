@@ -6,9 +6,9 @@ use super::Error;
 use core::header::HashingAlgorithm;
 use core::header::Keyslot;
 use core::header::{Header, HeaderVersion};
+use core::primitives::Mode;
 use core::primitives::gen_nonce;
 use core::primitives::gen_salt;
-use core::primitives::Mode;
 use core::protected::Protected;
 use std::cell::RefCell;
 use std::io::{Read, Write};
@@ -27,8 +27,8 @@ pub fn execute<RW>(req: Request<'_, RW>) -> Result<(), Error>
 where
     RW: Read + Write + Seek,
 {
-    let (header, _) = core::header::Header::deserialize(&mut *req.handle.borrow_mut())
-        .map_err(|_| Error::HeaderDeserialize)?;
+    let (header, _) =
+        Header::deserialize(&mut *req.handle.borrow_mut()).map_err(|_| Error::HeaderDeserialize)?;
 
     if header.header_type.version < HeaderVersion::V5 {
         return Err(Error::Unsupported);

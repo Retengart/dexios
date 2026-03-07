@@ -7,7 +7,7 @@ use crate::global::structs::PackParams;
 use crate::warn;
 use anyhow::{Context, Result};
 use clap::ArgMatches;
-use core::header::{HashingAlgorithm, ARGON2ID_LATEST, BLAKE3BALLOON_LATEST};
+use core::header::{ARGON2ID_LATEST, BLAKE3BALLOON_LATEST, HashingAlgorithm};
 use core::primitives::Algorithm;
 
 use super::states::{Compression, DirectoryMode, Key, KeyParams, PrintMode};
@@ -24,7 +24,7 @@ pub fn get_params(name: &str, sub_matches: &ArgMatches) -> Result<Vec<String>> {
 
 pub fn get_param(name: &str, sub_matches: &ArgMatches) -> Result<String> {
     let value = sub_matches
-        .value_of(name)
+        .get_one::<String>(name)
         .with_context(|| format!("No {} provided", name))?
         .to_string();
     Ok(value)
@@ -34,7 +34,7 @@ pub fn get_param(name: &str, sub_matches: &ArgMatches) -> Result<String> {
 pub fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
     let key = Key::init(sub_matches, &KeyParams::default(), "keyfile")?;
 
-    let hash_mode = if sub_matches.is_present("hash") {
+    let hash_mode = if sub_matches.get_flag("hash") {
         //specify to emit hash after operation
         HashMode::CalculateHash
     } else {
@@ -44,9 +44,9 @@ pub fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
 
     let force = forcemode(sub_matches);
 
-    let erase = if sub_matches.is_present("erase") {
+    let erase = if sub_matches.get_one::<String>("erase").is_some() {
         let result = sub_matches
-            .value_of("erase")
+            .get_one::<String>("erase")
             .context("No amount of passes specified")?
             .parse();
 
@@ -60,10 +60,10 @@ pub fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
         EraseMode::IgnoreFile
     };
 
-    let header_location = if sub_matches.is_present("header") {
+    let header_location = if sub_matches.get_one::<String>("header").is_some() {
         HeaderLocation::Detached(
             sub_matches
-                .value_of("header")
+                .get_one::<String>("header")
                 .context("No header/invalid text provided")?
                 .to_string(),
         )
@@ -84,7 +84,14 @@ pub fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
 }
 
 pub fn hashing_algorithm(sub_matches: &ArgMatches) -> HashingAlgorithm {
-    if sub_matches.is_present("argon") {
+    let use_argon = sub_matches
+        .try_get_one::<bool>("argon")
+        .ok()
+        .flatten()
+        .copied()
+        .unwrap_or(false);
+
+    if use_argon {
         HashingAlgorithm::Argon2id(ARGON2ID_LATEST)
     } else {
         HashingAlgorithm::Blake3Balloon(BLAKE3BALLOON_LATEST)
@@ -93,7 +100,7 @@ pub fn hashing_algorithm(sub_matches: &ArgMatches) -> HashingAlgorithm {
 
 // gets the algorithm, primarily for encrypt functions
 pub fn algorithm(sub_matches: &ArgMatches) -> Algorithm {
-    if sub_matches.is_present("aes") {
+    if sub_matches.get_flag("aes") {
         Algorithm::Aes256Gcm
     } else {
         Algorithm::XChaCha20Poly1305
@@ -101,9 +108,9 @@ pub fn algorithm(sub_matches: &ArgMatches) -> Algorithm {
 }
 
 pub fn erase_params(sub_matches: &ArgMatches) -> Result<(i32, ForceMode)> {
-    let passes = if sub_matches.is_present("passes") {
+    let passes = if sub_matches.get_one::<String>("passes").is_some() {
         let result = sub_matches
-            .value_of("passes")
+            .get_one::<String>("passes")
             .context("No amount of passes specified")?
             .parse::<i32>();
         if let Ok(value) = result {
@@ -125,7 +132,7 @@ pub fn erase_params(sub_matches: &ArgMatches) -> Result<(i32, ForceMode)> {
 pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams)> {
     let key = Key::init(sub_matches, &KeyParams::default(), "keyfile")?;
 
-    let hash_mode = if sub_matches.is_present("hash") {
+    let hash_mode = if sub_matches.get_flag("hash") {
         //specify to emit hash after operation
         HashMode::CalculateHash
     } else {
@@ -137,10 +144,10 @@ pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams
 
     let erase = EraseMode::IgnoreFile;
 
-    let header_location = if sub_matches.is_present("header") {
+    let header_location = if sub_matches.get_one::<String>("header").is_some() {
         HeaderLocation::Detached(
             sub_matches
-                .value_of("header")
+                .get_one::<String>("header")
                 .context("No header/invalid text provided")?
                 .to_string(),
         )
@@ -159,7 +166,7 @@ pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams
         hashing_algorithm,
     };
 
-    let print_mode = if sub_matches.is_present("verbose") {
+    let print_mode = if sub_matches.get_flag("verbose") {
         //specify to emit hash after operation
         PrintMode::Verbose
     } else {
@@ -167,7 +174,7 @@ pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams
         PrintMode::Quiet
     };
 
-    let dir_mode = if sub_matches.is_present("recursive") {
+    let dir_mode = if sub_matches.get_flag("recursive") {
         //specify to emit hash after operation
         DirectoryMode::Recursive
     } else {
@@ -175,13 +182,13 @@ pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams
         DirectoryMode::Singular
     };
 
-    let erase_source = if sub_matches.is_present("erase") {
+    let erase_source = if sub_matches.get_flag("erase") {
         EraseSourceDir::Erase
     } else {
         EraseSourceDir::Retain
     };
 
-    let compression = if sub_matches.is_present("zstd") {
+    let compression = if sub_matches.get_flag("zstd") {
         Compression::Zstd
     } else {
         Compression::None
@@ -198,7 +205,7 @@ pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams
 }
 
 pub fn forcemode(sub_matches: &ArgMatches) -> ForceMode {
-    if sub_matches.is_present("force") {
+    if sub_matches.get_flag("force") {
         ForceMode::Force
     } else {
         ForceMode::Prompt
@@ -235,4 +242,70 @@ pub fn key_manipulation_params(sub_matches: &ArgMatches) -> Result<KeyManipulati
         key_new,
         hashing_algorithm,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::build_cli;
+
+    #[test]
+    fn decrypt_key_init_falls_back_to_user_without_autogenerate_arg() {
+        let matches = build_cli()
+            .try_get_matches_from(["dexios", "decrypt", "cipher.enc", "plain.txt"])
+            .expect("CLI should parse");
+        let (_, sub_matches) = matches.subcommand().expect("subcommand");
+
+        let key = Key::init(
+            sub_matches,
+            &KeyParams {
+                user: true,
+                env: false,
+                autogenerate: true,
+                keyfile: true,
+            },
+            "keyfile",
+        )
+        .expect("key selection");
+
+        assert!(key == Key::User);
+    }
+
+    #[test]
+    fn decrypt_parameter_handler_defaults_to_blake3_balloon() {
+        let matches = build_cli()
+            .try_get_matches_from([
+                "dexios",
+                "decrypt",
+                "-k",
+                "keyfile",
+                "cipher.enc",
+                "plain.txt",
+            ])
+            .expect("CLI should parse");
+        let (_, sub_matches) = matches.subcommand().expect("subcommand");
+
+        let params = parameter_handler(sub_matches).expect("params");
+
+        assert!(params.hashing_algorithm == HashingAlgorithm::Blake3Balloon(BLAKE3BALLOON_LATEST));
+    }
+
+    #[test]
+    fn unpack_parameter_handler_defaults_to_blake3_balloon() {
+        let matches = build_cli()
+            .try_get_matches_from([
+                "dexios",
+                "unpack",
+                "-k",
+                "keyfile",
+                "archive.enc",
+                "out-dir",
+            ])
+            .expect("CLI should parse");
+        let (_, sub_matches) = matches.subcommand().expect("subcommand");
+
+        let params = parameter_handler(sub_matches).expect("params");
+
+        assert!(params.hashing_algorithm == HashingAlgorithm::Blake3Balloon(BLAKE3BALLOON_LATEST));
+    }
 }
