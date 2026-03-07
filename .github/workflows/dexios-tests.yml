@@ -56,16 +56,24 @@ jobs:
       run: dd if=/dev/urandom of=100MB.bin bs=1M count=100
     - name: Generate keyfile
       run: dd if=/dev/urandom of=keyfile bs=1 count=4096
+    - name: Save plaintext hash
+      run: sha256sum 100MB.bin > 100MB.bin.sha256
     - name: Encrypt in stream mode (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -eHfk keyfile 100MB.bin 100MB.enc'
     - name: Decrypt in stream mode (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -dHfk keyfile 100MB.enc 100MB.bin'
+    - name: Verify decrypted plaintext (XChaCha20-Poly1305)
+      run: sha256sum -c 100MB.bin.sha256
     - name: Generate test file
       run: dd if=/dev/urandom of=100MB.bin bs=1M count=100
+    - name: Save plaintext hash (AES-256-GCM)
+      run: sha256sum 100MB.bin > 100MB.bin.sha256
     - name: Encrypt in stream mode (AES-256-GCM)
       run: '"$DEXIOS_BIN" -eHfk keyfile --aes 100MB.bin 100MB.enc'
     - name: Decrypt in stream mode (AES-256-GCM)
       run: '"$DEXIOS_BIN" -dHfk keyfile 100MB.enc 100MB.bin'
+    - name: Verify decrypted plaintext (AES-256-GCM)
+      run: sha256sum -c 100MB.bin.sha256
 
   header-tests:
     needs: build
@@ -85,6 +93,8 @@ jobs:
       run: dd if=/dev/urandom of=100MB.bin bs=1M count=100
     - name: Generate keyfile
       run: dd if=/dev/urandom of=keyfile bs=1 count=4096
+    - name: Save plaintext hash
+      run: sha256sum 100MB.bin > 100MB.bin.sha256
     - name: Encrypt in stream mode (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -eHfk keyfile 100MB.bin 100MB.enc'
     - name: Dump Header
@@ -95,14 +105,22 @@ jobs:
       run: '"$DEXIOS_BIN" header restore 100MB.enc.header 100MB.enc'
     - name: Decrypt in stream mode (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -dHfk keyfile 100MB.enc 100MB.bin'
+    - name: Verify restored-header plaintext
+      run: sha256sum -c 100MB.bin.sha256
     - name: Strip Header
       run: '"$DEXIOS_BIN" header strip 100MB.enc'
     - name: Decrypt in stream mode with detached header (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -dHfk keyfile --header 100MB.enc.header 100MB.enc 100MB.bin'
+    - name: Verify detached-header plaintext
+      run: sha256sum -c 100MB.bin.sha256
+    - name: Save plaintext hash for detached-header encrypt
+      run: sha256sum 100MB.bin > 100MB.detached.sha256
     - name: Encrypt in stream mode to detached header (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -eHfk keyfile --header 100MB.header 100MB.bin 100MB.enc'
     - name: Decrypt in stream mode with detached header (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -dHfk keyfile --header 100MB.header 100MB.enc 100MB.bin'
+    - name: Verify detached-header roundtrip plaintext
+      run: sha256sum -c 100MB.detached.sha256
 
   hash-standalone-mode:
     needs: build
