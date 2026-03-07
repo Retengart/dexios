@@ -4,7 +4,7 @@
 mod test {
     use core::primitives::{get_nonce_len, Algorithm, Mode, MASTER_KEY_LEN, SALT_LEN};
     use core::protected::Protected;
-    use rand::{prelude::StdRng, RngCore, SeedableRng};
+    use rand::{rngs::StdRng, Rng, SeedableRng};
 
     const SALT_SEED: u64 = 123_456;
     const NONCE_SEED: u64 = SALT_SEED + 1;
