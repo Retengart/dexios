@@ -242,7 +242,7 @@ pub(crate) mod tests {
                 assert!(header.header_type.algorithm == Algorithm::XChaCha20Poly1305);
                 assert!(header.header_type.mode == Mode::StreamMode);
                 assert!(!aad.is_empty());
-                assert!(content.len() > header.get_size() as usize);
+                assert!(u64::try_from(content.len()).unwrap() > header.get_size());
             }
             _ => unreachable!(),
         }

@@ -256,7 +256,7 @@ impl Storage<io::Cursor<Vec<u8>>> for InMemoryStorage {
         for dir in dirs {
             let existing = self.files().get(&dir).cloned();
             match existing {
-                Some(IMFile::Dir) => continue,
+                Some(IMFile::Dir) => {}
                 Some(IMFile::File(_)) => return Err(Error::CreateDir),
                 None => self.save_file(dir, IMFile::Dir),
             }
@@ -580,7 +580,7 @@ mod tests {
             .unwrap();
 
         match stor.flush_file(&file) {
-            Ok(_) => {
+            Ok(()) => {
                 let im_file = stor.files().get(file.path()).cloned();
                 assert_eq!(
                     im_file,
@@ -603,7 +603,7 @@ mod tests {
         let file_path = file.path().to_path_buf();
 
         match stor.remove_file(file) {
-            Ok(_) => {
+            Ok(()) => {
                 let im_file = stor.files().get(&file_path).cloned();
                 assert_eq!(im_file, None);
             }
@@ -620,7 +620,7 @@ mod tests {
         let file_path = file.path().to_path_buf();
 
         match stor.remove_file(file) {
-            Ok(_) => {
+            Ok(()) => {
                 let im_file = stor.files().get(&file_path).cloned();
                 assert_eq!(im_file, None);
             }
