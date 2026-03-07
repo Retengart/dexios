@@ -28,7 +28,7 @@ jobs:
           target
         key: ${{ runner.os }}-cargo-stable-${{ hashFiles('Cargo.lock') }}
     - name: Build
-      run: cargo build --release -p dexios
+      run: cargo +stable build --release -p dexios
     - name: Strip
       run: strip target/release/dexios
     - name: Upload Binary as artifact
