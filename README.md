@@ -39,7 +39,7 @@ isolated, and ensure that security-critical pieces of code remain maintainable.
 
 ## Development
 
-Dexios development now targets Rust `1.93`.
+Dexios currently requires Rust `1.88` or newer.
 
 ```bash
 cargo build --workspace
