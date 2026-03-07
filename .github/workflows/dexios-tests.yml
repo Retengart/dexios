@@ -243,14 +243,18 @@ jobs:
       run: dd if=/dev/urandom of=test/1.bin bs=1M count=10 && dd if=/dev/urandom of=test/2.bin bs=1M count=10 && dd if=/dev/urandom of=test/3.bin bs=1M count=10 && dd if=/dev/urandom of=test/4.bin bs=1M count=10
     - name: Generate keyfile
       run: dd if=/dev/urandom of=keyfile bs=1 count=4096
+    - name: Save source manifest
+      run: find test -type f -print0 | sort -z | xargs -0 sha256sum > test.manifest
     - name: Pack+Encrypt test directory (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" pack -fk keyfile test/ output.zip'
     - name: Remove Directory
       run: rm -rf test/
     - name: Decrypt+Unpack archive (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" unpack -fk keyfile output.zip .'
-    - name: List files in directory
-      run: ls -lla test/
+    - name: Save unpacked manifest
+      run: find test -type f -print0 | sort -z | xargs -0 sha256sum > test.after.manifest
+    - name: Verify unpacked files
+      run: diff -u test.manifest test.after.manifest
 
   key-add:
     needs: build
