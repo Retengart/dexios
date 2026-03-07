@@ -133,7 +133,7 @@ where
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::io::{Cursor, Read};
 
@@ -143,8 +143,7 @@ mod tests {
     use crate::encrypt::tests::PASSWORD;
     use crate::storage::{InMemoryStorage, Storage};
 
-    #[allow(dead_code)]
-    const ENCRYPTED_PACKED_BAR_DIR: [u8; 1202] = [
+    pub(crate) const ENCRYPTED_PACKED_BAR_DIR: [u8; 1202] = [
         222, 5, 14, 1, 12, 1, 173, 240, 60, 45, 230, 243, 58, 160, 69, 50, 217, 192, 66, 223, 124,
         190, 148, 91, 92, 129, 0, 0, 0, 0, 0, 0, 223, 181, 71, 240, 140, 106, 41, 36, 82, 150, 105,
         215, 159, 108, 234, 246, 25, 19, 65, 206, 177, 146, 15, 174, 209, 129, 82, 2, 62, 76, 129,

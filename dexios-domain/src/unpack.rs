@@ -171,6 +171,7 @@ pub fn execute<RW: Read + Write + Seek>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -180,6 +181,7 @@ mod tests {
 
     use crate::encrypt::tests::PASSWORD;
     use crate::pack;
+    use crate::pack::tests::ENCRYPTED_PACKED_BAR_DIR;
     use crate::storage::{IMFile, InMemoryFile, InMemoryStorage, Storage};
 
     fn pack_bar_directory(
@@ -273,5 +275,35 @@ mod tests {
         assert_text(&stor, "out-detached/bar/.hello.txt", "hello");
         assert_text(&stor, "out-detached/bar/world.txt", "world");
         assert_text(&stor, "out-detached/bar/.foo/world.txt", "world");
+    }
+
+    #[test]
+    fn should_unpack_legacy_master_generated_archive_fixture() {
+        let stor = Arc::new(InMemoryStorage::default());
+        let archive = stor.create_file("legacy.enc").unwrap();
+        archive
+            .try_writer()
+            .unwrap()
+            .borrow_mut()
+            .write_all(&ENCRYPTED_PACKED_BAR_DIR)
+            .unwrap();
+        stor.flush_file(&archive).unwrap();
+        let archive = stor.read_file("legacy.enc").unwrap();
+
+        let req = Request {
+            reader: archive.try_reader().unwrap(),
+            header_reader: None,
+            raw_key: Protected::new(PASSWORD.to_vec()),
+            output_dir_path: PathBuf::from("legacy-out"),
+            on_decrypted_header: None,
+            on_archive_info: None,
+            on_zip_file: None,
+        };
+
+        execute(stor.clone(), req).unwrap();
+
+        assert_text(&stor, "legacy-out/bar/.hello.txt", "hello");
+        assert_text(&stor, "legacy-out/bar/world.txt", "world");
+        assert_text(&stor, "legacy-out/bar/.foo/world.txt", "world");
     }
 }
