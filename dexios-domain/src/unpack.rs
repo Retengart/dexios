@@ -116,23 +116,13 @@ pub fn execute<RW: Read + Write + Seek>(
             on_archive_info(files_count);
         }
 
-        // 5. create dirs
-        #[allow(clippy::needless_collect)]
-        let create_dirs_jobs = entities
+        // 5. create dirs sequentially to avoid unbounded thread fan-out on large archives.
+        entities
             .iter()
             .filter(|(_, _, is_dir)| *is_dir)
             .map(|(fp, ..)| fp)
             .chain([&output_dir])
-            .map(|full_path| {
-                let stor = stor.clone();
-                let full_path = full_path.clone();
-                std::thread::spawn(move || stor.create_dir_all(full_path).map_err(Error::Storage))
-            })
-            .collect::<Vec<_>>();
-
-        create_dirs_jobs
-            .into_iter()
-            .try_for_each(|th| th.join().unwrap())?;
+            .try_for_each(|full_path| stor.create_dir_all(full_path).map_err(Error::Storage))?;
 
         // 6. create files
         entities
@@ -157,11 +147,7 @@ pub fn execute<RW: Read + Write + Seek>(
             })?;
     }
 
-    let cleanup_res = cleanup_temp_archive(stor.as_ref(), tmp_file, buf_capacity);
-
-    if let Err(err) = cleanup_res {
-        return Err(err);
-    }
+    cleanup_temp_archive(stor.as_ref(), tmp_file, buf_capacity)?;
 
     Ok(())
 }
