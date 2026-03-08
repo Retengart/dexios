@@ -314,4 +314,30 @@ mod tests {
             HashingAlgorithm::Blake3Balloon(BLAKE3BALLOON_LATEST)
         );
     }
+
+    #[test]
+    fn explicit_autogenerate_beats_environment_key() {
+        let matches = build_cli()
+            .try_get_matches_from(["dexios", "encrypt", "--auto=7", "in.bin", "out.enc"])
+            .expect("CLI should parse");
+        let (_, sub_matches) = matches.subcommand().expect("subcommand");
+
+        let key = Key::resolve_key_source(
+            sub_matches
+                .try_get_one::<String>("keyfile")
+                .ok()
+                .flatten()
+                .map(String::as_str),
+            sub_matches
+                .try_get_one::<String>("autogenerate")
+                .ok()
+                .flatten()
+                .map(String::as_str),
+            true,
+            &KeyParams::default(),
+        )
+        .expect("key selection");
+
+        assert_eq!(key, Key::Generate(7));
+    }
 }
