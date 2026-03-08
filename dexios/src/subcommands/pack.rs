@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::process::exit;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -17,6 +16,10 @@ use crate::{
 use domain::storage::Storage;
 
 use crate::cli::prompt::overwrite_check;
+
+fn should_continue_after_overwrite_checks(output_ok: bool, header_ok: Option<bool>) -> bool {
+    output_ok && header_ok.unwrap_or(true)
+}
 
 pub struct Request<'a> {
     pub input_file: &'a Vec<String>,
@@ -46,8 +49,14 @@ pub fn execute(req: &Request) -> Result<()> {
         return Err(anyhow::anyhow!("Input path cannot be a file."));
     }
 
-    if !overwrite_check(req.output_file, req.crypto_params.force)? {
-        exit(0);
+    let output_ok = overwrite_check(req.output_file, req.crypto_params.force)?;
+    let header_ok = match &req.crypto_params.header_location {
+        HeaderLocation::Embedded => None,
+        HeaderLocation::Detached(path) => Some(overwrite_check(path, req.crypto_params.force)?),
+    };
+
+    if !should_continue_after_overwrite_checks(output_ok, header_ok) {
+        return Ok(());
     }
 
     let input_files = req
@@ -62,13 +71,7 @@ pub fn execute(req: &Request) -> Result<()> {
 
     let header_file = match &req.crypto_params.header_location {
         HeaderLocation::Embedded => None,
-        HeaderLocation::Detached(path) => {
-            if !overwrite_check(path, req.crypto_params.force)? {
-                exit(0);
-            }
-
-            Some(stor.create_file(path).or_else(|_| stor.write_file(path))?)
-        }
+        HeaderLocation::Detached(path) => Some(stor.create_file(path).or_else(|_| stor.write_file(path))?),
     };
 
     let compress_files = input_files
@@ -126,4 +129,21 @@ pub fn execute(req: &Request) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn detached_header_decline_returns_false_before_work_starts() {
+        assert!(!super::should_continue_after_overwrite_checks(
+            true,
+            Some(false)
+        ));
+    }
+
+    #[test]
+    fn approve_all_overwrite_checks_returns_true() {
+        assert!(super::should_continue_after_overwrite_checks(true, Some(true)));
+        assert!(super::should_continue_after_overwrite_checks(true, None));
+    }
 }
