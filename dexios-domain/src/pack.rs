@@ -121,11 +121,7 @@ where
     })
     .map_err(Error::Encrypt);
 
-    let cleanup_res = cleanup_temp_archive(stor.as_ref(), tmp_file, buf_capacity);
-
-    if let Err(err) = cleanup_res {
-        return Err(err);
-    }
+    cleanup_temp_archive(stor.as_ref(), tmp_file, buf_capacity)?;
 
     encrypt_res
 }
