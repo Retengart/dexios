@@ -50,6 +50,31 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+pub struct TempArtifact {
+    path: PathBuf,
+    file: RefCell<tempfile::NamedTempFile>,
+}
+
+impl TempArtifact {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn reader(&self) -> &RefCell<tempfile::NamedTempFile> {
+        &self.file
+    }
+
+    pub fn writer(&self) -> &RefCell<tempfile::NamedTempFile> {
+        &self.file
+    }
+
+    pub fn len(&self) -> Result<usize, Error> {
+        let file = self.file.borrow();
+        let meta = file.as_file().metadata().map_err(|_| Error::FileLen)?;
+        meta.len().try_into().map_err(|_| Error::FileLen)
+    }
+}
+
 pub trait Storage<RW>: Send + Sync
 where
     RW: Read + Write + Seek,
@@ -77,6 +102,18 @@ where
 }
 
 pub struct FileStorage;
+
+impl FileStorage {
+    pub fn create_temp_artifact(&self) -> Result<TempArtifact, Error> {
+        let file = tempfile::NamedTempFile::new().map_err(|_| Error::CreateFile)?;
+        let path = file.path().to_path_buf();
+
+        Ok(TempArtifact {
+            path,
+            file: RefCell::new(file),
+        })
+    }
+}
 
 impl Storage<fs::File> for FileStorage {
     fn create_dir_all<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
@@ -795,5 +832,14 @@ mod tests {
         assert_eq!(stor.file_len(&file).unwrap(), b"secret-bytes".len());
 
         fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn temp_artifact_exists_while_live() {
+        let stor = FileStorage;
+        let tmp = stor.create_temp_artifact().expect("temp artifact");
+        let path = tmp.path().to_path_buf();
+
+        assert!(path.exists());
     }
 }
