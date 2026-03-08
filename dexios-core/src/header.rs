@@ -737,7 +737,7 @@ impl Header {
     pub fn write(&self, writer: &mut impl Write) -> Result<()> {
         let header_bytes = self.serialize()?;
         writer
-            .write(&header_bytes)
+            .write_all(&header_bytes)
             .context("Unable to write header")?;
 
         Ok(())
