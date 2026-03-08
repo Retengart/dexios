@@ -38,6 +38,11 @@ use crate::protected::Protected;
 /// let key = argon2id_hash(raw_key, &salt, &HeaderVersion::V3).unwrap();
 /// ```
 ///
+/// # Errors
+///
+/// Returns an error if the header version does not support Argon2id, if the Argon2
+/// parameters cannot be constructed, or if hashing the password into the output
+/// buffer fails.
 pub fn argon2id_hash(
     raw_key: Protected<Vec<u8>>,
     salt: &[u8; SALT_LEN],
@@ -102,6 +107,11 @@ pub fn argon2id_hash(
 /// let key = balloon_hash(raw_key, &salt, &HeaderVersion::V4).unwrap();
 /// ```
 ///
+/// # Errors
+///
+/// Returns an error if the header version does not support Balloon hashing, if the
+/// Balloon parameters cannot be constructed, or if hashing the password into the
+/// output buffer fails.
 pub fn balloon_hash(
     raw_key: Protected<Vec<u8>>,
     salt: &[u8; SALT_LEN],
@@ -140,6 +150,12 @@ pub fn balloon_hash(
 /// In header versions >= V4, this is a cryptographically-secure random value
 ///
 /// In header versions >= V4, this function will iterate through all available keyslots, looking for a match. If it finds a match, it will return the decrypted master key.
+///
+/// # Errors
+///
+/// Returns an error if the header is missing required salt or keyslot data, if the
+/// selected KDF fails, if the cipher cannot be initialized, or if none of the
+/// available keyslots can be decrypted with the supplied key.
 #[allow(clippy::module_name_repetitions)]
 pub fn decrypt_master_key(
     raw_key: Protected<Vec<u8>>,
