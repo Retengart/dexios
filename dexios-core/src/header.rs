@@ -48,7 +48,7 @@ pub const HEADER_VERSION: HeaderVersion = HeaderVersion::V5;
 
 /// This stores all possible versions of the header
 #[allow(clippy::module_name_repetitions)]
-#[derive(PartialEq, Eq, Clone, Copy, PartialOrd)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd)]
 pub enum HeaderVersion {
     V1,
     V2,
@@ -107,7 +107,7 @@ pub const BLAKE3BALLOON_LATEST: i32 = 5;
 
 /// This is in place to make `Keyslot` handling a **lot** easier
 /// You may use the constants `ARGON2ID_LATEST` and `BLAKE3BALLOON_LATEST` for defining versions
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HashingAlgorithm {
     Argon2id(i32),
     Blake3Balloon(i32),
@@ -116,8 +116,8 @@ pub enum HashingAlgorithm {
 impl std::fmt::Display for HashingAlgorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            HashingAlgorithm::Argon2id(i) => write!(f, "Argon2id (param v{})", i),
-            HashingAlgorithm::Blake3Balloon(i) => write!(f, "BLAKE3-Balloon (param v{})", i),
+            HashingAlgorithm::Argon2id(i) => write!(f, "Argon2id (param v{i})"),
+            HashingAlgorithm::Blake3Balloon(i) => write!(f, "BLAKE3-Balloon (param v{i})"),
         }
     }
 }

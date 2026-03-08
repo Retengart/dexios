@@ -56,7 +56,7 @@ pub enum ForceMode {
     Prompt,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Key {
     Keyfile(String),
     Env,
@@ -95,10 +95,10 @@ impl Key {
             }
             Key::Keyfile(path) => {
                 let mut reader = std::fs::File::open(path)
-                    .with_context(|| format!("Unable to read file: {}", path))?;
+                    .with_context(|| format!("Unable to read file: {path}"))?;
                 let secret = get_bytes(&mut reader)?;
                 if secret.is_empty() {
-                    return Err(anyhow::anyhow!(format!("Keyfile '{}' is empty", path)));
+                    return Err(anyhow::anyhow!(format!("Keyfile '{path}' is empty")));
                 }
                 secret
             }
@@ -139,7 +139,7 @@ impl Key {
             .flatten();
 
         let key = if let (Some(path), true) = (keyfile, params.keyfile) {
-            Key::Keyfile(path.to_string())
+            Key::Keyfile(path.clone())
         } else if std::env::var("DEXIOS_KEY").is_ok() && params.env {
             Key::Env
         } else if let (Some(words), true) = (autogenerate, params.autogenerate) {

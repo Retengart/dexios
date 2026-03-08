@@ -238,9 +238,9 @@ pub(crate) mod tests {
                 let mut encrypted = Cursor::new(&content);
                 let (header, aad) = Header::deserialize(&mut encrypted).unwrap();
 
-                assert!(header.header_type.version == HeaderVersion::V5);
-                assert!(header.header_type.algorithm == Algorithm::XChaCha20Poly1305);
-                assert!(header.header_type.mode == Mode::StreamMode);
+                assert_eq!(header.header_type.version, HeaderVersion::V5);
+                assert_eq!(header.header_type.algorithm, Algorithm::XChaCha20Poly1305);
+                assert_eq!(header.header_type.mode, Mode::StreamMode);
                 assert!(!aad.is_empty());
                 assert!(u64::try_from(content.len()).unwrap() > header.get_size());
             }
