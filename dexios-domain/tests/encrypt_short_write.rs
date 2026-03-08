@@ -62,7 +62,9 @@ fn encrypt_must_write_the_full_embedded_header() {
         salt: None,
         keyslots: Some(vec![]),
     };
-    let expected_len = header.get_size() as usize + b"Hello world".len() + 16;
+    let expected_len = usize::try_from(header.get_size()).expect("header size fits in usize")
+        + b"Hello world".len()
+        + 16;
 
     assert_eq!(output.borrow().len(), expected_len);
 }
