@@ -1,5 +1,5 @@
 use crate::{cli::prompt::get_answer, global::states::HashMode};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use anyhow::Result;
 
@@ -67,8 +67,6 @@ pub fn unpack(
     };
 
     let raw_key = params.key.get_secret(&PasswordState::Direct)?;
-    let unpack_callback_error = Arc::new(Mutex::new(None));
-    let callback_error = unpack_callback_error.clone();
     let verbose = print_mode == PrintMode::Verbose;
 
     domain::unpack::execute(
@@ -81,20 +79,11 @@ pub fn unpack(
             on_decrypted_header: None,
             on_archive_info: None,
             on_zip_file: Some(Box::new(move |file_path| {
-                match should_unpack_entry(&file_path, params.force, verbose, get_answer) {
-                    Ok(should_unpack) => should_unpack,
-                    Err(err) => {
-                        *callback_error.lock().unwrap() = Some(err);
-                        false
-                    }
-                }
+                should_unpack_entry(&file_path, params.force, verbose, get_answer)
+                    .map_err(|err| err.to_string())
             })),
         },
     )?;
-
-    if let Some(err) = unpack_callback_error.lock().unwrap().take() {
-        return Err(err);
-    }
 
     if params.hash_mode == HashMode::CalculateHash {
         super::hashing::hash_stream(&[input.to_string()])?;
