@@ -75,14 +75,7 @@ impl TempArtifact {
     }
 
     pub fn secure_dispose(self) -> Result<(), Error> {
-        let path = self.path.clone();
-        drop(self);
-
-        if path.exists() {
-            return Err(Error::RemoveFile);
-        }
-
-        Ok(())
+        self.file.into_inner().close().map_err(|_| Error::RemoveFile)
     }
 }
 
