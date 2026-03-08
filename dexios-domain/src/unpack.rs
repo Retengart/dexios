@@ -19,6 +19,7 @@ pub enum Error {
     ResetCursorPosition,
     Storage(storage::Error),
     Decrypt(decrypt::Error),
+    TempCleanup,
 }
 
 impl std::fmt::Display for Error {
@@ -30,6 +31,7 @@ impl std::fmt::Display for Error {
             Error::ResetCursorPosition => f.write_str("Unable to reset cursor position"),
             Error::Storage(inner) => write!(f, "Storage error: {inner}"),
             Error::Decrypt(inner) => write!(f, "Decrypt error: {inner}"),
+            Error::TempCleanup => f.write_str("Unable to securely clean up temporary archive"),
         }
     }
 }
@@ -156,7 +158,24 @@ pub fn execute<RW: Read + Write + Seek>(
             })?;
     }
 
-    // 7. Finally eraze temp zip archive with zeros.
+    let cleanup_res = cleanup_temp_archive(stor.as_ref(), tmp_file, buf_capacity);
+
+    if let Err(err) = cleanup_res {
+        return Err(err);
+    }
+
+    Ok(())
+}
+
+fn cleanup_temp_archive<RW>(
+    stor: &impl Storage<RW>,
+    tmp_file: storage::Entry<RW>,
+    buf_capacity: usize,
+) -> Result<(), Error>
+where
+    RW: Read + Write + Seek,
+{
+    // Finally erase temp zip archive with zeros.
     overwrite::execute(overwrite::Request {
         buf_capacity,
         writer: tmp_file
@@ -164,9 +183,9 @@ pub fn execute<RW: Read + Write + Seek>(
             .expect("We sure that file in write mode"),
         passes: 1,
     })
-    .ok();
+    .map_err(|_| Error::TempCleanup)?;
 
-    stor.remove_file(tmp_file).ok();
+    stor.remove_file(tmp_file).map_err(|_| Error::TempCleanup)?;
 
     Ok(())
 }
@@ -174,7 +193,7 @@ pub fn execute<RW: Read + Write + Seek>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+    use std::io::{Cursor, Write};
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -185,7 +204,9 @@ mod tests {
     use crate::encrypt::tests::PASSWORD;
     use crate::pack;
     use crate::pack::tests::ENCRYPTED_PACKED_BAR_DIR;
-    use crate::storage::{IMFile, InMemoryFile, InMemoryStorage, Storage};
+    use crate::storage::{
+        Error as StorageError, IMFile, InMemoryFile, InMemoryStorage, Storage,
+    };
 
     fn pack_bar_directory(
         stor: Arc<InMemoryStorage>,
@@ -230,6 +251,80 @@ mod tests {
                 assert_eq!(buf, expected.as_bytes());
             }
             _ => panic!("missing file: {path}"),
+        }
+    }
+
+    #[derive(Default)]
+    struct FailingCleanupStorage {
+        inner: InMemoryStorage,
+    }
+
+    impl Storage<Cursor<Vec<u8>>> for FailingCleanupStorage {
+        fn create_dir_all<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), StorageError> {
+            self.inner.create_dir_all(path)
+        }
+
+        fn create_file<P: AsRef<std::path::Path>>(
+            &self,
+            path: P,
+        ) -> Result<storage::Entry<Cursor<Vec<u8>>>, StorageError> {
+            self.inner.create_file(path)
+        }
+
+        fn read_file<P: AsRef<std::path::Path>>(
+            &self,
+            path: P,
+        ) -> Result<storage::Entry<Cursor<Vec<u8>>>, StorageError> {
+            self.inner.read_file(path)
+        }
+
+        fn overwrite_file<P: AsRef<std::path::Path>>(
+            &self,
+            path: P,
+        ) -> Result<storage::Entry<Cursor<Vec<u8>>>, StorageError> {
+            self.inner.overwrite_file(path)
+        }
+
+        fn write_file<P: AsRef<std::path::Path>>(
+            &self,
+            path: P,
+        ) -> Result<storage::Entry<Cursor<Vec<u8>>>, StorageError> {
+            self.inner.write_file(path)
+        }
+
+        fn flush_file(
+            &self,
+            file: &storage::Entry<Cursor<Vec<u8>>>,
+        ) -> Result<(), StorageError> {
+            self.inner.flush_file(file)
+        }
+
+        fn file_len(
+            &self,
+            file: &storage::Entry<Cursor<Vec<u8>>>,
+        ) -> Result<usize, StorageError> {
+            self.inner.file_len(file)
+        }
+
+        fn remove_file(
+            &self,
+            _file: storage::Entry<Cursor<Vec<u8>>>,
+        ) -> Result<(), StorageError> {
+            Err(StorageError::RemoveFile)
+        }
+
+        fn remove_dir_all(
+            &self,
+            file: storage::Entry<Cursor<Vec<u8>>>,
+        ) -> Result<(), StorageError> {
+            self.inner.remove_dir_all(file)
+        }
+
+        fn read_dir(
+            &self,
+            file: &storage::Entry<Cursor<Vec<u8>>>,
+        ) -> Result<Vec<storage::Entry<Cursor<Vec<u8>>>>, StorageError> {
+            self.inner.read_dir(file)
         }
     }
 
@@ -308,5 +403,44 @@ mod tests {
         assert_text(&stor, "legacy-out/bar/.hello.txt", "hello");
         assert_text(&stor, "legacy-out/bar/world.txt", "world");
         assert_text(&stor, "legacy-out/bar/.foo/world.txt", "world");
+    }
+
+    #[test]
+    fn should_fail_when_temp_zip_cleanup_fails() {
+        let stor = Arc::new(FailingCleanupStorage::default());
+        let setup_stor = Arc::new(InMemoryStorage::default());
+        pack_bar_directory(setup_stor.clone(), "archive.enc", None);
+
+        let archive = setup_stor.read_file("archive.enc").unwrap();
+        let mut archive_buf = Vec::new();
+        archive
+            .try_reader()
+            .unwrap()
+            .borrow_mut()
+            .read_to_end(&mut archive_buf)
+            .unwrap();
+        let archive_file = stor.inner.create_file("archive.enc").unwrap();
+        archive_file
+            .try_writer()
+            .unwrap()
+            .borrow_mut()
+            .write_all(&archive_buf)
+            .unwrap();
+        stor.inner.flush_file(&archive_file).unwrap();
+
+        let archive = stor.read_file("archive.enc").unwrap();
+        let req = Request {
+            reader: archive.try_reader().unwrap(),
+            header_reader: None,
+            raw_key: Protected::new(PASSWORD.to_vec()),
+            output_dir_path: PathBuf::from("out"),
+            on_decrypted_header: None,
+            on_archive_info: None,
+            on_zip_file: None,
+        };
+
+        let result = execute(stor, req);
+
+        assert!(matches!(result, Err(Error::TempCleanup)));
     }
 }
