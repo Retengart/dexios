@@ -1,4 +1,3 @@
-use rand::distr::{Alphanumeric, SampleString};
 use std::cell::RefCell;
 use std::fs;
 use std::io::{Read, Seek, Write};
@@ -83,15 +82,6 @@ pub trait Storage<RW>: Send + Sync
 where
     RW: Read + Write + Seek,
 {
-    // TODO(pleshevskiy): return a new struct that will be removed on drop.
-    fn create_temp_file(&self) -> Result<Entry<RW>, Error> {
-        let mut path = std::env::temp_dir();
-        let file_name = Alphanumeric.sample_string(&mut rand::rng(), 16);
-        path.push(file_name);
-
-        self.create_file(path)
-    }
-
     fn create_dir_all<P: AsRef<Path>>(&self, path: P) -> Result<(), Error>;
     fn create_file<P: AsRef<Path>>(&self, path: P) -> Result<Entry<RW>, Error>;
     fn read_file<P: AsRef<Path>>(&self, path: P) -> Result<Entry<RW>, Error>;
