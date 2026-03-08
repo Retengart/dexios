@@ -16,7 +16,7 @@ pub const ENCRYPTED_MASTER_KEY_LEN: usize = 48;
 pub const ALGORITHMS_LEN: usize = 3;
 
 /// This is an `enum` containing all AEADs supported by `dexios-core`
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Algorithm {
     Aes256Gcm,
     XChaCha20Poly1305,
@@ -43,7 +43,7 @@ impl std::fmt::Display for Algorithm {
 }
 
 /// This defines the possible modes used for encrypting/decrypting
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Mode {
     MemoryMode,
     StreamMode,

@@ -52,7 +52,7 @@ pub fn get_answer(prompt: &str, default: bool, force: ForceMode) -> Result<bool>
 // if force mode is true, avoid prompts at all
 pub fn overwrite_check(name: &str, force: ForceMode) -> Result<bool> {
     let answer = if std::fs::metadata(name).is_ok() {
-        let prompt = format!("{} already exists, would you like to overwrite?", name);
+        let prompt = format!("{name} already exists, would you like to overwrite?");
         get_answer(&prompt, true, force)?
     } else {
         true
