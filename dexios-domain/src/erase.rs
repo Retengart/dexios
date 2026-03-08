@@ -37,7 +37,7 @@ where
     RW: Read + Write + Seek,
     P: AsRef<Path>,
 {
-    let file = stor.write_file(req.path).map_err(|_| Error::OpenFile)?;
+    let file = stor.overwrite_file(req.path).map_err(|_| Error::OpenFile)?;
     let buf_capacity = stor.file_len(&file).map_err(|_| Error::OpenFile)?;
 
     crate::overwrite::execute(crate::overwrite::Request {
