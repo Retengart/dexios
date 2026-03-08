@@ -58,9 +58,13 @@ pub fn execute(req: &Request) -> Result<()> {
 
     let output_ok = overwrite_check(req.output_file, req.crypto_params.force)?;
 
-    if !should_continue_after_overwrite_checks(output_ok, || match &req.crypto_params.header_location {
-        HeaderLocation::Embedded => Ok(None),
-        HeaderLocation::Detached(path) => overwrite_check(path, req.crypto_params.force).map(Some),
+    if !should_continue_after_overwrite_checks(output_ok, || {
+        match &req.crypto_params.header_location {
+            HeaderLocation::Embedded => Ok(None),
+            HeaderLocation::Detached(path) => {
+                overwrite_check(path, req.crypto_params.force).map(Some)
+            }
+        }
     })? {
         return Ok(());
     }
@@ -77,7 +81,9 @@ pub fn execute(req: &Request) -> Result<()> {
 
     let header_file = match &req.crypto_params.header_location {
         HeaderLocation::Embedded => None,
-        HeaderLocation::Detached(path) => Some(stor.create_file(path).or_else(|_| stor.write_file(path))?),
+        HeaderLocation::Detached(path) => {
+            Some(stor.create_file(path).or_else(|_| stor.write_file(path))?)
+        }
     };
 
     let compress_files = input_files
@@ -141,11 +147,7 @@ pub fn execute(req: &Request) -> Result<()> {
 mod tests {
     #[test]
     fn detached_header_decline_returns_false_before_work_starts() {
-        assert!(!super::should_continue_after_overwrite_checks(
-            true,
-            || Ok(Some(false))
-        )
-        .unwrap());
+        assert!(!super::should_continue_after_overwrite_checks(true, || Ok(Some(false))).unwrap());
     }
 
     #[test]

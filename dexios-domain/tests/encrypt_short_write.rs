@@ -1,7 +1,7 @@
-use dexios_domain::encrypt;
 use core::header::{HashingAlgorithm, Header, HeaderType, HeaderVersion};
 use core::primitives::{Algorithm, Mode};
 use core::protected::Protected;
+use dexios_domain::encrypt;
 use std::cell::RefCell;
 use std::io::{Cursor, Seek, SeekFrom, Write};
 

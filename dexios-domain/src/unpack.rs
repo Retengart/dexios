@@ -187,9 +187,7 @@ mod tests {
     use crate::encrypt::tests::PASSWORD;
     use crate::pack;
     use crate::pack::tests::ENCRYPTED_PACKED_BAR_DIR;
-    use crate::storage::{
-        Error as StorageError, IMFile, InMemoryFile, InMemoryStorage, Storage,
-    };
+    use crate::storage::{Error as StorageError, IMFile, InMemoryFile, InMemoryStorage, Storage};
 
     fn pack_bar_directory(
         stor: Arc<InMemoryStorage>,
@@ -275,24 +273,15 @@ mod tests {
             self.inner.write_file(path)
         }
 
-        fn flush_file(
-            &self,
-            file: &storage::Entry<Cursor<Vec<u8>>>,
-        ) -> Result<(), StorageError> {
+        fn flush_file(&self, file: &storage::Entry<Cursor<Vec<u8>>>) -> Result<(), StorageError> {
             self.inner.flush_file(file)
         }
 
-        fn file_len(
-            &self,
-            file: &storage::Entry<Cursor<Vec<u8>>>,
-        ) -> Result<usize, StorageError> {
+        fn file_len(&self, file: &storage::Entry<Cursor<Vec<u8>>>) -> Result<usize, StorageError> {
             self.inner.file_len(file)
         }
 
-        fn remove_file(
-            &self,
-            _file: storage::Entry<Cursor<Vec<u8>>>,
-        ) -> Result<(), StorageError> {
+        fn remove_file(&self, _file: storage::Entry<Cursor<Vec<u8>>>) -> Result<(), StorageError> {
             Err(StorageError::RemoveFile)
         }
 

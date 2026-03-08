@@ -76,8 +76,8 @@ pub fn execute<W: Write + Seek>(req: Request<'_, W>) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
     use rand::{SeedableRng, rngs::StdRng};
+    use std::io::Cursor;
 
     fn make_test(capacity: usize, passes: i32) {
         let mut buf = vec![0u8; capacity];

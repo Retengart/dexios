@@ -55,7 +55,9 @@ pub fn stream_mode(
 
     let header_file = match &params.header_location {
         HeaderLocation::Embedded => None,
-        HeaderLocation::Detached(path) => Some(stor.create_file(path).or_else(|_| stor.write_file(path))?),
+        HeaderLocation::Detached(path) => {
+            Some(stor.create_file(path).or_else(|_| stor.write_file(path))?)
+        }
     };
 
     // 2. encrypt file
@@ -94,11 +96,7 @@ pub fn stream_mode(
 mod tests {
     #[test]
     fn detached_header_decline_returns_false_before_work_starts() {
-        assert!(!super::should_continue_after_overwrite_checks(
-            true,
-            || Ok(Some(false))
-        )
-        .unwrap());
+        assert!(!super::should_continue_after_overwrite_checks(true, || Ok(Some(false))).unwrap());
     }
 
     #[test]
