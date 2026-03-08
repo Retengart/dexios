@@ -155,6 +155,7 @@
 <li>The <code>DEXIOS_KEY</code> environment variable</li>
 <li>A user-provided password (this can be chosen by just running Dexios, and providing none of the above)</li>
 </ul>
+<p>When multiple key sources are available, Dexios prefers explicit command-line input over ambient process state. The precedence is: <code>-k</code> keyfile, then <code>--auto</code>, then <code>DEXIOS_KEY</code>, and finally an interactive password prompt.</p>
 
                     </main>
 

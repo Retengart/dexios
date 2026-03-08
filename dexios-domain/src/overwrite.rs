@@ -36,21 +36,32 @@ pub struct Request<'a, W: Write + Seek> {
     pub passes: i32,
 }
 
+fn write_random_pass<W: Write, R: Rng>(
+    writer: &mut W,
+    len: usize,
+    rng: &mut R,
+) -> Result<(), Error> {
+    let mut remaining = len;
+
+    while remaining > 0 {
+        let block_size = remaining.min(BLOCK_SIZE);
+        let mut block_buf = vec![0u8; block_size];
+        rng.fill_bytes(&mut block_buf);
+        writer
+            .write_all(&block_buf)
+            .map_err(|_| Error::OverwriteWithRandomBytes)?;
+        remaining -= block_size;
+    }
+
+    Ok(())
+}
+
 pub fn execute<W: Write + Seek>(req: Request<'_, W>) -> Result<(), Error> {
     let mut writer = req.writer.borrow_mut();
     for _ in 0..req.passes {
         writer.rewind().map_err(|_| Error::ResetCursorPosition)?;
-
-        let mut blocks = [BLOCK_SIZE].repeat(req.buf_capacity / BLOCK_SIZE);
-        blocks.push(req.buf_capacity % BLOCK_SIZE);
-
-        for block_size in blocks.into_iter().take_while(|bs| *bs > 0) {
-            let mut block_buf = Vec::with_capacity(block_size);
-            rand::rng().fill_bytes(&mut block_buf);
-            writer
-                .write_all(&block_buf)
-                .map_err(|_| Error::OverwriteWithRandomBytes)?;
-        }
+        let mut rng = rand::rng();
+        write_random_pass(&mut *writer, req.buf_capacity, &mut rng)?;
 
         writer.flush().map_err(|_| Error::FlushFile)?;
     }
@@ -65,10 +76,11 @@ pub fn execute<W: Write + Seek>(req: Request<'_, W>) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::{SeedableRng, rngs::StdRng};
     use std::io::Cursor;
 
     fn make_test(capacity: usize, passes: i32) {
-        let mut buf = Vec::with_capacity(capacity);
+        let mut buf = vec![0u8; capacity];
         rand::rng().fill_bytes(&mut buf);
 
         let writer = Cursor::new(&mut buf);
@@ -121,5 +133,15 @@ mod tests {
     #[test]
     fn should_erase_fill_random_bytes_zero_times() {
         make_test(515, 0);
+    }
+
+    #[test]
+    fn write_random_pass_writes_non_zero_bytes() {
+        let mut cursor = Cursor::new(vec![0u8; 32]);
+        let mut rng = StdRng::seed_from_u64(1);
+
+        write_random_pass(&mut cursor, 32, &mut rng).unwrap();
+
+        assert_ne!(cursor.into_inner(), vec![0u8; 32]);
     }
 }

@@ -85,6 +85,10 @@ impl EncryptionStreams {
     /// let encrypt_stream = EncryptionStreams::initialize(key, &nonce, &Algorithm::XChaCha20Poly1305).unwrap();
     /// ```
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the nonce length is incompatible with the selected
+    /// algorithm or if the hashed key cannot initialize the stream cipher.
     pub fn initialize(
         key: Protected<[u8; 32]>,
         nonce: &[u8],
@@ -133,6 +137,10 @@ impl EncryptionStreams {
     /// This is used for encrypting the *next* block of data in streaming mode
     ///
     /// It requires either some plaintext, or an `aead::Payload` (that contains the plaintext and the AAD)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the AEAD rejects the supplied payload or AAD.
     pub fn encrypt_next<'msg, 'aad>(
         &mut self,
         payload: impl Into<Payload<'msg, 'aad>>,
@@ -147,6 +155,10 @@ impl EncryptionStreams {
     /// This is used for encrypting the *last* block of data in streaming mode. It consumes the stream object to prevent further usage.
     ///
     /// It requires either some plaintext, or an `aead::Payload` (that contains the plaintext and the AAD)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the AEAD rejects the supplied payload or AAD.
     pub fn encrypt_last<'msg, 'aad>(
         self,
         payload: impl Into<Payload<'msg, 'aad>>,
@@ -181,6 +193,10 @@ impl EncryptionStreams {
     /// encrypt_stream.encrypt_file(&mut input_file, &mut output_file, &aad);
     /// ```
     ///
+    /// # Errors
+    ///
+    /// Returns an error if reading from the input fails, writing to the output
+    /// fails, flushing the writer fails, or the stream cipher rejects a block.
     pub fn encrypt_file(
         mut self,
         reader: &mut impl Read,
@@ -263,6 +279,10 @@ impl DecryptionStreams {
     /// let decrypt_stream = DecryptionStreams::initialize(key, &nonce, &Algorithm::XChaCha20Poly1305).unwrap();
     /// ```
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the hashed key cannot initialize the selected stream
+    /// cipher.
     pub fn initialize(
         key: Protected<[u8; 32]>,
         nonce: &[u8],
@@ -301,6 +321,10 @@ impl DecryptionStreams {
     /// It requires either some plaintext, or an `aead::Payload` (that contains the plaintext and the AAD)
     ///
     /// Whatever you provided as AAD while encrypting must be present during decryption, or else you will receive an error.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the AEAD rejects the supplied payload or AAD.
     pub fn decrypt_next<'msg, 'aad>(
         &mut self,
         payload: impl Into<Payload<'msg, 'aad>>,
@@ -317,6 +341,10 @@ impl DecryptionStreams {
     /// It requires either some plaintext, or an `aead::Payload` (that contains the plaintext and the AAD)
     ///
     /// Whatever you provided as AAD while encrypting must be present during decryption, or else you will receive an error.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the AEAD rejects the supplied payload or AAD.
     pub fn decrypt_last<'msg, 'aad>(
         self,
         payload: impl Into<Payload<'msg, 'aad>>,
@@ -349,6 +377,10 @@ impl DecryptionStreams {
     /// decrypt_stream.decrypt_file(&mut input_file, &mut output_file, &aad);
     /// ```
     ///
+    /// # Errors
+    ///
+    /// Returns an error if reading from the input fails, writing to the output
+    /// fails, or the stream cipher rejects a block during decryption.
     pub fn decrypt_file(
         mut self,
         reader: &mut impl Read,

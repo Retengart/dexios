@@ -66,6 +66,7 @@ where
     fn create_dir_all<P: AsRef<Path>>(&self, path: P) -> Result<(), Error>;
     fn create_file<P: AsRef<Path>>(&self, path: P) -> Result<Entry<RW>, Error>;
     fn read_file<P: AsRef<Path>>(&self, path: P) -> Result<Entry<RW>, Error>;
+    fn overwrite_file<P: AsRef<Path>>(&self, path: P) -> Result<Entry<RW>, Error>;
     fn write_file<P: AsRef<Path>>(&self, path: P) -> Result<Entry<RW>, Error>;
     fn flush_file(&self, file: &Entry<RW>) -> Result<(), Error>;
     fn file_len(&self, file: &Entry<RW>) -> Result<usize, Error>;
@@ -115,6 +116,20 @@ impl Storage<fs::File> for FileStorage {
             .write(true)
             .read(true)
             .truncate(true)
+            .open(&path)
+            .map_err(|_| Error::OpenFile(FileMode::Write))?;
+
+        Ok(Entry::File(FileData {
+            path,
+            stream: RefCell::new(file),
+        }))
+    }
+
+    fn overwrite_file<P: AsRef<Path>>(&self, path: P) -> Result<Entry<fs::File>, Error> {
+        let path = path.as_ref().to_path_buf();
+        let file = fs::File::options()
+            .write(true)
+            .read(true)
             .open(&path)
             .map_err(|_| Error::OpenFile(FileMode::Write))?;
 
@@ -323,6 +338,10 @@ impl Storage<io::Cursor<Vec<u8>>> for InMemoryStorage {
             path: file_path,
             stream: RefCell::new(cursor),
         }))
+    }
+
+    fn overwrite_file<P: AsRef<Path>>(&self, path: P) -> Result<Entry<io::Cursor<Vec<u8>>>, Error> {
+        self.write_file(path)
     }
 
     fn flush_file(&self, file: &Entry<io::Cursor<Vec<u8>>>) -> Result<(), Error> {
@@ -756,5 +775,25 @@ mod tests {
             }
             _ => unreachable!(),
         }
+    }
+
+    #[test]
+    fn overwrite_file_preserves_existing_length_on_disk() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("dexios-overwrite-{unique}.bin"));
+
+        fs::write(&path, b"secret-bytes").unwrap();
+
+        let stor = FileStorage;
+        let file = stor.overwrite_file(&path).expect("open without truncation");
+
+        assert_eq!(stor.file_len(&file).unwrap(), b"secret-bytes".len());
+
+        fs::remove_file(path).ok();
     }
 }

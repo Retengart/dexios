@@ -1,3 +1,4 @@
+#[path = "support/common.rs"]
 mod common;
 use common::*;
 use dexios_domain::storage::*;
@@ -115,7 +116,7 @@ fn should_write_content_to_file() {
         .unwrap();
 
     match stor.flush_file(&file) {
-        Ok(_) => {
+        Ok(()) => {
             let mut file_buf = vec![];
             fs::File::open("hello_7.txt")
                 .unwrap()
@@ -137,7 +138,7 @@ fn should_remove_a_file_in_read_mode() {
     let file = stor.write_file("hello_8.txt").unwrap();
 
     match stor.remove_file(file) {
-        Ok(_) => match fs::File::open("hello_8.txt") {
+        Ok(()) => match fs::File::open("hello_8.txt") {
             Err(_) => {}
             _ => unreachable!(),
         },
@@ -153,7 +154,7 @@ fn should_remove_a_file_in_write_mode() {
     let file = stor.write_file("hello_9.txt").unwrap();
 
     match stor.remove_file(file) {
-        Ok(_) => match fs::File::open("hello_9.txt") {
+        Ok(()) => match fs::File::open("hello_9.txt") {
             Err(_) => {}
             _ => unreachable!(),
         },
@@ -239,16 +240,16 @@ fn should_return_file_names_of_dir_subfiles() {
                 .map(|f| f.path().to_path_buf())
                 .collect::<Vec<_>>();
             assert_eq!(
-                sorted_file_names(file_names.iter().collect()),
+                sorted_file_names(&file_names),
                 vec![
-                    "bar_14/",
-                    "bar_14/foo",
-                    "bar_14/foo/hello.txt",
-                    "bar_14/foo/world.txt",
-                    "bar_14/hello.txt",
-                    "bar_14/world.txt",
+                    "bar_14/".to_string(),
+                    "bar_14/foo".to_string(),
+                    "bar_14/foo/hello.txt".to_string(),
+                    "bar_14/foo/world.txt".to_string(),
+                    "bar_14/hello.txt".to_string(),
+                    "bar_14/world.txt".to_string(),
                 ]
-            )
+            );
         }
         _ => unreachable!(),
     }
@@ -270,17 +271,27 @@ fn should_include_hidden_files_names() {
                 .map(|f| f.path().to_path_buf())
                 .collect::<Vec<_>>();
             assert_eq!(
-                sorted_file_names(file_names.iter().collect()),
+                sorted_file_names(&file_names),
                 vec![
-                    "bar_15/",
-                    "bar_15/.foo",
-                    "bar_15/.foo/hello.txt",
-                    "bar_15/.foo/world.txt",
-                    "bar_15/.hello.txt",
-                    "bar_15/world.txt",
+                    "bar_15/".to_string(),
+                    "bar_15/.foo".to_string(),
+                    "bar_15/.foo/hello.txt".to_string(),
+                    "bar_15/.foo/world.txt".to_string(),
+                    "bar_15/.hello.txt".to_string(),
+                    "bar_15/world.txt".to_string(),
                 ]
-            )
+            );
         }
         _ => unreachable!(),
     }
+}
+
+#[test]
+fn sorted_file_names_returns_owned_sorted_names() {
+    let file_names = vec![PathBuf::from("b.txt"), PathBuf::from("a.txt")];
+
+    assert_eq!(
+        sorted_file_names(&file_names),
+        vec!["a.txt".to_string(), "b.txt".to_string()]
+    );
 }

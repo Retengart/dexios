@@ -56,7 +56,7 @@ pub enum ForceMode {
     Prompt,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Key {
     Keyfile(String),
     Env,
@@ -79,6 +79,35 @@ fn get_bytes<R: std::io::Read>(reader: &mut R) -> Result<Protected<Vec<u8>>> {
 }
 
 impl Key {
+    pub(crate) fn resolve_key_source(
+        keyfile: Option<&str>,
+        autogenerate: Option<&str>,
+        env_available: bool,
+        params: &KeyParams,
+    ) -> Result<Self> {
+        let key = if let (Some(path), true) = (keyfile, params.keyfile) {
+            Key::Keyfile(path.to_owned())
+        } else if let (Some(words), true) = (autogenerate, params.autogenerate) {
+            let result = words.parse::<i32>();
+            if let Ok(value) = result {
+                Key::Generate(value)
+            } else {
+                warn!("No amount of words specified - using the default.");
+                Key::Generate(7)
+            }
+        } else if env_available && params.env {
+            Key::Env
+        } else if params.user {
+            Key::User
+        } else {
+            return Err(anyhow::anyhow!(
+                "No key sources found with the parameters/arguments provided"
+            ));
+        };
+
+        Ok(key)
+    }
+
     // this handles getting the secret, and returning it
     // it relies on `parameters.rs`' handling and logic to determine which route to get the key
     // it can handle keyfiles, env variables, automatically generating and letting the user enter a key
@@ -95,10 +124,10 @@ impl Key {
             }
             Key::Keyfile(path) => {
                 let mut reader = std::fs::File::open(path)
-                    .with_context(|| format!("Unable to read file: {}", path))?;
+                    .with_context(|| format!("Unable to read file: {path}"))?;
                 let secret = get_bytes(&mut reader)?;
                 if secret.is_empty() {
-                    return Err(anyhow::anyhow!(format!("Keyfile '{}' is empty", path)));
+                    return Err(anyhow::anyhow!(format!("Keyfile '{path}' is empty")));
                 }
                 secret
             }
@@ -132,33 +161,20 @@ impl Key {
         let keyfile = sub_matches
             .try_get_one::<String>(keyfile_descriptor)
             .ok()
-            .flatten();
+            .flatten()
+            .map(String::as_str);
         let autogenerate = sub_matches
             .try_get_one::<String>("autogenerate")
             .ok()
-            .flatten();
+            .flatten()
+            .map(String::as_str);
 
-        let key = if let (Some(path), true) = (keyfile, params.keyfile) {
-            Key::Keyfile(path.to_string())
-        } else if std::env::var("DEXIOS_KEY").is_ok() && params.env {
-            Key::Env
-        } else if let (Some(words), true) = (autogenerate, params.autogenerate) {
-            let result = words.parse::<i32>();
-            if let Ok(value) = result {
-                Key::Generate(value)
-            } else {
-                warn!("No amount of words specified - using the default.");
-                Key::Generate(7)
-            }
-        } else if params.user {
-            Key::User
-        } else {
-            return Err(anyhow::anyhow!(
-                "No key sources found with the parameters/arguments provided"
-            ));
-        };
-
-        Ok(key)
+        Self::resolve_key_source(
+            keyfile,
+            autogenerate,
+            std::env::var("DEXIOS_KEY").is_ok(),
+            params,
+        )
     }
 }
 

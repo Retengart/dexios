@@ -9,8 +9,8 @@ use crate::success;
 // it's used by hash-standalone mode
 pub fn hash_stream(files: &[String]) -> Result<()> {
     for input in files {
-        let mut input_file = std::fs::File::open(input)
-            .with_context(|| format!("Unable to open file: {}", input))?;
+        let mut input_file =
+            std::fs::File::open(input).with_context(|| format!("Unable to open file: {input}"))?;
 
         let hash = domain::hash::execute(
             domain::hasher::Blake3Hasher::default(),

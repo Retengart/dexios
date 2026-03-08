@@ -51,6 +51,9 @@ impl Ciphers {
     /// let cipher = Ciphers::initialize(key, &Algorithm::XChaCha20Poly1305).unwrap();
     /// ```
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the hashed key cannot initialize the selected cipher.
     pub fn initialize(key: Protected<[u8; 32]>, algorithm: &Algorithm) -> anyhow::Result<Self> {
         let cipher = match algorithm {
             Algorithm::Aes256Gcm => {
@@ -80,6 +83,10 @@ impl Ciphers {
     /// This can be used to encrypt data with a given `Ciphers` object
     ///
     /// It requires the nonce, and either some plaintext, or an `aead::Payload` (that contains the plaintext and the AAD)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the AEAD rejects the supplied nonce, plaintext, or AAD.
     pub fn encrypt<'msg, 'aad>(
         &self,
         nonce: &[u8],
@@ -92,6 +99,11 @@ impl Ciphers {
         }
     }
 
+    /// This encrypts the provided buffer in place with the supplied nonce and AAD.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the AEAD rejects the supplied nonce, buffer contents, or AAD.
     pub fn encrypt_in_place(
         &self,
         nonce: &[u8],
@@ -110,6 +122,10 @@ impl Ciphers {
     /// It requires the nonce used for encryption, and either some plaintext, or an `aead::Payload` (that contains the plaintext and the AAD)
     ///
     /// NOTE: The data will not decrypt successfully if an AAD was provided for encryption, but is not present/has been modified while decrypting
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the AEAD rejects the supplied nonce, ciphertext, or AAD.
     pub fn decrypt<'msg, 'aad>(
         &self,
         nonce: &[u8],

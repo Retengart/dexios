@@ -25,8 +25,8 @@ pub fn get_params(name: &str, sub_matches: &ArgMatches) -> Result<Vec<String>> {
 pub fn get_param(name: &str, sub_matches: &ArgMatches) -> Result<String> {
     let value = sub_matches
         .get_one::<String>(name)
-        .with_context(|| format!("No {} provided", name))?
-        .to_string();
+        .with_context(|| format!("No {name} provided"))?
+        .clone();
     Ok(value)
 }
 
@@ -65,7 +65,7 @@ pub fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
             sub_matches
                 .get_one::<String>("header")
                 .context("No header/invalid text provided")?
-                .to_string(),
+                .clone(),
         )
     } else {
         HeaderLocation::Embedded
@@ -149,7 +149,7 @@ pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams
             sub_matches
                 .get_one::<String>("header")
                 .context("No header/invalid text provided")?
-                .to_string(),
+                .clone(),
         )
     } else {
         HeaderLocation::Embedded
@@ -268,7 +268,7 @@ mod tests {
         )
         .expect("key selection");
 
-        assert!(key == Key::User);
+        assert_eq!(key, Key::User);
     }
 
     #[test]
@@ -287,7 +287,10 @@ mod tests {
 
         let params = parameter_handler(sub_matches).expect("params");
 
-        assert!(params.hashing_algorithm == HashingAlgorithm::Blake3Balloon(BLAKE3BALLOON_LATEST));
+        assert_eq!(
+            params.hashing_algorithm,
+            HashingAlgorithm::Blake3Balloon(BLAKE3BALLOON_LATEST)
+        );
     }
 
     #[test]
@@ -306,6 +309,35 @@ mod tests {
 
         let params = parameter_handler(sub_matches).expect("params");
 
-        assert!(params.hashing_algorithm == HashingAlgorithm::Blake3Balloon(BLAKE3BALLOON_LATEST));
+        assert_eq!(
+            params.hashing_algorithm,
+            HashingAlgorithm::Blake3Balloon(BLAKE3BALLOON_LATEST)
+        );
+    }
+
+    #[test]
+    fn explicit_autogenerate_beats_environment_key() {
+        let matches = build_cli()
+            .try_get_matches_from(["dexios", "encrypt", "--auto=7", "in.bin", "out.enc"])
+            .expect("CLI should parse");
+        let (_, sub_matches) = matches.subcommand().expect("subcommand");
+
+        let key = Key::resolve_key_source(
+            sub_matches
+                .try_get_one::<String>("keyfile")
+                .ok()
+                .flatten()
+                .map(String::as_str),
+            sub_matches
+                .try_get_one::<String>("autogenerate")
+                .ok()
+                .flatten()
+                .map(String::as_str),
+            true,
+            &KeyParams::default(),
+        )
+        .expect("key selection");
+
+        assert_eq!(key, Key::Generate(7));
     }
 }

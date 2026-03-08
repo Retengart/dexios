@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::process::exit;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -17,6 +16,17 @@ use crate::{
 use domain::storage::Storage;
 
 use crate::cli::prompt::overwrite_check;
+
+fn should_continue_after_overwrite_checks<F>(output_ok: bool, header_check: F) -> Result<bool>
+where
+    F: FnOnce() -> Result<Option<bool>>,
+{
+    if !output_ok {
+        return Ok(false);
+    }
+
+    Ok(header_check()?.unwrap_or(true))
+}
 
 pub struct Request<'a> {
     pub input_file: &'a Vec<String>,
@@ -46,8 +56,17 @@ pub fn execute(req: &Request) -> Result<()> {
         return Err(anyhow::anyhow!("Input path cannot be a file."));
     }
 
-    if !overwrite_check(req.output_file, req.crypto_params.force)? {
-        exit(0);
+    let output_ok = overwrite_check(req.output_file, req.crypto_params.force)?;
+
+    if !should_continue_after_overwrite_checks(output_ok, || {
+        match &req.crypto_params.header_location {
+            HeaderLocation::Embedded => Ok(None),
+            HeaderLocation::Detached(path) => {
+                overwrite_check(path, req.crypto_params.force).map(Some)
+            }
+        }
+    })? {
+        return Ok(());
     }
 
     let input_files = req
@@ -63,10 +82,6 @@ pub fn execute(req: &Request) -> Result<()> {
     let header_file = match &req.crypto_params.header_location {
         HeaderLocation::Embedded => None,
         HeaderLocation::Detached(path) => {
-            if !overwrite_check(path, req.crypto_params.force)? {
-                exit(0);
-            }
-
             Some(stor.create_file(path).or_else(|_| stor.write_file(path))?)
         }
     };
@@ -126,4 +141,32 @@ pub fn execute(req: &Request) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn detached_header_decline_returns_false_before_work_starts() {
+        assert!(!super::should_continue_after_overwrite_checks(true, || Ok(Some(false))).unwrap());
+    }
+
+    #[test]
+    fn approve_all_overwrite_checks_returns_true() {
+        assert!(super::should_continue_after_overwrite_checks(true, || Ok(Some(true))).unwrap());
+        assert!(super::should_continue_after_overwrite_checks(true, || Ok(None)).unwrap());
+    }
+
+    #[test]
+    fn main_output_decline_short_circuits_header_check() {
+        let mut called = false;
+
+        let result = super::should_continue_after_overwrite_checks(false, || {
+            called = true;
+            Ok(Some(true))
+        })
+        .unwrap();
+
+        assert!(!result);
+        assert!(!called);
+    }
 }
