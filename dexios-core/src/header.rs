@@ -124,6 +124,11 @@ impl std::fmt::Display for HashingAlgorithm {
 
 impl HashingAlgorithm {
     /// A simple helper function that will hash a value with the appropriate algorithm and version
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the selected hashing algorithm is not supported for the
+    /// requested header version or if the underlying KDF reports an error.
     pub fn hash(
         &self,
         raw_key: Protected<Vec<u8>>,
@@ -249,6 +254,11 @@ impl Header {
     /// ```
     ///
     #[allow(clippy::too_many_lines)]
+    /// # Errors
+    ///
+    /// Returns an error if the reader cannot be read or seeked, if the header bytes
+    /// are malformed, or if the encoded version, algorithm, mode, or keyslot
+    /// identifiers are unsupported.
     pub fn deserialize(reader: &mut (impl Read + Seek)) -> Result<(Self, Vec<u8>)> {
         let mut version_bytes = [0u8; 2];
         reader
@@ -617,6 +627,9 @@ impl Header {
     /// let header_bytes = header.serialize().unwrap();
     /// ```
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the header version is deprecated for serialization.
     pub fn serialize(&self) -> Result<Vec<u8>> {
         let tag = self.get_tag();
         match self.header_type.version {
@@ -648,6 +661,11 @@ impl Header {
     /// It will return the bytes used for AAD
     ///
     /// You may view more about what is used as AAD [here](https://brxken128.github.io/dexios/dexios-core/Headers.html#authenticating-the-header-with-aad-v840).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the header version is deprecated for serialization or if
+    /// required salt or keyslot data is missing.
     pub fn create_aad(&self) -> Result<Vec<u8>> {
         let tag = self.get_tag();
         match self.header_type.version {
@@ -712,6 +730,10 @@ impl Header {
     /// header.write(&mut output_file).unwrap();
     /// ```
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the header cannot be serialized or if writing the
+    /// serialized header to the writer fails.
     pub fn write(&self, writer: &mut impl Write) -> Result<()> {
         let header_bytes = self.serialize()?;
         writer
