@@ -19,6 +19,8 @@ pub enum Error {
     ResetCursorPosition,
     Storage(storage::Error),
     Decrypt(decrypt::Error),
+    TempCleanup,
+    OnZipFile(String),
 }
 
 impl std::fmt::Display for Error {
@@ -30,6 +32,8 @@ impl std::fmt::Display for Error {
             Error::ResetCursorPosition => f.write_str("Unable to reset cursor position"),
             Error::Storage(inner) => write!(f, "Storage error: {inner}"),
             Error::Decrypt(inner) => write!(f, "Decrypt error: {inner}"),
+            Error::TempCleanup => f.write_str("Unable to securely clean up temporary archive"),
+            Error::OnZipFile(inner) => write!(f, "Zip file callback error: {inner}"),
         }
     }
 }
@@ -37,7 +41,7 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 type OnArchiveInfo = Box<dyn FnOnce(usize)>;
-type OnZipFileFn = Box<dyn Fn(PathBuf) -> bool>;
+type OnZipFileFn = Box<dyn Fn(PathBuf) -> Result<bool, String>>;
 
 pub struct Request<'a, R>
 where
@@ -87,51 +91,38 @@ pub fn execute<RW: Read + Write + Seek>(
         let output_dir = req.output_dir_path.clone();
 
         // 4. prepare phase
-        let entities = (0..archive.len())
-            .filter_map(|i| {
-                let zip_file = archive.by_index(i).ok()?;
-                let mut full_path = output_dir.clone();
+        let mut entities = Vec::new();
+        for i in 0..archive.len() {
+            let zip_file = archive.by_index(i).map_err(|_| Error::OpenArchive)?;
+            let Some(path) = zip_file.enclosed_name() else {
+                continue;
+            };
 
-                // Prevent zip slip attack
-                //
-                // Source: https://snyk.io/research/zip-slip-vulnerability
-                zip_file.enclosed_name().map(|path| {
-                    full_path.push(path);
+            let mut full_path = output_dir.clone();
+            full_path.push(path);
 
-                    (full_path, i, zip_file.is_dir())
-                })
-            })
-            .filter(|(full_path, ..)| {
-                if let Some(on_zip_file) = req.on_zip_file.as_ref() {
-                    on_zip_file(full_path.clone())
-                } else {
-                    true
+            if let Some(on_zip_file) = req.on_zip_file.as_ref() {
+                let should_unpack = on_zip_file(full_path.clone()).map_err(Error::OnZipFile)?;
+                if !should_unpack {
+                    continue;
                 }
-            })
-            .collect::<Vec<_>>();
+            }
+
+            entities.push((full_path, i, zip_file.is_dir()));
+        }
 
         let files_count = entities.len();
         if let Some(on_archive_info) = req.on_archive_info {
             on_archive_info(files_count);
         }
 
-        // 5. create dirs
-        #[allow(clippy::needless_collect)]
-        let create_dirs_jobs = entities
+        // 5. create dirs sequentially to avoid unbounded thread fan-out on large archives.
+        entities
             .iter()
             .filter(|(_, _, is_dir)| *is_dir)
             .map(|(fp, ..)| fp)
             .chain([&output_dir])
-            .map(|full_path| {
-                let stor = stor.clone();
-                let full_path = full_path.clone();
-                std::thread::spawn(move || stor.create_dir_all(full_path).map_err(Error::Storage))
-            })
-            .collect::<Vec<_>>();
-
-        create_dirs_jobs
-            .into_iter()
-            .try_for_each(|th| th.join().unwrap())?;
+            .try_for_each(|full_path| stor.create_dir_all(full_path).map_err(Error::Storage))?;
 
         // 6. create files
         entities
@@ -156,17 +147,28 @@ pub fn execute<RW: Read + Write + Seek>(
             })?;
     }
 
-    // 7. Finally eraze temp zip archive with zeros.
+    cleanup_temp_archive(stor.as_ref(), tmp_file, buf_capacity)?;
+
+    Ok(())
+}
+
+fn cleanup_temp_archive<RW>(
+    stor: &impl Storage<RW>,
+    tmp_file: storage::Entry<RW>,
+    buf_capacity: usize,
+) -> Result<(), Error>
+where
+    RW: Read + Write + Seek,
+{
+    // Finally erase temp zip archive with zeros.
     overwrite::execute(overwrite::Request {
         buf_capacity,
-        writer: tmp_file
-            .try_writer()
-            .expect("We sure that file in write mode"),
+        writer: tmp_file.try_writer().map_err(|_| Error::TempCleanup)?,
         passes: 1,
     })
-    .ok();
+    .map_err(|_| Error::TempCleanup)?;
 
-    stor.remove_file(tmp_file).ok();
+    stor.remove_file(tmp_file).map_err(|_| Error::TempCleanup)?;
 
     Ok(())
 }
@@ -174,7 +176,7 @@ pub fn execute<RW: Read + Write + Seek>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+    use std::io::{Cursor, Write};
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -185,7 +187,7 @@ mod tests {
     use crate::encrypt::tests::PASSWORD;
     use crate::pack;
     use crate::pack::tests::ENCRYPTED_PACKED_BAR_DIR;
-    use crate::storage::{IMFile, InMemoryFile, InMemoryStorage, Storage};
+    use crate::storage::{Error as StorageError, IMFile, InMemoryFile, InMemoryStorage, Storage};
 
     fn pack_bar_directory(
         stor: Arc<InMemoryStorage>,
@@ -230,6 +232,71 @@ mod tests {
                 assert_eq!(buf, expected.as_bytes());
             }
             _ => panic!("missing file: {path}"),
+        }
+    }
+
+    #[derive(Default)]
+    struct FailingCleanupStorage {
+        inner: InMemoryStorage,
+    }
+
+    impl Storage<Cursor<Vec<u8>>> for FailingCleanupStorage {
+        fn create_dir_all<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), StorageError> {
+            self.inner.create_dir_all(path)
+        }
+
+        fn create_file<P: AsRef<std::path::Path>>(
+            &self,
+            path: P,
+        ) -> Result<storage::Entry<Cursor<Vec<u8>>>, StorageError> {
+            self.inner.create_file(path)
+        }
+
+        fn read_file<P: AsRef<std::path::Path>>(
+            &self,
+            path: P,
+        ) -> Result<storage::Entry<Cursor<Vec<u8>>>, StorageError> {
+            self.inner.read_file(path)
+        }
+
+        fn overwrite_file<P: AsRef<std::path::Path>>(
+            &self,
+            path: P,
+        ) -> Result<storage::Entry<Cursor<Vec<u8>>>, StorageError> {
+            self.inner.overwrite_file(path)
+        }
+
+        fn write_file<P: AsRef<std::path::Path>>(
+            &self,
+            path: P,
+        ) -> Result<storage::Entry<Cursor<Vec<u8>>>, StorageError> {
+            self.inner.write_file(path)
+        }
+
+        fn flush_file(&self, file: &storage::Entry<Cursor<Vec<u8>>>) -> Result<(), StorageError> {
+            self.inner.flush_file(file)
+        }
+
+        fn file_len(&self, file: &storage::Entry<Cursor<Vec<u8>>>) -> Result<usize, StorageError> {
+            self.inner.file_len(file)
+        }
+
+        fn remove_file(&self, _file: storage::Entry<Cursor<Vec<u8>>>) -> Result<(), StorageError> {
+            Err(StorageError::RemoveFile)
+        }
+
+        fn remove_dir_all(
+            &self,
+            file: storage::Entry<Cursor<Vec<u8>>>,
+        ) -> Result<(), StorageError> {
+            self.inner.remove_dir_all(file)
+        }
+
+        fn read_dir(
+            &self,
+            file: &storage::Entry<Cursor<Vec<u8>>>,
+        ) -> Result<Vec<storage::Entry<Cursor<Vec<u8>>>>, StorageError> {
+            self.inner.read_dir(file)
         }
     }
 
@@ -308,5 +375,44 @@ mod tests {
         assert_text(&stor, "legacy-out/bar/.hello.txt", "hello");
         assert_text(&stor, "legacy-out/bar/world.txt", "world");
         assert_text(&stor, "legacy-out/bar/.foo/world.txt", "world");
+    }
+
+    #[test]
+    fn should_fail_when_temp_zip_cleanup_fails() {
+        let stor = Arc::new(FailingCleanupStorage::default());
+        let setup_stor = Arc::new(InMemoryStorage::default());
+        pack_bar_directory(setup_stor.clone(), "archive.enc", None);
+
+        let archive = setup_stor.read_file("archive.enc").unwrap();
+        let mut archive_buf = Vec::new();
+        archive
+            .try_reader()
+            .unwrap()
+            .borrow_mut()
+            .read_to_end(&mut archive_buf)
+            .unwrap();
+        let archive_file = stor.inner.create_file("archive.enc").unwrap();
+        archive_file
+            .try_writer()
+            .unwrap()
+            .borrow_mut()
+            .write_all(&archive_buf)
+            .unwrap();
+        stor.inner.flush_file(&archive_file).unwrap();
+
+        let archive = stor.read_file("archive.enc").unwrap();
+        let req = Request {
+            reader: archive.try_reader().unwrap(),
+            header_reader: None,
+            raw_key: Protected::new(PASSWORD.to_vec()),
+            output_dir_path: PathBuf::from("out"),
+            on_decrypted_header: None,
+            on_archive_info: None,
+            on_zip_file: None,
+        };
+
+        let result = execute(stor, req);
+
+        assert!(matches!(result, Err(Error::TempCleanup)));
     }
 }

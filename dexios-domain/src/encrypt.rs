@@ -120,7 +120,7 @@ where
         None => {
             req.writer
                 .borrow_mut()
-                .write(&header.serialize().map_err(|_| Error::WriteHeader)?)
+                .write_all(&header.serialize().map_err(|_| Error::WriteHeader)?)
                 .map_err(|_| Error::WriteHeader)?;
         }
         Some(header_writer) => {
@@ -131,7 +131,7 @@ where
 
             header_writer
                 .borrow_mut()
-                .write(&header.serialize().map_err(|_| Error::WriteHeader)?)
+                .write_all(&header.serialize().map_err(|_| Error::WriteHeader)?)
                 .map_err(|_| Error::WriteHeader)?;
         }
     }

@@ -4,10 +4,20 @@ use crate::global::structs::CryptoParams;
 use anyhow::Result;
 use core::header::{HEADER_VERSION, HeaderType};
 use core::primitives::{Algorithm, Mode};
-use std::process::exit;
 use std::sync::Arc;
 
 use domain::storage::Storage;
+
+fn should_continue_after_overwrite_checks<F>(output_ok: bool, header_check: F) -> Result<bool>
+where
+    F: FnOnce() -> Result<Option<bool>>,
+{
+    if !output_ok {
+        return Ok(false);
+    }
+
+    Ok(header_check()?.unwrap_or(true))
+}
 
 // this function is for encrypting a file in stream mode
 // it handles any user-facing interactiveness, opening files
@@ -28,8 +38,13 @@ pub fn stream_mode(
         ));
     }
 
-    if !overwrite_check(output, params.force)? {
-        exit(0);
+    let output_ok = overwrite_check(output, params.force)?;
+
+    if !should_continue_after_overwrite_checks(output_ok, || match &params.header_location {
+        HeaderLocation::Embedded => Ok(None),
+        HeaderLocation::Detached(path) => overwrite_check(path, params.force).map(Some),
+    })? {
+        return Ok(());
     }
 
     let input_file = stor.read_file(input)?;
@@ -41,10 +56,6 @@ pub fn stream_mode(
     let header_file = match &params.header_location {
         HeaderLocation::Embedded => None,
         HeaderLocation::Detached(path) => {
-            if !overwrite_check(path, params.force)? {
-                exit(0);
-            }
-
             Some(stor.create_file(path).or_else(|_| stor.write_file(path))?)
         }
     };
@@ -79,4 +90,32 @@ pub fn stream_mode(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn detached_header_decline_returns_false_before_work_starts() {
+        assert!(!super::should_continue_after_overwrite_checks(true, || Ok(Some(false))).unwrap());
+    }
+
+    #[test]
+    fn approve_all_overwrite_checks_returns_true() {
+        assert!(super::should_continue_after_overwrite_checks(true, || Ok(Some(true))).unwrap());
+        assert!(super::should_continue_after_overwrite_checks(true, || Ok(None)).unwrap());
+    }
+
+    #[test]
+    fn main_output_decline_short_circuits_header_check() {
+        let mut called = false;
+
+        let result = super::should_continue_after_overwrite_checks(false, || {
+            called = true;
+            Ok(Some(true))
+        })
+        .unwrap();
+
+        assert!(!result);
+        assert!(!called);
+    }
 }

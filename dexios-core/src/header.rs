@@ -48,7 +48,7 @@ pub const HEADER_VERSION: HeaderVersion = HeaderVersion::V5;
 
 /// This stores all possible versions of the header
 #[allow(clippy::module_name_repetitions)]
-#[derive(PartialEq, Eq, Clone, Copy, PartialOrd)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd)]
 pub enum HeaderVersion {
     V1,
     V2,
@@ -107,7 +107,7 @@ pub const BLAKE3BALLOON_LATEST: i32 = 5;
 
 /// This is in place to make `Keyslot` handling a **lot** easier
 /// You may use the constants `ARGON2ID_LATEST` and `BLAKE3BALLOON_LATEST` for defining versions
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HashingAlgorithm {
     Argon2id(i32),
     Blake3Balloon(i32),
@@ -116,14 +116,19 @@ pub enum HashingAlgorithm {
 impl std::fmt::Display for HashingAlgorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            HashingAlgorithm::Argon2id(i) => write!(f, "Argon2id (param v{})", i),
-            HashingAlgorithm::Blake3Balloon(i) => write!(f, "BLAKE3-Balloon (param v{})", i),
+            HashingAlgorithm::Argon2id(i) => write!(f, "Argon2id (param v{i})"),
+            HashingAlgorithm::Blake3Balloon(i) => write!(f, "BLAKE3-Balloon (param v{i})"),
         }
     }
 }
 
 impl HashingAlgorithm {
     /// A simple helper function that will hash a value with the appropriate algorithm and version
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the selected hashing algorithm is not supported for the
+    /// requested header version or if the underlying KDF reports an error.
     pub fn hash(
         &self,
         raw_key: Protected<Vec<u8>>,
@@ -249,6 +254,11 @@ impl Header {
     /// ```
     ///
     #[allow(clippy::too_many_lines)]
+    /// # Errors
+    ///
+    /// Returns an error if the reader cannot be read or seeked, if the header bytes
+    /// are malformed, or if the encoded version, algorithm, mode, or keyslot
+    /// identifiers are unsupported.
     pub fn deserialize(reader: &mut (impl Read + Seek)) -> Result<(Self, Vec<u8>)> {
         let mut version_bytes = [0u8; 2];
         reader
@@ -617,6 +627,9 @@ impl Header {
     /// let header_bytes = header.serialize().unwrap();
     /// ```
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the header version is deprecated for serialization.
     pub fn serialize(&self) -> Result<Vec<u8>> {
         let tag = self.get_tag();
         match self.header_type.version {
@@ -648,6 +661,11 @@ impl Header {
     /// It will return the bytes used for AAD
     ///
     /// You may view more about what is used as AAD [here](https://brxken128.github.io/dexios/dexios-core/Headers.html#authenticating-the-header-with-aad-v840).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the header version is deprecated for serialization or if
+    /// required salt or keyslot data is missing.
     pub fn create_aad(&self) -> Result<Vec<u8>> {
         let tag = self.get_tag();
         match self.header_type.version {
@@ -712,10 +730,14 @@ impl Header {
     /// header.write(&mut output_file).unwrap();
     /// ```
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the header cannot be serialized or if writing the
+    /// serialized header to the writer fails.
     pub fn write(&self, writer: &mut impl Write) -> Result<()> {
         let header_bytes = self.serialize()?;
         writer
-            .write(&header_bytes)
+            .write_all(&header_bytes)
             .context("Unable to write header")?;
 
         Ok(())

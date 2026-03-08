@@ -48,28 +48,19 @@ where
         .read_dir(&req.entry)
         .map_err(|_| Error::ReadDirEntries)?;
 
-    #[allow(clippy::needless_collect)] // 🚫 we have to collect in order to propertly join threads!
-    let handlers = files
+    files
         .into_iter()
         .filter(|f| !f.is_dir())
-        .map(|f| {
-            let file_path = f.path().to_path_buf();
-            let stor = stor.clone();
-            std::thread::spawn(move || -> Result<(), Error> {
-                crate::erase::execute(
-                    stor,
-                    crate::erase::Request {
-                        path: file_path,
-                        passes: req.passes,
-                    },
-                )
-                .map_err(Error::EraseFile)?;
-                Ok(())
-            })
-        })
-        .collect::<Vec<_>>();
-
-    handlers.into_iter().try_for_each(|h| h.join().unwrap())?;
+        .try_for_each(|f| {
+            crate::erase::execute(
+                stor.clone(),
+                crate::erase::Request {
+                    path: f.path().to_path_buf(),
+                    passes: req.passes,
+                },
+            )
+            .map_err(Error::EraseFile)
+        })?;
 
     stor.remove_dir_all(req.entry).map_err(|_| Error::RemoveDir)
 }
