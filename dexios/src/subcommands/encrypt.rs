@@ -8,8 +8,15 @@ use std::sync::Arc;
 
 use domain::storage::Storage;
 
-fn should_continue_after_overwrite_checks(output_ok: bool, header_ok: Option<bool>) -> bool {
-    output_ok && header_ok.unwrap_or(true)
+fn should_continue_after_overwrite_checks<F>(output_ok: bool, header_check: F) -> Result<bool>
+where
+    F: FnOnce() -> Result<Option<bool>>,
+{
+    if !output_ok {
+        return Ok(false);
+    }
+
+    Ok(header_check()?.unwrap_or(true))
 }
 
 // this function is for encrypting a file in stream mode
@@ -32,12 +39,11 @@ pub fn stream_mode(
     }
 
     let output_ok = overwrite_check(output, params.force)?;
-    let header_ok = match &params.header_location {
-        HeaderLocation::Embedded => None,
-        HeaderLocation::Detached(path) => Some(overwrite_check(path, params.force)?),
-    };
 
-    if !should_continue_after_overwrite_checks(output_ok, header_ok) {
+    if !should_continue_after_overwrite_checks(output_ok, || match &params.header_location {
+        HeaderLocation::Embedded => Ok(None),
+        HeaderLocation::Detached(path) => overwrite_check(path, params.force).map(Some),
+    })? {
         return Ok(());
     }
 
@@ -90,13 +96,28 @@ mod tests {
     fn detached_header_decline_returns_false_before_work_starts() {
         assert!(!super::should_continue_after_overwrite_checks(
             true,
-            Some(false)
-        ));
+            || Ok(Some(false))
+        )
+        .unwrap());
     }
 
     #[test]
     fn approve_all_overwrite_checks_returns_true() {
-        assert!(super::should_continue_after_overwrite_checks(true, Some(true)));
-        assert!(super::should_continue_after_overwrite_checks(true, None));
+        assert!(super::should_continue_after_overwrite_checks(true, || Ok(Some(true))).unwrap());
+        assert!(super::should_continue_after_overwrite_checks(true, || Ok(None)).unwrap());
+    }
+
+    #[test]
+    fn main_output_decline_short_circuits_header_check() {
+        let mut called = false;
+
+        let result = super::should_continue_after_overwrite_checks(false, || {
+            called = true;
+            Ok(Some(true))
+        })
+        .unwrap();
+
+        assert!(!result);
+        assert!(!called);
     }
 }
