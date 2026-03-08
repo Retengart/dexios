@@ -73,6 +73,17 @@ impl TempArtifact {
         let meta = file.as_file().metadata().map_err(|_| Error::FileLen)?;
         meta.len().try_into().map_err(|_| Error::FileLen)
     }
+
+    pub fn secure_dispose(self) -> Result<(), Error> {
+        let path = self.path.clone();
+        drop(self);
+
+        if path.exists() {
+            return Err(Error::RemoveFile);
+        }
+
+        Ok(())
+    }
 }
 
 pub trait Storage<RW>: Send + Sync
@@ -841,5 +852,27 @@ mod tests {
         let path = tmp.path().to_path_buf();
 
         assert!(path.exists());
+    }
+
+    #[test]
+    fn temp_artifact_is_deleted_on_drop() {
+        let path = {
+            let stor = FileStorage;
+            let tmp = stor.create_temp_artifact().unwrap();
+            tmp.path().to_path_buf()
+        };
+
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn temp_artifact_secure_dispose_removes_file() {
+        let stor = FileStorage;
+        let tmp = stor.create_temp_artifact().unwrap();
+        let path = tmp.path().to_path_buf();
+
+        tmp.secure_dispose().unwrap();
+
+        assert!(!path.exists());
     }
 }
