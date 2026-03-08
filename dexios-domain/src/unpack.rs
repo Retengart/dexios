@@ -177,9 +177,7 @@ where
     // Finally erase temp zip archive with zeros.
     overwrite::execute(overwrite::Request {
         buf_capacity,
-        writer: tmp_file
-            .try_writer()
-            .expect("We sure that file in write mode"),
+        writer: tmp_file.try_writer().map_err(|_| Error::TempCleanup)?,
         passes: 1,
     })
     .map_err(|_| Error::TempCleanup)?;
