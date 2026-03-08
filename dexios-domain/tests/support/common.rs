@@ -4,13 +4,14 @@ use std::io::Write;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
-pub struct TestFileStorage {
+pub(super) struct TestFileStorage {
     inner: FileStorage,
     test_case_n: u32,
 }
 
 impl TestFileStorage {
-    pub fn new(test_case_n: u32) -> Self {
+    #[must_use]
+    pub(super) fn new(test_case_n: u32) -> Self {
         Self {
             inner: FileStorage,
             test_case_n,
@@ -33,7 +34,7 @@ impl Drop for TestFileStorage {
     }
 }
 
-pub fn save_text_file<P>(stor: &TestFileStorage, path: P, content: &str) -> Result<(), Error>
+pub(super) fn save_text_file<P>(stor: &TestFileStorage, path: P, content: &str) -> Result<(), Error>
 where
     P: AsRef<Path>,
 {
@@ -45,11 +46,7 @@ where
     stor.flush_file(&file)
 }
 
-// --------------------------------
-// TEST DATA
-// -------------------------------
-
-pub fn add_hello_txt(stor: &TestFileStorage) -> Result<(), Error> {
+pub(super) fn add_hello_txt(stor: &TestFileStorage) -> Result<(), Error> {
     save_text_file(
         stor,
         format!("hello_{}.txt", stor.test_case_n),
@@ -57,7 +54,7 @@ pub fn add_hello_txt(stor: &TestFileStorage) -> Result<(), Error> {
     )
 }
 
-pub fn add_bar_foo_folder(stor: &TestFileStorage) -> Result<(), Error> {
+pub(super) fn add_bar_foo_folder(stor: &TestFileStorage) -> Result<(), Error> {
     let bar_dir = format!("bar_{}", stor.test_case_n);
     fs::create_dir(&bar_dir).map_err(|_| Error::CreateFile)?;
     save_text_file(stor, format!("{}/hello.txt", &bar_dir), "hello")?;
@@ -68,7 +65,7 @@ pub fn add_bar_foo_folder(stor: &TestFileStorage) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn add_bar_foo_folder_with_hidden(stor: &TestFileStorage) -> Result<(), Error> {
+pub(super) fn add_bar_foo_folder_with_hidden(stor: &TestFileStorage) -> Result<(), Error> {
     let bar_dir = format!("bar_{}", stor.test_case_n);
     fs::create_dir(&bar_dir).map_err(|_| Error::CreateFile)?;
     save_text_file(stor, format!("{}/.hello.txt", &bar_dir), "hello")?;
@@ -79,10 +76,10 @@ pub fn add_bar_foo_folder_with_hidden(stor: &TestFileStorage) -> Result<(), Erro
     Ok(())
 }
 
-pub fn sorted_file_names(file_names: Vec<&PathBuf>) -> Vec<&str> {
+pub(super) fn sorted_file_names(file_names: &[PathBuf]) -> Vec<String> {
     let mut keys = file_names
         .iter()
-        .map(|k| k.to_str().unwrap())
+        .map(|k| k.to_string_lossy().into_owned())
         .collect::<Vec<_>>();
     keys.sort_unstable();
     keys
