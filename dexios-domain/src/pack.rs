@@ -24,6 +24,7 @@ pub enum Error {
     ReadData,
     WriteData,
     Encrypt(crate::encrypt::Error),
+    TempCleanup,
 }
 
 impl std::fmt::Display for Error {
@@ -36,6 +37,7 @@ impl std::fmt::Display for Error {
             Error::ReadData => f.write_str("Unable to read data"),
             Error::WriteData => f.write_str("Unable to write data"),
             Error::Encrypt(inner) => write!(f, "Unable to encrypt archive: {inner}"),
+            Error::TempCleanup => f.write_str("Unable to securely clean up temporary archive"),
         }
     }
 }
@@ -119,18 +121,34 @@ where
     })
     .map_err(Error::Encrypt);
 
-    // 5. Finally eraze zip archive with zeros.
+    let cleanup_res = cleanup_temp_archive(stor.as_ref(), tmp_file, buf_capacity);
+
+    if let Err(err) = cleanup_res {
+        return Err(err);
+    }
+
+    encrypt_res
+}
+
+fn cleanup_temp_archive<RW>(
+    stor: &impl Storage<RW>,
+    tmp_file: crate::storage::Entry<RW>,
+    buf_capacity: usize,
+) -> Result<(), Error>
+where
+    RW: Read + Write + Seek,
+{
+    // Finally erase zip archive with zeros.
     crate::overwrite::execute(crate::overwrite::Request {
         buf_capacity,
         writer: tmp_file.try_writer().map_err(|_| Error::FinishArchive)?,
         passes: 2,
     })
-    .ok();
+    .map_err(|_| Error::TempCleanup)?;
 
-    stor.remove_file(tmp_file).ok();
-
-    encrypt_res
+    stor.remove_file(tmp_file).map_err(|_| Error::TempCleanup)
 }
+
 
 #[cfg(test)]
 pub(crate) mod tests {
@@ -141,7 +159,7 @@ pub(crate) mod tests {
     use core::primitives::{Algorithm, Mode};
 
     use crate::encrypt::tests::PASSWORD;
-    use crate::storage::{InMemoryStorage, Storage};
+    use crate::storage::{Error as StorageError, InMemoryStorage, Storage};
 
     pub(crate) const ENCRYPTED_PACKED_BAR_DIR: [u8; 1202] = [
         222, 5, 14, 1, 12, 1, 173, 240, 60, 45, 230, 243, 58, 160, 69, 50, 217, 192, 66, 223, 124,
@@ -202,6 +220,80 @@ pub(crate) mod tests {
         229, 39, 224, 19, 92, 220, 151, 154, 193, 191, 30,
     ];
 
+    #[derive(Default)]
+    struct FailingCleanupStorage {
+        inner: InMemoryStorage,
+    }
+
+    impl Storage<Cursor<Vec<u8>>> for FailingCleanupStorage {
+        fn create_dir_all<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), StorageError> {
+            self.inner.create_dir_all(path)
+        }
+
+        fn create_file<P: AsRef<std::path::Path>>(
+            &self,
+            path: P,
+        ) -> Result<crate::storage::Entry<Cursor<Vec<u8>>>, StorageError> {
+            self.inner.create_file(path)
+        }
+
+        fn read_file<P: AsRef<std::path::Path>>(
+            &self,
+            path: P,
+        ) -> Result<crate::storage::Entry<Cursor<Vec<u8>>>, StorageError> {
+            self.inner.read_file(path)
+        }
+
+        fn overwrite_file<P: AsRef<std::path::Path>>(
+            &self,
+            path: P,
+        ) -> Result<crate::storage::Entry<Cursor<Vec<u8>>>, StorageError> {
+            self.inner.overwrite_file(path)
+        }
+
+        fn write_file<P: AsRef<std::path::Path>>(
+            &self,
+            path: P,
+        ) -> Result<crate::storage::Entry<Cursor<Vec<u8>>>, StorageError> {
+            self.inner.write_file(path)
+        }
+
+        fn flush_file(
+            &self,
+            file: &crate::storage::Entry<Cursor<Vec<u8>>>,
+        ) -> Result<(), StorageError> {
+            self.inner.flush_file(file)
+        }
+
+        fn file_len(
+            &self,
+            file: &crate::storage::Entry<Cursor<Vec<u8>>>,
+        ) -> Result<usize, StorageError> {
+            self.inner.file_len(file)
+        }
+
+        fn remove_file(
+            &self,
+            _file: crate::storage::Entry<Cursor<Vec<u8>>>,
+        ) -> Result<(), StorageError> {
+            Err(StorageError::RemoveFile)
+        }
+
+        fn remove_dir_all(
+            &self,
+            file: crate::storage::Entry<Cursor<Vec<u8>>>,
+        ) -> Result<(), StorageError> {
+            self.inner.remove_dir_all(file)
+        }
+
+        fn read_dir(
+            &self,
+            file: &crate::storage::Entry<Cursor<Vec<u8>>>,
+        ) -> Result<Vec<crate::storage::Entry<Cursor<Vec<u8>>>>, StorageError> {
+            self.inner.read_dir(file)
+        }
+    }
+
     #[test]
     fn should_pack_bar_directory() {
         let stor = Arc::new(InMemoryStorage::default());
@@ -246,5 +338,36 @@ pub(crate) mod tests {
             }
             _ => unreachable!(),
         }
+    }
+
+    #[test]
+    fn should_fail_when_temp_archive_cleanup_fails() {
+        let stor = Arc::new(FailingCleanupStorage::default());
+        stor.inner.add_hello_txt();
+        stor.inner.add_bar_foo_folder_with_hidden();
+
+        let file = stor.read_file("bar/").unwrap();
+        let mut compress_files = stor.read_dir(&file).unwrap();
+        compress_files.sort_by(|a, b| a.path().cmp(b.path()));
+
+        let output_file = stor.create_file("bar.zip.enc").unwrap();
+
+        let req = Request {
+            compress_files,
+            compression_method: zip::CompressionMethod::Stored,
+            writer: output_file.try_writer().unwrap(),
+            header_writer: None,
+            raw_key: Protected::new(PASSWORD.to_vec()),
+            header_type: HeaderType {
+                version: HeaderVersion::V5,
+                algorithm: Algorithm::XChaCha20Poly1305,
+                mode: Mode::StreamMode,
+            },
+            hashing_algorithm: HashingAlgorithm::Blake3Balloon(5),
+        };
+
+        let result = execute(stor, req);
+
+        assert!(matches!(result, Err(Error::TempCleanup)));
     }
 }
