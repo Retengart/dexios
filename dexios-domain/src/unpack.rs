@@ -20,6 +20,7 @@ pub enum Error {
     Storage(storage::Error),
     Decrypt(decrypt::Error),
     TempCleanup,
+    OnZipFile(String),
 }
 
 impl std::fmt::Display for Error {
@@ -32,6 +33,7 @@ impl std::fmt::Display for Error {
             Error::Storage(inner) => write!(f, "Storage error: {inner}"),
             Error::Decrypt(inner) => write!(f, "Decrypt error: {inner}"),
             Error::TempCleanup => f.write_str("Unable to securely clean up temporary archive"),
+            Error::OnZipFile(inner) => write!(f, "Zip file callback error: {inner}"),
         }
     }
 }
@@ -39,7 +41,7 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 type OnArchiveInfo = Box<dyn FnOnce(usize)>;
-type OnZipFileFn = Box<dyn Fn(PathBuf) -> bool>;
+type OnZipFileFn = Box<dyn Fn(PathBuf) -> Result<bool, String>>;
 
 pub struct Request<'a, R>
 where
@@ -89,28 +91,25 @@ pub fn execute<RW: Read + Write + Seek>(
         let output_dir = req.output_dir_path.clone();
 
         // 4. prepare phase
-        let entities = (0..archive.len())
-            .filter_map(|i| {
-                let zip_file = archive.by_index(i).ok()?;
-                let mut full_path = output_dir.clone();
+        let mut entities = Vec::new();
+        for i in 0..archive.len() {
+            let zip_file = archive.by_index(i).map_err(|_| Error::OpenArchive)?;
+            let Some(path) = zip_file.enclosed_name() else {
+                continue;
+            };
 
-                // Prevent zip slip attack
-                //
-                // Source: https://snyk.io/research/zip-slip-vulnerability
-                zip_file.enclosed_name().map(|path| {
-                    full_path.push(path);
+            let mut full_path = output_dir.clone();
+            full_path.push(path);
 
-                    (full_path, i, zip_file.is_dir())
-                })
-            })
-            .filter(|(full_path, ..)| {
-                if let Some(on_zip_file) = req.on_zip_file.as_ref() {
-                    on_zip_file(full_path.clone())
-                } else {
-                    true
+            if let Some(on_zip_file) = req.on_zip_file.as_ref() {
+                let should_unpack = on_zip_file(full_path.clone()).map_err(Error::OnZipFile)?;
+                if !should_unpack {
+                    continue;
                 }
-            })
-            .collect::<Vec<_>>();
+            }
+
+            entities.push((full_path, i, zip_file.is_dir()));
+        }
 
         let files_count = entities.len();
         if let Some(on_archive_info) = req.on_archive_info {
