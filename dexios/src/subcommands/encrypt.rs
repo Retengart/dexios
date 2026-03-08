@@ -4,10 +4,13 @@ use crate::global::structs::CryptoParams;
 use anyhow::Result;
 use core::header::{HEADER_VERSION, HeaderType};
 use core::primitives::{Algorithm, Mode};
-use std::process::exit;
 use std::sync::Arc;
 
 use domain::storage::Storage;
+
+fn should_continue_after_overwrite_checks(output_ok: bool, header_ok: Option<bool>) -> bool {
+    output_ok && header_ok.unwrap_or(true)
+}
 
 // this function is for encrypting a file in stream mode
 // it handles any user-facing interactiveness, opening files
@@ -28,8 +31,14 @@ pub fn stream_mode(
         ));
     }
 
-    if !overwrite_check(output, params.force)? {
-        exit(0);
+    let output_ok = overwrite_check(output, params.force)?;
+    let header_ok = match &params.header_location {
+        HeaderLocation::Embedded => None,
+        HeaderLocation::Detached(path) => Some(overwrite_check(path, params.force)?),
+    };
+
+    if !should_continue_after_overwrite_checks(output_ok, header_ok) {
+        return Ok(());
     }
 
     let input_file = stor.read_file(input)?;
@@ -40,13 +49,7 @@ pub fn stream_mode(
 
     let header_file = match &params.header_location {
         HeaderLocation::Embedded => None,
-        HeaderLocation::Detached(path) => {
-            if !overwrite_check(path, params.force)? {
-                exit(0);
-            }
-
-            Some(stor.create_file(path).or_else(|_| stor.write_file(path))?)
-        }
+        HeaderLocation::Detached(path) => Some(stor.create_file(path).or_else(|_| stor.write_file(path))?),
     };
 
     // 2. encrypt file
@@ -79,4 +82,21 @@ pub fn stream_mode(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn detached_header_decline_returns_false_before_work_starts() {
+        assert!(!super::should_continue_after_overwrite_checks(
+            true,
+            Some(false)
+        ));
+    }
+
+    #[test]
+    fn approve_all_overwrite_checks_returns_true() {
+        assert!(super::should_continue_after_overwrite_checks(true, Some(true)));
+        assert!(super::should_continue_after_overwrite_checks(true, None));
+    }
 }
