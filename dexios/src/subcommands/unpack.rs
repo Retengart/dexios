@@ -12,12 +12,7 @@ use crate::global::{
 use crate::{info, warn};
 use std::path::{Path, PathBuf};
 
-fn should_unpack_entry<F>(
-    file_path: &Path,
-    force: ForceMode,
-    verbose: bool,
-    ask: F,
-) -> Result<bool>
+fn should_unpack_entry<F>(file_path: &Path, force: ForceMode, verbose: bool, ask: F) -> Result<bool>
 where
     F: FnOnce(&str, bool, ForceMode) -> Result<bool>,
 {

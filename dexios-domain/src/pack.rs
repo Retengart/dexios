@@ -145,7 +145,6 @@ where
     stor.remove_file(tmp_file).map_err(|_| Error::TempCleanup)
 }
 
-
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
