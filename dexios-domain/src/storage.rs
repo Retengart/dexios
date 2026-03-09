@@ -1,4 +1,3 @@
-use rand::distr::{Alphanumeric, SampleString};
 use std::cell::RefCell;
 use std::fs;
 use std::io::{Read, Seek, Write};
@@ -50,19 +49,41 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+pub struct TempArtifact {
+    file: RefCell<fs::File>,
+}
+
+impl TempArtifact {
+    pub fn with_reader<T, E>(&self, f: impl FnOnce(&mut fs::File) -> Result<T, E>) -> Result<T, E> {
+        let mut file = self.file.borrow_mut();
+        f(&mut file)
+    }
+
+    pub fn with_writer<T, E>(&self, f: impl FnOnce(&mut fs::File) -> Result<T, E>) -> Result<T, E> {
+        let mut file = self.file.borrow_mut();
+        f(&mut file)
+    }
+
+    pub fn len(&self) -> Result<usize, Error> {
+        let file = self.file.borrow();
+        let meta = file.metadata().map_err(|_| Error::FileLen)?;
+        meta.len().try_into().map_err(|_| Error::FileLen)
+    }
+
+    pub fn is_empty(&self) -> Result<bool, Error> {
+        self.len().map(|len| len == 0)
+    }
+
+    pub fn secure_dispose(self) -> Result<(), Error> {
+        drop(self);
+        Ok(())
+    }
+}
+
 pub trait Storage<RW>: Send + Sync
 where
     RW: Read + Write + Seek,
 {
-    // TODO(pleshevskiy): return a new struct that will be removed on drop.
-    fn create_temp_file(&self) -> Result<Entry<RW>, Error> {
-        let mut path = std::env::temp_dir();
-        let file_name = Alphanumeric.sample_string(&mut rand::rng(), 16);
-        path.push(file_name);
-
-        self.create_file(path)
-    }
-
     fn create_dir_all<P: AsRef<Path>>(&self, path: P) -> Result<(), Error>;
     fn create_file<P: AsRef<Path>>(&self, path: P) -> Result<Entry<RW>, Error>;
     fn read_file<P: AsRef<Path>>(&self, path: P) -> Result<Entry<RW>, Error>;
@@ -77,6 +98,16 @@ where
 }
 
 pub struct FileStorage;
+
+impl FileStorage {
+    pub fn create_temp_artifact(&self) -> Result<TempArtifact, Error> {
+        let file = tempfile::tempfile().map_err(|_| Error::CreateFile)?;
+
+        Ok(TempArtifact {
+            file: RefCell::new(file),
+        })
+    }
+}
 
 impl Storage<fs::File> for FileStorage {
     fn create_dir_all<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
@@ -795,5 +826,47 @@ mod tests {
         assert_eq!(stor.file_len(&file).unwrap(), b"secret-bytes".len());
 
         fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn temp_artifact_exists_while_live() {
+        let stor = FileStorage;
+        let tmp = stor.create_temp_artifact().expect("temp artifact");
+        tmp.with_writer(|file| {
+            file.write_all(b"temp-data").map_err(|_| Error::FlushFile)?;
+            Ok::<(), Error>(())
+        })
+        .unwrap();
+
+        assert_eq!(tmp.len().unwrap(), b"temp-data".len());
+    }
+
+    #[test]
+    fn temp_artifact_is_deleted_on_drop() {
+        let stor = FileStorage;
+        let tmp = stor.create_temp_artifact().unwrap();
+
+        tmp.with_writer(|file| {
+            file.write_all(b"temp-data").map_err(|_| Error::FlushFile)?;
+            Ok::<(), Error>(())
+        })
+        .unwrap();
+
+        // Drop should not panic and should dispose of the unnamed temp file.
+        drop(tmp);
+    }
+
+    #[test]
+    fn temp_artifact_secure_dispose_removes_file() {
+        let stor = FileStorage;
+        let tmp = stor.create_temp_artifact().unwrap();
+
+        tmp.with_writer(|file| {
+            file.write_all(b"temp-data").map_err(|_| Error::FlushFile)?;
+            Ok::<(), Error>(())
+        })
+        .unwrap();
+
+        tmp.secure_dispose().unwrap();
     }
 }

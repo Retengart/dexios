@@ -36,6 +36,25 @@ pub struct Request<'a> {
     pub algorithm: Algorithm,
 }
 
+fn archive_root_name(input: &str) -> Result<PathBuf> {
+    let path = PathBuf::from(input);
+
+    if let Some(name) = path.file_name() {
+        return Ok(PathBuf::from(name));
+    }
+
+    let fallback = path
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(part) => Some(PathBuf::from(part)),
+            _ => None,
+        })
+        .next_back()
+        .ok_or_else(|| anyhow::anyhow!("Unable to derive archive root name from input path"))?;
+
+    Ok(fallback)
+}
+
 // this first indexes the input directory
 // once it has the total number of files/folders, it creates a temporary zip file
 // it compresses all of the files into the temporary archive
@@ -86,20 +105,37 @@ pub fn execute(req: &Request) -> Result<()> {
         }
     };
 
-    let compress_files = input_files
-        .into_iter()
-        .flat_map(|file| {
-            if file.is_dir() {
-                // TODO(pleshevskiy): use iterator instead of vec!
-                match stor.read_dir(&file) {
-                    Ok(files) => files.into_iter().map(Ok).collect(),
-                    Err(err) => vec![Err(err)],
-                }
-            } else {
-                vec![Ok(file)]
+    let mut entries = Vec::new();
+    for (input_name, file) in req.input_file.iter().zip(input_files.into_iter()) {
+        let archive_root_name =
+            archive_root_name(input_name).map_err(|_| domain::storage::Error::DirEntries)?;
+        let root_path = file.path().to_path_buf();
+
+        if file.is_dir() {
+            let files = stor.read_dir(&file)?;
+            for source in files {
+                let relative = source
+                    .path()
+                    .strip_prefix(&root_path)
+                    .map_err(|_| domain::storage::Error::DirEntries)?;
+                let archive_path = if relative.as_os_str().is_empty() {
+                    archive_root_name.clone()
+                } else {
+                    archive_root_name.join(relative)
+                };
+
+                entries.push(domain::pack::ArchiveSourceEntry {
+                    source,
+                    archive_path,
+                });
             }
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+        } else {
+            entries.push(domain::pack::ArchiveSourceEntry {
+                source: file,
+                archive_path: archive_root_name,
+            });
+        }
+    }
 
     let compression_method = match req.pack_params.compression {
         Compression::None => zip::CompressionMethod::Stored,
@@ -110,7 +146,7 @@ pub fn execute(req: &Request) -> Result<()> {
     domain::pack::execute(
         stor.clone(),
         domain::pack::Request {
-            compress_files,
+            entries,
             compression_method,
             writer: output_file.try_writer()?,
             header_writer: header_file.as_ref().and_then(|f| f.try_writer().ok()),

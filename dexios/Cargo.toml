@@ -1,6 +1,6 @@
 [package]
 name = "dexios"
-version = "8.9.0"
+version = "8.9.1"
 authors = [
     "brxken128 <brxken128@tutanota.com>",
     "Retengart <119082209+Retengart@users.noreply.github.com>",

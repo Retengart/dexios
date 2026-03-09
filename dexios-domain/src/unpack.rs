@@ -11,6 +11,41 @@ use crate::storage::{self, Storage};
 use crate::{decrypt, overwrite};
 use core::protected::Protected;
 
+trait TempArtifactLike {
+    fn with_reader<T, E>(&self, f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>) -> Result<T, E>;
+    fn with_writer<T, E>(&self, f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>)
+    -> Result<T, E>;
+    fn len(&self) -> Result<usize, Error>;
+    fn secure_dispose(self) -> Result<(), Error>;
+}
+
+trait ReadSeek: Read + Seek {}
+impl<T: Read + Seek + ?Sized> ReadSeek for T {}
+
+trait WriteSeek: Write + Seek {}
+impl<T: Write + Seek + ?Sized> WriteSeek for T {}
+
+impl TempArtifactLike for storage::TempArtifact {
+    fn with_reader<T, E>(&self, f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>) -> Result<T, E> {
+        storage::TempArtifact::with_reader(self, |file| f(file))
+    }
+
+    fn with_writer<T, E>(
+        &self,
+        f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>,
+    ) -> Result<T, E> {
+        storage::TempArtifact::with_writer(self, |file| f(file))
+    }
+
+    fn len(&self) -> Result<usize, Error> {
+        storage::TempArtifact::len(self).map_err(Error::Storage)
+    }
+
+    fn secure_dispose(self) -> Result<(), Error> {
+        storage::TempArtifact::secure_dispose(self).map_err(|_| Error::TempCleanup)
+    }
+}
+
 #[derive(Debug)]
 pub enum Error {
     WriteData,
@@ -60,33 +95,50 @@ pub fn execute<RW: Read + Write + Seek>(
     stor: Arc<impl Storage<RW> + 'static>,
     req: Request<'_, RW>,
 ) -> Result<(), Error> {
+    execute_with_temp_artifact(stor, req, || {
+        storage::FileStorage
+            .create_temp_artifact()
+            .map_err(Error::Storage)
+    })
+}
+
+fn execute_with_temp_artifact<RW, T, F>(
+    stor: Arc<impl Storage<RW> + 'static>,
+    req: Request<'_, RW>,
+    temp_factory: F,
+) -> Result<(), Error>
+where
+    RW: Read + Write + Seek,
+    T: TempArtifactLike,
+    F: FnOnce() -> Result<T, Error>,
+{
     // 1. Create temp zip archive.
-    let tmp_file = stor.create_temp_file().map_err(Error::Storage)?;
+    let tmp_file = temp_factory()?;
 
     // 2. Decrypt input file to temp zip archive.
-    decrypt::execute(decrypt::Request {
-        header_reader: req.header_reader,
-        reader: req.reader,
-        writer: tmp_file
-            .try_writer()
-            .expect("We sure that file in write mode"),
-        raw_key: req.raw_key,
-        on_decrypted_header: req.on_decrypted_header,
-    })
-    .map_err(Error::Decrypt)?;
+    tmp_file.with_writer(|tmp_writer| {
+        tmp_writer
+            .rewind()
+            .map_err(|_| Error::Storage(storage::Error::OpenFile(storage::FileMode::Write)))?;
+        let writer = RefCell::new(tmp_writer);
+        decrypt::execute(decrypt::Request {
+            header_reader: req.header_reader,
+            reader: req.reader,
+            writer: &writer,
+            raw_key: req.raw_key,
+            on_decrypted_header: req.on_decrypted_header,
+        })
+        .map_err(Error::Decrypt)
+    })?;
 
-    let buf_capacity = stor.file_len(&tmp_file).map_err(Error::Storage)?;
+    let buf_capacity = tmp_file.len()?;
 
     // 3. Recover files from temp archive.
-    {
-        let mut reader = tmp_file
-            .try_reader()
-            .expect("We sure that file in read mode")
-            .borrow_mut();
-
-        reader.rewind().map_err(|_| Error::ResetCursorPosition)?;
-
-        let mut archive = zip::ZipArchive::new(&mut *reader).map_err(|_| Error::OpenArchive)?;
+    tmp_file.with_reader(|tmp_reader| {
+        tmp_reader
+            .rewind()
+            .map_err(|_| Error::ResetCursorPosition)?;
+        let mut archive = zip::ZipArchive::new(tmp_reader).map_err(|_| Error::OpenArchive)?;
 
         let output_dir = req.output_dir_path.clone();
 
@@ -144,31 +196,27 @@ pub fn execute<RW: Read + Write + Seek>(
                 .map_err(|_| Error::WriteData)?;
                 stor.flush_file(&file).map_err(Error::Storage)?;
                 Ok(())
-            })?;
-    }
+            })
+    })?;
 
-    cleanup_temp_archive(stor.as_ref(), tmp_file, buf_capacity)?;
+    cleanup_temp_archive(tmp_file, buf_capacity)?;
 
     Ok(())
 }
 
-fn cleanup_temp_archive<RW>(
-    stor: &impl Storage<RW>,
-    tmp_file: storage::Entry<RW>,
-    buf_capacity: usize,
-) -> Result<(), Error>
-where
-    RW: Read + Write + Seek,
-{
+fn cleanup_temp_archive(tmp_file: impl TempArtifactLike, buf_capacity: usize) -> Result<(), Error> {
     // Finally erase temp zip archive with zeros.
-    overwrite::execute(overwrite::Request {
-        buf_capacity,
-        writer: tmp_file.try_writer().map_err(|_| Error::TempCleanup)?,
-        passes: 1,
-    })
-    .map_err(|_| Error::TempCleanup)?;
+    tmp_file.with_writer(|tmp_writer| {
+        let writer = RefCell::new(tmp_writer);
+        overwrite::execute(overwrite::Request {
+            buf_capacity,
+            writer: &writer,
+            passes: 1,
+        })
+        .map_err(|_| Error::TempCleanup)
+    })?;
 
-    stor.remove_file(tmp_file).map_err(|_| Error::TempCleanup)?;
+    tmp_file.secure_dispose()?;
 
     Ok(())
 }
@@ -187,7 +235,7 @@ mod tests {
     use crate::encrypt::tests::PASSWORD;
     use crate::pack;
     use crate::pack::tests::ENCRYPTED_PACKED_BAR_DIR;
-    use crate::storage::{Error as StorageError, IMFile, InMemoryFile, InMemoryStorage, Storage};
+    use crate::storage::{IMFile, InMemoryFile, InMemoryStorage, Storage};
 
     fn pack_bar_directory(
         stor: Arc<InMemoryStorage>,
@@ -200,12 +248,19 @@ mod tests {
         let file = stor.read_file("bar/").unwrap();
         let mut compress_files = stor.read_dir(&file).unwrap();
         compress_files.sort_by(|a, b| a.path().cmp(b.path()));
+        let entries = compress_files
+            .into_iter()
+            .map(|source| pack::ArchiveSourceEntry {
+                archive_path: source.path().to_path_buf(),
+                source,
+            })
+            .collect::<Vec<_>>();
 
         let output_file = stor.create_file(output_path).unwrap();
         let header_file = header_path.map(|path| stor.create_file(path).unwrap());
 
         let req = pack::Request {
-            compress_files,
+            entries,
             compression_method: zip::CompressionMethod::Stored,
             writer: output_file.try_writer().unwrap(),
             header_writer: header_file.as_ref().map(|file| file.try_writer().unwrap()),
@@ -235,68 +290,33 @@ mod tests {
         }
     }
 
-    #[derive(Default)]
-    struct FailingCleanupStorage {
-        inner: InMemoryStorage,
+    struct FailingTempArtifact {
+        file: RefCell<Cursor<Vec<u8>>>,
     }
 
-    impl Storage<Cursor<Vec<u8>>> for FailingCleanupStorage {
-        fn create_dir_all<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), StorageError> {
-            self.inner.create_dir_all(path)
-        }
-
-        fn create_file<P: AsRef<std::path::Path>>(
+    impl TempArtifactLike for FailingTempArtifact {
+        fn with_reader<T, E>(
             &self,
-            path: P,
-        ) -> Result<storage::Entry<Cursor<Vec<u8>>>, StorageError> {
-            self.inner.create_file(path)
+            f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>,
+        ) -> Result<T, E> {
+            let mut file = self.file.borrow_mut();
+            f(&mut *file)
         }
 
-        fn read_file<P: AsRef<std::path::Path>>(
+        fn with_writer<T, E>(
             &self,
-            path: P,
-        ) -> Result<storage::Entry<Cursor<Vec<u8>>>, StorageError> {
-            self.inner.read_file(path)
+            f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>,
+        ) -> Result<T, E> {
+            let mut file = self.file.borrow_mut();
+            f(&mut *file)
         }
 
-        fn overwrite_file<P: AsRef<std::path::Path>>(
-            &self,
-            path: P,
-        ) -> Result<storage::Entry<Cursor<Vec<u8>>>, StorageError> {
-            self.inner.overwrite_file(path)
+        fn len(&self) -> Result<usize, Error> {
+            Ok(self.file.borrow().get_ref().len())
         }
 
-        fn write_file<P: AsRef<std::path::Path>>(
-            &self,
-            path: P,
-        ) -> Result<storage::Entry<Cursor<Vec<u8>>>, StorageError> {
-            self.inner.write_file(path)
-        }
-
-        fn flush_file(&self, file: &storage::Entry<Cursor<Vec<u8>>>) -> Result<(), StorageError> {
-            self.inner.flush_file(file)
-        }
-
-        fn file_len(&self, file: &storage::Entry<Cursor<Vec<u8>>>) -> Result<usize, StorageError> {
-            self.inner.file_len(file)
-        }
-
-        fn remove_file(&self, _file: storage::Entry<Cursor<Vec<u8>>>) -> Result<(), StorageError> {
-            Err(StorageError::RemoveFile)
-        }
-
-        fn remove_dir_all(
-            &self,
-            file: storage::Entry<Cursor<Vec<u8>>>,
-        ) -> Result<(), StorageError> {
-            self.inner.remove_dir_all(file)
-        }
-
-        fn read_dir(
-            &self,
-            file: &storage::Entry<Cursor<Vec<u8>>>,
-        ) -> Result<Vec<storage::Entry<Cursor<Vec<u8>>>>, StorageError> {
-            self.inner.read_dir(file)
+        fn secure_dispose(self) -> Result<(), Error> {
+            Err(Error::TempCleanup)
         }
     }
 
@@ -378,8 +398,8 @@ mod tests {
     }
 
     #[test]
-    fn should_fail_when_temp_zip_cleanup_fails() {
-        let stor = Arc::new(FailingCleanupStorage::default());
+    fn unpack_fails_if_temp_artifact_disposal_fails() {
+        let stor = Arc::new(InMemoryStorage::default());
         let setup_stor = Arc::new(InMemoryStorage::default());
         pack_bar_directory(setup_stor.clone(), "archive.enc", None);
 
@@ -391,14 +411,14 @@ mod tests {
             .borrow_mut()
             .read_to_end(&mut archive_buf)
             .unwrap();
-        let archive_file = stor.inner.create_file("archive.enc").unwrap();
+        let archive_file = stor.create_file("archive.enc").unwrap();
         archive_file
             .try_writer()
             .unwrap()
             .borrow_mut()
             .write_all(&archive_buf)
             .unwrap();
-        stor.inner.flush_file(&archive_file).unwrap();
+        stor.flush_file(&archive_file).unwrap();
 
         let archive = stor.read_file("archive.enc").unwrap();
         let req = Request {
@@ -411,7 +431,11 @@ mod tests {
             on_zip_file: None,
         };
 
-        let result = execute(stor, req);
+        let result = execute_with_temp_artifact(stor, req, || {
+            Ok(FailingTempArtifact {
+                file: RefCell::new(Cursor::new(Vec::new())),
+            })
+        });
 
         assert!(matches!(result, Err(Error::TempCleanup)));
     }
