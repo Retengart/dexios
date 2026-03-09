@@ -43,6 +43,8 @@ The active integration branch is `main`, and GitHub Actions run on pushes and pu
 
 Pull requests should summarize user-visible impact, note any security or compatibility implications, and mention documentation updates when behavior changes. Include command output for CLI changes and screenshots only when GUI behavior changes.
 
+Do not commit ad hoc planning artifacts from `docs/plans/`. Those files are local working notes, not mergeable project documentation.
+
 ## Security & Configuration Notes
 Treat changes to headers, algorithms, KDF selection, pack/unpack behavior, and secure erase logic as compatibility-sensitive. Review `spec/specification-v1.pdf`, `docs/technical-details/`, and `SECURITY.md` before changing on-disk format behavior or cryptographic defaults.
 
