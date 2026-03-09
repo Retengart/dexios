@@ -16,6 +16,10 @@ ROOT="$(mktemp -d /tmp/dexios-cli-surface.XXXXXX)"
 
 cleanup() {
     if [[ "${KEEP_TMP:-0}" == "1" || "$FAILURES" -ne 0 ]]; then
+        if [[ -n "${CLI_SURFACE_ARTIFACTS_DIR:-}" ]]; then
+            mkdir -p "$CLI_SURFACE_ARTIFACTS_DIR"
+            cp -a "$ROOT" "$CLI_SURFACE_ARTIFACTS_DIR"/
+        fi
         echo "Artifacts kept at: $ROOT"
     else
         rm -rf "$ROOT"
