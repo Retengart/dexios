@@ -41,7 +41,10 @@ fn build_archive_entries(
                 root_name.join(relative)
             };
 
-            ArchiveSourceEntry { source, archive_path }
+            ArchiveSourceEntry {
+                source,
+                archive_path,
+            }
         })
         .collect()
 }

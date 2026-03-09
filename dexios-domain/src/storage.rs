@@ -70,6 +70,10 @@ impl TempArtifact {
         meta.len().try_into().map_err(|_| Error::FileLen)
     }
 
+    pub fn is_empty(&self) -> Result<bool, Error> {
+        self.len().map(|len| len == 0)
+    }
+
     pub fn secure_dispose(self) -> Result<(), Error> {
         drop(self);
         Ok(())

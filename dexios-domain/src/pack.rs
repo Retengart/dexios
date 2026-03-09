@@ -16,14 +16,9 @@ use zip::write::SimpleFileOptions;
 use crate::storage::Storage;
 
 trait TempArtifactLike {
-    fn with_reader<T, E>(
-        &self,
-        f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>,
-    ) -> Result<T, E>;
-    fn with_writer<T, E>(
-        &self,
-        f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>,
-    ) -> Result<T, E>;
+    fn with_reader<T, E>(&self, f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>) -> Result<T, E>;
+    fn with_writer<T, E>(&self, f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>)
+    -> Result<T, E>;
     fn len(&self) -> Result<usize, Error>;
     fn secure_dispose(self) -> Result<(), Error>;
 }
@@ -35,10 +30,7 @@ trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek + ?Sized> WriteSeek for T {}
 
 impl TempArtifactLike for crate::storage::TempArtifact {
-    fn with_reader<T, E>(
-        &self,
-        f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>,
-    ) -> Result<T, E> {
+    fn with_reader<T, E>(&self, f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>) -> Result<T, E> {
         crate::storage::TempArtifact::with_reader(self, |file| f(file))
     }
 
@@ -175,33 +167,26 @@ where
     let buf_capacity = tmp_file.len()?;
 
     // 4. Encrypt zip archive
-    let encrypt_res = tmp_file
-        .with_reader(|tmp_reader| {
-            tmp_reader.rewind().map_err(|_| Error::FinishArchive)?;
-            let reader = RefCell::new(tmp_reader);
-            crate::encrypt::execute(crate::encrypt::Request {
-                reader: &reader,
-                writer: req.writer,
-                header_writer: req.header_writer,
-                raw_key: req.raw_key,
-                header_type: req.header_type,
-                hashing_algorithm: req.hashing_algorithm,
-            })
-            .map_err(Error::Encrypt)
-        });
+    let encrypt_res = tmp_file.with_reader(|tmp_reader| {
+        tmp_reader.rewind().map_err(|_| Error::FinishArchive)?;
+        let reader = RefCell::new(tmp_reader);
+        crate::encrypt::execute(crate::encrypt::Request {
+            reader: &reader,
+            writer: req.writer,
+            header_writer: req.header_writer,
+            raw_key: req.raw_key,
+            header_type: req.header_type,
+            hashing_algorithm: req.hashing_algorithm,
+        })
+        .map_err(Error::Encrypt)
+    });
 
-    cleanup_temp_archive::<RW>(tmp_file, buf_capacity)?;
+    cleanup_temp_archive(tmp_file, buf_capacity)?;
 
     encrypt_res
 }
 
-fn cleanup_temp_archive<RW>(
-    tmp_file: impl TempArtifactLike,
-    buf_capacity: usize,
-) -> Result<(), Error>
-where
-    RW: Read + Write + Seek,
-{
+fn cleanup_temp_archive(tmp_file: impl TempArtifactLike, buf_capacity: usize) -> Result<(), Error> {
     // Finally erase zip archive with zeros.
     tmp_file.with_writer(|tmp_writer| {
         let writer = RefCell::new(tmp_writer);

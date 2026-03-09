@@ -124,7 +124,10 @@ pub fn execute(req: &Request) -> Result<()> {
                     archive_root_name.join(relative)
                 };
 
-                entries.push(domain::pack::ArchiveSourceEntry { source, archive_path });
+                entries.push(domain::pack::ArchiveSourceEntry {
+                    source,
+                    archive_path,
+                });
             }
         } else {
             entries.push(domain::pack::ArchiveSourceEntry {
