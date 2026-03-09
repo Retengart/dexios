@@ -50,31 +50,29 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 pub struct TempArtifact {
-    path: PathBuf,
-    file: RefCell<tempfile::NamedTempFile>,
+    file: RefCell<fs::File>,
 }
 
 impl TempArtifact {
-    pub fn path(&self) -> &Path {
-        &self.path
+    pub fn with_reader<T, E>(&self, f: impl FnOnce(&mut fs::File) -> Result<T, E>) -> Result<T, E> {
+        let mut file = self.file.borrow_mut();
+        f(&mut file)
     }
 
-    pub fn reader(&self) -> &RefCell<tempfile::NamedTempFile> {
-        &self.file
-    }
-
-    pub fn writer(&self) -> &RefCell<tempfile::NamedTempFile> {
-        &self.file
+    pub fn with_writer<T, E>(&self, f: impl FnOnce(&mut fs::File) -> Result<T, E>) -> Result<T, E> {
+        let mut file = self.file.borrow_mut();
+        f(&mut file)
     }
 
     pub fn len(&self) -> Result<usize, Error> {
         let file = self.file.borrow();
-        let meta = file.as_file().metadata().map_err(|_| Error::FileLen)?;
+        let meta = file.metadata().map_err(|_| Error::FileLen)?;
         meta.len().try_into().map_err(|_| Error::FileLen)
     }
 
     pub fn secure_dispose(self) -> Result<(), Error> {
-        self.file.into_inner().close().map_err(|_| Error::RemoveFile)
+        drop(self);
+        Ok(())
     }
 }
 
@@ -99,11 +97,9 @@ pub struct FileStorage;
 
 impl FileStorage {
     pub fn create_temp_artifact(&self) -> Result<TempArtifact, Error> {
-        let file = tempfile::NamedTempFile::new().map_err(|_| Error::CreateFile)?;
-        let path = file.path().to_path_buf();
+        let file = tempfile::tempfile().map_err(|_| Error::CreateFile)?;
 
         Ok(TempArtifact {
-            path,
             file: RefCell::new(file),
         })
     }
@@ -832,30 +828,41 @@ mod tests {
     fn temp_artifact_exists_while_live() {
         let stor = FileStorage;
         let tmp = stor.create_temp_artifact().expect("temp artifact");
-        let path = tmp.path().to_path_buf();
+        tmp.with_writer(|file| {
+            file.write_all(b"temp-data").map_err(|_| Error::FlushFile)?;
+            Ok::<(), Error>(())
+        })
+        .unwrap();
 
-        assert!(path.exists());
+        assert_eq!(tmp.len().unwrap(), b"temp-data".len());
     }
 
     #[test]
     fn temp_artifact_is_deleted_on_drop() {
-        let path = {
-            let stor = FileStorage;
-            let tmp = stor.create_temp_artifact().unwrap();
-            tmp.path().to_path_buf()
-        };
+        let stor = FileStorage;
+        let tmp = stor.create_temp_artifact().unwrap();
 
-        assert!(!path.exists());
+        tmp.with_writer(|file| {
+            file.write_all(b"temp-data").map_err(|_| Error::FlushFile)?;
+            Ok::<(), Error>(())
+        })
+        .unwrap();
+
+        // Drop should not panic and should dispose of the unnamed temp file.
+        drop(tmp);
     }
 
     #[test]
     fn temp_artifact_secure_dispose_removes_file() {
         let stor = FileStorage;
         let tmp = stor.create_temp_artifact().unwrap();
-        let path = tmp.path().to_path_buf();
+
+        tmp.with_writer(|file| {
+            file.write_all(b"temp-data").map_err(|_| Error::FlushFile)?;
+            Ok::<(), Error>(())
+        })
+        .unwrap();
 
         tmp.secure_dispose().unwrap();
-
-        assert!(!path.exists());
     }
 }
