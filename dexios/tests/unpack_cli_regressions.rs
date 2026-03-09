@@ -45,15 +45,19 @@ impl Drop for TestDir {
     }
 }
 
+fn run_unpack_with_args(input: &Path, output: &Path, extra_args: &[&str]) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
+    command.env("DEXIOS_KEY", PASSWORD).arg("unpack").arg("-f");
+
+    for arg in extra_args {
+        command.arg(arg);
+    }
+
+    command.arg(input).arg(output).output().unwrap()
+}
+
 fn run_unpack(input: &Path, output: &Path) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_dexios"))
-        .env("DEXIOS_KEY", PASSWORD)
-        .arg("unpack")
-        .arg("-f")
-        .arg(input)
-        .arg(output)
-        .output()
-        .unwrap()
+    run_unpack_with_args(input, output, &[])
 }
 
 fn write_zip_with_entries(path: &Path, entries: &[(&str, &[u8])]) {
@@ -197,4 +201,29 @@ fn unpack_cli_rejects_duplicate_normalized_targets() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(!output_dir.join("collision.txt").exists());
+}
+
+#[test]
+fn unpack_cli_erase_removes_archive_after_success() {
+    let test_dir = TestDir::new("unpack-cli-erase");
+    let plain_zip = test_dir.path().join("plain.zip");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+
+    write_zip_with_entries(&plain_zip, &[("payload/file.txt", b"top secret")]);
+    encrypt_archive(&plain_zip, &encrypted_archive);
+
+    let output = run_unpack_with_args(&encrypted_archive, &output_dir, &["--erase"]);
+
+    assert!(
+        output.status.success(),
+        "unpack failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!encrypted_archive.exists());
+    assert_eq!(
+        fs::read_to_string(output_dir.join("payload/file.txt")).unwrap(),
+        "top secret"
+    );
 }

@@ -1,4 +1,7 @@
-use crate::{cli::prompt::get_answer, global::states::HashMode};
+use crate::{
+    cli::prompt::get_answer,
+    global::states::{EraseMode, HashMode},
+};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -82,6 +85,10 @@ pub fn unpack(
 
     if params.hash_mode == HashMode::CalculateHash {
         super::hashing::hash_stream(&[input.to_string()])?;
+    }
+
+    if let EraseMode::EraseFile(passes) = params.erase {
+        super::erase::secure_erase(input, passes, params.force)?;
     }
 
     Ok(())

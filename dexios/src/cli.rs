@@ -258,7 +258,7 @@ pub fn build_cli() -> Command {
                     .short('r')
                     .long("recursive")
                     .action(ArgAction::SetTrue)
-                    .help("Index files and folders within other folders (index recursively)"),
+                    .help("Pack directories recursively (default behavior; retained for compatibility)"),
             )
             .arg(
                 Arg::new("keyfile")
