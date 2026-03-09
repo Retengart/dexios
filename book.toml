@@ -1,0 +1,14 @@
+[book]
+authors = ["brxken128"]
+language = "en"
+src = "book/src"
+title = "Dexios"
+description = "Documentation for Dexios"
+
+[rust]
+edition = "2024"
+
+[build]
+build-dir = "docs"                # the directory where the output is placed
+create-missing = true             # whether or not to create missing pages
+use-default-preprocessors = true  # use the default preprocessors

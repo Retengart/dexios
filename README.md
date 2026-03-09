@@ -6,58 +6,59 @@
 [![Dexios Crate](https://img.shields.io/crates/v/dexios.svg?style=flat-square)](https://lib.rs/crates/dexios)
 [![BSD-2-Clause](https://img.shields.io/badge/License-BSD_2--Clause-blue.svg?style=flat-square)](https://opensource.org/licenses/BSD-2-Clause)
 
-## Update Status
+## Dexios
 
-Dexios will continue to receive updates. Things are stable for the time being and I consider none of the code broken. In the (somewhat) near future I plan to change the backend entirely and give the CLI a re-write, so that things are both easier to maintain and understand. This will regrettably not be backwards-compatible, but the performance improvements and stability guarantees will be extremely worthwhile.
+Dexios is a Rust command-line file encryption utility built around a small, versioned file format and modern authenticated encryption.
 
-## Dexios - What is it?
+Current defaults for new encryption:
 
-Dexios is a fast, secure, and open source command-line encryption tool. It's
-written entirely in Rust and prioritises security, performance and convenience
-the most. It uses modern cryptographic AEADs (XChaCha20-Poly1305 + AES-256-GCM),
-with audited backends to ensure the safety and integrity of
-your data. It's extremely easy to use Dexios before uploading your files to a
-cloud service, to ensure that no prying eyes can read them.
+- `XChaCha20-Poly1305`
+- `BLAKE3-Balloon`
+- V5 headers
+- stream-mode encryption
 
-For notes on Deoxys-II, please see the
-[Security Notices](https://brxken128.github.io/dexios/Introduction.html#security-notices)
-section of the Documentation.
+The workspace is split into:
 
-You can install Dexios through cargo, with:
+- `dexios/` for the CLI
+- `dexios-core/` for cryptographic primitives and header handling
+- `dexios-domain/` for higher-level workflows such as pack/unpack and key operations
+- `dexios-gui/` for an experimental GUI crate
 
-```
-cargo install dexios --locked
-```
-
-Or you can download a pre-compiled binary from
-[the releases page](https://github.com/brxken128/dexios/releases)!
-
-This repo also contains the Dexios-Core and Dexios-Domain libraries
-- they're used by Dexios itself for
-managing headers and cryptographic functions. This allows us to keep them
-isolated, and ensure that security-critical pieces of code remain maintainable.
-
-## Development
+## Installation
 
 Dexios currently requires Rust `1.88` or newer.
 
 ```bash
+cargo install dexios --locked
+```
+
+Prebuilt binaries are also published on the releases page.
+
+## Development
+
+```bash
+cargo check --workspace --all-targets --release
 cargo build --workspace
 cargo test --workspace --all-features --release --verbose
 ```
 
-You may view more information about [Dexios](dexios/README.md),
-[Dexios-Core](dexios-core/README.md) and [Dexios-Domain](dexios-domain/README.md) in their respective folders. You can also
-[view the documentation](https://brxken128.github.io/dexios/) for the technical
-info!
+## Documentation
 
-## Donating
+The mdBook source for the project documentation lives in `book/src/`.
 
-If you like my work, and want to help support the project, feel free to donate!
-This is not necessary by any means, so please don't feel obliged to do so.
+- generated site output lives in `docs/`
+- crate API docs are published separately on docs.rs
+- the whitepaper-style format reference lives in `spec/dexios-paper.typ`
 
-```
-XMR: 84zSGS18aHtT3CZjZUnnWpCsz1wmA5f65G6BXisbrvAiH7PxZpP8GorbdjAQYRtfeiANZywwUPjZcHu8eXJeWdafJQFK46G
-BTC: bc1q8x0r7khrfj40qd0zr5xv3t9nl92rz2387pu48u
-ETH: 0x9630f95F11dFa8703b71DbF746E5c83A31A3F2DD
-```
+For user-facing and technical docs, see:
+
+- [Dexios CLI notes](dexios/README.md)
+- [Dexios-Core](dexios-core/README.md)
+- [Dexios-Domain](dexios-domain/README.md)
+- [Published documentation site](https://brxken128.github.io/dexios/)
+
+## Notes
+
+- `AES-256-GCM` is available via `--aes`.
+- `argon2id` is available for new output via `--argon`.
+- `Deoxys-II-256` remains part of format compatibility in `dexios-core`, but the current CLI does not offer it for new encryption.
