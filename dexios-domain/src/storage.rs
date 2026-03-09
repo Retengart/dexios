@@ -1,12 +1,10 @@
 use std::cell::RefCell;
 use std::fs;
-use std::io::{Read, Seek, Write};
-use std::path::{Path, PathBuf};
+use std::io::{self, Read, Seek, Write};
+use std::path::{Component, Path, PathBuf};
 
 #[cfg(test)]
 use std::collections::HashMap;
-#[cfg(test)]
-use std::io;
 #[cfg(test)]
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 #[cfg(test)]
@@ -27,8 +25,10 @@ pub enum Error {
     RemoveDir,
     DirEntries,
     FlushFile,
+    SyncFile,
     FileAccess,
     FileLen,
+    UnsafePath(PathBuf),
 }
 
 impl std::fmt::Display for Error {
@@ -38,11 +38,15 @@ impl std::fmt::Display for Error {
             Error::CreateFile => f.write_str("Unable to create a new file"),
             Error::OpenFile(mode) => write!(f, "Unable to read the file in {mode:?} mode"),
             Error::FlushFile => f.write_str("Unable to flush the file"),
+            Error::SyncFile => f.write_str("Unable to sync the file"),
             Error::RemoveFile => f.write_str("Unable to remove the file"),
             Error::RemoveDir => f.write_str("Unable to remove dir"),
             Error::DirEntries => f.write_str("Unable to read directory"),
             Error::FileAccess => f.write_str("Permission denied"),
             Error::FileLen => f.write_str("Unable to get file length"),
+            Error::UnsafePath(path) => {
+                write!(f, "Unsafe extraction path: {}", path.display())
+            }
         }
     }
 }
@@ -74,9 +78,8 @@ impl TempArtifact {
         self.len().map(|len| len == 0)
     }
 
-    pub fn secure_dispose(self) -> Result<(), Error> {
-        drop(self);
-        Ok(())
+    pub fn sync_all(&self) -> Result<(), Error> {
+        self.file.borrow().sync_all().map_err(|_| Error::SyncFile)
     }
 }
 
@@ -95,6 +98,20 @@ where
     fn remove_dir_all(&self, file: Entry<RW>) -> Result<(), Error>;
     // TODO(pleshevskiy): return iterator instead of Vector
     fn read_dir(&self, file: &Entry<RW>) -> Result<Vec<Entry<RW>>, Error>;
+
+    fn prepare_unpack_root<P: AsRef<Path>>(&self, output_dir: P) -> Result<PathBuf, Error> {
+        let output_dir = output_dir.as_ref().to_path_buf();
+        self.create_dir_all(&output_dir)?;
+        Ok(output_dir)
+    }
+
+    fn resolve_unpack_path<P: AsRef<Path>>(
+        &self,
+        root: P,
+        relative: &Path,
+    ) -> Result<PathBuf, Error> {
+        Ok(root.as_ref().join(relative))
+    }
 }
 
 pub struct FileStorage;
@@ -217,6 +234,74 @@ impl Storage<fs::File> for FileStorage {
             })
             .map(|path| path.and_then(|path| self.read_file(path)))
             .collect()
+    }
+
+    fn prepare_unpack_root<P: AsRef<Path>>(&self, output_dir: P) -> Result<PathBuf, Error> {
+        let output_dir = output_dir.as_ref();
+        let mut current = if output_dir.is_absolute() {
+            PathBuf::new()
+        } else {
+            std::env::current_dir().map_err(|_| Error::FileAccess)?
+        };
+
+        for component in output_dir.components() {
+            match component {
+                Component::Prefix(prefix) => current.push(prefix.as_os_str()),
+                Component::RootDir => current.push(component.as_os_str()),
+                Component::CurDir => {}
+                Component::ParentDir => return Err(Error::UnsafePath(output_dir.to_path_buf())),
+                Component::Normal(part) => {
+                    current.push(part);
+
+                    match fs::symlink_metadata(&current) {
+                        Ok(meta) if meta.file_type().is_symlink() => {
+                            return Err(Error::UnsafePath(current));
+                        }
+                        Ok(meta) if meta.is_dir() => {}
+                        Ok(_) => return Err(Error::UnsafePath(current)),
+                        Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                            fs::create_dir(&current).map_err(|_| Error::CreateDir)?;
+                        }
+                        Err(_) => return Err(Error::FileAccess),
+                    }
+                }
+            }
+        }
+
+        fs::canonicalize(&current).map_err(|_| Error::UnsafePath(output_dir.to_path_buf()))
+    }
+
+    fn resolve_unpack_path<P: AsRef<Path>>(
+        &self,
+        root: P,
+        relative: &Path,
+    ) -> Result<PathBuf, Error> {
+        let root = root.as_ref();
+        let full_path = root.join(relative);
+        let mut current = root.to_path_buf();
+        let mut components = relative.components().peekable();
+
+        while let Some(component) = components.next() {
+            let Component::Normal(part) = component else {
+                return Err(Error::UnsafePath(full_path));
+            };
+
+            current.push(part);
+
+            match fs::symlink_metadata(&current) {
+                Ok(meta) if meta.file_type().is_symlink() => {
+                    return Err(Error::UnsafePath(full_path));
+                }
+                Ok(meta) if components.peek().is_some() && meta.is_file() => {
+                    return Err(Error::UnsafePath(full_path));
+                }
+                Ok(_) => {}
+                Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+                Err(_) => return Err(Error::FileAccess),
+            }
+        }
+
+        Ok(full_path)
     }
 }
 
@@ -857,7 +942,7 @@ mod tests {
     }
 
     #[test]
-    fn temp_artifact_secure_dispose_removes_file() {
+    fn temp_artifact_sync_all_succeeds_while_live() {
         let stor = FileStorage;
         let tmp = stor.create_temp_artifact().unwrap();
 
@@ -867,6 +952,6 @@ mod tests {
         })
         .unwrap();
 
-        tmp.secure_dispose().unwrap();
+        tmp.sync_all().unwrap();
     }
 }

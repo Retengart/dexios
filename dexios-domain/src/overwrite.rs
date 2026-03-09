@@ -56,6 +56,21 @@ fn write_random_pass<W: Write, R: Rng>(
     Ok(())
 }
 
+fn write_zero_pass<W: Write>(writer: &mut W, len: usize) -> Result<(), Error> {
+    let zero_block = [0u8; BLOCK_SIZE];
+    let mut remaining = len;
+
+    while remaining > 0 {
+        let block_size = remaining.min(BLOCK_SIZE);
+        writer
+            .write_all(&zero_block[..block_size])
+            .map_err(|_| Error::OverwriteWithZeros)?;
+        remaining -= block_size;
+    }
+
+    Ok(())
+}
+
 pub fn execute<W: Write + Seek>(req: Request<'_, W>) -> Result<(), Error> {
     let mut writer = req.writer.borrow_mut();
     for _ in 0..req.passes {
@@ -67,9 +82,7 @@ pub fn execute<W: Write + Seek>(req: Request<'_, W>) -> Result<(), Error> {
     }
 
     writer.rewind().map_err(|_| Error::ResetCursorPosition)?;
-    writer
-        .write_all(&[0].repeat(req.buf_capacity))
-        .map_err(|_| Error::OverwriteWithZeros)?;
+    write_zero_pass(&mut *writer, req.buf_capacity)?;
     writer.flush().map_err(|_| Error::FlushFile)
 }
 
@@ -78,6 +91,27 @@ mod tests {
     use super::*;
     use rand::{SeedableRng, rngs::StdRng};
     use std::io::Cursor;
+
+    struct ChunkLimitedWriter {
+        cursor: Cursor<Vec<u8>>,
+    }
+
+    impl Write for ChunkLimitedWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            assert!(buf.len() <= BLOCK_SIZE, "write larger than BLOCK_SIZE");
+            self.cursor.write(buf)
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            self.cursor.flush()
+        }
+    }
+
+    impl Seek for ChunkLimitedWriter {
+        fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+            self.cursor.seek(pos)
+        }
+    }
 
     fn make_test(capacity: usize, passes: i32) {
         let mut buf = vec![0u8; capacity];
@@ -143,5 +177,19 @@ mod tests {
         write_random_pass(&mut cursor, 32, &mut rng).unwrap();
 
         assert_ne!(cursor.into_inner(), vec![0u8; 32]);
+    }
+
+    #[test]
+    fn zero_pass_streams_in_fixed_blocks() {
+        let writer = RefCell::new(ChunkLimitedWriter {
+            cursor: Cursor::new(vec![0xAA; BLOCK_SIZE * 4 + 3]),
+        });
+
+        execute(Request {
+            writer: &writer,
+            buf_capacity: BLOCK_SIZE * 4 + 3,
+            passes: 0,
+        })
+        .unwrap();
     }
 }

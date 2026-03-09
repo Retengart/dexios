@@ -20,7 +20,7 @@ trait TempArtifactLike {
     fn with_writer<T, E>(&self, f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>)
     -> Result<T, E>;
     fn len(&self) -> Result<usize, Error>;
-    fn secure_dispose(self) -> Result<(), Error>;
+    fn sync_all(&self) -> Result<(), Error>;
 }
 
 trait ReadSeek: Read + Seek {}
@@ -45,8 +45,8 @@ impl TempArtifactLike for crate::storage::TempArtifact {
         crate::storage::TempArtifact::len(self).map_err(|_| Error::FinishArchive)
     }
 
-    fn secure_dispose(self) -> Result<(), Error> {
-        crate::storage::TempArtifact::secure_dispose(self).map_err(|_| Error::TempCleanup)
+    fn sync_all(&self) -> Result<(), Error> {
+        crate::storage::TempArtifact::sync_all(self).map_err(|_| Error::TempCleanup)
     }
 }
 
@@ -198,7 +198,9 @@ fn cleanup_temp_archive(tmp_file: impl TempArtifactLike, buf_capacity: usize) ->
         .map_err(|_| Error::TempCleanup)
     })?;
 
-    tmp_file.secure_dispose()
+    tmp_file.sync_all()?;
+    drop(tmp_file);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -296,7 +298,7 @@ pub(crate) mod tests {
             Ok(self.file.borrow().get_ref().len())
         }
 
-        fn secure_dispose(self) -> Result<(), Error> {
+        fn sync_all(&self) -> Result<(), Error> {
             Err(Error::TempCleanup)
         }
     }
@@ -355,7 +357,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn pack_fails_if_temp_artifact_disposal_fails() {
+    fn pack_fails_if_temp_artifact_sync_fails() {
         let stor = Arc::new(InMemoryStorage::default());
         stor.add_hello_txt();
         stor.add_bar_foo_folder_with_hidden();
