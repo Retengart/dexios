@@ -193,3 +193,60 @@ fn pack_mixed_nested_roots_do_not_leak_current_directory_name() {
         vec!["bar/foo/", "bar/foo/two.txt", "foo/", "foo/one.txt",]
     );
 }
+
+#[test]
+fn pack_verbose_reports_archived_entries() {
+    let test_dir = TestDir::new("pack-verbose");
+    let source_dir = test_dir.path().join("source");
+    fs::create_dir_all(source_dir.join("nested")).unwrap();
+    fs::write(source_dir.join("hello.txt"), b"hello").unwrap();
+    fs::write(source_dir.join("nested/world.txt"), b"world").unwrap();
+
+    let output = run_pack(&source_dir, &["-v"], &["."], "archive.enc");
+
+    assert!(
+        output.status.success(),
+        "pack failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("[i] Packing source/hello.txt"));
+    assert!(stdout.contains("[i] Packing source/nested/world.txt"));
+}
+
+#[test]
+fn pack_recursive_flag_matches_default_recursive_behavior() {
+    let test_dir = TestDir::new("pack-recursive-alias");
+    let default_dir = test_dir.path().join("default/source");
+    let recursive_dir = test_dir.path().join("recursive/source");
+    fs::create_dir_all(default_dir.join("nested/deeper")).unwrap();
+    fs::create_dir_all(recursive_dir.join("nested/deeper")).unwrap();
+    fs::write(default_dir.join("hello.txt"), b"hello").unwrap();
+    fs::write(default_dir.join("nested/deeper/world.txt"), b"world").unwrap();
+    fs::write(recursive_dir.join("hello.txt"), b"hello").unwrap();
+    fs::write(recursive_dir.join("nested/deeper/world.txt"), b"world").unwrap();
+
+    let default_output = run_pack(&default_dir, &[], &["."], "default.enc");
+    let recursive_output = run_pack(&recursive_dir, &["-r"], &["."], "recursive.enc");
+
+    assert!(
+        default_output.status.success(),
+        "default pack failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&default_output.stdout),
+        String::from_utf8_lossy(&default_output.stderr)
+    );
+    assert!(
+        recursive_output.status.success(),
+        "recursive pack failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&recursive_output.stdout),
+        String::from_utf8_lossy(&recursive_output.stderr)
+    );
+
+    let default_names = decrypt_archive_entry_names(&default_dir.join("default.enc"), None);
+    let recursive_names = decrypt_archive_entry_names(&recursive_dir.join("recursive.enc"), None);
+
+    assert_eq!(default_names, recursive_names);
+    assert!(default_names.contains(&"source/nested/deeper/world.txt".to_string()));
+}

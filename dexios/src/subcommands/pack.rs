@@ -8,7 +8,8 @@ use anyhow::{Context, Result};
 use core::header::{HEADER_VERSION, HeaderType};
 use core::primitives::{Algorithm, Mode};
 
-use crate::global::states::{HashMode, HeaderLocation, PasswordState};
+use crate::global::states::{HashMode, HeaderLocation, PasswordState, PrintMode};
+use crate::info;
 use crate::{
     global::states::EraseSourceDir,
     global::{
@@ -269,12 +270,19 @@ pub fn execute(req: &Request) -> Result<()> {
                     archive_root_name.join(relative)
                 };
 
+                if req.pack_params.print_mode == PrintMode::Verbose {
+                    info!("Packing {}", archive_path.display());
+                }
+
                 entries.push(domain::pack::ArchiveSourceEntry {
                     source,
                     archive_path,
                 });
             }
         } else {
+            if req.pack_params.print_mode == PrintMode::Verbose {
+                info!("Packing {}", archive_root_name.display());
+            }
             entries.push(domain::pack::ArchiveSourceEntry {
                 source: file,
                 archive_path: archive_root_name,
