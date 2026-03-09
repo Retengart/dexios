@@ -1,3 +1,5 @@
+use dexios_core::header::common::{KeyslotNonce, PayloadNonce, Salt};
+use dexios_core::header::v1::{KeyslotKdf, V1Header, V1Keyslot};
 use dexios_core::header::{Header, HeaderType, HeaderVersion};
 use dexios_core::primitives::{Algorithm, Mode};
 use std::io::{Cursor, Seek, SeekFrom, Write};
@@ -45,6 +47,25 @@ fn header_write_must_write_the_full_serialized_header() {
     let mut sink = ShortWriteCursor::default();
 
     header.write(&mut sink).expect("header write");
+
+    assert_eq!(sink.len(), header.serialize().unwrap().len());
+}
+
+#[test]
+fn v1_header_write_must_write_the_full_serialized_header() {
+    let header = V1Header::new(
+        PayloadNonce::new([7u8; 20]),
+        vec![V1Keyslot::new(
+            KeyslotKdf::Blake3Balloon,
+            [5u8; 48],
+            KeyslotNonce::new([9u8; 24]),
+            Salt::new([3u8; 16]),
+        )],
+    )
+    .expect("v1 header");
+    let mut sink = ShortWriteCursor::default();
+
+    header.write(&mut sink).expect("v1 header write");
 
     assert_eq!(sink.len(), header.serialize().unwrap().len());
 }
