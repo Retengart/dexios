@@ -3,12 +3,12 @@
 use std::cell::RefCell;
 use std::io::{Read, Seek, Write};
 
-use core::cipher::Ciphers;
+use core::cipher::legacy as legacy_cipher;
 use core::header::legacy::{Header, HeaderType};
 use core::key::decrypt_master_key;
-use core::primitives::Mode;
+use core::primitives::legacy::Mode;
 use core::protected::Protected;
-use core::stream::DecryptionStreams;
+use core::stream::legacy as legacy_stream;
 
 #[derive(Debug)]
 pub enum Error {
@@ -102,7 +102,7 @@ where
             let master_key =
                 decrypt_master_key(req.raw_key, &header).map_err(|_| Error::DecryptMasterKey)?;
 
-            let ciphers = Ciphers::initialize(master_key, &header.header_type.algorithm)
+            let ciphers = legacy_cipher::initialize(master_key, &header.header_type.algorithm)
                 .map_err(|_| Error::InitializeChiphers)?;
 
             let payload = core::Payload {
@@ -123,7 +123,7 @@ where
             let master_key =
                 decrypt_master_key(req.raw_key, &header).map_err(|_| Error::DecryptMasterKey)?;
 
-            let streams = DecryptionStreams::initialize(
+            let streams = legacy_stream::initialize_decryption(
                 master_key,
                 &header.nonce,
                 &header.header_type.algorithm,

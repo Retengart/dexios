@@ -5,9 +5,8 @@ use std::io::Seek;
 
 use super::Error;
 use core::header::legacy::{HashingAlgorithm, Header, HeaderVersion, Keyslot};
-use core::primitives::Mode;
-use core::primitives::gen_nonce;
 use core::primitives::gen_salt;
+use core::primitives::legacy::{Mode, gen_nonce};
 use core::protected::Protected;
 use std::cell::RefCell;
 use std::io::{Read, Write};

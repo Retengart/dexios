@@ -1,4 +1,4 @@
-use core::header::HashingAlgorithm;
+use core::header::legacy::HashingAlgorithm;
 
 use crate::global::states::{ForceMode, HashMode};
 

@@ -8,7 +8,7 @@ use anyhow::Result;
 use rand::RngExt;
 use zeroize::Zeroize;
 
-use crate::cipher::Ciphers;
+use crate::cipher::legacy as legacy_cipher;
 use crate::header::{Header, HeaderVersion};
 use crate::kdf::{Salt, derive_argon2id_with_params, derive_balloon_with_params};
 use crate::primitives::{MASTER_KEY_LEN, SALT_LEN};
@@ -92,7 +92,7 @@ pub fn decrypt_master_key(
             })?;
             let key = keyslot.hash_algorithm.hash(raw_key, &keyslot.salt)?;
 
-            let cipher = Ciphers::initialize(key, &header.header_type.algorithm)?;
+            let cipher = legacy_cipher::initialize(key, &header.header_type.algorithm)?;
             cipher
                 .decrypt(&keyslot.nonce, keyslot.encrypted_key.as_slice())
                 .map(vec_to_arr)
@@ -107,7 +107,7 @@ pub fn decrypt_master_key(
             .find_map(|keyslot| {
                 let key = keyslot.hash_algorithm.hash(raw_key.clone(), &keyslot.salt).ok()?;
 
-                let cipher = Ciphers::initialize(key, &header.header_type.algorithm).ok()?;
+                let cipher = legacy_cipher::initialize(key, &header.header_type.algorithm).ok()?;
                 cipher
                     .decrypt(&keyslot.nonce, keyslot.encrypted_key.as_slice())
                     .map(vec_to_arr)

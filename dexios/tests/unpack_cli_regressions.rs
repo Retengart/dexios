@@ -6,8 +6,8 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use core::header::{HashingAlgorithm, HeaderType, HeaderVersion};
-use core::primitives::{Algorithm, Mode};
+use core::header::legacy::{HashingAlgorithm, HeaderType, HeaderVersion};
+use core::primitives::legacy::{Algorithm, Mode};
 use core::protected::Protected;
 use domain::encrypt;
 use zip::write::SimpleFileOptions;

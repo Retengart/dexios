@@ -282,8 +282,8 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    use core::header::{HashingAlgorithm, HeaderType, HeaderVersion};
-    use core::primitives::{Algorithm, Mode};
+    use core::header::legacy::{HashingAlgorithm, HeaderType, HeaderVersion};
+    use core::primitives::legacy::{Algorithm, Mode};
     use core::protected::Protected;
 
     use crate::encrypt::tests::PASSWORD;

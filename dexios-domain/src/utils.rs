@@ -21,13 +21,14 @@ pub use test::gen_salt;
 #[cfg(not(test))]
 pub use core::primitives::gen_master_key;
 #[cfg(not(test))]
-pub use core::primitives::gen_nonce;
-#[cfg(not(test))]
 pub use core::primitives::gen_salt;
+#[cfg(not(test))]
+pub use core::primitives::legacy::gen_nonce;
 
 #[cfg(test)]
 mod test {
-    use core::primitives::{Algorithm, MASTER_KEY_LEN, Mode, SALT_LEN, get_nonce_len};
+    use core::primitives::legacy::{Algorithm, Mode, get_nonce_len};
+    use core::primitives::{MASTER_KEY_LEN, SALT_LEN};
     use core::protected::Protected;
     use rand::{Rng, SeedableRng, rngs::StdRng};
 

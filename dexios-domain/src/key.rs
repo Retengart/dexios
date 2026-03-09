@@ -1,10 +1,11 @@
 use core::Zeroize;
+use core::cipher::legacy as legacy_cipher;
+use core::header::legacy::Keyslot;
 use core::key::vec_to_arr;
-use core::primitives::Algorithm;
 use core::primitives::ENCRYPTED_MASTER_KEY_LEN;
 use core::primitives::MASTER_KEY_LEN;
+use core::primitives::legacy::Algorithm;
 use core::protected::Protected;
-use core::{cipher::Ciphers, header::legacy::Keyslot};
 
 pub mod add;
 pub mod change;
@@ -60,7 +61,8 @@ pub fn decrypt_v5_master_key_with_index(
             .hash_algorithm
             .hash(raw_key_old.clone(), &keyslot.salt)
             .map_err(|_| Error::KeyHash)?;
-        let cipher = Ciphers::initialize(key_old, algorithm).map_err(|_| Error::CipherInit)?;
+        let cipher =
+            legacy_cipher::initialize(key_old, algorithm).map_err(|_| Error::CipherInit)?;
 
         let master_key_result = cipher.decrypt(&keyslot.nonce, keyslot.encrypted_key.as_slice());
 
@@ -97,7 +99,7 @@ pub fn encrypt_master_key(
     nonce: &[u8],
     algorithm: &Algorithm,
 ) -> Result<[u8; ENCRYPTED_MASTER_KEY_LEN], Error> {
-    let cipher = Ciphers::initialize(key_new, algorithm).map_err(|_| Error::CipherInit)?;
+    let cipher = legacy_cipher::initialize(key_new, algorithm).map_err(|_| Error::CipherInit)?;
 
     let master_key_result = cipher.encrypt(nonce, master_key.expose().as_slice());
 

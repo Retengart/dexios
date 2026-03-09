@@ -1,7 +1,7 @@
 use dexios_core::header::common::{HeaderWriteError, KeyslotNonce, PayloadNonce, Salt};
 use dexios_core::header::legacy::{Header, HeaderType, HeaderVersion};
 use dexios_core::header::v1::{KeyslotKdf, V1Header, V1Keyslot};
-use dexios_core::primitives::{Algorithm, Mode};
+use dexios_core::primitives::legacy::{Algorithm, Mode};
 use std::io::{Cursor, Seek, SeekFrom, Write};
 
 #[derive(Default)]

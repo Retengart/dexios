@@ -1,5 +1,8 @@
-use dexios_core::header::common::{KeyslotNonce, PayloadNonce, Salt};
+use dexios_core::cipher::Ciphers;
+use dexios_core::header::common::{KeyslotNonce, PayloadNonce, Salt as HeaderSalt};
 use dexios_core::header::v1::{KeyslotKdf, V1Header, V1Keyslot};
+use dexios_core::kdf::{Kdf, Salt};
+use dexios_core::stream::{DecryptionStreams, EncryptionStreams};
 
 mod support {
     use super::*;
@@ -11,7 +14,7 @@ mod support {
                 KeyslotKdf::Blake3Balloon,
                 [11u8; 48],
                 KeyslotNonce::new([13u8; 24]),
-                Salt::new([17u8; 16]),
+                HeaderSalt::new([17u8; 16]),
             )],
         )
         .expect("sample v1 header")
@@ -34,6 +37,57 @@ fn payload_nonce_length_is_fixed_for_v1() {
 #[test]
 fn keyslot_nonce_length_is_fixed_for_v1() {
     assert_eq!(dexios_core::primitives::KEYSLOT_NONCE_LEN, 24);
+}
+
+#[test]
+fn cipher_initialization_uses_the_single_suite_signature() {
+    let key = Kdf::Blake3Balloon
+        .derive(
+            dexios_core::protected::Protected::new(b"password".to_vec()),
+            &Salt::new([9u8; 16]),
+        )
+        .unwrap();
+
+    let cipher = Ciphers::initialize(key).unwrap();
+    let nonce = dexios_core::primitives::gen_keyslot_nonce();
+    let encrypted = cipher
+        .encrypt(nonce.as_bytes(), b"hello".as_slice())
+        .unwrap();
+    let decrypted = cipher
+        .decrypt(nonce.as_bytes(), encrypted.as_slice())
+        .unwrap();
+
+    assert_eq!(decrypted, b"hello");
+}
+
+#[test]
+fn stream_initialization_uses_the_single_suite_signature() {
+    let key = Kdf::Blake3Balloon
+        .derive(
+            dexios_core::protected::Protected::new(b"password".to_vec()),
+            &Salt::new([9u8; 16]),
+        )
+        .unwrap();
+
+    let nonce = dexios_core::primitives::gen_payload_nonce();
+    let encrypted = EncryptionStreams::initialize(key, nonce.as_bytes())
+        .unwrap()
+        .encrypt_last(b"hello".as_slice())
+        .unwrap();
+
+    let key = Kdf::Blake3Balloon
+        .derive(
+            dexios_core::protected::Protected::new(b"password".to_vec()),
+            &Salt::new([9u8; 16]),
+        )
+        .unwrap();
+
+    let decrypted = DecryptionStreams::initialize(key, nonce.as_bytes())
+        .unwrap()
+        .decrypt_last(encrypted.as_slice())
+        .unwrap();
+
+    assert_eq!(decrypted, b"hello");
 }
 
 #[test]

@@ -4,8 +4,8 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use core::header::{HashingAlgorithm, HeaderType, HeaderVersion};
-use core::primitives::{Algorithm, Mode};
+use core::header::legacy::{HashingAlgorithm, HeaderType, HeaderVersion};
+use core::primitives::legacy::{Algorithm, Mode};
 use core::protected::Protected;
 use dexios_domain::decrypt;
 use dexios_domain::pack::{self, ArchiveSourceEntry};

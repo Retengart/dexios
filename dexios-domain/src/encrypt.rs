@@ -3,11 +3,12 @@
 use std::cell::RefCell;
 use std::io::{Read, Seek, Write};
 
-use core::cipher::Ciphers;
+use core::cipher::legacy as legacy_cipher;
 use core::header::legacy::{HashingAlgorithm, Header, HeaderType, Keyslot};
-use core::primitives::{ENCRYPTED_MASTER_KEY_LEN, Mode};
+use core::primitives::ENCRYPTED_MASTER_KEY_LEN;
+use core::primitives::legacy::Mode;
 use core::protected::Protected;
-use core::stream::EncryptionStreams;
+use core::stream::legacy as legacy_stream;
 
 use crate::utils::{gen_master_key, gen_nonce, gen_salt};
 
@@ -69,7 +70,7 @@ where
         .map_err(|_| Error::HashKey)?;
 
     // 3. initialize cipher
-    let cipher = Ciphers::initialize(key, &req.header_type.algorithm)
+    let cipher = legacy_cipher::initialize(key, &req.header_type.algorithm)
         .map_err(|_| Error::InitializeChiphers)?;
 
     // 4. generate master key
@@ -101,7 +102,7 @@ where
 
     let header_nonce = gen_nonce(&req.header_type.algorithm, &req.header_type.mode);
     let streams =
-        EncryptionStreams::initialize(master_key, &header_nonce, &req.header_type.algorithm)
+        legacy_stream::initialize_encryption(master_key, &header_nonce, &req.header_type.algorithm)
             .map_err(|_| Error::InitializeStreams)?;
 
     let header = Header {
@@ -155,8 +156,8 @@ where
 pub mod tests {
     use std::io::Cursor;
 
-    use core::header::HeaderVersion;
-    use core::primitives::Algorithm;
+    use core::header::legacy::HeaderVersion;
+    use core::primitives::legacy::Algorithm;
 
     use super::*;
 

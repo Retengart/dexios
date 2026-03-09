@@ -5,8 +5,8 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use core::header::{HEADER_VERSION, HeaderType};
-use core::primitives::{Algorithm, Mode};
+use core::header::legacy::{HEADER_VERSION, HeaderType};
+use core::primitives::legacy::{Algorithm, Mode};
 
 use crate::global::states::{HashMode, HeaderLocation, PasswordState, PrintMode};
 use crate::info;

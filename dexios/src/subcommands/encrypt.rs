@@ -2,8 +2,8 @@ use crate::cli::prompt::overwrite_check;
 use crate::global::states::{EraseMode, HashMode, HeaderLocation, PasswordState};
 use crate::global::structs::CryptoParams;
 use anyhow::Result;
-use core::header::{HEADER_VERSION, HeaderType};
-use core::primitives::{Algorithm, Mode};
+use core::header::legacy::{HEADER_VERSION, HeaderType};
+use core::primitives::legacy::{Algorithm, Mode};
 use std::sync::Arc;
 
 use domain::storage::Storage;

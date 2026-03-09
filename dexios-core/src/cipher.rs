@@ -11,7 +11,7 @@
 //! let raw_key = Protected::new(vec![0u8; 128]);
 //! let salt = dexios_core::kdf::Salt::new([9u8; 16]);
 //! let key = dexios_core::kdf::Kdf::Blake3Balloon.derive(raw_key, &salt).unwrap();
-//! let cipher = Ciphers::initialize(key, &Algorithm::XChaCha20Poly1305).unwrap();
+//! let cipher = Ciphers::initialize(key).unwrap();
 //!
 //! let secret = "super secret information";
 //!
@@ -26,7 +26,6 @@
 use aead::{Aead, AeadInPlace, KeyInit, Payload};
 use chacha20poly1305::XChaCha20Poly1305;
 
-use crate::primitives::Algorithm;
 use crate::protected::Protected;
 
 /// Direct AEAD helper for the single supported Dexios suite.
@@ -37,9 +36,7 @@ impl Ciphers {
     ///
     /// The returned `Cipher` can be used for both encryption and decryption
     ///
-    /// You just need to provide a derived 32-byte key. The `algorithm` argument
-    /// remains only as a temporary compatibility parameter while surrounding
-    /// callers are still being migrated.
+    /// You just need to provide a derived 32-byte key.
     ///
     /// # Examples
     /// ```rust,ignore
@@ -47,18 +44,13 @@ impl Ciphers {
     /// let raw_key = Protected::new(vec![0u8; 128]);
     /// let salt = dexios_core::kdf::Salt::new([9u8; 16]);
     /// let key = dexios_core::kdf::Kdf::Blake3Balloon.derive(raw_key, &salt).unwrap();
-    /// let cipher = Ciphers::initialize(key, &Algorithm::XChaCha20Poly1305).unwrap();
+    /// let cipher = Ciphers::initialize(key).unwrap();
     /// ```
     ///
     /// # Errors
     ///
-    /// Returns an error if the selected algorithm is no longer supported or if
-    /// the hashed key cannot initialize the fixed cipher.
-    pub fn initialize(key: Protected<[u8; 32]>, algorithm: &Algorithm) -> anyhow::Result<Self> {
-        if algorithm != &Algorithm::XChaCha20Poly1305 {
-            return Err(anyhow::anyhow!("Unsupported cipher suite"));
-        }
-
+    /// Returns an error if the hashed key cannot initialize the fixed cipher.
+    pub fn initialize(key: Protected<[u8; 32]>) -> anyhow::Result<Self> {
         let cipher = XChaCha20Poly1305::new_from_slice(key.expose())
             .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
 
@@ -110,5 +102,20 @@ impl Ciphers {
         ciphertext: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         self.0.decrypt(nonce.as_ref().into(), ciphertext)
+    }
+}
+
+pub mod legacy {
+    use crate::primitives::legacy::Algorithm;
+    use crate::protected::Protected;
+
+    use super::Ciphers;
+
+    pub fn initialize(key: Protected<[u8; 32]>, algorithm: &Algorithm) -> anyhow::Result<Ciphers> {
+        if algorithm != &Algorithm::XChaCha20Poly1305 {
+            return Err(anyhow::anyhow!("Unsupported cipher suite"));
+        }
+
+        Ciphers::initialize(key)
     }
 }

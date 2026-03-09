@@ -6,8 +6,8 @@ use std::{
 use crate::cli::prompt::overwrite_check;
 use crate::global::states::ForceMode;
 use anyhow::{Context, Result};
-use core::header::HashingAlgorithm;
-use core::header::{Header, HeaderVersion};
+use core::header::legacy::HashingAlgorithm;
+use core::header::legacy::{Header, HeaderVersion};
 use domain::storage::Storage;
 use domain::utils::hex_encode;
 

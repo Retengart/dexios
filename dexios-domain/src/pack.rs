@@ -212,8 +212,8 @@ pub(crate) mod tests {
     use super::*;
     use std::io::{Cursor, Read};
 
-    use core::header::{Header, HeaderType, HeaderVersion};
-    use core::primitives::{Algorithm, Mode};
+    use core::header::legacy::{Header, HeaderType, HeaderVersion};
+    use core::primitives::legacy::{Algorithm, Mode};
 
     use crate::encrypt::tests::PASSWORD;
     use crate::storage::{InMemoryStorage, Storage};
