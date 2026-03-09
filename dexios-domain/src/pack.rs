@@ -12,7 +12,7 @@ use std::cell::RefCell;
 use std::io::{BufWriter, Read, Seek, Write};
 use std::sync::Arc;
 
-use core::header::{HashingAlgorithm, HeaderType};
+use core::header::legacy::{HashingAlgorithm, HeaderType};
 use core::primitives::BLOCK_SIZE;
 use core::protected::Protected;
 use zip::write::SimpleFileOptions;

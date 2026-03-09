@@ -2,7 +2,7 @@
 //! the Dexios format and uses a version >= V5.
 
 use super::Error;
-use core::header::{Header, HeaderVersion};
+use core::header::legacy::{Header, HeaderVersion};
 use core::protected::Protected;
 use std::cell::RefCell;
 use std::io::Seek;

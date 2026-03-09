@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::io::{Read, Seek, Write};
 
 use core::cipher::Ciphers;
-use core::header::{HashingAlgorithm, Header, HeaderType, Keyslot};
+use core::header::legacy::{HashingAlgorithm, Header, HeaderType, Keyslot};
 use core::primitives::{ENCRYPTED_MASTER_KEY_LEN, Mode};
 use core::protected::Protected;
 use core::stream::EncryptionStreams;

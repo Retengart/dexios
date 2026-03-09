@@ -8,11 +8,11 @@
 //! ```rust,ignore
 //! // obviously the key should contain data, not be an empty vec
 //! let raw_key = Protected::new(vec![0u8; 128]);
-//! let salt = gen_salt();
-//! let key = balloon_hash(raw_key, &salt, &HeaderVersion::V5).unwrap();
+//! let salt = dexios_core::kdf::Salt::new([9u8; 16]);
+//! let key = dexios_core::kdf::Kdf::Blake3Balloon.derive(raw_key, &salt).unwrap();
 //!
 //! // this nonce should be read from somewhere, not generated
-//! let nonce = gen_nonce(&Algorithm::XChaCha20Poly1305, &Mode::StreamMode);
+//! let nonce = gen_payload_nonce();
 //!
 //! let decrypt_stream = DecryptionStreams::initialize(key, &nonce, &Algorithm::XChaCha20Poly1305).unwrap();
 //!
@@ -31,32 +31,24 @@ use aead::{
     KeyInit, Payload,
     stream::{DecryptorLE31, EncryptorLE31},
 };
-use aes_gcm::Aes256Gcm;
 use anyhow::Context;
 use chacha20poly1305::XChaCha20Poly1305;
-use deoxys::DeoxysII256;
 // use rand::{prelude::StdRng, Rng, SeedableRng, RngCore};
 use zeroize::Zeroize;
 
-use crate::primitives::{Algorithm, BLOCK_SIZE};
+use crate::primitives::{Algorithm, BLOCK_SIZE, PAYLOAD_NONCE_LEN};
 use crate::protected::Protected;
 
 /// This `enum` contains streams for that are used solely for encryption
 ///
-/// It has definitions for all AEADs supported by `dexios-core`
 pub enum EncryptionStreams {
-    Aes256Gcm(Box<EncryptorLE31<Aes256Gcm>>),
     XChaCha20Poly1305(Box<EncryptorLE31<XChaCha20Poly1305>>),
-    DeoxysII256(Box<EncryptorLE31<DeoxysII256>>),
 }
 
 /// This `enum` contains streams for that are used solely for decryption
 ///
-/// It has definitions for all AEADs supported by `dexios-core`
 pub enum DecryptionStreams {
-    Aes256Gcm(Box<DecryptorLE31<Aes256Gcm>>),
     XChaCha20Poly1305(Box<DecryptorLE31<XChaCha20Poly1305>>),
-    DeoxysII256(Box<DecryptorLE31<DeoxysII256>>),
 }
 
 impl EncryptionStreams {
@@ -64,7 +56,9 @@ impl EncryptionStreams {
     ///
     /// It requies a 32-byte hashed key, which will be dropped once the stream has been initialized
     ///
-    /// It requires a pre-generated nonce, which you may generate with `gen_nonce()`
+    /// It requires a pre-generated payload nonce. The `algorithm` argument
+    /// remains only as a temporary compatibility parameter while callers are
+    /// migrated.
     ///
     /// If the nonce length is not exact, you will receive an error.
     ///
@@ -77,60 +71,40 @@ impl EncryptionStreams {
     /// ```rust,ignore
     /// // obviously the key should contain data, not be an empty vec
     /// let raw_key = Protected::new(vec![0u8; 128]);
-    /// let salt = gen_salt();
-    /// let key = balloon_hash(raw_key, &salt, &HeaderVersion::V5).unwrap();
+    /// let salt = dexios_core::kdf::Salt::new([9u8; 16]);
+    /// let key = dexios_core::kdf::Kdf::Blake3Balloon.derive(raw_key, &salt).unwrap();
     ///
-    /// let nonce = gen_nonce(&Algorithm::XChaCha20Poly1305, &Mode::StreamMode);
-    /// let encrypt_stream = EncryptionStreams::initialize(key, &nonce, &Algorithm::XChaCha20Poly1305).unwrap();
+    /// let nonce = dexios_core::primitives::gen_payload_nonce();
+    /// let encrypt_stream = EncryptionStreams::initialize(
+    ///     key,
+    ///     nonce.as_bytes(),
+    ///     &Algorithm::XChaCha20Poly1305,
+    /// ).unwrap();
     /// ```
     ///
     /// # Errors
     ///
-    /// Returns an error if the nonce length is incompatible with the selected
-    /// algorithm or if the hashed key cannot initialize the stream cipher.
+    /// Returns an error if the selected algorithm is no longer supported, if
+    /// the nonce length is invalid for V1, or if the hashed key cannot
+    /// initialize the stream cipher.
     pub fn initialize(
         key: Protected<[u8; 32]>,
         nonce: &[u8],
         algorithm: &Algorithm,
     ) -> anyhow::Result<Self> {
-        let streams = match algorithm {
-            Algorithm::Aes256Gcm => {
-                if nonce.len() != 8 {
-                    return Err(anyhow::anyhow!("Nonce is not the correct length"));
-                }
+        if algorithm != &Algorithm::XChaCha20Poly1305 {
+            return Err(anyhow::anyhow!("Unsupported cipher suite"));
+        }
+        if nonce.len() != PAYLOAD_NONCE_LEN {
+            return Err(anyhow::anyhow!("Nonce is not the correct length"));
+        }
 
-                let cipher = Aes256Gcm::new_from_slice(key.expose())
-                    .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
-
-                let stream = EncryptorLE31::from_aead(cipher, nonce.into());
-                EncryptionStreams::Aes256Gcm(Box::new(stream))
-            }
-            Algorithm::XChaCha20Poly1305 => {
-                if nonce.len() != 20 {
-                    return Err(anyhow::anyhow!("Nonce is not the correct length"));
-                }
-
-                let cipher = XChaCha20Poly1305::new_from_slice(key.expose())
-                    .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
-
-                let stream = EncryptorLE31::from_aead(cipher, nonce.into());
-                EncryptionStreams::XChaCha20Poly1305(Box::new(stream))
-            }
-            Algorithm::DeoxysII256 => {
-                if nonce.len() != 11 {
-                    return Err(anyhow::anyhow!("Nonce is not the correct length"));
-                }
-
-                let cipher = DeoxysII256::new_from_slice(key.expose())
-                    .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
-
-                let stream = EncryptorLE31::from_aead(cipher, nonce.into());
-                EncryptionStreams::DeoxysII256(Box::new(stream))
-            }
-        };
+        let cipher = XChaCha20Poly1305::new_from_slice(key.expose())
+            .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
+        let stream = EncryptorLE31::from_aead(cipher, nonce.into());
 
         drop(key);
-        Ok(streams)
+        Ok(EncryptionStreams::XChaCha20Poly1305(Box::new(stream)))
     }
 
     /// This is used for encrypting the *next* block of data in streaming mode
@@ -145,9 +119,7 @@ impl EncryptionStreams {
         payload: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         match self {
-            EncryptionStreams::Aes256Gcm(s) => s.encrypt_next(payload),
             EncryptionStreams::XChaCha20Poly1305(s) => s.encrypt_next(payload),
-            EncryptionStreams::DeoxysII256(s) => s.encrypt_next(payload),
         }
     }
 
@@ -163,9 +135,7 @@ impl EncryptionStreams {
         payload: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         match self {
-            EncryptionStreams::Aes256Gcm(s) => s.encrypt_last(payload),
             EncryptionStreams::XChaCha20Poly1305(s) => s.encrypt_last(payload),
-            EncryptionStreams::DeoxysII256(s) => s.encrypt_last(payload),
         }
     }
 
@@ -270,50 +240,41 @@ impl DecryptionStreams {
     /// ```rust,ignore
     /// // obviously the key should contain data, not be an empty vec
     /// let raw_key = Protected::new(vec![0u8; 128]);
-    /// let salt = gen_salt();
-    /// let key = balloon_hash(raw_key, &salt, &HeaderVersion::V5).unwrap();
+    /// let salt = dexios_core::kdf::Salt::new([9u8; 16]);
+    /// let key = dexios_core::kdf::Kdf::Blake3Balloon.derive(raw_key, &salt).unwrap();
     ///
     /// // this nonce should be read from somewhere, not generated
-    /// let nonce = gen_nonce(&Algorithm::XChaCha20Poly1305, &Mode::StreamMode);
+    /// let nonce = dexios_core::primitives::gen_payload_nonce();
     ///
-    /// let decrypt_stream = DecryptionStreams::initialize(key, &nonce, &Algorithm::XChaCha20Poly1305).unwrap();
+    /// let decrypt_stream = DecryptionStreams::initialize(
+    ///     key,
+    ///     nonce.as_bytes(),
+    ///     &Algorithm::XChaCha20Poly1305,
+    /// ).unwrap();
     /// ```
     ///
     /// # Errors
     ///
-    /// Returns an error if the hashed key cannot initialize the selected stream
-    /// cipher.
+    /// Returns an error if the selected algorithm is no longer supported or if
+    /// the hashed key cannot initialize the stream cipher.
     pub fn initialize(
         key: Protected<[u8; 32]>,
         nonce: &[u8],
         algorithm: &Algorithm,
     ) -> anyhow::Result<Self> {
-        let streams = match algorithm {
-            Algorithm::Aes256Gcm => {
-                let cipher = Aes256Gcm::new_from_slice(key.expose())
-                    .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
+        if algorithm != &Algorithm::XChaCha20Poly1305 {
+            return Err(anyhow::anyhow!("Unsupported cipher suite"));
+        }
+        if nonce.len() != PAYLOAD_NONCE_LEN {
+            return Err(anyhow::anyhow!("Nonce is not the correct length"));
+        }
 
-                let stream = DecryptorLE31::from_aead(cipher, nonce.into());
-                DecryptionStreams::Aes256Gcm(Box::new(stream))
-            }
-            Algorithm::XChaCha20Poly1305 => {
-                let cipher = XChaCha20Poly1305::new_from_slice(key.expose())
-                    .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
-
-                let stream = DecryptorLE31::from_aead(cipher, nonce.into());
-                DecryptionStreams::XChaCha20Poly1305(Box::new(stream))
-            }
-            Algorithm::DeoxysII256 => {
-                let cipher = DeoxysII256::new_from_slice(key.expose())
-                    .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
-
-                let stream = DecryptorLE31::from_aead(cipher, nonce.into());
-                DecryptionStreams::DeoxysII256(Box::new(stream))
-            }
-        };
+        let cipher = XChaCha20Poly1305::new_from_slice(key.expose())
+            .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
+        let stream = DecryptorLE31::from_aead(cipher, nonce.into());
 
         drop(key);
-        Ok(streams)
+        Ok(DecryptionStreams::XChaCha20Poly1305(Box::new(stream)))
     }
 
     /// This is used for decrypting the *next* block of data in streaming mode
@@ -330,9 +291,7 @@ impl DecryptionStreams {
         payload: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         match self {
-            DecryptionStreams::Aes256Gcm(s) => s.decrypt_next(payload),
             DecryptionStreams::XChaCha20Poly1305(s) => s.decrypt_next(payload),
-            DecryptionStreams::DeoxysII256(s) => s.decrypt_next(payload),
         }
     }
 
@@ -350,9 +309,7 @@ impl DecryptionStreams {
         payload: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
         match self {
-            DecryptionStreams::Aes256Gcm(s) => s.decrypt_last(payload),
             DecryptionStreams::XChaCha20Poly1305(s) => s.decrypt_last(payload),
-            DecryptionStreams::DeoxysII256(s) => s.decrypt_last(payload),
         }
     }
 

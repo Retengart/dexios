@@ -27,6 +27,16 @@ fn serializes_v1_header_to_416_bytes() {
 }
 
 #[test]
+fn payload_nonce_length_is_fixed_for_v1() {
+    assert_eq!(dexios_core::primitives::PAYLOAD_NONCE_LEN, 20);
+}
+
+#[test]
+fn keyslot_nonce_length_is_fixed_for_v1() {
+    assert_eq!(dexios_core::primitives::KEYSLOT_NONCE_LEN, 24);
+}
+
+#[test]
 fn deserialize_roundtrip_preserves_payload_nonce_and_keyslots() {
     let header = support::sample_v1_header();
     let bytes = header.serialize().unwrap();

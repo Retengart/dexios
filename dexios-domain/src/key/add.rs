@@ -4,9 +4,7 @@
 use std::io::Seek;
 
 use super::Error;
-use core::header::HashingAlgorithm;
-use core::header::Keyslot;
-use core::header::{Header, HeaderVersion};
+use core::header::legacy::{HashingAlgorithm, Header, HeaderVersion, Keyslot};
 use core::primitives::Mode;
 use core::primitives::gen_nonce;
 use core::primitives::gen_salt;

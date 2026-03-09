@@ -4,7 +4,7 @@
 //!
 //! - Dexios header parsing and serialization,
 //! - password hashing and wrapping-key derivation,
-//! - cipher and stream helpers,
+//! - single-suite XChaCha20-Poly1305 cipher and stream helpers,
 //! - and `Protected<>` for explicit zeroize-on-drop secret handling.
 #![forbid(unsafe_code)]
 #![warn(clippy::all)]

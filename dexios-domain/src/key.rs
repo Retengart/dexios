@@ -4,7 +4,7 @@ use core::primitives::Algorithm;
 use core::primitives::ENCRYPTED_MASTER_KEY_LEN;
 use core::primitives::MASTER_KEY_LEN;
 use core::protected::Protected;
-use core::{cipher::Ciphers, header::Keyslot};
+use core::{cipher::Ciphers, header::legacy::Keyslot};
 
 pub mod add;
 pub mod change;

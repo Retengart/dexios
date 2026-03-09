@@ -1,4 +1,5 @@
-use core::header::{HashingAlgorithm, Header, HeaderType, HeaderVersion};
+use core::header::common::HEADER_LEN;
+use core::header::legacy::{HashingAlgorithm, Header, HeaderType, HeaderVersion};
 use core::primitives::{Algorithm, Mode};
 use core::protected::Protected;
 use dexios_domain::encrypt;
@@ -62,9 +63,11 @@ fn encrypt_must_write_the_full_embedded_header() {
         salt: None,
         keyslots: Some(vec![]),
     };
-    let expected_len = usize::try_from(header.get_size()).expect("header size fits in usize")
-        + b"Hello world".len()
-        + 16;
+    assert_eq!(
+        usize::try_from(header.get_size()).expect("header size fits in usize"),
+        HEADER_LEN
+    );
+    let expected_len = HEADER_LEN + b"Hello world".len() + 16;
 
     assert_eq!(output.borrow().len(), expected_len);
 }

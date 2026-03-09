@@ -1,4 +1,5 @@
 //! This module contains all cryptographic primitives used by `dexios-core`
+use crate::header::common::{KeyslotNonce, PayloadNonce};
 use crate::protected::Protected;
 use rand::Rng;
 
@@ -13,7 +14,8 @@ pub const SALT_LEN: usize = 16; // bytes
 
 pub const MASTER_KEY_LEN: usize = 32;
 pub const ENCRYPTED_MASTER_KEY_LEN: usize = 48;
-pub const ALGORITHMS_LEN: usize = 3;
+pub const PAYLOAD_NONCE_LEN: usize = 20;
+pub const KEYSLOT_NONCE_LEN: usize = 24;
 
 /// This is an `enum` containing all AEADs supported by `dexios-core`
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -22,15 +24,6 @@ pub enum Algorithm {
     XChaCha20Poly1305,
     DeoxysII256,
 }
-
-/// This is an array containing all AEADs supported by `dexios-core`.
-///
-/// It can be used by and end-user application to show a list of AEADs that they may use
-pub static ALGORITHMS: [Algorithm; ALGORITHMS_LEN] = [
-    Algorithm::XChaCha20Poly1305,
-    Algorithm::Aes256Gcm,
-    Algorithm::DeoxysII256,
-];
 
 impl std::fmt::Display for Algorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -58,17 +51,23 @@ impl std::fmt::Display for Mode {
     }
 }
 
-/// This can be used to generate a nonce for encryption
-/// It requires both the algorithm and the mode, so it can correctly determine the nonce length
-/// This nonce can be passed directly to `EncryptionStreams::initialize()`
+#[must_use]
+pub fn gen_payload_nonce() -> PayloadNonce {
+    let mut nonce = [0u8; PAYLOAD_NONCE_LEN];
+    rand::rng().fill_bytes(&mut nonce);
+    PayloadNonce::new(nonce)
+}
+
+#[must_use]
+pub fn gen_keyslot_nonce() -> KeyslotNonce {
+    let mut nonce = [0u8; KEYSLOT_NONCE_LEN];
+    rand::rng().fill_bytes(&mut nonce);
+    KeyslotNonce::new(nonce)
+}
+
+/// Legacy compatibility nonce generator.
 ///
-/// # Examples
-///
-/// ```rust
-/// # use dexios_core::primitives::*;
-/// let nonce = gen_nonce(&Algorithm::XChaCha20Poly1305, &Mode::StreamMode);
-/// ```
-///
+/// New V1 code should use [`gen_payload_nonce`] or [`gen_keyslot_nonce`].
 #[must_use]
 pub fn gen_nonce(algorithm: &Algorithm, mode: &Mode) -> Vec<u8> {
     let nonce_len = get_nonce_len(algorithm, mode);
@@ -77,24 +76,19 @@ pub fn gen_nonce(algorithm: &Algorithm, mode: &Mode) -> Vec<u8> {
     nonce
 }
 
-/// This function calculates the length of the nonce, depending on the data provided
+/// Legacy compatibility nonce-length helper.
 ///
-/// Stream mode nonces are 4 bytes less than their "memory" mode counterparts, due to `aead::StreamLE31`
-///
-/// `StreamLE31` contains a 31-bit little endian counter, and a 1-bit "last block" flag, stored as the last 4 bytes of the nonce, this is done to prevent nonce-reuse
+/// New V1 code should use [`PAYLOAD_NONCE_LEN`] and [`KEYSLOT_NONCE_LEN`]
+/// directly.
 #[must_use]
 pub fn get_nonce_len(algorithm: &Algorithm, mode: &Mode) -> usize {
-    let mut nonce_len = match algorithm {
-        Algorithm::Aes256Gcm => 12,
-        Algorithm::XChaCha20Poly1305 => 24,
-        Algorithm::DeoxysII256 => 15,
-    };
-
-    if mode == &Mode::StreamMode {
-        nonce_len -= 4;
+    match (algorithm, mode) {
+        (Algorithm::XChaCha20Poly1305, Mode::StreamMode) => PAYLOAD_NONCE_LEN,
+        (Algorithm::XChaCha20Poly1305, Mode::MemoryMode) => KEYSLOT_NONCE_LEN,
+        (Algorithm::Aes256Gcm, _) | (Algorithm::DeoxysII256, _) => {
+            panic!("AES and Deoxys-II are no longer supported")
+        }
     }
-
-    nonce_len
 }
 
 /// Generates a new protected master key of the specified `MASTER_KEY_LEN`.

@@ -9,78 +9,61 @@
 //! ```rust,ignore
 //! // obviously the key should contain data, not be an empty vec
 //! let raw_key = Protected::new(vec![0u8; 128]);
-//! let salt = gen_salt();
-//! let key = balloon_hash(raw_key, &salt, &HeaderVersion::V5).unwrap();
+//! let salt = dexios_core::kdf::Salt::new([9u8; 16]);
+//! let key = dexios_core::kdf::Kdf::Blake3Balloon.derive(raw_key, &salt).unwrap();
 //! let cipher = Ciphers::initialize(key, &Algorithm::XChaCha20Poly1305).unwrap();
 //!
 //! let secret = "super secret information";
 //!
-//! let nonce = gen_nonce(&Algorithm::XChaCha20Poly1305, &Mode::MemoryMode);
-//! let encrypted_data = cipher.encrypt(&nonce, secret.as_bytes()).unwrap();
+//! let nonce = gen_keyslot_nonce();
+//! let encrypted_data = cipher.encrypt(nonce.as_bytes(), secret.as_bytes()).unwrap();
 //!
-//! let decrypted_data = cipher.decrypt(&nonce, encrypted_data.as_slice()).unwrap();
+//! let decrypted_data = cipher.decrypt(nonce.as_bytes(), encrypted_data.as_slice()).unwrap();
 //!
 //! assert_eq!(secret, decrypted_data);
 //! ```
 
 use aead::{Aead, AeadInPlace, KeyInit, Payload};
-use aes_gcm::Aes256Gcm;
 use chacha20poly1305::XChaCha20Poly1305;
-use deoxys::DeoxysII256;
 
 use crate::primitives::Algorithm;
 use crate::protected::Protected;
 
-/// This `enum` defines all possible cipher types, for each AEAD that is supported by `dexios-core`
-pub enum Ciphers {
-    Aes256Gcm(Box<Aes256Gcm>),
-    XChaCha(Box<XChaCha20Poly1305>),
-    DeoxysII(Box<DeoxysII256>),
-}
+/// Direct AEAD helper for the single supported Dexios suite.
+pub struct Ciphers(Box<XChaCha20Poly1305>);
 
 impl Ciphers {
     /// This can be used to quickly initialise a `Cipher`
     ///
     /// The returned `Cipher` can be used for both encryption and decryption
     ///
-    /// You just need to provide a derived 32-byte key and the algorithm to use.
+    /// You just need to provide a derived 32-byte key. The `algorithm` argument
+    /// remains only as a temporary compatibility parameter while surrounding
+    /// callers are still being migrated.
     ///
     /// # Examples
     /// ```rust,ignore
     /// // obviously the key should contain data, not be an empty vec
     /// let raw_key = Protected::new(vec![0u8; 128]);
-    /// let salt = gen_salt();
-    /// let key = balloon_hash(raw_key, &salt, &HeaderVersion::V5).unwrap();
+    /// let salt = dexios_core::kdf::Salt::new([9u8; 16]);
+    /// let key = dexios_core::kdf::Kdf::Blake3Balloon.derive(raw_key, &salt).unwrap();
     /// let cipher = Ciphers::initialize(key, &Algorithm::XChaCha20Poly1305).unwrap();
     /// ```
     ///
     /// # Errors
     ///
-    /// Returns an error if the hashed key cannot initialize the selected cipher.
+    /// Returns an error if the selected algorithm is no longer supported or if
+    /// the hashed key cannot initialize the fixed cipher.
     pub fn initialize(key: Protected<[u8; 32]>, algorithm: &Algorithm) -> anyhow::Result<Self> {
-        let cipher = match algorithm {
-            Algorithm::Aes256Gcm => {
-                let cipher = Aes256Gcm::new_from_slice(key.expose())
-                    .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
+        if algorithm != &Algorithm::XChaCha20Poly1305 {
+            return Err(anyhow::anyhow!("Unsupported cipher suite"));
+        }
 
-                Ciphers::Aes256Gcm(Box::new(cipher))
-            }
-            Algorithm::XChaCha20Poly1305 => {
-                let cipher = XChaCha20Poly1305::new_from_slice(key.expose())
-                    .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
-
-                Ciphers::XChaCha(Box::new(cipher))
-            }
-            Algorithm::DeoxysII256 => {
-                let cipher = DeoxysII256::new_from_slice(key.expose())
-                    .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
-
-                Ciphers::DeoxysII(Box::new(cipher))
-            }
-        };
+        let cipher = XChaCha20Poly1305::new_from_slice(key.expose())
+            .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
 
         drop(key);
-        Ok(cipher)
+        Ok(Self(Box::new(cipher)))
     }
 
     /// This can be used to encrypt data with a given `Ciphers` object
@@ -95,11 +78,7 @@ impl Ciphers {
         nonce: &[u8],
         plaintext: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
-        match self {
-            Ciphers::Aes256Gcm(c) => c.encrypt(nonce.as_ref().into(), plaintext),
-            Ciphers::XChaCha(c) => c.encrypt(nonce.as_ref().into(), plaintext),
-            Ciphers::DeoxysII(c) => c.encrypt(nonce.as_ref().into(), plaintext),
-        }
+        self.0.encrypt(nonce.as_ref().into(), plaintext)
     }
 
     /// This encrypts the provided buffer in place with the supplied nonce and AAD.
@@ -113,11 +92,7 @@ impl Ciphers {
         aad: &[u8],
         buffer: &mut dyn aead::Buffer,
     ) -> Result<(), aead::Error> {
-        match self {
-            Ciphers::Aes256Gcm(c) => c.encrypt_in_place(nonce.as_ref().into(), aad, buffer),
-            Ciphers::XChaCha(c) => c.encrypt_in_place(nonce.as_ref().into(), aad, buffer),
-            Ciphers::DeoxysII(c) => c.encrypt_in_place(nonce.as_ref().into(), aad, buffer),
-        }
+        self.0.encrypt_in_place(nonce.as_ref().into(), aad, buffer)
     }
 
     /// This can be used to decrypt data with a given `Ciphers` object
@@ -134,10 +109,6 @@ impl Ciphers {
         nonce: &[u8],
         ciphertext: impl Into<Payload<'msg, 'aad>>,
     ) -> aead::Result<Vec<u8>> {
-        match self {
-            Ciphers::Aes256Gcm(c) => c.decrypt(nonce.as_ref().into(), ciphertext),
-            Ciphers::XChaCha(c) => c.decrypt(nonce.as_ref().into(), ciphertext),
-            Ciphers::DeoxysII(c) => c.decrypt(nonce.as_ref().into(), ciphertext),
-        }
+        self.0.decrypt(nonce.as_ref().into(), ciphertext)
     }
 }

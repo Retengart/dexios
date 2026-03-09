@@ -3,7 +3,7 @@
 use std::io::Seek;
 
 use super::Error;
-use core::header::HeaderVersion;
+use core::header::legacy::{Header, HeaderVersion};
 use core::protected::Protected;
 use std::cell::RefCell;
 use std::io::Read;
@@ -20,8 +20,8 @@ pub fn execute<R>(req: Request<'_, R>) -> Result<(), Error>
 where
     R: Read + Seek,
 {
-    let (header, _) = core::header::Header::deserialize(&mut *req.handle.borrow_mut())
-        .map_err(|_| Error::HeaderDeserialize)?;
+    let (header, _) =
+        Header::deserialize(&mut *req.handle.borrow_mut()).map_err(|_| Error::HeaderDeserialize)?;
 
     if header.header_type.version < HeaderVersion::V5 {
         return Err(Error::Unsupported);
