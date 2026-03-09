@@ -1,5 +1,4 @@
-use dexios_core::header::common::Salt;
-use dexios_core::kdf::Kdf;
+use dexios_core::kdf::{Kdf, Salt};
 use dexios_core::protected::Protected;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -68,6 +67,26 @@ fn kdf_vector_file_contains_expected_cases() {
         assert!(!vector.provenance.is_empty());
         assert!(vector.metadata.contains_key("source_kind"));
         assert!(vector.metadata.contains_key("source_name"));
+
+        match vector.algorithm.as_str() {
+            "argon2id" => {
+                assert!(vector.metadata.contains_key("source_version"));
+                assert!(vector.metadata.contains_key("source_entrypoint"));
+                assert!(vector.metadata.contains_key("params_memory_kib"));
+                assert!(vector.metadata.contains_key("params_time_cost"));
+                assert!(vector.metadata.contains_key("params_parallelism"));
+                assert!(vector.metadata.contains_key("params_hash_len"));
+            }
+            "balloon" => {
+                assert!(vector.metadata.contains_key("source_repo"));
+                assert!(vector.metadata.contains_key("source_commit"));
+                assert!(vector.metadata.contains_key("source_hash_primitive"));
+                assert!(vector.metadata.contains_key("params_space_cost"));
+                assert!(vector.metadata.contains_key("params_time_cost"));
+                assert!(vector.metadata.contains_key("params_delta"));
+            }
+            other => panic!("unexpected KDF algorithm in testdata: {other}"),
+        }
     }
 
     assert!(

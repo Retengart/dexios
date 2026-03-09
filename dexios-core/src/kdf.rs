@@ -1,9 +1,9 @@
 use std::fmt::{Display, Formatter};
 
-use crate::header::common::Salt;
 use crate::protected::Protected;
 
 pub const DERIVED_KEY_LEN: usize = 32;
+pub const SALT_LEN: usize = 16;
 
 const ARGON2ID_MEMORY_KIB: u32 = 262_144;
 const ARGON2ID_TIME_COST: u32 = 10;
@@ -12,6 +12,21 @@ const ARGON2ID_PARALLELISM: u32 = 4;
 const BLAKE3_BALLOON_SPACE_COST: u32 = 278_528;
 const BLAKE3_BALLOON_TIME_COST: u32 = 1;
 const BLAKE3_BALLOON_PARALLELISM: u32 = 1;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Salt([u8; SALT_LEN]);
+
+impl Salt {
+    #[must_use]
+    pub const fn new(bytes: [u8; SALT_LEN]) -> Self {
+        Self(bytes)
+    }
+
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; SALT_LEN] {
+        &self.0
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kdf {

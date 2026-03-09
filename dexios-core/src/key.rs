@@ -9,16 +9,15 @@ use rand::RngExt;
 use zeroize::Zeroize;
 
 use crate::cipher::Ciphers;
-use crate::header::common::Salt;
 use crate::header::{Header, HeaderVersion};
-use crate::kdf::{derive_argon2id_with_params, derive_balloon_with_params};
+use crate::kdf::{Salt, derive_argon2id_with_params, derive_balloon_with_params};
 use crate::primitives::{MASTER_KEY_LEN, SALT_LEN};
 use crate::protected::Protected;
 
 /// Temporary compatibility wrapper for the legacy header implementation.
 ///
 /// New code should call [`crate::kdf::Kdf::derive`] directly.
-pub fn argon2id_hash(
+pub(crate) fn argon2id_hash(
     raw_key: Protected<Vec<u8>>,
     salt: &[u8; SALT_LEN],
     version: &HeaderVersion,
@@ -38,7 +37,7 @@ pub fn argon2id_hash(
 /// Temporary compatibility wrapper for the legacy header implementation.
 ///
 /// New code should call [`crate::kdf::Kdf::derive`] directly.
-pub fn balloon_hash(
+pub(crate) fn balloon_hash(
     raw_key: Protected<Vec<u8>>,
     salt: &[u8; SALT_LEN],
     version: &HeaderVersion,
