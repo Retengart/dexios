@@ -1,4 +1,5 @@
-//! This provides functionality for adding a key to a header that both adheres to the Dexios format, and is using a version >= V5.
+//! This provides functionality for adding a key to a header that adheres to the
+//! Dexios format and uses a version >= V5.
 
 use std::io::Seek;
 
