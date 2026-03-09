@@ -12,14 +12,9 @@ use crate::{decrypt, overwrite};
 use core::protected::Protected;
 
 trait TempArtifactLike {
-    fn with_reader<T, E>(
-        &self,
-        f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>,
-    ) -> Result<T, E>;
-    fn with_writer<T, E>(
-        &self,
-        f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>,
-    ) -> Result<T, E>;
+    fn with_reader<T, E>(&self, f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>) -> Result<T, E>;
+    fn with_writer<T, E>(&self, f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>)
+    -> Result<T, E>;
     fn len(&self) -> Result<usize, Error>;
     fn secure_dispose(self) -> Result<(), Error>;
 }
@@ -31,10 +26,7 @@ trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek + ?Sized> WriteSeek for T {}
 
 impl TempArtifactLike for storage::TempArtifact {
-    fn with_reader<T, E>(
-        &self,
-        f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>,
-    ) -> Result<T, E> {
+    fn with_reader<T, E>(&self, f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>) -> Result<T, E> {
         storage::TempArtifact::with_reader(self, |file| f(file))
     }
 
@@ -104,7 +96,9 @@ pub fn execute<RW: Read + Write + Seek>(
     req: Request<'_, RW>,
 ) -> Result<(), Error> {
     execute_with_temp_artifact(stor, req, || {
-        storage::FileStorage.create_temp_artifact().map_err(Error::Storage)
+        storage::FileStorage
+            .create_temp_artifact()
+            .map_err(Error::Storage)
     })
 }
 
@@ -123,7 +117,9 @@ where
 
     // 2. Decrypt input file to temp zip archive.
     tmp_file.with_writer(|tmp_writer| {
-        tmp_writer.rewind().map_err(|_| Error::Storage(storage::Error::OpenFile(storage::FileMode::Write)))?;
+        tmp_writer
+            .rewind()
+            .map_err(|_| Error::Storage(storage::Error::OpenFile(storage::FileMode::Write)))?;
         let writer = RefCell::new(tmp_writer);
         decrypt::execute(decrypt::Request {
             header_reader: req.header_reader,
@@ -139,7 +135,9 @@ where
 
     // 3. Recover files from temp archive.
     tmp_file.with_reader(|tmp_reader| {
-        tmp_reader.rewind().map_err(|_| Error::ResetCursorPosition)?;
+        tmp_reader
+            .rewind()
+            .map_err(|_| Error::ResetCursorPosition)?;
         let mut archive = zip::ZipArchive::new(tmp_reader).map_err(|_| Error::OpenArchive)?;
 
         let output_dir = req.output_dir_path.clone();
