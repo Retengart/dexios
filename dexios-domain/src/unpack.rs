@@ -3,8 +3,9 @@
 //! This is known as "unpacking" within Dexios.
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::io::{Read, Seek, Write};
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use crate::storage::{self, Storage};
@@ -16,7 +17,7 @@ trait TempArtifactLike {
     fn with_writer<T, E>(&self, f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>)
     -> Result<T, E>;
     fn len(&self) -> Result<usize, Error>;
-    fn secure_dispose(self) -> Result<(), Error>;
+    fn sync_all(&self) -> Result<(), Error>;
 }
 
 trait ReadSeek: Read + Seek {}
@@ -41,8 +42,8 @@ impl TempArtifactLike for storage::TempArtifact {
         storage::TempArtifact::len(self).map_err(Error::Storage)
     }
 
-    fn secure_dispose(self) -> Result<(), Error> {
-        storage::TempArtifact::secure_dispose(self).map_err(|_| Error::TempCleanup)
+    fn sync_all(&self) -> Result<(), Error> {
+        storage::TempArtifact::sync_all(self).map_err(|_| Error::TempCleanup)
     }
 }
 
@@ -52,6 +53,8 @@ pub enum Error {
     OpenArchive,
     OpenArchivedFile,
     ResetCursorPosition,
+    UnsafeOutputPath(PathBuf),
+    DuplicateOutputPath(PathBuf),
     Storage(storage::Error),
     Decrypt(decrypt::Error),
     TempCleanup,
@@ -65,6 +68,16 @@ impl std::fmt::Display for Error {
             Error::OpenArchive => f.write_str("Unable to open archive"),
             Error::OpenArchivedFile => f.write_str("Unable to open archived file"),
             Error::ResetCursorPosition => f.write_str("Unable to reset cursor position"),
+            Error::UnsafeOutputPath(path) => {
+                write!(f, "Unsafe output path: {}", path.display())
+            }
+            Error::DuplicateOutputPath(path) => {
+                write!(
+                    f,
+                    "Duplicate output path after normalization: {}",
+                    path.display()
+                )
+            }
             Error::Storage(inner) => write!(f, "Storage error: {inner}"),
             Error::Decrypt(inner) => write!(f, "Decrypt error: {inner}"),
             Error::TempCleanup => f.write_str("Unable to securely clean up temporary archive"),
@@ -140,18 +153,26 @@ where
             .map_err(|_| Error::ResetCursorPosition)?;
         let mut archive = zip::ZipArchive::new(tmp_reader).map_err(|_| Error::OpenArchive)?;
 
-        let output_dir = req.output_dir_path.clone();
+        let output_dir = stor
+            .prepare_unpack_root(&req.output_dir_path)
+            .map_err(map_storage_path_error)?;
 
         // 4. prepare phase
         let mut entities = Vec::new();
+        let mut seen_paths = HashSet::new();
         for i in 0..archive.len() {
             let zip_file = archive.by_index(i).map_err(|_| Error::OpenArchive)?;
             let Some(path) = zip_file.enclosed_name() else {
                 continue;
             };
+            let path = normalize_archive_path(&path)?;
+            if !seen_paths.insert(path.clone()) {
+                return Err(Error::DuplicateOutputPath(path));
+            }
 
-            let mut full_path = output_dir.clone();
-            full_path.push(path);
+            let full_path = stor
+                .resolve_unpack_path(&output_dir, &path)
+                .map_err(map_storage_path_error)?;
 
             if let Some(on_zip_file) = req.on_zip_file.as_ref() {
                 let should_unpack = on_zip_file(full_path.clone()).map_err(Error::OnZipFile)?;
@@ -204,6 +225,38 @@ where
     Ok(())
 }
 
+fn normalize_archive_path(path: &Path) -> Result<PathBuf, Error> {
+    let mut normalized = PathBuf::new();
+
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::Normal(part) => normalized.push(part),
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    return Err(Error::UnsafeOutputPath(path.to_path_buf()));
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => {
+                return Err(Error::UnsafeOutputPath(path.to_path_buf()));
+            }
+        }
+    }
+
+    if normalized.as_os_str().is_empty() {
+        return Err(Error::UnsafeOutputPath(path.to_path_buf()));
+    }
+
+    Ok(normalized)
+}
+
+fn map_storage_path_error(err: storage::Error) -> Error {
+    match err {
+        storage::Error::UnsafePath(path) => Error::UnsafeOutputPath(path),
+        other => Error::Storage(other),
+    }
+}
+
 fn cleanup_temp_archive(tmp_file: impl TempArtifactLike, buf_capacity: usize) -> Result<(), Error> {
     // Finally erase temp zip archive with zeros.
     tmp_file.with_writer(|tmp_writer| {
@@ -216,8 +269,8 @@ fn cleanup_temp_archive(tmp_file: impl TempArtifactLike, buf_capacity: usize) ->
         .map_err(|_| Error::TempCleanup)
     })?;
 
-    tmp_file.secure_dispose()?;
-
+    tmp_file.sync_all()?;
+    drop(tmp_file);
     Ok(())
 }
 
@@ -315,7 +368,7 @@ mod tests {
             Ok(self.file.borrow().get_ref().len())
         }
 
-        fn secure_dispose(self) -> Result<(), Error> {
+        fn sync_all(&self) -> Result<(), Error> {
             Err(Error::TempCleanup)
         }
     }
@@ -398,7 +451,7 @@ mod tests {
     }
 
     #[test]
-    fn unpack_fails_if_temp_artifact_disposal_fails() {
+    fn unpack_fails_if_temp_artifact_sync_fails() {
         let stor = Arc::new(InMemoryStorage::default());
         let setup_stor = Arc::new(InMemoryStorage::default());
         pack_bar_directory(setup_stor.clone(), "archive.enc", None);
