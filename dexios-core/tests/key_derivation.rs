@@ -1,4 +1,4 @@
-use dexios_core::header::{HashingAlgorithm, HeaderVersion};
+use dexios_core::header::legacy::{HashingAlgorithm, HeaderVersion};
 use dexios_core::key::{argon2id_hash, balloon_hash};
 use dexios_core::protected::Protected;
 use serde::Deserialize;

@@ -143,14 +143,20 @@ impl V1Header {
 
     pub fn write(&self, writer: &mut impl Write) -> Result<(), HeaderWriteError> {
         let serialized = self.serialize()?;
-        writer
-            .write_all(&serialized)
-            .map_err(|_| HeaderWriteError::Io)
+        writer.write_all(&serialized).map_err(HeaderWriteError::Io)
     }
 
     pub fn deserialize(reader: &mut impl Read) -> Result<Self, HeaderReadError> {
         let mut bytes = [0u8; HEADER_LEN];
         reader.read_exact(&mut bytes)?;
+
+        Self::deserialize_bytes(bytes)
+    }
+
+    pub(crate) fn deserialize_bytes(bytes: [u8; HEADER_LEN]) -> Result<Self, HeaderReadError> {
+        if bytes[7] != 0 || bytes[28..32] != [0u8; 4] {
+            return Err(HeaderReadError::NonZeroReservedBytes);
+        }
 
         let mut magic = [0u8; 4];
         magic.copy_from_slice(&bytes[..4]);
@@ -176,7 +182,19 @@ impl V1Header {
         for index in 0..keyslot_count {
             let start = HEADER_STATIC_LEN + (index * KEYSLOT_LEN);
             let end = start + KEYSLOT_LEN;
-            keyslots.push(V1Keyslot::deserialize(&bytes[start..end])?);
+            let keyslot = V1Keyslot::deserialize(&bytes[start..end])?;
+            if bytes[(start + 90)..end] != [0u8; 6] {
+                return Err(HeaderReadError::NonZeroActiveKeyslotPadding(index));
+            }
+            keyslots.push(keyslot);
+        }
+
+        for index in keyslot_count..MAX_KEYSLOTS {
+            let start = HEADER_STATIC_LEN + (index * KEYSLOT_LEN);
+            let end = start + KEYSLOT_LEN;
+            if bytes[start..end] != [0u8; KEYSLOT_LEN] {
+                return Err(HeaderReadError::NonZeroInactiveKeyslotPadding(index));
+            }
         }
 
         Self::new(PayloadNonce::new(payload_nonce), keyslots)

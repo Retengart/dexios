@@ -75,6 +75,9 @@ pub enum HeaderReadError {
     UnsupportedVersion([u8; 2]),
     InvalidKeyslotCount(u8),
     InvalidKeyslotTag([u8; 2]),
+    NonZeroReservedBytes,
+    NonZeroActiveKeyslotPadding(usize),
+    NonZeroInactiveKeyslotPadding(usize),
 }
 
 impl Display for HeaderReadError {
@@ -87,6 +90,19 @@ impl Display for HeaderReadError {
             }
             Self::InvalidKeyslotCount(count) => write!(f, "invalid V1 keyslot count: {count}"),
             Self::InvalidKeyslotTag(tag) => write!(f, "invalid V1 keyslot tag: {tag:02X?}"),
+            Self::NonZeroReservedBytes => write!(f, "non-zero reserved bytes in V1 header"),
+            Self::NonZeroActiveKeyslotPadding(index) => {
+                write!(
+                    f,
+                    "non-zero active keyslot padding in V1 header slot {index}"
+                )
+            }
+            Self::NonZeroInactiveKeyslotPadding(index) => {
+                write!(
+                    f,
+                    "non-zero inactive keyslot bytes in V1 header slot {index}"
+                )
+            }
         }
     }
 }
@@ -99,10 +115,10 @@ impl From<std::io::Error> for HeaderReadError {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum HeaderWriteError {
     TooManyKeyslots(usize),
-    Io,
+    Io(std::io::Error),
 }
 
 impl Display for HeaderWriteError {
@@ -111,7 +127,7 @@ impl Display for HeaderWriteError {
             Self::TooManyKeyslots(count) => {
                 write!(f, "v1 header cannot encode {count} keyslots")
             }
-            Self::Io => write!(f, "unable to write v1 header"),
+            Self::Io(error) => write!(f, "unable to write v1 header: {error}"),
         }
     }
 }

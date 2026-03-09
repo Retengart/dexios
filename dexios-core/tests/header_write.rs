@@ -1,6 +1,6 @@
-use dexios_core::header::common::{KeyslotNonce, PayloadNonce, Salt};
+use dexios_core::header::common::{HeaderWriteError, KeyslotNonce, PayloadNonce, Salt};
+use dexios_core::header::legacy::{Header, HeaderType, HeaderVersion};
 use dexios_core::header::v1::{KeyslotKdf, V1Header, V1Keyslot};
-use dexios_core::header::{Header, HeaderType, HeaderVersion};
 use dexios_core::primitives::{Algorithm, Mode};
 use std::io::{Cursor, Seek, SeekFrom, Write};
 
@@ -29,6 +29,22 @@ impl Write for ShortWriteCursor {
 impl Seek for ShortWriteCursor {
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
         self.inner.seek(pos)
+    }
+}
+
+#[derive(Default)]
+struct FailingWriter;
+
+impl Write for FailingWriter {
+    fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::WriteZero,
+            "forced write failure",
+        ))
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }
 
@@ -68,4 +84,28 @@ fn v1_header_write_must_write_the_full_serialized_header() {
     header.write(&mut sink).expect("v1 header write");
 
     assert_eq!(sink.len(), header.serialize().unwrap().len());
+}
+
+#[test]
+fn v1_header_write_preserves_underlying_io_error_details() {
+    let header = V1Header::new(
+        PayloadNonce::new([7u8; 20]),
+        vec![V1Keyslot::new(
+            KeyslotKdf::Blake3Balloon,
+            [5u8; 48],
+            KeyslotNonce::new([9u8; 24]),
+            Salt::new([3u8; 16]),
+        )],
+    )
+    .expect("v1 header");
+    let mut sink = FailingWriter;
+
+    let error = header
+        .write(&mut sink)
+        .expect_err("short write should fail");
+
+    assert!(matches!(
+        error,
+        HeaderWriteError::Io(inner) if inner.kind() == std::io::ErrorKind::WriteZero
+    ));
 }
