@@ -31,6 +31,7 @@ impl TestDir {
             std::process::id()
         ));
         fs::create_dir_all(&path).unwrap();
+        let path = fs::canonicalize(path).unwrap();
         Self { path }
     }
 
@@ -43,6 +44,13 @@ impl Drop for TestDir {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.path);
     }
+}
+
+#[test]
+fn test_dir_path_is_canonical() {
+    let test_dir = TestDir::new("unpack-cli-canonical");
+
+    assert_eq!(&fs::canonicalize(test_dir.path()).unwrap(), test_dir.path());
 }
 
 fn run_unpack_with_args(input: &Path, output: &Path, extra_args: &[&str]) -> std::process::Output {
