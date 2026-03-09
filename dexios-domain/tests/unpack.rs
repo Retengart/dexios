@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use core::header::{HashingAlgorithm, HeaderType, HeaderVersion};
@@ -15,7 +15,8 @@ use zip::write::SimpleFileOptions;
 const PASSWORD: &[u8; 8] = b"12345678";
 
 struct TestDir {
-    dir: tempfile::TempDir,
+    _dir: tempfile::TempDir,
+    path: PathBuf,
 }
 
 impl TestDir {
@@ -24,11 +25,12 @@ impl TestDir {
             .prefix(&format!("dexios-{prefix}-"))
             .tempdir()
             .unwrap();
-        Self { dir }
+        let path = fs::canonicalize(dir.path()).unwrap();
+        Self { _dir: dir, path }
     }
 
     fn path(&self) -> &Path {
-        self.dir.path()
+        &self.path
     }
 }
 
@@ -36,7 +38,8 @@ impl TestDir {
 fn test_dir_uses_system_temp_root() {
     let dir = TestDir::new("unpack-temp-root");
 
-    assert!(dir.path().starts_with(std::env::temp_dir()));
+    let temp_root = fs::canonicalize(std::env::temp_dir()).unwrap();
+    assert!(dir.path().starts_with(&temp_root));
     assert!(!dir.path().starts_with(Path::new("target/test-artifacts")));
 }
 
