@@ -22,3 +22,10 @@ Currently, all versions of `dexios-core` are supported.
 Please open a Github Issue to report any vulnerabilities - they will be fixed as quickly as possible this way.
 
 As an alternative, you may contact `brxken128@tutanota.com`.
+
+For documentation/source mismatches that affect security-sensitive behavior, please mention whether the issue concerns:
+
+- headers or format compatibility
+- KDF or algorithm selection
+- pack/unpack behavior
+- secure erase or temporary artifact cleanup

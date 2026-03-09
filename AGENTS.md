@@ -10,7 +10,8 @@ This repository is a Cargo workspace rooted at `Cargo.toml` with four members:
 
 Repository-level documentation and packaging assets live outside the crates:
 
-- `docs/technical-details/` holds the technical reference material, and `docs/` also contains the generated documentation site assets.
+- `book/src/` holds the mdBook source for the documentation site.
+- `docs/` contains the generated documentation site assets.
 - `assets/` contains branding and image assets.
 - `spec/specification-v1.pdf` is the file format reference.
 - `default.nix`, `flake.nix`, and `shell.nix` define the Nix workflows.
@@ -46,6 +47,6 @@ Pull requests should summarize user-visible impact, note any security or compati
 Do not commit ad hoc planning artifacts from `docs/plans/`. Those files are local working notes, not mergeable project documentation.
 
 ## Security & Configuration Notes
-Treat changes to headers, algorithms, KDF selection, pack/unpack behavior, and secure erase logic as compatibility-sensitive. Review `spec/specification-v1.pdf`, `docs/technical-details/`, and `SECURITY.md` before changing on-disk format behavior or cryptographic defaults.
+Treat changes to headers, algorithms, KDF selection, pack/unpack behavior, and secure erase logic as compatibility-sensitive. Review `spec/specification-v1.pdf`, `book/src/`, and `SECURITY.md` before changing on-disk format behavior or cryptographic defaults.
 
 Never commit real secrets, decrypted fixtures, or long-lived keys. Keep any manual test data disposable, and do not check generated artifacts from `target/` or ad hoc test output into the repository.
