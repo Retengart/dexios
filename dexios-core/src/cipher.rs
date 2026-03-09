@@ -1,13 +1,16 @@
-//! This module is used for standard, typical encryption and decryption.
+//! This module provides direct AEAD helpers for memory-mode style encryption and
+//! decryption.
 //!
-//! The data is fully loaded into memory before encryption/decryption, and it is processed within the same "block"
+//! The data is processed in one shot rather than through the LE31 stream layer.
+//! In the current Dexios CLI, this path is mainly relevant for compatibility
+//! and wrapped-master-key handling rather than new file encryption.
 //!
 //! # Examples
 //! ```rust,ignore
 //! // obviously the key should contain data, not be an empty vec
 //! let raw_key = Protected::new(vec![0u8; 128]);
 //! let salt = gen_salt();
-//! let key = balloon_hash(raw_key, &salt, &HeaderVersion::V4).unwrap();
+//! let key = balloon_hash(raw_key, &salt, &HeaderVersion::V5).unwrap();
 //! let cipher = Ciphers::initialize(key, &Algorithm::XChaCha20Poly1305).unwrap();
 //!
 //! let secret = "super secret information";
@@ -40,14 +43,14 @@ impl Ciphers {
     ///
     /// The returned `Cipher` can be used for both encryption and decryption
     ///
-    /// You just need to provide the `argon2id`/`balloon` hashed key, and the algorithm to use
+    /// You just need to provide a derived 32-byte key and the algorithm to use.
     ///
     /// # Examples
     /// ```rust,ignore
     /// // obviously the key should contain data, not be an empty vec
     /// let raw_key = Protected::new(vec![0u8; 128]);
     /// let salt = gen_salt();
-    /// let key = balloon_hash(raw_key, &salt, &HeaderVersion::V4).unwrap();
+    /// let key = balloon_hash(raw_key, &salt, &HeaderVersion::V5).unwrap();
     /// let cipher = Ciphers::initialize(key, &Algorithm::XChaCha20Poly1305).unwrap();
     /// ```
     ///

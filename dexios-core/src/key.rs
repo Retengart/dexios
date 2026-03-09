@@ -1,6 +1,7 @@
-//! This module handles key-related functionality within `dexios-core`
+//! This module handles key-related functionality within `dexios-core`.
 //!
-//! It contains methods for `argon2id` and `balloon` hashing, and securely generating a salt
+//! It contains methods for `argon2id` and `BLAKE3-Balloon` hashing, master-key
+//! recovery, and passphrase generation.
 //!
 //! # Examples
 //!
@@ -104,7 +105,7 @@ pub fn argon2id_hash(
 /// let salt = gen_salt();
 /// let secret_data = "secure key".as_bytes().to_vec();
 /// let raw_key = Protected::new(secret_data);
-/// let key = balloon_hash(raw_key, &salt, &HeaderVersion::V4).unwrap();
+/// let key = balloon_hash(raw_key, &salt, &HeaderVersion::V5).unwrap();
 /// ```
 ///
 /// # Errors
@@ -143,13 +144,12 @@ pub fn balloon_hash(
     Ok(Protected::new(key))
 }
 
-/// This is a helper function for retrieving the key used for encrypting the data
+/// This is a helper function for retrieving the effective data-encryption key.
 ///
-/// In header versions below V4, this is just the hashed password
+/// In header versions below V4, this is the derived password/key hash itself.
 ///
-/// In header versions >= V4, this is a cryptographically-secure random value
-///
-/// In header versions >= V4, this function will iterate through all available keyslots, looking for a match. If it finds a match, it will return the decrypted master key.
+/// In header versions V4 and above, this function recovers the random wrapped
+/// master key stored in the header metadata.
 ///
 /// # Errors
 ///
@@ -210,11 +210,11 @@ pub fn vec_to_arr<const N: usize>(mut master_key_vec: Vec<u8>) -> [u8; N] {
     master_key
 }
 
-/// This function is used for autogenerating a passphrase, from a wordlist
+/// This function is used for autogenerating a passphrase from the bundled
+/// wordlist.
 ///
-/// It consists of n words, from the EFF large wordlist. The default amount of words is 7.
-///
-/// Each word is separated with `-`.
+/// It consists of `n` words joined with `-`. The current CLI default is `7`
+/// words.
 ///
 /// This provides adequate protection, while also remaining somewhat memorable.
 #[must_use]

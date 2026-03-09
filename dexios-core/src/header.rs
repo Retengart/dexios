@@ -1,13 +1,17 @@
-//! The Dexios header is an encrypted file/data header that stores specific information needed for decryption.
+//! The Dexios header stores the metadata required to decrypt Dexios-encrypted
+//! data.
 //!
-//! This includes:
-//! * header version
-//! * salt
-//! * nonce
-//! * encryption algorithm
-//! * whether the file was encrypted in "memory" or stream mode
+//! Depending on the header version, this includes:
 //!
-//! It allows for serialization, deserialization, and has a convenience function for quickly writing the header to a file.
+//! - header version,
+//! - encryption algorithm,
+//! - encryption mode,
+//! - payload nonce,
+//! - a legacy salt,
+//! - and/or wrapped-master-key keyslots.
+//!
+//! The module supports serialization, deserialization, AAD creation, and
+//! writing the serialized header to a writer.
 //!
 //! # Examples
 //!
@@ -90,9 +94,11 @@ struct HeaderTag {
     pub mode: [u8; 2],
 }
 
-/// This is the main `Header` struct, and it contains all of the information about the encrypted data
+/// This is the main `Header` struct, and it contains all of the information
+/// about the encrypted data.
 ///
-/// It contains the `HeaderType`, the nonce, and the salt
+/// Depending on the header version, it contains the [`HeaderType`], the payload
+/// nonce, an optional legacy salt, and optional keyslots.
 ///
 /// This needs to be manually created for encrypting data
 pub struct Header {
@@ -235,7 +241,8 @@ impl Header {
     ///
     /// The AAD for older versions is empty as no AAD is the default for AEADs, and the header validation was not in place prior to V3.
     ///
-    /// NOTE: This leaves the cursor at 64 bytes into the buffer, as that is the size of the header
+    /// NOTE: This leaves the cursor at the end of the serialized header. The
+    /// exact offset depends on the detected header version.
     ///
     /// # Examples
     ///

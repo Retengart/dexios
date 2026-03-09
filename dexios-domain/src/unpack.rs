@@ -1,4 +1,5 @@
-//! This contains the logic for decrypting a zip file, and extracting each file to the target directory. The temporary zip file is then erased with one pass.
+//! This contains the logic for decrypting a packed zip archive and extracting
+//! each file to the target directory.
 //!
 //! This is known as "unpacking" within Dexios.
 

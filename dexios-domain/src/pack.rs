@@ -1,8 +1,12 @@
-//! This contains the logic for traversing a given directory, placing all of the files within a zip file, and encrypting the zip file. The temporary zip file is then erased with one pass.
+//! This contains the logic for traversing one or more directories, placing
+//! their files into a temporary zip archive, and encrypting that archive. The
+//! temporary zip file is then cleaned up through the overwrite helper.
 //!
 //! This is known as "packing" within Dexios.
 //!
-//! DISCLAIMER: Encryption with compression is generally not recommended, however here it is fine. As the data is at-rest, and it's assumed you have complete control over the data you're encrypting (e.g. not attacker-controlled), there should be no problems. Feel free to use no compression if you feel otherwise.
+//! DISCLAIMER: Compression with encryption is generally risky in interactive
+//! attacker-controlled settings. The Dexios `pack` workflow assumes offline
+//! at-rest archival use, where the user controls the packed input.
 
 use std::cell::RefCell;
 use std::io::{BufWriter, Read, Seek, Write};

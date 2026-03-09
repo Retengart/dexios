@@ -1,8 +1,7 @@
-//! This module contains all of the LE31 STREAM objects and functionality
+//! This module contains the LE31 stream-mode helpers used by Dexios for file
+//! payload encryption and decryption.
 //!
-//! This is where streaming mode encryption, decryption and initialization is handled.
-//!
-//! There are also some convenience functions for quickly encrypting and decrypting files.
+//! Current Dexios write paths use this module for new encrypted files.
 //!
 //! # Examples
 //!
@@ -10,7 +9,7 @@
 //! // obviously the key should contain data, not be an empty vec
 //! let raw_key = Protected::new(vec![0u8; 128]);
 //! let salt = gen_salt();
-//! let key = balloon_hash(raw_key, &salt, &HeaderVersion::V4).unwrap();
+//! let key = balloon_hash(raw_key, &salt, &HeaderVersion::V5).unwrap();
 //!
 //! // this nonce should be read from somewhere, not generated
 //! let nonce = gen_nonce(&Algorithm::XChaCha20Poly1305, &Mode::StreamMode);
@@ -79,7 +78,7 @@ impl EncryptionStreams {
     /// // obviously the key should contain data, not be an empty vec
     /// let raw_key = Protected::new(vec![0u8; 128]);
     /// let salt = gen_salt();
-    /// let key = balloon_hash(raw_key, &salt, &HeaderVersion::V4).unwrap();
+    /// let key = balloon_hash(raw_key, &salt, &HeaderVersion::V5).unwrap();
     ///
     /// let nonce = gen_nonce(&Algorithm::XChaCha20Poly1305, &Mode::StreamMode);
     /// let encrypt_stream = EncryptionStreams::initialize(key, &nonce, &Algorithm::XChaCha20Poly1305).unwrap();
@@ -174,7 +173,8 @@ impl EncryptionStreams {
     ///
     /// Every single block is provided with the AAD
     ///
-    /// Valid AAD must be provided if you are using `HeaderVersion::V3` and above. It must be empty if the `HeaderVersion` is lower.
+    /// Valid AAD must be provided if you are using `HeaderVersion::V3` and
+    /// above. It must be empty if the header version is lower.
     ///
     /// You are free to use a custom AAD, just ensure that it is present for decryption, or else you will receive an error.
     ///
@@ -186,8 +186,8 @@ impl EncryptionStreams {
     /// let mut input_file = File::open("input").unwrap();
     /// let mut output_file = File::create("output.encrypted").unwrap();
     ///
-    /// // aad should be generated from the header (only for encryption)
-    /// let aad = header.serialize().unwrap();
+    /// // aad should be generated from the header with `create_aad()`
+    /// let aad = header.create_aad().unwrap();
     ///
     /// let encrypt_stream = EncryptionStreams::initialize(key, &nonce, &Algorithm::XChaCha20Poly1305).unwrap();
     /// encrypt_stream.encrypt_file(&mut input_file, &mut output_file, &aad);
@@ -271,7 +271,7 @@ impl DecryptionStreams {
     /// // obviously the key should contain data, not be an empty vec
     /// let raw_key = Protected::new(vec![0u8; 128]);
     /// let salt = gen_salt();
-    /// let key = balloon_hash(raw_key, &salt, &HeaderVersion::V4).unwrap();
+    /// let key = balloon_hash(raw_key, &salt, &HeaderVersion::V5).unwrap();
     ///
     /// // this nonce should be read from somewhere, not generated
     /// let nonce = gen_nonce(&Algorithm::XChaCha20Poly1305, &Mode::StreamMode);
