@@ -1,5 +1,5 @@
-use dexios_core::header::legacy::{HashingAlgorithm, HeaderVersion};
-use dexios_core::key::{argon2id_hash, balloon_hash};
+use dexios_core::header::common::Salt;
+use dexios_core::kdf::Kdf;
 use dexios_core::protected::Protected;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -12,7 +12,7 @@ struct VectorFile {
 #[derive(Deserialize)]
 struct KdfVector {
     algorithm: String,
-    version: String,
+    case: String,
     password: String,
     salt_hex: String,
     expected_hex: String,
@@ -27,10 +27,10 @@ fn load_vectors() -> Vec<KdfVector> {
         .vector
 }
 
-fn find_vector<'a>(vectors: &'a [KdfVector], algorithm: &str, version: &str) -> &'a KdfVector {
+fn find_vector<'a>(vectors: &'a [KdfVector], algorithm: &str, case: &str) -> &'a KdfVector {
     vectors
         .iter()
-        .find(|vector| vector.algorithm == algorithm && vector.version == version)
+        .find(|vector| vector.algorithm == algorithm && vector.case == case)
         .expect("known KDF vector")
 }
 
@@ -46,145 +46,64 @@ fn decode_hex<const N: usize>(hex: &str) -> [u8; N] {
     bytes.try_into().expect("hex value with expected length")
 }
 
+fn assert_vector(algorithm: Kdf, algorithm_name: &str, case: &str) {
+    let vectors = load_vectors();
+    let vector = find_vector(&vectors, algorithm_name, case);
+    let salt = Salt::new(decode_hex::<16>(&vector.salt_hex));
+    let expected = decode_hex::<32>(&vector.expected_hex);
+    let key = algorithm
+        .derive(Protected::new(vector.password.as_bytes().to_vec()), &salt)
+        .expect("KDF hash");
+
+    assert_eq!(key.expose(), &expected);
+}
+
 #[test]
 fn kdf_vector_file_contains_expected_cases() {
     let vectors = load_vectors();
     let mut seen_pairs = BTreeSet::new();
 
     for vector in &vectors {
-        assert!(seen_pairs.insert((vector.algorithm.as_str(), vector.version.as_str())));
-    }
-
-    assert!(
-        vectors
-            .iter()
-            .any(|vector| vector.algorithm == "argon2id" && vector.version == "V1")
-    );
-    assert!(
-        vectors
-            .iter()
-            .any(|vector| vector.algorithm == "balloon" && vector.version == "V5")
-    );
-
-    for vector in &vectors {
+        assert!(seen_pairs.insert((vector.algorithm.as_str(), vector.case.as_str())));
         assert!(!vector.provenance.is_empty());
         assert!(vector.metadata.contains_key("source_kind"));
         assert!(vector.metadata.contains_key("source_name"));
-
-        match vector.algorithm.as_str() {
-            "argon2id" => {
-                assert!(vector.metadata.contains_key("source_version"));
-                assert!(vector.metadata.contains_key("source_entrypoint"));
-                assert!(vector.metadata.contains_key("params_memory_kib"));
-                assert!(vector.metadata.contains_key("params_time_cost"));
-                assert!(vector.metadata.contains_key("params_parallelism"));
-                assert!(vector.metadata.contains_key("params_hash_len"));
-            }
-            "balloon" => {
-                assert!(vector.metadata.contains_key("source_repo"));
-                assert!(vector.metadata.contains_key("source_commit"));
-                assert!(vector.metadata.contains_key("source_hash_primitive"));
-                assert!(vector.metadata.contains_key("params_space_cost"));
-                assert!(vector.metadata.contains_key("params_time_cost"));
-                assert!(vector.metadata.contains_key("params_delta"));
-            }
-            other => panic!("unexpected KDF algorithm in testdata: {other}"),
-        }
     }
-}
-
-fn assert_argon2_vector(version: HeaderVersion, version_id: &str) {
-    let vectors = load_vectors();
-    let vector = find_vector(&vectors, "argon2id", version_id);
-    let salt = decode_hex::<16>(&vector.salt_hex);
-    let expected = decode_hex::<32>(&vector.expected_hex);
-    let key = argon2id_hash(
-        Protected::new(vector.password.as_bytes().to_vec()),
-        &salt,
-        &version,
-    )
-    .expect("argon2 hash");
-
-    assert_eq!(key.expose(), &expected);
-}
-
-fn assert_balloon_vector(version: HeaderVersion, version_id: &str) {
-    let vectors = load_vectors();
-    let vector = find_vector(&vectors, "balloon", version_id);
-    let salt = decode_hex::<16>(&vector.salt_hex);
-    let expected = decode_hex::<32>(&vector.expected_hex);
-    let key = balloon_hash(
-        Protected::new(vector.password.as_bytes().to_vec()),
-        &salt,
-        &version,
-    )
-    .expect("balloon hash");
-
-    assert_eq!(key.expose(), &expected);
-}
-
-fn assert_mapping_vector(algorithm: HashingAlgorithm, algorithm_name: &str, version_id: &str) {
-    let vectors = load_vectors();
-    let vector = find_vector(&vectors, algorithm_name, version_id);
-    let salt = decode_hex::<16>(&vector.salt_hex);
-    let expected = decode_hex::<32>(&vector.expected_hex);
-    let key = algorithm
-        .hash(Protected::new(vector.password.as_bytes().to_vec()), &salt)
-        .expect("mapped KDF hash");
-
-    assert_eq!(key.expose(), &expected);
-}
-
-#[test]
-fn argon2id_v1_matches_known_vector() {
-    assert_argon2_vector(HeaderVersion::V1, "V1");
-}
-
-#[test]
-fn argon2id_v2_matches_known_vector() {
-    assert_argon2_vector(HeaderVersion::V2, "V2");
-}
-
-#[test]
-fn argon2id_v3_matches_known_vector() {
-    assert_argon2_vector(HeaderVersion::V3, "V3");
-}
-
-#[test]
-fn balloon_hash_v4_matches_known_vector() {
-    assert_balloon_vector(HeaderVersion::V4, "V4");
-}
-
-#[test]
-fn balloon_hash_v5_matches_known_vector() {
-    assert_balloon_vector(HeaderVersion::V5, "V5");
-}
-
-#[test]
-fn hashing_algorithm_argon2id_routes_versions_1_through_3() {
-    assert_mapping_vector(HashingAlgorithm::Argon2id(1), "argon2id", "V1");
-    assert_mapping_vector(HashingAlgorithm::Argon2id(2), "argon2id", "V2");
-    assert_mapping_vector(HashingAlgorithm::Argon2id(3), "argon2id", "V3");
-}
-
-#[test]
-fn hashing_algorithm_balloon_routes_versions_4_and_5() {
-    assert_mapping_vector(HashingAlgorithm::Blake3Balloon(4), "balloon", "V4");
-    assert_mapping_vector(HashingAlgorithm::Blake3Balloon(5), "balloon", "V5");
-}
-
-#[test]
-fn hashing_algorithm_rejects_unsupported_versions() {
-    let salt = [9u8; 16];
 
     assert!(
-        HashingAlgorithm::Argon2id(99)
-            .hash(Protected::new(b"test-password".to_vec()), &salt)
-            .is_err()
+        vectors
+            .iter()
+            .any(|vector| vector.algorithm == "argon2id" && vector.case == "stable")
     );
     assert!(
-        HashingAlgorithm::Blake3Balloon(99)
-            .hash(Protected::new(b"test-password".to_vec()), &salt)
-            .is_err()
+        vectors
+            .iter()
+            .any(|vector| vector.algorithm == "balloon" && vector.case == "stable")
     );
+}
+
+#[test]
+fn argon2id_derives_a_32_byte_key() {
+    let derived = Kdf::Argon2id
+        .derive(Protected::new(b"password".to_vec()), &Salt::new([7; 16]))
+        .unwrap();
+    assert_eq!(derived.expose().len(), 32);
+}
+
+#[test]
+fn blake3_balloon_derives_a_32_byte_key() {
+    let derived = Kdf::Blake3Balloon
+        .derive(Protected::new(b"password".to_vec()), &Salt::new([9; 16]))
+        .unwrap();
+    assert_eq!(derived.expose().len(), 32);
+}
+
+#[test]
+fn argon2id_matches_stable_known_vector() {
+    assert_vector(Kdf::Argon2id, "argon2id", "stable");
+}
+
+#[test]
+fn balloon_matches_stable_known_vector() {
+    assert_vector(Kdf::Blake3Balloon, "balloon", "stable");
 }

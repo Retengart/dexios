@@ -16,6 +16,7 @@ pub mod cipher;
 pub mod header;
 #[path = "header.rs"]
 mod header_legacy;
+pub mod kdf;
 pub mod key;
 pub mod primitives;
 pub mod protected;
