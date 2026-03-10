@@ -275,3 +275,73 @@ fn pack_delete_source_removes_source_directory_after_success() {
     assert!(!source_dir.exists());
     assert!(test_dir.path().join("archive.enc").exists());
 }
+
+#[test]
+fn pack_delete_source_rejects_output_inside_source_and_keeps_source() {
+    let test_dir = TestDir::new("pack-delete-source-output-inside-source");
+    let source_dir = test_dir.path().join("source");
+    fs::create_dir_all(source_dir.join("nested")).unwrap();
+    fs::write(source_dir.join("hello.txt"), b"hello").unwrap();
+    fs::write(source_dir.join("nested/world.txt"), b"world").unwrap();
+    let output_path = source_dir.join("archive.enc");
+
+    let output = run_pack(
+        test_dir.path(),
+        &["--delete-source"],
+        &["source"],
+        output_path.to_str().unwrap(),
+    );
+
+    assert!(
+        !output.status.success(),
+        "pack unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("delete-source"),
+        "stderr did not mention delete-source conflict: {stderr}"
+    );
+    assert!(source_dir.exists());
+    assert!(source_dir.join("hello.txt").exists());
+    assert!(!output_path.exists());
+}
+
+#[test]
+fn pack_delete_source_rejects_detached_header_inside_source_and_keeps_source() {
+    let test_dir = TestDir::new("pack-delete-source-header-inside-source");
+    let source_dir = test_dir.path().join("source");
+    fs::create_dir_all(source_dir.join("nested")).unwrap();
+    fs::write(source_dir.join("hello.txt"), b"hello").unwrap();
+    fs::write(source_dir.join("nested/world.txt"), b"world").unwrap();
+    let header_path = source_dir.join("header.bin");
+    let archive_path = test_dir.path().join("archive.enc");
+
+    let output = run_pack(
+        test_dir.path(),
+        &[
+            "--delete-source",
+            "--header",
+            header_path.to_str().unwrap(),
+        ],
+        &["source"],
+        archive_path.to_str().unwrap(),
+    );
+
+    assert!(
+        !output.status.success(),
+        "pack unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("delete-source"),
+        "stderr did not mention delete-source conflict: {stderr}"
+    );
+    assert!(source_dir.exists());
+    assert!(source_dir.join("hello.txt").exists());
+    assert!(!header_path.exists());
+    assert!(!archive_path.exists());
+}

@@ -193,6 +193,69 @@ fn excluded_pack_paths(req: &Request) -> Result<HashSet<PathBuf>> {
     Ok(paths)
 }
 
+fn canonicalize_with_missing_suffix(path: &Path) -> Result<PathBuf> {
+    let current_dir = std::env::current_dir().context("Unable to read current directory")?;
+    let resolved = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        current_dir.join(path)
+    };
+
+    let mut suffix = Vec::<OsString>::new();
+    let mut existing = resolved.as_path();
+
+    while !existing.exists() {
+        let name = existing
+            .file_name()
+            .ok_or_else(|| anyhow::anyhow!("Unable to resolve path {}", path.display()))?;
+        suffix.push(name.to_os_string());
+        existing = existing
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("Unable to resolve path {}", path.display()))?;
+    }
+
+    let mut canonical =
+        fs::canonicalize(existing).with_context(|| format!("Unable to resolve {}", path.display()))?;
+    for component in suffix.iter().rev() {
+        canonical.push(component);
+    }
+
+    Ok(canonical)
+}
+
+fn ensure_delete_source_does_not_target_generated_paths(req: &Request) -> Result<()> {
+    if req.pack_params.delete_source != DeleteSource::Delete {
+        return Ok(());
+    }
+
+    let source_roots = req
+        .input_file
+        .iter()
+        .map(|path| {
+            fs::canonicalize(path)
+                .with_context(|| format!("Unable to resolve input path {path}"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let output_path = canonicalize_with_missing_suffix(Path::new(req.output_file))?;
+    if source_roots.iter().any(|root| output_path.starts_with(root)) {
+        return Err(anyhow::anyhow!(
+            "--delete-source cannot be used when the output file is inside a source directory"
+        ));
+    }
+
+    if let HeaderLocation::Detached(path) = &req.crypto_params.header_location {
+        let header_path = canonicalize_with_missing_suffix(Path::new(path))?;
+        if source_roots.iter().any(|root| header_path.starts_with(root)) {
+            return Err(anyhow::anyhow!(
+                "--delete-source cannot be used when the detached header is inside a source directory"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 // this first indexes the input directory
 // once it has the total number of files/folders, it creates a temporary zip file
 // it compresses all of the files into the temporary archive
@@ -212,6 +275,8 @@ pub fn execute(req: &Request) -> Result<()> {
     if req.input_file.iter().any(|f| PathBuf::from(f).is_file()) {
         return Err(anyhow::anyhow!("Input path cannot be a file."));
     }
+
+    ensure_delete_source_does_not_target_generated_paths(req)?;
 
     let output_ok = overwrite_check(req.output_file, req.crypto_params.force)?;
 
