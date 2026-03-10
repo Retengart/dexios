@@ -3,9 +3,10 @@ use crate::global::states::Key;
 use crate::global::states::PasswordState;
 use crate::global::structs::KeyManipulationParams;
 use anyhow::{Context, Result};
+use core::header::common::HeaderReadError;
 use core::header::legacy::HashingAlgorithm;
-use core::kdf::Kdf;
 use core::header::read_header;
+use core::kdf::Kdf;
 use std::cell::RefCell;
 use std::fs::OpenOptions;
 use std::io::Seek;
@@ -19,6 +20,18 @@ fn to_kdf(hashing_algorithm: HashingAlgorithm) -> Kdf {
     }
 }
 
+fn ensure_v1_header<R: std::io::Read>(reader: &mut R) -> Result<()> {
+    match read_header(reader) {
+        Ok(_) => Ok(()),
+        Err(HeaderReadError::InvalidMagic(_)) | Err(HeaderReadError::UnsupportedVersion(_)) => {
+            Err(anyhow::anyhow!(
+                "This function currently only supports Dexios V1 headers"
+            ))
+        }
+        Err(err) => Err(anyhow::anyhow!("Malformed Dexios V1 header: {err}")),
+    }
+}
+
 pub fn add(input: &str, params: &KeyManipulationParams) -> Result<()> {
     let input_file = RefCell::new(
         OpenOptions::new()
@@ -28,9 +41,7 @@ pub fn add(input: &str, params: &KeyManipulationParams) -> Result<()> {
             .with_context(|| format!("Unable to open input file: {input}"))?,
     );
 
-    read_header(&mut *input_file.borrow_mut()).map_err(|_| {
-        anyhow::anyhow!("This function currently only supports Dexios V1 headers")
-    })?;
+    ensure_v1_header(&mut *input_file.borrow_mut())?;
 
     input_file
         .borrow_mut()
@@ -68,9 +79,7 @@ pub fn change(input: &str, params: &KeyManipulationParams) -> Result<()> {
             .with_context(|| format!("Unable to open input file: {input}"))?,
     );
 
-    read_header(&mut *input_file.borrow_mut()).map_err(|_| {
-        anyhow::anyhow!("This function currently only supports Dexios V1 headers")
-    })?;
+    ensure_v1_header(&mut *input_file.borrow_mut())?;
 
     input_file
         .borrow_mut()
@@ -108,9 +117,7 @@ pub fn delete(input: &str, key_old: &Key) -> Result<()> {
             .with_context(|| format!("Unable to open input file: {input}"))?,
     );
 
-    read_header(&mut *input_file.borrow_mut()).map_err(|_| {
-        anyhow::anyhow!("This function currently only supports Dexios V1 headers")
-    })?;
+    ensure_v1_header(&mut *input_file.borrow_mut())?;
 
     input_file
         .borrow_mut()
@@ -139,9 +146,7 @@ pub fn verify(input: &str, key: &Key) -> Result<()> {
             .with_context(|| format!("Unable to open input file: {input}"))?,
     );
 
-    read_header(&mut *input_file.borrow_mut()).map_err(|_| {
-        anyhow::anyhow!("This function currently only supports Dexios V1 headers")
-    })?;
+    ensure_v1_header(&mut *input_file.borrow_mut())?;
 
     input_file
         .borrow_mut()
