@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use core::header::legacy::{HashingAlgorithm, HeaderType, HeaderVersion};
+use core::header::{ParsedHeader, read_header};
 use core::primitives::legacy::{Algorithm, Mode};
 use core::protected::Protected;
 use dexios_domain::decrypt;
@@ -75,6 +76,11 @@ fn pack_writes_relative_archive_paths() {
 
     pack::execute(stor.clone(), req).unwrap();
     stor.flush_file(&output_file).unwrap();
+
+    let output_bytes = fs::read(&output_path).unwrap();
+    let (parsed, _aad) = read_header(&mut Cursor::new(&output_bytes)).unwrap();
+    let ParsedHeader::V1(header) = parsed;
+    assert_eq!(header.keyslots().len(), 1);
 
     let archive = stor.read_file(&output_path).unwrap();
     let decrypted = RefCell::new(Cursor::new(Vec::new()));

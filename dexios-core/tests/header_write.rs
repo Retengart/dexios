@@ -49,7 +49,7 @@ impl Write for FailingWriter {
 }
 
 #[test]
-fn header_write_must_write_the_full_serialized_header() {
+fn legacy_v5_header_write_must_write_the_full_serialized_header() {
     let header = Header {
         header_type: HeaderType {
             version: HeaderVersion::V5,

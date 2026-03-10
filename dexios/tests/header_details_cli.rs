@@ -140,6 +140,9 @@ fn header_details_reports_v1_profile() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Header version: V1"));
     assert!(stdout.contains("Cipher suite: XChaCha20-Poly1305 / LE31 stream"));
+    assert!(!stdout.contains("V5"));
+    assert!(!stdout.contains("AES-256-GCM"));
+    assert!(!stdout.contains("(legacy)"));
 }
 
 #[test]
