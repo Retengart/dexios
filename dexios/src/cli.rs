@@ -75,13 +75,6 @@ pub fn build_cli() -> Command {
                 .long("force")
                 .action(ArgAction::SetTrue)
                 .help("Force all actions"),
-        )
-        .arg(
-            Arg::new("force")
-                .short('f')
-                .long("force")
-                .action(ArgAction::SetTrue)
-                .help("Force all actions"),
         );
 
     let decrypt = Command::new("decrypt")
@@ -525,6 +518,20 @@ pub fn get_matches() -> clap::ArgMatches {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cli_definition_passes_clap_debug_assertions() {
+        super::build_cli().debug_assert();
+    }
+
+    #[test]
+    fn encrypt_help_does_not_panic_from_duplicate_args() {
+        let result = std::panic::catch_unwind(|| {
+            let _ = super::build_cli().try_get_matches_from(["dexios", "encrypt", "--help"]);
+        });
+
+        assert!(result.is_ok(), "encrypt --help should not panic");
+    }
+
     #[test]
     fn encrypt_command_accepts_header_and_auto() {
         let matches = super::build_cli()
