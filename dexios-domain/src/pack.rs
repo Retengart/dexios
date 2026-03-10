@@ -13,6 +13,7 @@ use std::io::{BufWriter, Read, Seek, Write};
 use std::sync::Arc;
 
 use core::header::legacy::{HashingAlgorithm, HeaderType};
+use core::kdf::Kdf;
 use core::primitives::BLOCK_SIZE;
 use core::protected::Protected;
 use zip::write::SimpleFileOptions;
@@ -179,8 +180,10 @@ where
             writer: req.writer,
             header_writer: req.header_writer,
             raw_key: req.raw_key,
-            header_type: req.header_type,
-            hashing_algorithm: req.hashing_algorithm,
+            kdf: match req.hashing_algorithm {
+                HashingAlgorithm::Argon2id(_) => Kdf::Argon2id,
+                HashingAlgorithm::Blake3Balloon(_) => Kdf::Blake3Balloon,
+            },
         })
         .map_err(Error::Encrypt)
     });
@@ -212,12 +215,13 @@ pub(crate) mod tests {
     use super::*;
     use std::io::{Cursor, Read};
 
-    use core::header::legacy::{Header, HeaderType, HeaderVersion};
+    use core::header::legacy::{HeaderType, HeaderVersion};
     use core::primitives::legacy::{Algorithm, Mode};
 
     use crate::encrypt::tests::PASSWORD;
     use crate::storage::{InMemoryStorage, Storage};
 
+    #[allow(dead_code)]
     pub(crate) const ENCRYPTED_PACKED_BAR_DIR: [u8; 1202] = [
         222, 5, 14, 1, 12, 1, 173, 240, 60, 45, 230, 243, 58, 160, 69, 50, 217, 192, 66, 223, 124,
         190, 148, 91, 92, 129, 0, 0, 0, 0, 0, 0, 223, 181, 71, 240, 140, 106, 41, 36, 82, 150, 105,
@@ -347,14 +351,12 @@ pub(crate) mod tests {
 
                 let mut content = vec![];
                 reader.read_to_end(&mut content).unwrap();
-                let mut encrypted = Cursor::new(&content);
-                let (header, aad) = Header::deserialize(&mut encrypted).unwrap();
+                let (parsed, aad) = core::header::read_header(&mut Cursor::new(&content)).unwrap();
 
-                assert_eq!(header.header_type.version, HeaderVersion::V5);
-                assert_eq!(header.header_type.algorithm, Algorithm::XChaCha20Poly1305);
-                assert_eq!(header.header_type.mode, Mode::StreamMode);
-                assert!(!aad.is_empty());
-                assert!(u64::try_from(content.len()).unwrap() > header.get_size());
+                let core::header::ParsedHeader::V1(header) = parsed;
+                assert_eq!(header.keyslots().len(), 1);
+                assert!(!aad.as_bytes().is_empty());
+                assert!(content.len() > core::header::common::HEADER_LEN);
             }
             _ => unreachable!(),
         }

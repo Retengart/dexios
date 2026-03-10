@@ -1,16 +1,17 @@
-//! This provides functionality for encryption that adheres to the Dexios format.
+//! This provides functionality for V1 encryption that adheres to the Dexios format.
 
 use std::cell::RefCell;
 use std::io::{Read, Seek, Write};
 
-use core::cipher::legacy as legacy_cipher;
-use core::header::legacy::{HashingAlgorithm, Header, HeaderType, Keyslot};
-use core::primitives::ENCRYPTED_MASTER_KEY_LEN;
-use core::primitives::legacy::Mode;
+use core::cipher::Ciphers;
+use core::header::common::Salt;
+use core::header::v1::{V1Header, V1Keyslot};
+use core::kdf::Kdf;
+use core::primitives::{ENCRYPTED_MASTER_KEY_LEN, gen_keyslot_nonce, gen_payload_nonce};
 use core::protected::Protected;
-use core::stream::legacy as legacy_stream;
+use core::stream::EncryptionStreams;
 
-use crate::utils::{gen_master_key, gen_nonce, gen_salt};
+use crate::utils::{gen_master_key, gen_salt};
 
 #[derive(Debug)]
 pub enum Error {
@@ -21,7 +22,6 @@ pub enum Error {
     WriteHeader,
     InitializeStreams,
     InitializeChiphers,
-    CreateAad,
 }
 
 impl std::fmt::Display for Error {
@@ -34,7 +34,6 @@ impl std::fmt::Display for Error {
             Error::WriteHeader => f.write_str("Cannot write header"),
             Error::InitializeStreams => f.write_str("Cannot initialize streams"),
             Error::InitializeChiphers => f.write_str("Cannot initialize chiphers"),
-            Error::CreateAad => f.write_str("Cannot create AAD"),
         }
     }
 }
@@ -50,9 +49,7 @@ where
     pub writer: &'a RefCell<W>,
     pub header_writer: Option<&'a RefCell<W>>,
     pub raw_key: Protected<Vec<u8>>,
-    // TODO: don't use external types in logic
-    pub header_type: HeaderType,
-    pub hashing_algorithm: HashingAlgorithm,
+    pub kdf: Kdf,
 }
 
 pub fn execute<R, W>(req: Request<'_, R, W>) -> Result<(), Error>
@@ -60,59 +57,37 @@ where
     R: Read + Seek,
     W: Write + Seek,
 {
-    // 1. generate salt
-    let salt = gen_salt();
+    let salt_bytes = gen_salt();
+    let header_salt = Salt::new(salt_bytes);
+    let kdf_salt = core::kdf::Salt::new(salt_bytes);
 
-    // 2. hash key
     let key = req
-        .hashing_algorithm
-        .hash(req.raw_key, &salt)
+        .kdf
+        .derive(req.raw_key, &kdf_salt)
         .map_err(|_| Error::HashKey)?;
+    let cipher = Ciphers::initialize(key).map_err(|_| Error::InitializeChiphers)?;
 
-    // 3. initialize cipher
-    let cipher = legacy_cipher::initialize(key, &req.header_type.algorithm)
-        .map_err(|_| Error::InitializeChiphers)?;
-
-    // 4. generate master key
     let master_key = gen_master_key();
-
-    let master_key_nonce =
-        gen_nonce(&req.header_type.algorithm, &Mode::MemoryMode).map_err(|_| Error::CreateAad)?;
-
-    // 5. encrypt master key
+    let master_key_nonce = gen_keyslot_nonce();
     let master_key_encrypted = {
         let encrypted_key = cipher
-            .encrypt(master_key_nonce.as_slice(), master_key.as_slice())
+            .encrypt(master_key_nonce.as_bytes(), master_key.as_slice())
             .map_err(|_| Error::EncryptMasterKey)?;
 
         let mut encrypted_key_arr = [0u8; ENCRYPTED_MASTER_KEY_LEN];
         let len = ENCRYPTED_MASTER_KEY_LEN.min(encrypted_key.len());
         encrypted_key_arr[..len].copy_from_slice(&encrypted_key[..len]);
-
         encrypted_key_arr
     };
 
-    let keyslot = Keyslot {
-        encrypted_key: master_key_encrypted,
-        nonce: master_key_nonce,
-        hash_algorithm: req.hashing_algorithm,
-        salt,
-    };
-
-    let keyslots = vec![keyslot];
-
-    let header_nonce =
-        gen_nonce(&req.header_type.algorithm, &req.header_type.mode).map_err(|_| Error::CreateAad)?;
-    let streams =
-        legacy_stream::initialize_encryption(master_key, &header_nonce, &req.header_type.algorithm)
-            .map_err(|_| Error::InitializeStreams)?;
-
-    let header = Header {
-        header_type: req.header_type,
-        nonce: header_nonce,
-        salt: None,
-        keyslots: Some(keyslots),
-    };
+    let keyslot = V1Keyslot::new(
+        req.kdf.into(),
+        master_key_encrypted,
+        master_key_nonce,
+        header_salt,
+    );
+    let payload_nonce = gen_payload_nonce();
+    let header = V1Header::new(payload_nonce, vec![keyslot]).map_err(|_| Error::WriteHeader)?;
 
     req.writer
         .borrow_mut()
@@ -131,7 +106,6 @@ where
                 .borrow_mut()
                 .rewind()
                 .map_err(|_| Error::ResetCursorPosition)?;
-
             header_writer
                 .borrow_mut()
                 .write_all(&header.serialize().map_err(|_| Error::WriteHeader)?)
@@ -139,202 +113,79 @@ where
         }
     }
 
-    let aad = header.create_aad().map_err(|_| Error::CreateAad)?;
-
+    let aad = header.create_aad();
     let mut reader = req.reader.borrow_mut();
     reader.rewind().map_err(|_| Error::ResetCursorPosition)?;
 
     let mut writer = req.writer.borrow_mut();
-    streams
-        .encrypt_file(&mut *reader, &mut *writer, &aad)
+    EncryptionStreams::initialize(master_key, header.payload_nonce().as_bytes())
+        .map_err(|_| Error::InitializeStreams)?
+        .encrypt_file(&mut *reader, &mut *writer, aad.as_bytes())
         .map_err(|_| Error::EncryptFile)?;
 
     Ok(())
 }
 
-// WARNING! Very expensive tests!
-// TODO(pleshevskiy): think about optimizations
 #[cfg(test)]
 pub mod tests {
     use std::io::Cursor;
 
-    use core::header::legacy::HeaderVersion;
-    use core::primitives::legacy::Algorithm;
+    use core::header::common::HEADER_LEN;
+    use core::header::{ParsedHeader, read_header};
+    use core::kdf::Kdf;
 
     use super::*;
 
     pub const PASSWORD: &[u8; 8] = b"12345678";
 
-    pub const V4_ENCRYPTED_CONTENT: [u8; 155] = [
-        222, 4, 14, 1, 12, 1, 58, 206, 16, 183, 233, 128, 23, 223, 81, 30, 214, 132, 32, 104, 51,
-        119, 173, 240, 60, 45, 230, 243, 58, 160, 69, 50, 217, 192, 66, 223, 124, 190, 148, 91, 92,
-        129, 0, 0, 0, 0, 0, 0, 147, 32, 67, 18, 249, 211, 189, 86, 187, 159, 234, 160, 94, 80, 72,
-        68, 231, 114, 132, 105, 164, 177, 26, 217, 46, 168, 97, 110, 34, 27, 13, 16, 14, 111, 3,
-        109, 218, 232, 212, 78, 188, 55, 91, 106, 97, 74, 238, 210, 173, 240, 60, 45, 230, 243, 58,
-        160, 69, 50, 217, 192, 66, 223, 124, 190, 148, 91, 92, 129, 50, 126, 110, 254, 0, 0, 0, 0,
-        0, 0, 0, 0, 14, 110, 105, 217, 74, 171, 173, 103, 11, 136, 119, 98, 145, 17, 70, 84, 144,
-        143, 154, 244, 82, 201, 85, 13, 187, 85, 89,
-    ];
-
-    pub const V5_ENCRYPTED_CONTENT: [u8; 443] = [
-        222, 5, 14, 1, 12, 1, 173, 240, 60, 45, 230, 243, 58, 160, 69, 50, 217, 192, 66, 223, 124,
-        190, 148, 91, 92, 129, 0, 0, 0, 0, 0, 0, 223, 181, 71, 240, 140, 106, 41, 36, 82, 150, 105,
-        215, 159, 108, 234, 246, 25, 19, 65, 206, 177, 146, 15, 174, 209, 129, 82, 2, 62, 76, 129,
-        34, 136, 189, 11, 98, 105, 54, 146, 71, 102, 166, 97, 177, 207, 62, 194, 132, 38, 87, 173,
-        240, 60, 45, 230, 243, 58, 160, 69, 50, 217, 192, 66, 223, 124, 190, 148, 91, 92, 129, 50,
-        126, 110, 254, 58, 206, 16, 183, 233, 128, 23, 223, 81, 30, 214, 132, 32, 104, 51, 119, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 14, 110, 105, 217, 74,
-        171, 173, 103, 11, 136, 119, 172, 145, 72, 239, 74, 217, 63, 245, 222, 31, 164, 139, 146,
-        71, 165, 91,
-    ];
-
-    pub const V5_ENCRYPTED_FULL_DETACHED_CONTENT: [u8; 27] = [
-        14, 110, 105, 217, 74, 171, 173, 103, 11, 136, 119, 172, 145, 72, 239, 74, 217, 63, 245,
-        222, 31, 164, 139, 146, 71, 165, 91,
-    ];
-    pub const V5_ENCRYPTED_DETACHED_CONTENT: [u8; 443] = [
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 14, 110, 105,
-        217, 74, 171, 173, 103, 11, 136, 119, 172, 145, 72, 239, 74, 217, 63, 245, 222, 31, 164,
-        139, 146, 71, 165, 91,
-    ];
-    pub const V5_ENCRYPTED_DETACHED_HEADER: [u8; 416] = [
-        222, 5, 14, 1, 12, 1, 173, 240, 60, 45, 230, 243, 58, 160, 69, 50, 217, 192, 66, 223, 124,
-        190, 148, 91, 92, 129, 0, 0, 0, 0, 0, 0, 223, 181, 71, 240, 140, 106, 41, 36, 82, 150, 105,
-        215, 159, 108, 234, 246, 25, 19, 65, 206, 177, 146, 15, 174, 209, 129, 82, 2, 62, 76, 129,
-        34, 136, 189, 11, 98, 105, 54, 146, 71, 102, 166, 97, 177, 207, 62, 194, 132, 38, 87, 173,
-        240, 60, 45, 230, 243, 58, 160, 69, 50, 217, 192, 66, 223, 124, 190, 148, 91, 92, 129, 50,
-        126, 110, 254, 58, 206, 16, 183, 233, 128, 23, 223, 81, 30, 214, 132, 32, 104, 51, 119, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    ];
-
     #[test]
-    fn should_encrypt_content_with_v4_version() {
-        let mut input_content = b"Hello world";
-        let input_cur = RefCell::new(Cursor::new(&mut input_content));
+    fn should_encrypt_content_with_v1_header() {
+        let input_cur = RefCell::new(Cursor::new(b"Hello world".to_vec()));
+        let output_cur = RefCell::new(Cursor::new(Vec::new()));
 
-        let mut output_content = vec![];
-        let output_cur = RefCell::new(Cursor::new(&mut output_content));
-
-        let req = Request {
+        execute(Request {
             reader: &input_cur,
             writer: &output_cur,
             header_writer: None,
             raw_key: Protected::new(PASSWORD.to_vec()),
-            header_type: HeaderType {
-                version: HeaderVersion::V4,
-                algorithm: Algorithm::XChaCha20Poly1305,
-                mode: Mode::StreamMode,
-            },
-            hashing_algorithm: HashingAlgorithm::Blake3Balloon(4),
-        };
+            kdf: Kdf::Blake3Balloon,
+        })
+        .expect("encrypt");
 
-        match execute(req) {
-            Ok(()) => {
-                assert_eq!(output_content, V4_ENCRYPTED_CONTENT.to_vec());
-            }
-            Err(e) => {
-                println!("{e:?}");
-                unreachable!()
-            }
-        }
+        let mut encrypted = output_cur.into_inner().into_inner();
+        let (parsed, _) = read_header(&mut Cursor::new(&encrypted)).expect("read header");
+        let ParsedHeader::V1(header) = parsed;
+
+        assert_eq!(header.keyslots().len(), 1);
+        assert_eq!(encrypted.len(), HEADER_LEN + b"Hello world".len() + 16);
+
+        encrypted.drain(..HEADER_LEN);
+        assert_eq!(encrypted.len(), b"Hello world".len() + 16);
     }
 
     #[test]
-    fn should_encrypt_content_with_v5_version() {
-        let mut input_content = b"Hello world";
-        let input_cur = RefCell::new(Cursor::new(&mut input_content));
+    fn should_save_v1_header_separately() {
+        let input_cur = RefCell::new(Cursor::new(b"Hello world".to_vec()));
+        let output_cur = RefCell::new(Cursor::new(Vec::new()));
+        let output_header_cur = RefCell::new(Cursor::new(Vec::new()));
 
-        let mut output_content = vec![];
-        let output_cur = RefCell::new(Cursor::new(&mut output_content));
-
-        let req = Request {
-            reader: &input_cur,
-            writer: &output_cur,
-            header_writer: None,
-            raw_key: Protected::new(PASSWORD.to_vec()),
-            header_type: HeaderType {
-                version: HeaderVersion::V5,
-                algorithm: Algorithm::XChaCha20Poly1305,
-                mode: Mode::StreamMode,
-            },
-            hashing_algorithm: HashingAlgorithm::Blake3Balloon(5),
-        };
-
-        match execute(req) {
-            Ok(()) => {
-                assert_eq!(output_content, V5_ENCRYPTED_CONTENT.to_vec());
-            }
-            Err(e) => {
-                println!("{e:?}");
-                unreachable!()
-            }
-        }
-    }
-
-    #[test]
-    fn should_save_header_separately() {
-        let mut input_content = b"Hello world";
-        let input_cur = RefCell::new(Cursor::new(&mut input_content));
-
-        let mut output_content = vec![];
-        let output_cur = RefCell::new(Cursor::new(&mut output_content));
-
-        let mut output_header = vec![];
-        let output_header_cur = RefCell::new(Cursor::new(&mut output_header));
-
-        let req = Request {
+        execute(Request {
             reader: &input_cur,
             writer: &output_cur,
             header_writer: Some(&output_header_cur),
             raw_key: Protected::new(PASSWORD.to_vec()),
-            header_type: HeaderType {
-                version: HeaderVersion::V5,
-                algorithm: Algorithm::XChaCha20Poly1305,
-                mode: Mode::StreamMode,
-            },
-            hashing_algorithm: HashingAlgorithm::Blake3Balloon(5),
-        };
+            kdf: Kdf::Blake3Balloon,
+        })
+        .expect("encrypt detached");
 
-        match execute(req) {
-            Ok(()) => {
-                assert_eq!(output_content, V5_ENCRYPTED_FULL_DETACHED_CONTENT.to_vec());
-                assert_eq!(output_header, V5_ENCRYPTED_DETACHED_HEADER.to_vec());
-            }
-            Err(e) => {
-                println!("{e:?}");
-                unreachable!()
-            }
-        }
+        let output_content = output_cur.into_inner().into_inner();
+        let output_header = output_header_cur.into_inner().into_inner();
+        let (parsed, _) =
+            read_header(&mut Cursor::new(&output_header)).expect("read detached header");
+        let ParsedHeader::V1(header) = parsed;
+
+        assert_eq!(header.keyslots().len(), 1);
+        assert_eq!(output_header.len(), HEADER_LEN);
+        assert_eq!(output_content.len(), b"Hello world".len() + 16);
     }
 }

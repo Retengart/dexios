@@ -1,8 +1,8 @@
-//! This provides functionality for deleting a key from a header that adheres to
-//! the Dexios format and uses a version >= V5.
+//! This provides functionality for deleting a key from a Dexios V1 header.
 
 use super::Error;
-use core::header::legacy::{Header, HeaderVersion};
+use core::header::common::HEADER_LEN;
+use core::header::{ParsedHeader, read_header};
 use core::protected::Protected;
 use std::cell::RefCell;
 use std::io::Seek;
@@ -20,42 +20,27 @@ pub fn execute<RW>(req: Request<'_, RW>) -> Result<(), Error>
 where
     RW: Read + Write + Seek,
 {
-    let (header, _) =
-        Header::deserialize(&mut *req.handle.borrow_mut()).map_err(|_| Error::HeaderDeserialize)?;
-
-    if header.header_type.version < HeaderVersion::V5 {
-        return Err(Error::Unsupported);
-    }
-
-    let header_size: i64 = header
-        .get_size()
-        .try_into()
-        .map_err(|_| Error::HeaderSizeParse)?;
+    let (parsed, _) =
+        read_header(&mut *req.handle.borrow_mut()).map_err(|_| Error::HeaderDeserialize)?;
+    let ParsedHeader::V1(header) = parsed;
 
     req.handle
         .borrow_mut()
-        .seek(std::io::SeekFrom::Current(-header_size))
+        .seek(std::io::SeekFrom::Current(
+            -i64::try_from(HEADER_LEN).map_err(|_| Error::HeaderSizeParse)?,
+        ))
         .map_err(|_| Error::Seek)?;
 
     // this gets modified, then any changes from below are written at the end
-    let mut keyslots = header.keyslots.clone().unwrap();
+    let mut keyslots = header.keyslots().to_vec();
 
     // all of these functions need either the master key, or the index
-    let (_, index) = super::decrypt_v5_master_key_with_index(
-        &keyslots,
-        req.raw_key_old,
-        &header.header_type.algorithm,
-    )?;
+    let (_, index) = super::decrypt_v1_master_key_with_index(&keyslots, req.raw_key_old)?;
 
     keyslots.remove(index);
 
-    // recreate header and inherit everything (except keyslots)
-    let header_new = Header {
-        nonce: header.nonce,
-        salt: header.salt,
-        keyslots: Some(keyslots),
-        header_type: header.header_type,
-    };
+    let header_new = core::header::v1::V1Header::new(*header.payload_nonce(), keyslots)
+        .map_err(|_| Error::HeaderWrite)?;
 
     // write the header to the handle
     header_new

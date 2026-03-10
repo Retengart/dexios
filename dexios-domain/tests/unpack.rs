@@ -4,8 +4,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use core::header::legacy::{HashingAlgorithm, HeaderType, HeaderVersion};
-use core::primitives::legacy::{Algorithm, Mode};
+use core::kdf::Kdf;
 use core::protected::Protected;
 use dexios_domain::encrypt;
 use dexios_domain::storage::{FileStorage, Storage};
@@ -83,12 +82,7 @@ fn encrypt_archive(input_path: &Path, output_path: &Path) {
         writer: &output,
         header_writer: None,
         raw_key: Protected::new(PASSWORD.to_vec()),
-        header_type: HeaderType {
-            version: HeaderVersion::V5,
-            algorithm: Algorithm::XChaCha20Poly1305,
-            mode: Mode::StreamMode,
-        },
-        hashing_algorithm: HashingAlgorithm::Blake3Balloon(5),
+        kdf: Kdf::Blake3Balloon,
     })
     .unwrap();
 

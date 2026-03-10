@@ -1,6 +1,5 @@
 use core::header::common::HEADER_LEN;
-use core::header::legacy::{HashingAlgorithm, Header, HeaderType, HeaderVersion};
-use core::primitives::legacy::{Algorithm, Mode};
+use core::kdf::Kdf;
 use core::protected::Protected;
 use dexios_domain::encrypt;
 use std::cell::RefCell;
@@ -44,29 +43,10 @@ fn encrypt_must_write_the_full_embedded_header() {
         writer: &output,
         header_writer: None,
         raw_key: Protected::new(b"12345678".to_vec()),
-        header_type: HeaderType {
-            version: HeaderVersion::V5,
-            algorithm: Algorithm::XChaCha20Poly1305,
-            mode: Mode::StreamMode,
-        },
-        hashing_algorithm: HashingAlgorithm::Blake3Balloon(5),
+        kdf: Kdf::Blake3Balloon,
     })
     .expect("encrypt");
 
-    let header = Header {
-        header_type: HeaderType {
-            version: HeaderVersion::V5,
-            algorithm: Algorithm::XChaCha20Poly1305,
-            mode: Mode::StreamMode,
-        },
-        nonce: vec![0u8; 20],
-        salt: None,
-        keyslots: Some(vec![]),
-    };
-    assert_eq!(
-        usize::try_from(header.get_size()).expect("header size fits in usize"),
-        HEADER_LEN
-    );
     let expected_len = HEADER_LEN + b"Hello world".len() + 16;
 
     assert_eq!(output.borrow().len(), expected_len);

@@ -1,5 +1,7 @@
 use std::io::{Read, Write};
 
+use crate::kdf::Kdf;
+
 use super::common::{
     Aad, HEADER_LEN, HEADER_STATIC_LEN, HeaderReadError, HeaderWriteError, KEYSLOT_LEN,
     KeyslotNonce, MAGIC, MAX_KEYSLOTS, PayloadNonce, Salt, VERSION_V1,
@@ -28,6 +30,24 @@ impl KeyslotKdf {
     }
 }
 
+impl From<Kdf> for KeyslotKdf {
+    fn from(value: Kdf) -> Self {
+        match value {
+            Kdf::Blake3Balloon => Self::Blake3Balloon,
+            Kdf::Argon2id => Self::Argon2id,
+        }
+    }
+}
+
+impl From<KeyslotKdf> for Kdf {
+    fn from(value: KeyslotKdf) -> Self {
+        match value {
+            KeyslotKdf::Blake3Balloon => Self::Blake3Balloon,
+            KeyslotKdf::Argon2id => Self::Argon2id,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct V1Keyslot {
     kdf: KeyslotKdf,
@@ -50,6 +70,26 @@ impl V1Keyslot {
             nonce,
             salt,
         }
+    }
+
+    #[must_use]
+    pub const fn kdf(&self) -> KeyslotKdf {
+        self.kdf
+    }
+
+    #[must_use]
+    pub const fn encrypted_master_key(&self) -> &[u8; 48] {
+        &self.encrypted_master_key
+    }
+
+    #[must_use]
+    pub const fn nonce(&self) -> &KeyslotNonce {
+        &self.nonce
+    }
+
+    #[must_use]
+    pub const fn salt(&self) -> &Salt {
+        &self.salt
     }
 
     fn serialize_into(&self, bytes: &mut Vec<u8>) {
