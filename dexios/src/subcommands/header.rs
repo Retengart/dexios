@@ -1,13 +1,16 @@
 use std::{
     cell::RefCell,
     fs::{File, OpenOptions},
+    io::Seek,
 };
 
 use crate::cli::prompt::overwrite_check;
 use crate::global::states::ForceMode;
 use anyhow::{Context, Result};
-use core::header::legacy::HashingAlgorithm;
-use core::header::legacy::{Header, HeaderVersion};
+use core::header::legacy::Header as LegacyHeader;
+use core::header::legacy::HeaderVersion as LegacyHeaderVersion;
+use core::header::v1::KeyslotKdf;
+use core::header::{ParsedHeader, read_header};
 use domain::storage::Storage;
 use domain::utils::hex_encode;
 
@@ -15,39 +18,56 @@ pub fn details(input: &str) -> Result<()> {
     let mut input_file =
         File::open(input).with_context(|| format!("Unable to open input file: {input}"))?;
 
-    let header_result = Header::deserialize(&mut input_file);
+    if let Ok((parsed, aad)) = read_header(&mut input_file) {
+        let ParsedHeader::V1(header) = parsed;
+        println!("Header version: V1");
+        println!("Cipher suite: XChaCha20-Poly1305 / LE31 stream");
+        println!(
+            "Payload nonce: {} (hex)",
+            hex_encode(header.payload_nonce().as_bytes())
+        );
+        println!("AAD: {} (hex)", hex_encode(aad.as_bytes()));
 
-    if header_result.is_err() {
-        return Err(anyhow::anyhow!(
-            "This does not seem like a valid Dexios header"
-        ));
+        for (i, keyslot) in header.keyslots().iter().enumerate() {
+            let kdf = match keyslot.kdf() {
+                KeyslotKdf::Blake3Balloon => "BLAKE3-Balloon",
+                KeyslotKdf::Argon2id => "Argon2id",
+            };
+            println!("Keyslot {i}:");
+            println!("  KDF: {kdf}");
+            println!("  Salt: {} (hex)", hex_encode(keyslot.salt().as_bytes()));
+            println!(
+                "  Master Key: {} (hex, encrypted)",
+                hex_encode(keyslot.encrypted_master_key())
+            );
+            println!(
+                "  Master Key Nonce: {} (hex)",
+                hex_encode(keyslot.nonce().as_bytes())
+            );
+        }
+
+        return Ok(());
     }
 
-    let (header, aad) = header_result.unwrap();
+    input_file.rewind().with_context(|| {
+        format!("Unable to rewind input file while reading legacy header: {input}")
+    })?;
+    let (header, aad) = LegacyHeader::deserialize(&mut input_file)
+        .map_err(|_| anyhow::anyhow!("This does not seem like a valid Dexios header"))?;
 
-    println!("Header version: {}", header.header_type.version);
-    println!("Encryption algorithm: {}", header.header_type.algorithm);
-    println!("Encryption mode: {}", header.header_type.mode);
-    println!("Encryption nonce: {} (hex)", hex_encode(&header.nonce));
+    println!("Header version: {} (legacy)", header.header_type.version);
+    println!("Cipher suite: legacy / compatibility");
+    println!("Payload nonce: {} (hex)", hex_encode(&header.nonce));
     println!("AAD: {} (hex)", hex_encode(&aad));
 
     match header.header_type.version {
-        HeaderVersion::V1 => {
+        LegacyHeaderVersion::V1 | LegacyHeaderVersion::V2 | LegacyHeaderVersion::V3 => {
             println!("Salt: {} (hex)", hex_encode(&header.salt.unwrap()));
-            println!("Hashing Algorithm: {}", HashingAlgorithm::Argon2id(1));
         }
-        HeaderVersion::V2 => {
-            println!("Salt: {} (hex)", hex_encode(&header.salt.unwrap()));
-            println!("Hashing Algorithm: {}", HashingAlgorithm::Argon2id(2));
-        }
-        HeaderVersion::V3 => {
-            println!("Salt: {} (hex)", hex_encode(&header.salt.unwrap()));
-            println!("Hashing Algorithm: {}", HashingAlgorithm::Argon2id(3));
-        }
-        HeaderVersion::V4 | HeaderVersion::V5 => {
+        LegacyHeaderVersion::V4 | LegacyHeaderVersion::V5 => {
             for (i, keyslot) in header.keyslots.unwrap().iter().enumerate() {
                 println!("Keyslot {i}:");
-                println!("  Hashing Algorithm: {}", keyslot.hash_algorithm);
+                println!("  KDF: {}", keyslot.hash_algorithm);
                 println!("  Salt: {} (hex)", hex_encode(&keyslot.salt));
                 println!(
                     "  Master Key: {} (hex, encrypted)",

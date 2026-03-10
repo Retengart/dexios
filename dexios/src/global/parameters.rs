@@ -7,7 +7,6 @@ use crate::global::structs::PackParams;
 use anyhow::{Context, Result};
 use clap::ArgMatches;
 use core::header::legacy::{ARGON2ID_LATEST, BLAKE3BALLOON_LATEST, HashingAlgorithm};
-use core::primitives::legacy::Algorithm;
 
 use super::states::{Compression, DirectoryMode, Key, KeyParams, PrintMode};
 use super::structs::KeyManipulationParams;
@@ -84,15 +83,6 @@ pub fn hashing_algorithm(sub_matches: &ArgMatches) -> HashingAlgorithm {
         HashingAlgorithm::Argon2id(ARGON2ID_LATEST)
     } else {
         HashingAlgorithm::Blake3Balloon(BLAKE3BALLOON_LATEST)
-    }
-}
-
-// gets the algorithm, primarily for encrypt functions
-pub fn algorithm(sub_matches: &ArgMatches) -> Algorithm {
-    if sub_matches.get_flag("aes") {
-        Algorithm::Aes256Gcm
-    } else {
-        Algorithm::XChaCha20Poly1305
     }
 }
 

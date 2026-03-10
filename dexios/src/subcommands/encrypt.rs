@@ -4,7 +4,6 @@ use crate::global::structs::CryptoParams;
 use anyhow::Result;
 use core::header::legacy::HashingAlgorithm;
 use core::kdf::Kdf;
-use core::primitives::legacy::Algorithm;
 use std::sync::Arc;
 
 use domain::storage::Storage;
@@ -27,7 +26,6 @@ pub fn stream_mode(
     input: &str,
     output: &str,
     params: &CryptoParams,
-    _algorithm: Algorithm,
 ) -> Result<()> {
     // TODO: It is necessary to raise it to a higher level
     let stor = Arc::new(domain::storage::FileStorage);

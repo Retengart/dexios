@@ -36,7 +36,6 @@ pub struct Request<'a> {
     pub output_file: &'a str,
     pub pack_params: PackParams,
     pub crypto_params: CryptoParams,
-    pub algorithm: Algorithm,
 }
 
 #[cfg(windows)]
@@ -371,7 +370,7 @@ pub fn execute(req: &Request) -> Result<()> {
             header_type: HeaderType {
                 version: HEADER_VERSION,
                 mode: Mode::StreamMode,
-                algorithm: req.algorithm,
+                algorithm: Algorithm::XChaCha20Poly1305,
             },
             hashing_algorithm: req.crypto_params.hashing_algorithm,
         },

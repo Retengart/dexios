@@ -6,8 +6,8 @@ use clap::ArgMatches;
 
 use crate::global::{
     parameters::{
-        algorithm, forcemode, get_param, get_params, key_manipulation_params,
-        pack_params, parameter_handler,
+        forcemode, get_param, get_params, key_manipulation_params, pack_params,
+        parameter_handler,
     },
     states::{Key, KeyParams},
 };
@@ -37,14 +37,11 @@ pub fn delete_path(path: &str) -> Result<()> {
 
 pub fn encrypt(sub_matches: &ArgMatches) -> Result<()> {
     let params = parameter_handler(sub_matches)?;
-    let algorithm = algorithm(sub_matches);
 
-    // stream mode is the only mode to encrypt (v8.5.0+)
     encrypt::stream_mode(
         &get_param("input", sub_matches)?,
         &get_param("output", sub_matches)?,
         &params,
-        algorithm,
     )
 }
 
@@ -61,14 +58,12 @@ pub fn decrypt(sub_matches: &ArgMatches) -> Result<()> {
 
 pub fn pack(sub_matches: &ArgMatches) -> Result<()> {
     let (crypto_params, pack_params) = pack_params(sub_matches)?;
-    let algorithm = algorithm(sub_matches);
 
     pack::execute(&pack::Request {
         input_file: &get_params("input", sub_matches)?,
         output_file: &get_param("output", sub_matches)?,
         pack_params,
         crypto_params,
-        algorithm,
     })
 }
 

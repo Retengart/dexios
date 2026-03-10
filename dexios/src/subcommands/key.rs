@@ -3,9 +3,9 @@ use crate::global::states::Key;
 use crate::global::states::PasswordState;
 use crate::global::structs::KeyManipulationParams;
 use anyhow::{Context, Result};
-use core::header::legacy::{Header, HeaderVersion};
 use core::header::legacy::HashingAlgorithm;
 use core::kdf::Kdf;
+use core::header::read_header;
 use std::cell::RefCell;
 use std::fs::OpenOptions;
 use std::io::Seek;
@@ -28,13 +28,9 @@ pub fn add(input: &str, params: &KeyManipulationParams) -> Result<()> {
             .with_context(|| format!("Unable to open input file: {input}"))?,
     );
 
-    let (header, _) = Header::deserialize(&mut *input_file.borrow_mut())?;
-
-    if header.header_type.version < HeaderVersion::V5 {
-        return Err(anyhow::anyhow!(
-            "This function is not supported on header versions below V5"
-        ));
-    }
+    read_header(&mut *input_file.borrow_mut()).map_err(|_| {
+        anyhow::anyhow!("This function currently only supports Dexios V1 headers")
+    })?;
 
     input_file
         .borrow_mut()
@@ -72,13 +68,9 @@ pub fn change(input: &str, params: &KeyManipulationParams) -> Result<()> {
             .with_context(|| format!("Unable to open input file: {input}"))?,
     );
 
-    let (header, _) = Header::deserialize(&mut *input_file.borrow_mut())?;
-
-    if header.header_type.version < HeaderVersion::V5 {
-        return Err(anyhow::anyhow!(
-            "This function is not supported on header versions below V5"
-        ));
-    }
+    read_header(&mut *input_file.borrow_mut()).map_err(|_| {
+        anyhow::anyhow!("This function currently only supports Dexios V1 headers")
+    })?;
 
     input_file
         .borrow_mut()
@@ -116,13 +108,9 @@ pub fn delete(input: &str, key_old: &Key) -> Result<()> {
             .with_context(|| format!("Unable to open input file: {input}"))?,
     );
 
-    let (header, _) = Header::deserialize(&mut *input_file.borrow_mut())?;
-
-    if header.header_type.version < HeaderVersion::V5 {
-        return Err(anyhow::anyhow!(
-            "This function is not supported on header versions below V5"
-        ));
-    }
+    read_header(&mut *input_file.borrow_mut()).map_err(|_| {
+        anyhow::anyhow!("This function currently only supports Dexios V1 headers")
+    })?;
 
     input_file
         .borrow_mut()
@@ -151,13 +139,9 @@ pub fn verify(input: &str, key: &Key) -> Result<()> {
             .with_context(|| format!("Unable to open input file: {input}"))?,
     );
 
-    let (header, _) = Header::deserialize(&mut *input_file.borrow_mut())?;
-
-    if header.header_type.version < HeaderVersion::V5 {
-        return Err(anyhow::anyhow!(
-            "This function is not supported on header versions below V5"
-        ));
-    }
+    read_header(&mut *input_file.borrow_mut()).map_err(|_| {
+        anyhow::anyhow!("This function currently only supports Dexios V1 headers")
+    })?;
 
     input_file
         .borrow_mut()

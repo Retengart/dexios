@@ -77,10 +77,11 @@ pub fn build_cli() -> Command {
                 .help("Force all actions"),
         )
         .arg(
-            Arg::new("aes")
-                .long("aes")
+            Arg::new("force")
+                .short('f')
+                .long("force")
                 .action(ArgAction::SetTrue)
-                .help("Use AES-256-GCM for encryption"),
+                .help("Force all actions"),
         );
 
     let decrypt = Command::new("decrypt")
@@ -245,12 +246,6 @@ pub fn build_cli() -> Command {
                     .long("force")
                     .action(ArgAction::SetTrue)
                     .help("Force all actions"),
-            )
-            .arg(
-                Arg::new("aes")
-                    .long("aes")
-                    .action(ArgAction::SetTrue)
-                    .help("Use AES-256-GCM for encryption"),
             )
         )
         .subcommand(
