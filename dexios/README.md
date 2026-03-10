@@ -10,8 +10,8 @@ Current defaults for new encrypted files:
 
 - `XChaCha20-Poly1305`
 - `BLAKE3-Balloon`
-- V5 headers
-- stream-mode encryption
+- V1 headers
+- LE31 stream encryption
 
 ## Install
 
@@ -65,9 +65,9 @@ Current precedence is:
 
 ## Compatibility Notes
 
-- New encryption uses stream mode only.
-- Older memory-mode files are still supported for decryption.
-- `Deoxys-II-256` is recognized for backward compatibility, but the CLI does not expose it as a new-encryption option.
+- The normal encryption and key-management surface is V1-only.
+- `header details` is V1-first and may still inspect legacy headers as a secondary compatibility path.
+- The CLI no longer exposes alternate cipher selection or secure-erase flags.
 
 ## More Information
 

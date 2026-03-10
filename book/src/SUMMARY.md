@@ -8,7 +8,7 @@
 - [Usage Examples](./Usage-Examples.md)
 - [Technical Details](technical-details/README.md)
   - [Keys](technical-details/Keys.md)
-  - [Secure Erase](technical-details/Secure-Erase.md)
+  - [Delete Semantics](technical-details/Secure-Erase.md)
   - [Directory Packing](technical-details/Directory-Packing.md)
   - [Performance Notes](technical-details/Performance-Notes.md)
 - [Dexios-Core](dexios-core/README.md)

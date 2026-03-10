@@ -11,20 +11,10 @@ The current code supports two hashing families:
 
 For new files:
 
-- the default is `Blake3Balloon(5)`
-- `--argon` switches new encryption to `Argon2id(3)`
+- the default is `Blake3Balloon`
+- `--argon` switches new encryption to `Argon2id`
 
-For decryption and key manipulation, Dexios reads the required algorithm/version from the header or keyslot metadata.
-
-## Legacy Mapping
-
-Supported parameter-version mapping in the current code:
-
-- `Argon2id(1)` for V1
-- `Argon2id(2)` for V2
-- `Argon2id(3)` for V3 and new `--argon` output
-- `Blake3Balloon(4)` for V4
-- `Blake3Balloon(5)` for V5 and current default output
+For decryption and key manipulation, Dexios reads the required KDF family from the current keyslot metadata.
 
 ## Handling the Hash
 

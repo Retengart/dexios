@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-f750f07e.js";
+            window.path_to_searchindex_js = "../searchindex-a1a458d6.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-cfad17b7.js"></script>
+        <script src="../toc-73b73724.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -175,102 +175,55 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h2 id="headers"><a class="header" href="#headers">Headers</a></h2>
-<p>Dexios uses versioned headers. <code>dexios-core</code> can deserialize legacy headers from V1 through V5, while current write paths target <strong>V5</strong>.</p>
-<h2 id="version-tags-and-sizes"><a class="header" href="#version-tags-and-sizes">Version Tags and Sizes</a></h2>
-<p>Each header starts with a 2-byte version tag:</p>
+<p>The normal writable Dexios format is <strong>V1</strong>.</p>
+<p><code>dexios-core</code> still contains explicit legacy parsing helpers, but new encryption, new key management, and the normal CLI surface are centered on V1.</p>
+<h2 id="v1-layout"><a class="header" href="#v1-layout">V1 Layout</a></h2>
+<p>The V1 header is <strong>416 bytes</strong> long.</p>
+<p>Its first <strong>32 bytes</strong> are the static header region and also the payload AAD:</p>
 <ul>
-<li>V1: <code>[0xDE, 0x01]</code></li>
-<li>V2: <code>[0xDE, 0x02]</code></li>
-<li>V3: <code>[0xDE, 0x03]</code></li>
-<li>V4: <code>[0xDE, 0x04]</code></li>
-<li>V5: <code>[0xDE, 0x05]</code></li>
+<li>4-byte magic: <code>DXIO</code></li>
+<li>2-byte version field: <code>0x0001</code></li>
+<li>1-byte keyslot count</li>
+<li>1 reserved byte</li>
+<li>20-byte payload nonce</li>
+<li>4 reserved trailing bytes</li>
 </ul>
-<p>Current header sizes:</p>
+<p>Those first 32 bytes are authenticated as AAD during payload encryption and decryption.</p>
+<p>After the static region comes space for up to <strong>4 keyslots</strong>, each <strong>96 bytes</strong> long.</p>
+<p>Each V1 keyslot contains:</p>
 <ul>
-<li>V1-V3: 64 bytes</li>
-<li>V4: 128 bytes</li>
-<li>V5: 416 bytes</li>
-</ul>
-<p>The next fields after the version tag are:</p>
-<ul>
-<li>a 2-byte algorithm tag</li>
-<li>a 2-byte mode tag</li>
-</ul>
-<h2 id="current-format-v5"><a class="header" href="#current-format-v5">Current Format: V5</a></h2>
-<p>V5 is the current format used for new encryption.</p>
-<p>The first 32 bytes are the static header region:</p>
-<ul>
-<li>2-byte version tag</li>
-<li>2-byte algorithm tag</li>
-<li>2-byte mode tag</li>
-<li>stream/data nonce</li>
-<li>zero padding up to 32 bytes total</li>
-</ul>
-<p>Those first 32 bytes are also the AAD used for V5 payload encryption/decryption.</p>
-<p>After the static region comes space for up to <strong>4 keyslots</strong>, each exactly <strong>96 bytes</strong> long.</p>
-<p>Each V5 keyslot contains:</p>
-<ul>
-<li>a 2-byte keyslot identifier</li>
+<li>a 2-byte KDF identifier</li>
 <li>a 48-byte encrypted master key</li>
-<li>a memory-mode nonce for the wrapped master key</li>
-<li>zero padding up to byte 74 of the keyslot</li>
+<li>a 24-byte keyslot nonce</li>
 <li>a 16-byte salt</li>
-<li>6 trailing zero bytes</li>
+<li>6 reserved zero bytes</li>
 </ul>
-<p>Unused keyslot regions are serialized as zero-filled 96-byte blocks.</p>
-<h3 id="keyslot-identifiers"><a class="header" href="#keyslot-identifiers">Keyslot Identifiers</a></h3>
-<p>The keyslot identifier does more than say “this is a keyslot”. It also encodes the hashing algorithm and parameter version used to derive the wrapping key.</p>
-<p>Current identifiers recognized by the code:</p>
+<p>Unused keyslot regions are serialized as all-zero 96-byte blocks.</p>
+<h2 id="kdf-identifiers"><a class="header" href="#kdf-identifiers">KDF Identifiers</a></h2>
+<p>The current V1 format recognizes:</p>
 <ul>
-<li><code>[0xDF, 0xA1]</code> = <code>Argon2id(1)</code></li>
-<li><code>[0xDF, 0xA2]</code> = <code>Argon2id(2)</code></li>
-<li><code>[0xDF, 0xA3]</code> = <code>Argon2id(3)</code></li>
-<li><code>[0xDF, 0xB4]</code> = <code>Blake3Balloon(4)</code></li>
-<li><code>[0xDF, 0xB5]</code> = <code>Blake3Balloon(5)</code></li>
+<li><code>[0xDF, 0x01]</code> = <code>Blake3Balloon</code></li>
+<li><code>[0xDF, 0x02]</code> = <code>Argon2id</code></li>
 </ul>
-<h2 id="legacy-formats"><a class="header" href="#legacy-formats">Legacy Formats</a></h2>
-<h3 id="v1-v3"><a class="header" href="#v1-v3">V1-V3</a></h3>
-<p>V1-V3 are legacy 64-byte headers. They derive the data key directly from the user’s key material instead of storing a wrapped random master key in keyslots.</p>
-<ul>
-<li>V1 and V3 store a salt, mode, algorithm, nonce, and padding</li>
-<li>V2 also includes a legacy truncated HMAC field</li>
-<li>V3 authenticates the full header bytes as AAD during modern deserialization</li>
-</ul>
-<h3 id="v4"><a class="header" href="#v4">V4</a></h3>
-<p>V4 is the transitional master-key format. It stores:</p>
-<ul>
-<li>the static header fields</li>
-<li>a single wrapped master key</li>
-<li>a memory-mode nonce for that wrapped master key</li>
-<li>a salt associated with <code>Blake3Balloon(4)</code></li>
-</ul>
-<p>V4 has one effective keyslot, but not the full 4-slot V5 layout.</p>
-<h2 id="aad"><a class="header" href="#aad">AAD</a></h2>
-<p>AAD behavior depends on the header version:</p>
-<ul>
-<li>V1-V2: no AAD</li>
-<li>V3: the full serialized header</li>
-<li>V4: the static header bytes plus the trailing padding after the wrapped-key nonce</li>
-<li>V5: the first 32 bytes only</li>
-</ul>
-<p>V5 intentionally excludes keyslots from AAD so key management operations can rewrite keyslots without re-encrypting the file payload.</p>
 <h2 id="key-manipulation"><a class="header" href="#key-manipulation">Key Manipulation</a></h2>
-<p><code>key add</code>, <code>key change</code>, and <code>key del</code> operate on V5 headers only.</p>
+<p><code>key add</code>, <code>key change</code>, <code>key del</code>, and <code>key verify</code> now operate on V1 headers.</p>
 <p>Important behavior:</p>
 <ul>
-<li><code>key add</code> appends a new keyslot and fails if 4 keyslots already exist</li>
-<li><code>key change</code> rewrites the first matching keyslot</li>
-<li><code>key del</code> removes the first matching keyslot</li>
-<li>matching is determined by successfully decrypting the master key with the supplied old key material</li>
+<li>up to 4 keyslots may be populated</li>
+<li>matching is determined by successfully decrypting the wrapped master key</li>
+<li><code>change</code> and <code>del</code> affect the first matching keyslot</li>
 </ul>
-<p>If multiple keyslots correspond to equivalent credentials, <code>change</code> and <code>del</code> affect the first match only.</p>
+<h2 id="legacy-notes"><a class="header" href="#legacy-notes">Legacy Notes</a></h2>
+<p>Legacy header parsing still exists as an explicit compatibility path. It is mainly relevant for inspection and migration-adjacent code, not for the normal product surface.</p>
+<p><code>header details</code> is V1-first and only falls back to legacy parsing when the input is not a V1 header.</p>
 <h2 id="header-operations"><a class="header" href="#header-operations">Header Operations</a></h2>
-<h3 id="stripping"><a class="header" href="#stripping">Stripping</a></h3>
-<p><code>header strip</code> deserializes the header, rewinds the file, and overwrites the header region with zeroes. The number of zeroed bytes depends on the detected header version.</p>
-<h3 id="dumping"><a class="header" href="#dumping">Dumping</a></h3>
-<p><code>header dump</code> deserializes a valid Dexios header and writes the canonical serialized bytes to the output.</p>
-<h3 id="restoring"><a class="header" href="#restoring">Restoring</a></h3>
-<p><code>header restore</code> only works if the target file begins with enough zero bytes to hold the header being restored. Detached-header outputs usually do not reserve that space, so restoration is intentionally limited.</p>
+<p>Dexios still supports:</p>
+<ul>
+<li>dumping headers</li>
+<li>stripping headers by zeroing the serialized header region</li>
+<li>restoring headers when the target file already begins with enough zero bytes</li>
+</ul>
+<p>Detached-header outputs usually do not reserve enough zero bytes for restoration, so restore remains a specialized operation rather than a normal workflow.</p>
 
                     </main>
 

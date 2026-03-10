@@ -1,41 +1,28 @@
-## Secure Erase
+## Delete Semantics
 
-Dexios implements a best-effort overwrite-and-delete workflow. It should not be treated as a guarantee of physical erasure, especially on SSDs and other flash-backed storage.
+Dexios no longer exposes secure-erase behavior as a product feature.
 
-## Current Erase Flow
+Instead, the CLI offers plain delete-after-success flags:
 
-For a normal file erase request, Dexios:
+- `encrypt --delete-input`
+- `decrypt --delete-input`
+- `unpack --delete-input`
+- `pack --delete-source`
 
-1. opens the file for overwriting
-2. performs the requested number of random overwrite passes
-3. performs one final zero pass
-4. truncates and removes the file through the storage layer
+## Contract
 
-The user-facing default is **1 random pass** followed by the zero pass.
+The current contract is intentionally narrow:
 
-You can request a different pass count with:
+1. complete the requested workflow successfully
+2. flush and close the produced outputs
+3. delete the selected source inputs
 
-```bash
-dexios erase --passes=3 file.txt
-```
+If the workflow fails, the source inputs remain in place.
 
-or through `--erase[=N]` on encrypt/decrypt/unpack workflows.
+## Why Secure Erase Was Removed
 
-## Directories
-
-When a directory is erased through the CLI workflow, Dexios traverses it, erases regular files, and then removes the directory tree.
-
-## Limits
-
-- SSDs and flash media may retain older data because of wear leveling and controller behavior.
-- More passes increase I/O cost and media wear.
-- Dexios does not claim certified sanitization behavior.
+Overwrite passes are not a trustworthy abstraction on SSDs and other flash-backed storage. Dexios now prefers a simpler and more honest promise: delete sources after success, without claiming physical sanitization.
 
 ## Temporary Archives
 
-The current implementation also uses the overwrite helper for temporary plaintext zip artifacts:
-
-- `pack` currently cleans its temporary archive with **2 random passes** plus the final zero pass
-- `unpack` currently cleans its temporary archive with **1 random pass** plus the final zero pass
-
-Those are implementation details of the current release, not long-term format guarantees.
+`pack` and `unpack` still use temporary plaintext zip artifacts internally, but those artifacts are now handled as ordinary temporary files rather than overwritten repeatedly before deletion.

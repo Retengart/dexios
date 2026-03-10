@@ -13,17 +13,15 @@ The current workspace is split into four crates:
 - `dexios-domain`: the higher-level workflows used by the CLI
 - `dexios-gui`: an experimental GUI crate
 
-For new encryption, Dexios currently writes V5 headers and uses stream mode. The default encryption algorithm is `XChaCha20-Poly1305`, with `AES-256-GCM` available via `--aes`. The default password hashing algorithm for new files is `BLAKE3-Balloon`; `argon2id` can be selected with `--argon`.
+For normal encryption, Dexios now writes V1 headers and uses one suite: `XChaCha20-Poly1305` with LE31 stream encryption. The default password hashing algorithm for new files is `BLAKE3-Balloon`; `argon2id` can be selected with `--argon`.
 
 ## Security Notices
 
 The RustCrypto `aes-gcm` and `chacha20poly1305` implementations used by Dexios are based on audited upstream crates. Dexios itself does not claim a full-project external audit.
 
-`Deoxys-II-256` is still recognized by the format and supported for decrypting older files, but the current CLI does not offer it as a choice for new encryption.
-
 Dexios uses authenticated encryption and authenticates header data through AEAD AAD. Integrity of encrypted payloads does not depend on the optional checksum output.
 
-Secure erase support is best effort only. On flash storage and SSDs, wear leveling means no software tool can guarantee physical erasure of previous contents.
+The current product surface does not offer secure-erase behavior. Instead, selected workflows can delete their source inputs after successful completion.
 
 ## The Defaults
 
@@ -37,7 +35,7 @@ uses the following defaults:
 
 - `XChaCha20-Poly1305`
 - `BLAKE3-Balloon` password hashing
-- V5 headers
+- V1 headers
 - stream encryption with 1 MiB blocks
 - protected in-memory handling of secret material
 - an embedded header unless `--header` is specified

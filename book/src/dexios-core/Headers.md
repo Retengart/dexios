@@ -1,122 +1,65 @@
 ## Headers
 
-Dexios uses versioned headers. `dexios-core` can deserialize legacy headers from V1 through V5, while current write paths target **V5**.
+The normal writable Dexios format is **V1**.
 
-## Version Tags and Sizes
+`dexios-core` still contains explicit legacy parsing helpers, but new encryption, new key management, and the normal CLI surface are centered on V1.
 
-Each header starts with a 2-byte version tag:
+## V1 Layout
 
-- V1: `[0xDE, 0x01]`
-- V2: `[0xDE, 0x02]`
-- V3: `[0xDE, 0x03]`
-- V4: `[0xDE, 0x04]`
-- V5: `[0xDE, 0x05]`
+The V1 header is **416 bytes** long.
 
-Current header sizes:
+Its first **32 bytes** are the static header region and also the payload AAD:
 
-- V1-V3: 64 bytes
-- V4: 128 bytes
-- V5: 416 bytes
+- 4-byte magic: `DXIO`
+- 2-byte version field: `0x0001`
+- 1-byte keyslot count
+- 1 reserved byte
+- 20-byte payload nonce
+- 4 reserved trailing bytes
 
-The next fields after the version tag are:
+Those first 32 bytes are authenticated as AAD during payload encryption and decryption.
 
-- a 2-byte algorithm tag
-- a 2-byte mode tag
+After the static region comes space for up to **4 keyslots**, each **96 bytes** long.
 
-## Current Format: V5
+Each V1 keyslot contains:
 
-V5 is the current format used for new encryption.
-
-The first 32 bytes are the static header region:
-
-- 2-byte version tag
-- 2-byte algorithm tag
-- 2-byte mode tag
-- stream/data nonce
-- zero padding up to 32 bytes total
-
-Those first 32 bytes are also the AAD used for V5 payload encryption/decryption.
-
-After the static region comes space for up to **4 keyslots**, each exactly **96 bytes** long.
-
-Each V5 keyslot contains:
-
-- a 2-byte keyslot identifier
+- a 2-byte KDF identifier
 - a 48-byte encrypted master key
-- a memory-mode nonce for the wrapped master key
-- zero padding up to byte 74 of the keyslot
+- a 24-byte keyslot nonce
 - a 16-byte salt
-- 6 trailing zero bytes
+- 6 reserved zero bytes
 
-Unused keyslot regions are serialized as zero-filled 96-byte blocks.
+Unused keyslot regions are serialized as all-zero 96-byte blocks.
 
-### Keyslot Identifiers
+## KDF Identifiers
 
-The keyslot identifier does more than say "this is a keyslot". It also encodes the hashing algorithm and parameter version used to derive the wrapping key.
+The current V1 format recognizes:
 
-Current identifiers recognized by the code:
-
-- `[0xDF, 0xA1]` = `Argon2id(1)`
-- `[0xDF, 0xA2]` = `Argon2id(2)`
-- `[0xDF, 0xA3]` = `Argon2id(3)`
-- `[0xDF, 0xB4]` = `Blake3Balloon(4)`
-- `[0xDF, 0xB5]` = `Blake3Balloon(5)`
-
-## Legacy Formats
-
-### V1-V3
-
-V1-V3 are legacy 64-byte headers. They derive the data key directly from the user's key material instead of storing a wrapped random master key in keyslots.
-
-- V1 and V3 store a salt, mode, algorithm, nonce, and padding
-- V2 also includes a legacy truncated HMAC field
-- V3 authenticates the full header bytes as AAD during modern deserialization
-
-### V4
-
-V4 is the transitional master-key format. It stores:
-
-- the static header fields
-- a single wrapped master key
-- a memory-mode nonce for that wrapped master key
-- a salt associated with `Blake3Balloon(4)`
-
-V4 has one effective keyslot, but not the full 4-slot V5 layout.
-
-## AAD
-
-AAD behavior depends on the header version:
-
-- V1-V2: no AAD
-- V3: the full serialized header
-- V4: the static header bytes plus the trailing padding after the wrapped-key nonce
-- V5: the first 32 bytes only
-
-V5 intentionally excludes keyslots from AAD so key management operations can rewrite keyslots without re-encrypting the file payload.
+- `[0xDF, 0x01]` = `Blake3Balloon`
+- `[0xDF, 0x02]` = `Argon2id`
 
 ## Key Manipulation
 
-`key add`, `key change`, and `key del` operate on V5 headers only.
+`key add`, `key change`, `key del`, and `key verify` now operate on V1 headers.
 
 Important behavior:
 
-- `key add` appends a new keyslot and fails if 4 keyslots already exist
-- `key change` rewrites the first matching keyslot
-- `key del` removes the first matching keyslot
-- matching is determined by successfully decrypting the master key with the supplied old key material
+- up to 4 keyslots may be populated
+- matching is determined by successfully decrypting the wrapped master key
+- `change` and `del` affect the first matching keyslot
 
-If multiple keyslots correspond to equivalent credentials, `change` and `del` affect the first match only.
+## Legacy Notes
+
+Legacy header parsing still exists as an explicit compatibility path. It is mainly relevant for inspection and migration-adjacent code, not for the normal product surface.
+
+`header details` is V1-first and only falls back to legacy parsing when the input is not a V1 header.
 
 ## Header Operations
 
-### Stripping
+Dexios still supports:
 
-`header strip` deserializes the header, rewinds the file, and overwrites the header region with zeroes. The number of zeroed bytes depends on the detected header version.
+- dumping headers
+- stripping headers by zeroing the serialized header region
+- restoring headers when the target file already begins with enough zero bytes
 
-### Dumping
-
-`header dump` deserializes a valid Dexios header and writes the canonical serialized bytes to the output.
-
-### Restoring
-
-`header restore` only works if the target file begins with enough zero bytes to hold the header being restored. Detached-header outputs usually do not reserve that space, so restoration is intentionally limited.
+Detached-header outputs usually do not reserve enough zero bytes for restoration, so restore remains a specialized operation rather than a normal workflow.

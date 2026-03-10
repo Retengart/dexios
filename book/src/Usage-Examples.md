@@ -10,14 +10,6 @@ dexios encrypt secret.txt secret.enc
 dexios decrypt secret.enc secret.txt
 ```
 
-## Use AES-256-GCM Instead of the Default
-
-```bash
-dexios encrypt --aes secret.txt secret.enc
-```
-
-You do not need to repeat `--aes` during decryption; the algorithm is stored in the header.
-
 ## Use a Keyfile
 
 ```bash
@@ -64,16 +56,16 @@ dexios encrypt --hash secret.txt secret.enc
 dexios decrypt --hash secret.enc secret.txt
 ```
 
-## Securely Erase the Input After Encrypting
+## Delete the Input After Encrypting
 
 ```bash
-dexios encrypt --erase secret.txt secret.enc
+dexios encrypt --delete-input secret.txt secret.enc
 ```
 
-To request more overwrite passes:
+## Delete the Encrypted Input After Decrypting
 
 ```bash
-dexios encrypt --erase=3 secret.txt secret.enc
+dexios decrypt --delete-input secret.enc secret.txt
 ```
 
 ## Hash Files Directly
@@ -98,4 +90,16 @@ dexios pack --zstd photos/ archive.enc
 
 ```bash
 dexios unpack archive.enc output-dir
+```
+
+Delete the encrypted archive after a successful unpack:
+
+```bash
+dexios unpack --delete-input archive.enc output-dir
+```
+
+Delete source directories after a successful pack:
+
+```bash
+dexios pack --delete-source photos/ archive.enc
 ```

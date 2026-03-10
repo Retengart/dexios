@@ -8,18 +8,18 @@ Dexios-Core is the reusable cryptographic and format crate behind Dexios.
 
 It provides:
 
-- versioned header parsing and serialization
-- stream and memory-mode cipher helpers
+- V1 header parsing and serialization
+- single-suite XChaCha20-Poly1305 helpers
 - key derivation helpers
 - protected secret handling through `Protected<>`
 
-The current latest writable format is V5.
+The current normal writable format is V1.
 
 ## Security Notes
 
-Dexios-Core uses modern AEAD-backed encryption primitives from the Rust ecosystem. The current CLI writes new files with `XChaCha20-Poly1305` by default and optionally `AES-256-GCM`.
+Dexios-Core uses modern AEAD-backed encryption primitives from the Rust ecosystem. The normal write path is built around one suite: `XChaCha20-Poly1305` with LE31 stream encryption.
 
-`Deoxys-II-256` is still represented in the core format for compatibility with older files, but the current CLI does not expose it for new encryption.
+Legacy parsing and compatibility helpers still exist internally under explicit legacy boundaries, but they are no longer the normal product surface.
 
 ## Documentation
 

@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-f750f07e.js";
+            window.path_to_searchindex_js = "searchindex-a1a458d6.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-cfad17b7.js"></script>
+        <script src="toc-73b73724.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -180,10 +180,6 @@
 <h2 id="decrypt-a-file"><a class="header" href="#decrypt-a-file">Decrypt a File</a></h2>
 <pre><code class="language-bash">dexios decrypt secret.enc secret.txt
 </code></pre>
-<h2 id="use-aes-256-gcm-instead-of-the-default"><a class="header" href="#use-aes-256-gcm-instead-of-the-default">Use AES-256-GCM Instead of the Default</a></h2>
-<pre><code class="language-bash">dexios encrypt --aes secret.txt secret.enc
-</code></pre>
-<p>You do not need to repeat <code>--aes</code> during decryption; the algorithm is stored in the header.</p>
 <h2 id="use-a-keyfile"><a class="header" href="#use-a-keyfile">Use a Keyfile</a></h2>
 <pre><code class="language-bash">dexios encrypt --keyfile keyfile secret.txt secret.enc
 </code></pre>
@@ -207,11 +203,11 @@
 </code></pre>
 <pre><code class="language-bash">dexios decrypt --hash secret.enc secret.txt
 </code></pre>
-<h2 id="securely-erase-the-input-after-encrypting"><a class="header" href="#securely-erase-the-input-after-encrypting">Securely Erase the Input After Encrypting</a></h2>
-<pre><code class="language-bash">dexios encrypt --erase secret.txt secret.enc
+<h2 id="delete-the-input-after-encrypting"><a class="header" href="#delete-the-input-after-encrypting">Delete the Input After Encrypting</a></h2>
+<pre><code class="language-bash">dexios encrypt --delete-input secret.txt secret.enc
 </code></pre>
-<p>To request more overwrite passes:</p>
-<pre><code class="language-bash">dexios encrypt --erase=3 secret.txt secret.enc
+<h2 id="delete-the-encrypted-input-after-decrypting"><a class="header" href="#delete-the-encrypted-input-after-decrypting">Delete the Encrypted Input After Decrypting</a></h2>
+<pre><code class="language-bash">dexios decrypt --delete-input secret.enc secret.txt
 </code></pre>
 <h2 id="hash-files-directly"><a class="header" href="#hash-files-directly">Hash Files Directly</a></h2>
 <pre><code class="language-bash">dexios hash secret.enc
@@ -224,6 +220,12 @@
 </code></pre>
 <h2 id="unpack-a-previously-packed-archive"><a class="header" href="#unpack-a-previously-packed-archive">Unpack a Previously Packed Archive</a></h2>
 <pre><code class="language-bash">dexios unpack archive.enc output-dir
+</code></pre>
+<p>Delete the encrypted archive after a successful unpack:</p>
+<pre><code class="language-bash">dexios unpack --delete-input archive.enc output-dir
+</code></pre>
+<p>Delete source directories after a successful pack:</p>
+<pre><code class="language-bash">dexios pack --delete-source photos/ archive.enc
 </code></pre>
 
                     </main>

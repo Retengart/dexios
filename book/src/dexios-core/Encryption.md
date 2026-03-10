@@ -1,44 +1,32 @@
 ## Encryption
 
-The current Dexios format uses a random 32-byte master key for new encryption. User key material is hashed and used to wrap that master key inside the header.
+The current Dexios product surface uses one suite for new output:
 
-The current CLI supports new encryption with:
+- `XChaCha20-Poly1305`
+- LE31 stream encryption for payloads
+- a separate wrapping nonce for the encrypted master key inside each keyslot
 
-- `XChaCha20-Poly1305` (default)
-- `AES-256-GCM` (`--aes`)
+## Stream Encryption
 
-`Deoxys-II-256` is still recognized by the core format for backward compatibility, but the current CLI does not expose it for new encryption.
+Dexios reads and writes payloads in **1 MiB** blocks.
 
-## Stream Mode
+Stored payload nonces are shorter than their full AEAD counterparts because LE31 appends a 31-bit little-endian counter and a last-block flag internally:
 
-New encryption uses stream mode.
+- payload nonce: 20 bytes
+- keyslot nonce: 24 bytes
 
-Dexios reads and writes payloads in **1 MiB** blocks. The stream helper is based on LE31 stream encryption from the `aead` ecosystem.
+For new V1 files, the payload nonce is stored in the static header region. Each wrapped master key uses its own 24-byte nonce inside a keyslot.
 
-Stored stream nonces are shorter than their memory-mode equivalents because LE31 appends a 31-bit little-endian counter and a last-block flag internally:
+## Stream Edge Case
 
-- `XChaCha20-Poly1305`: 20-byte stored nonce, 24-byte effective AEAD nonce
-- `AES-256-GCM`: 8-byte stored nonce, 12-byte effective AEAD nonce
-- `Deoxys-II-256`: 11-byte stored nonce, 15-byte effective AEAD nonce
-
-For new V5 files, the stream/data nonce is stored in the static header region. The wrapped master key uses a separate memory-mode nonce inside each keyslot.
-
-## Stream Mode Edge Case
-
-If a file length is exactly divisible by the 1 MiB block size, Dexios still emits a final authenticated last block. This avoids truncation ambiguity and is covered by the current stream implementation and tests.
-
-## Memory Mode
-
-Memory mode still exists in `dexios-core`, but it is effectively a legacy compatibility path for decryption and old headers.
-
-The current CLI encrypt path does not select memory mode for new files; it always routes new encryption through stream mode.
-
-Memory mode uses the full AEAD nonce length:
-
-- 24 bytes for `XChaCha20-Poly1305`
-- 12 bytes for `AES-256-GCM`
-- 15 bytes for `Deoxys-II-256`
+If the plaintext length is exactly divisible by the 1 MiB block size, Dexios still emits a final authenticated last block. This avoids end-of-stream ambiguity.
 
 ## Header and Payload Authentication
 
-Payload authentication is provided by the AEAD itself, and header authentication is provided through the version-dependent AAD rules described in [Headers](Headers.md).
+Payload authentication is provided by the AEAD itself.
+
+Header authentication is provided through V1 AAD: the first 32 bytes of the header are authenticated with every encrypted block.
+
+## Legacy Notes
+
+Older compatibility paths still exist internally, but the normal public surface no longer exposes alternate cipher selection or memory-mode encryption for new output.

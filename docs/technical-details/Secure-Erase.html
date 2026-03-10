@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Secure Erase - Dexios</title>
+        <title>Delete Semantics - Dexios</title>
 
 
         <!-- Custom HTML head -->
@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-f750f07e.js";
+            window.path_to_searchindex_js = "../searchindex-a1a458d6.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-cfad17b7.js"></script>
+        <script src="../toc-73b73724.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -174,36 +174,27 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h2 id="secure-erase"><a class="header" href="#secure-erase">Secure Erase</a></h2>
-<p>Dexios implements a best-effort overwrite-and-delete workflow. It should not be treated as a guarantee of physical erasure, especially on SSDs and other flash-backed storage.</p>
-<h2 id="current-erase-flow"><a class="header" href="#current-erase-flow">Current Erase Flow</a></h2>
-<p>For a normal file erase request, Dexios:</p>
+                        <h2 id="delete-semantics"><a class="header" href="#delete-semantics">Delete Semantics</a></h2>
+<p>Dexios no longer exposes secure-erase behavior as a product feature.</p>
+<p>Instead, the CLI offers plain delete-after-success flags:</p>
+<ul>
+<li><code>encrypt --delete-input</code></li>
+<li><code>decrypt --delete-input</code></li>
+<li><code>unpack --delete-input</code></li>
+<li><code>pack --delete-source</code></li>
+</ul>
+<h2 id="contract"><a class="header" href="#contract">Contract</a></h2>
+<p>The current contract is intentionally narrow:</p>
 <ol>
-<li>opens the file for overwriting</li>
-<li>performs the requested number of random overwrite passes</li>
-<li>performs one final zero pass</li>
-<li>truncates and removes the file through the storage layer</li>
+<li>complete the requested workflow successfully</li>
+<li>flush and close the produced outputs</li>
+<li>delete the selected source inputs</li>
 </ol>
-<p>The user-facing default is <strong>1 random pass</strong> followed by the zero pass.</p>
-<p>You can request a different pass count with:</p>
-<pre><code class="language-bash">dexios erase --passes=3 file.txt
-</code></pre>
-<p>or through <code>--erase[=N]</code> on encrypt/decrypt/unpack workflows.</p>
-<h2 id="directories"><a class="header" href="#directories">Directories</a></h2>
-<p>When a directory is erased through the CLI workflow, Dexios traverses it, erases regular files, and then removes the directory tree.</p>
-<h2 id="limits"><a class="header" href="#limits">Limits</a></h2>
-<ul>
-<li>SSDs and flash media may retain older data because of wear leveling and controller behavior.</li>
-<li>More passes increase I/O cost and media wear.</li>
-<li>Dexios does not claim certified sanitization behavior.</li>
-</ul>
+<p>If the workflow fails, the source inputs remain in place.</p>
+<h2 id="why-secure-erase-was-removed"><a class="header" href="#why-secure-erase-was-removed">Why Secure Erase Was Removed</a></h2>
+<p>Overwrite passes are not a trustworthy abstraction on SSDs and other flash-backed storage. Dexios now prefers a simpler and more honest promise: delete sources after success, without claiming physical sanitization.</p>
 <h2 id="temporary-archives"><a class="header" href="#temporary-archives">Temporary Archives</a></h2>
-<p>The current implementation also uses the overwrite helper for temporary plaintext zip artifacts:</p>
-<ul>
-<li><code>pack</code> currently cleans its temporary archive with <strong>2 random passes</strong> plus the final zero pass</li>
-<li><code>unpack</code> currently cleans its temporary archive with <strong>1 random pass</strong> plus the final zero pass</li>
-</ul>
-<p>Those are implementation details of the current release, not long-term format guarantees.</p>
+<p><code>pack</code> and <code>unpack</code> still use temporary plaintext zip artifacts internally, but those artifacts are now handled as ordinary temporary files rather than overwritten repeatedly before deletion.</p>
 
                     </main>
 

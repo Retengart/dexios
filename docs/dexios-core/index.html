@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-f750f07e.js";
+            window.path_to_searchindex_js = "../searchindex-a1a458d6.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-cfad17b7.js"></script>
+        <script src="../toc-73b73724.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -178,13 +178,12 @@
 <p><code>dexios-core</code> is the reusable cryptographic and format layer behind Dexios.</p>
 <p>It is responsible for:</p>
 <ul>
-<li>header parsing and serialization</li>
+<li>V1 header parsing and serialization</li>
 <li>password hashing and key derivation</li>
-<li>stream and memory-mode cipher helpers</li>
+<li>single-suite stream and wrapping-key helpers</li>
 <li>protected secret handling through <code>Protected&lt;&gt;</code></li>
 </ul>
-<p>The current CLI uses <code>dexios-core</code> primarily through <code>dexios-domain</code>, but the crate can also be embedded directly in other Rust applications.</p>
-<p>The current latest writable header format is <strong>V5</strong>.</p>
+<p>The current CLI uses <code>dexios-core</code> primarily through <code>dexios-domain</code>, but the crate can also be embedded directly in other Rust applications. The normal writable header format is <strong>V1</strong>.</p>
 
                     </main>
 

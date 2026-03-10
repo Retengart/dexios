@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-f750f07e.js";
+            window.path_to_searchindex_js = "../searchindex-a1a458d6.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-cfad17b7.js"></script>
+        <script src="../toc-73b73724.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -178,11 +178,10 @@
 <p><code>dexios-domain</code> is the workflow layer between the CLI and <code>dexios-core</code>.</p>
 <p>It owns the higher-level operations that are awkward to model as raw primitives alone, including:</p>
 <ul>
-<li>file encryption and decryption requests</li>
+<li>V1 file encryption and decryption requests</li>
 <li>pack and unpack workflows</li>
-<li>secure erase helpers</li>
 <li>header dump/restore/strip operations</li>
-<li>V5 key manipulation</li>
+<li>V1 key manipulation</li>
 <li>storage abstractions for real files and tests</li>
 </ul>
 <p>The CLI mostly constructs request objects, then delegates the actual work to <code>dexios-domain</code>.</p>

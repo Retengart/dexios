@@ -33,8 +33,8 @@ The current implementation:
 3. excludes the output file and detached header path from being re-packed
 4. creates a temporary zip artifact
 5. writes directory and file entries into the archive
-6. encrypts the temporary archive using the same V5 stream-mode encryption path used for normal files
-7. cleans up the temporary archive
+6. encrypts the temporary archive using the same V1 stream encryption path used for normal files
+7. drops the temporary archive
 
 Files are currently copied into the zip archive in streaming chunks. The code does not attempt to preserve full original filesystem metadata as a stable compatibility guarantee.
 
@@ -55,4 +55,4 @@ If the CLI is not run with `--force`, unpack may prompt before overwriting exist
 
 - Packing hides original directory layout inside the encrypted payload, but the outer ciphertext still leaks overall file size.
 - Unpack should still be treated as a risky operation on untrusted input, even though the current implementation has explicit path-safety checks.
-- The temporary decrypted archive is plaintext while it exists, even though Dexios attempts to clean it up afterwards.
+- The temporary decrypted archive is plaintext while it exists.

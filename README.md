@@ -14,8 +14,8 @@ Current defaults for new encryption:
 
 - `XChaCha20-Poly1305`
 - `BLAKE3-Balloon`
-- V5 headers
-- stream-mode encryption
+- V1 headers
+- LE31 stream encryption
 
 The workspace is split into:
 
@@ -59,6 +59,6 @@ For user-facing and technical docs, see:
 
 ## Notes
 
-- `AES-256-GCM` is available via `--aes`.
 - `argon2id` is available for new output via `--argon`.
-- `Deoxys-II-256` remains part of format compatibility in `dexios-core`, but the current CLI does not offer it for new encryption.
+- delete-after-success flags are available for `encrypt`, `decrypt`, `pack`, and `unpack`
+- `header details` is V1-first and only falls back to legacy inspection for older artifacts

@@ -26,6 +26,6 @@ As an alternative, you may contact `brxken128@tutanota.com`.
 For documentation/source mismatches that affect security-sensitive behavior, please mention whether the issue concerns:
 
 - headers or format compatibility
-- KDF or algorithm selection
+- KDF selection
 - pack/unpack behavior
-- secure erase or temporary artifact cleanup
+- delete-after-success or temporary artifact lifecycle behavior

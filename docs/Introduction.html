@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-f750f07e.js";
+            window.path_to_searchindex_js = "searchindex-a1a458d6.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-cfad17b7.js"></script>
+        <script src="toc-73b73724.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -185,12 +185,11 @@
 <li><code>dexios-domain</code>: the higher-level workflows used by the CLI</li>
 <li><code>dexios-gui</code>: an experimental GUI crate</li>
 </ul>
-<p>For new encryption, Dexios currently writes V5 headers and uses stream mode. The default encryption algorithm is <code>XChaCha20-Poly1305</code>, with <code>AES-256-GCM</code> available via <code>--aes</code>. The default password hashing algorithm for new files is <code>BLAKE3-Balloon</code>; <code>argon2id</code> can be selected with <code>--argon</code>.</p>
+<p>For normal encryption, Dexios now writes V1 headers and uses one suite: <code>XChaCha20-Poly1305</code> with LE31 stream encryption. The default password hashing algorithm for new files is <code>BLAKE3-Balloon</code>; <code>argon2id</code> can be selected with <code>--argon</code>.</p>
 <h2 id="security-notices"><a class="header" href="#security-notices">Security Notices</a></h2>
 <p>The RustCrypto <code>aes-gcm</code> and <code>chacha20poly1305</code> implementations used by Dexios are based on audited upstream crates. Dexios itself does not claim a full-project external audit.</p>
-<p><code>Deoxys-II-256</code> is still recognized by the format and supported for decrypting older files, but the current CLI does not offer it as a choice for new encryption.</p>
 <p>Dexios uses authenticated encryption and authenticates header data through AEAD AAD. Integrity of encrypted payloads does not depend on the optional checksum output.</p>
-<p>Secure erase support is best effort only. On flash storage and SSDs, wear leveling means no software tool can guarantee physical erasure of previous contents.</p>
+<p>The current product surface does not offer secure-erase behavior. Instead, selected workflows can delete their source inputs after successful completion.</p>
 <h2 id="the-defaults"><a class="header" href="#the-defaults">The Defaults</a></h2>
 <p>Running:</p>
 <pre><code class="language-bash">dexios encrypt input.txt output.enc
@@ -199,7 +198,7 @@
 <ul>
 <li><code>XChaCha20-Poly1305</code></li>
 <li><code>BLAKE3-Balloon</code> password hashing</li>
-<li>V5 headers</li>
+<li>V1 headers</li>
 <li>stream encryption with 1 MiB blocks</li>
 <li>protected in-memory handling of secret material</li>
 <li>an embedded header unless <code>--header</code> is specified</li>

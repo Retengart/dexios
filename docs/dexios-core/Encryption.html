@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-f750f07e.js";
+            window.path_to_searchindex_js = "../searchindex-a1a458d6.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-cfad17b7.js"></script>
+        <script src="../toc-73b73724.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -175,36 +175,27 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h2 id="encryption"><a class="header" href="#encryption">Encryption</a></h2>
-<p>The current Dexios format uses a random 32-byte master key for new encryption. User key material is hashed and used to wrap that master key inside the header.</p>
-<p>The current CLI supports new encryption with:</p>
+<p>The current Dexios product surface uses one suite for new output:</p>
 <ul>
-<li><code>XChaCha20-Poly1305</code> (default)</li>
-<li><code>AES-256-GCM</code> (<code>--aes</code>)</li>
+<li><code>XChaCha20-Poly1305</code></li>
+<li>LE31 stream encryption for payloads</li>
+<li>a separate wrapping nonce for the encrypted master key inside each keyslot</li>
 </ul>
-<p><code>Deoxys-II-256</code> is still recognized by the core format for backward compatibility, but the current CLI does not expose it for new encryption.</p>
-<h2 id="stream-mode"><a class="header" href="#stream-mode">Stream Mode</a></h2>
-<p>New encryption uses stream mode.</p>
-<p>Dexios reads and writes payloads in <strong>1 MiB</strong> blocks. The stream helper is based on LE31 stream encryption from the <code>aead</code> ecosystem.</p>
-<p>Stored stream nonces are shorter than their memory-mode equivalents because LE31 appends a 31-bit little-endian counter and a last-block flag internally:</p>
+<h2 id="stream-encryption"><a class="header" href="#stream-encryption">Stream Encryption</a></h2>
+<p>Dexios reads and writes payloads in <strong>1 MiB</strong> blocks.</p>
+<p>Stored payload nonces are shorter than their full AEAD counterparts because LE31 appends a 31-bit little-endian counter and a last-block flag internally:</p>
 <ul>
-<li><code>XChaCha20-Poly1305</code>: 20-byte stored nonce, 24-byte effective AEAD nonce</li>
-<li><code>AES-256-GCM</code>: 8-byte stored nonce, 12-byte effective AEAD nonce</li>
-<li><code>Deoxys-II-256</code>: 11-byte stored nonce, 15-byte effective AEAD nonce</li>
+<li>payload nonce: 20 bytes</li>
+<li>keyslot nonce: 24 bytes</li>
 </ul>
-<p>For new V5 files, the stream/data nonce is stored in the static header region. The wrapped master key uses a separate memory-mode nonce inside each keyslot.</p>
-<h2 id="stream-mode-edge-case"><a class="header" href="#stream-mode-edge-case">Stream Mode Edge Case</a></h2>
-<p>If a file length is exactly divisible by the 1 MiB block size, Dexios still emits a final authenticated last block. This avoids truncation ambiguity and is covered by the current stream implementation and tests.</p>
-<h2 id="memory-mode"><a class="header" href="#memory-mode">Memory Mode</a></h2>
-<p>Memory mode still exists in <code>dexios-core</code>, but it is effectively a legacy compatibility path for decryption and old headers.</p>
-<p>The current CLI encrypt path does not select memory mode for new files; it always routes new encryption through stream mode.</p>
-<p>Memory mode uses the full AEAD nonce length:</p>
-<ul>
-<li>24 bytes for <code>XChaCha20-Poly1305</code></li>
-<li>12 bytes for <code>AES-256-GCM</code></li>
-<li>15 bytes for <code>Deoxys-II-256</code></li>
-</ul>
+<p>For new V1 files, the payload nonce is stored in the static header region. Each wrapped master key uses its own 24-byte nonce inside a keyslot.</p>
+<h2 id="stream-edge-case"><a class="header" href="#stream-edge-case">Stream Edge Case</a></h2>
+<p>If the plaintext length is exactly divisible by the 1 MiB block size, Dexios still emits a final authenticated last block. This avoids end-of-stream ambiguity.</p>
 <h2 id="header-and-payload-authentication"><a class="header" href="#header-and-payload-authentication">Header and Payload Authentication</a></h2>
-<p>Payload authentication is provided by the AEAD itself, and header authentication is provided through the version-dependent AAD rules described in <a href="Headers.html">Headers</a>.</p>
+<p>Payload authentication is provided by the AEAD itself.</p>
+<p>Header authentication is provided through V1 AAD: the first 32 bytes of the header are authenticated with every encrypted block.</p>
+<h2 id="legacy-notes"><a class="header" href="#legacy-notes">Legacy Notes</a></h2>
+<p>Older compatibility paths still exist internally, but the normal public surface no longer exposes alternate cipher selection or memory-mode encryption for new output.</p>
 
                     </main>
 

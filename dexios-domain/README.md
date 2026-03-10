@@ -10,9 +10,8 @@ It handles higher-level operations such as:
 
 - encrypt/decrypt request execution
 - pack and unpack workflows
-- secure erase helpers
 - header dump/restore/strip
-- V5 key manipulation
+- V1 key manipulation
 - storage abstraction for filesystem and tests
 
 The CLI mostly validates user input and then dispatches these workflows through `dexios-domain`.
