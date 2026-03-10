@@ -3,13 +3,13 @@ use core::header::legacy::HashingAlgorithm;
 use crate::global::states::{ForceMode, HashMode};
 
 use super::states::{
-    Compression, DirectoryMode, EraseMode, EraseSourceDir, HeaderLocation, Key, PrintMode,
+    Compression, DeleteInput, DeleteSource, DirectoryMode, HeaderLocation, Key, PrintMode,
 };
 
 pub struct CryptoParams {
     pub hash_mode: HashMode,
     pub force: ForceMode,
-    pub erase: EraseMode,
+    pub delete_input: DeleteInput,
     pub key: Key,
     pub header_location: HeaderLocation,
     pub hashing_algorithm: HashingAlgorithm,
@@ -19,7 +19,7 @@ pub struct CryptoParams {
 pub struct PackParams {
     pub dir_mode: DirectoryMode,
     pub print_mode: PrintMode,
-    pub erase_source: EraseSourceDir,
+    pub delete_source: DeleteSource,
     pub compression: Compression,
 }
 

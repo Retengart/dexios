@@ -1,6 +1,6 @@
 use crate::{
     cli::prompt::get_answer,
-    global::states::{EraseMode, HashMode},
+    global::states::{DeleteInput, HashMode},
 };
 use std::sync::Arc;
 
@@ -87,8 +87,10 @@ pub fn unpack(
         super::hashing::hash_stream(&[input.to_string()])?;
     }
 
-    if let EraseMode::EraseFile(passes) = params.erase {
-        super::erase::secure_erase(input, passes, params.force)?;
+    if params.delete_input == DeleteInput::Delete {
+        drop(header_file);
+        drop(input_file);
+        super::delete_path(input)?;
     }
 
     Ok(())

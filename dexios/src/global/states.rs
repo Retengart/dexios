@@ -21,9 +21,9 @@ pub enum Compression {
     Zstd,
 }
 
-#[derive(PartialEq, Eq)]
-pub enum EraseSourceDir {
-    Erase,
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum DeleteSource {
+    Delete,
     Retain,
 }
 
@@ -39,9 +39,9 @@ pub enum HeaderLocation {
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
-pub enum EraseMode {
-    EraseFile(i32),
-    IgnoreFile,
+pub enum DeleteInput {
+    Delete,
+    Retain,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]

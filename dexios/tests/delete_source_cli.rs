@@ -1,0 +1,234 @@
+use std::fs::{self, File};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use zip::write::SimpleFileOptions;
+
+const PASSWORD: &str = "12345678";
+static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
+
+struct TestDir {
+    path: PathBuf,
+}
+
+impl TestDir {
+    fn new(prefix: &str) -> Self {
+        let seq = NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "dexios-{prefix}-{}-{seq}-{nanos}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path).unwrap();
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TestDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
+    command
+        .current_dir(current_dir)
+        .env("DEXIOS_KEY", PASSWORD)
+        .args(args);
+    command.output().unwrap()
+}
+
+fn write_zip_with_entries(path: &Path, entries: &[(&str, &[u8])]) {
+    let file = File::create(path).unwrap();
+    let mut zip_writer = zip::ZipWriter::new(file);
+    let options = SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored)
+        .large_file(true)
+        .unix_permissions(0o755);
+
+    for (name, body) in entries {
+        zip_writer.start_file(*name, options).unwrap();
+        zip_writer.write_all(body).unwrap();
+    }
+
+    zip_writer.finish().unwrap();
+}
+
+#[test]
+fn encrypt_delete_input_removes_plaintext_after_success() {
+    let test_dir = TestDir::new("delete-input-encrypt");
+    let input = test_dir.path().join("plain.txt");
+    let output = test_dir.path().join("plain.enc");
+    fs::write(&input, b"top secret").unwrap();
+
+    let output_cmd = run_cli(
+        test_dir.path(),
+        &[
+            "encrypt",
+            "-f",
+            "--delete-input",
+            input.to_str().unwrap(),
+            output.to_str().unwrap(),
+        ],
+    );
+
+    assert!(
+        output_cmd.status.success(),
+        "encrypt failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output_cmd.stdout),
+        String::from_utf8_lossy(&output_cmd.stderr)
+    );
+    assert!(!input.exists());
+    assert!(output.exists());
+}
+
+#[test]
+fn encrypt_delete_input_keeps_plaintext_on_failure() {
+    let test_dir = TestDir::new("delete-input-encrypt-fail");
+    let input = test_dir.path().join("plain.txt");
+    fs::write(&input, b"top secret").unwrap();
+
+    let output_cmd = run_cli(
+        test_dir.path(),
+        &[
+            "encrypt",
+            "--delete-input",
+            input.to_str().unwrap(),
+            input.to_str().unwrap(),
+        ],
+    );
+
+    assert!(
+        !output_cmd.status.success(),
+        "encrypt unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output_cmd.stdout),
+        String::from_utf8_lossy(&output_cmd.stderr)
+    );
+    assert!(input.exists());
+}
+
+#[test]
+fn decrypt_delete_input_removes_encrypted_input_after_success() {
+    let test_dir = TestDir::new("delete-input-decrypt");
+    let input = test_dir.path().join("plain.txt");
+    let encrypted = test_dir.path().join("plain.enc");
+    let output = test_dir.path().join("plain.out");
+    fs::write(&input, b"top secret").unwrap();
+
+    let encrypt_cmd = run_cli(
+        test_dir.path(),
+        &[
+            "encrypt",
+            "-f",
+            input.to_str().unwrap(),
+            encrypted.to_str().unwrap(),
+        ],
+    );
+    assert!(encrypt_cmd.status.success());
+
+    let decrypt_cmd = run_cli(
+        test_dir.path(),
+        &[
+            "decrypt",
+            "-f",
+            "--delete-input",
+            encrypted.to_str().unwrap(),
+            output.to_str().unwrap(),
+        ],
+    );
+
+    assert!(
+        decrypt_cmd.status.success(),
+        "decrypt failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&decrypt_cmd.stdout),
+        String::from_utf8_lossy(&decrypt_cmd.stderr)
+    );
+    assert!(!encrypted.exists());
+    assert_eq!(fs::read_to_string(output).unwrap(), "top secret");
+}
+
+#[test]
+fn unpack_delete_input_removes_encrypted_archive_after_success() {
+    let test_dir = TestDir::new("delete-input-unpack");
+    let plain_zip = test_dir.path().join("plain.zip");
+    let encrypted = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+
+    write_zip_with_entries(&plain_zip, &[("payload/file.txt", b"top secret")]);
+
+    let encrypt_cmd = run_cli(
+        test_dir.path(),
+        &[
+            "encrypt",
+            "-f",
+            plain_zip.to_str().unwrap(),
+            encrypted.to_str().unwrap(),
+        ],
+    );
+    assert!(encrypt_cmd.status.success());
+
+    let unpack_cmd = run_cli(
+        test_dir.path(),
+        &[
+            "unpack",
+            "-f",
+            "--delete-input",
+            encrypted.to_str().unwrap(),
+            output_dir.to_str().unwrap(),
+        ],
+    );
+
+    assert!(
+        unpack_cmd.status.success(),
+        "unpack failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&unpack_cmd.stdout),
+        String::from_utf8_lossy(&unpack_cmd.stderr)
+    );
+    assert!(!encrypted.exists());
+    assert_eq!(
+        fs::read_to_string(output_dir.join("payload/file.txt")).unwrap(),
+        "top secret"
+    );
+}
+
+#[test]
+fn pack_delete_source_removes_source_directory_after_success() {
+    let test_dir = TestDir::new("delete-source-pack");
+    let source = test_dir.path().join("source");
+    let nested = source.join("nested");
+    let encrypted = test_dir.path().join("archive.enc");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(source.join("hello.txt"), b"hello").unwrap();
+    fs::write(nested.join("world.txt"), b"world").unwrap();
+
+    let pack_cmd = run_cli(
+        test_dir.path(),
+        &[
+            "pack",
+            "-f",
+            "--delete-source",
+            source.to_str().unwrap(),
+            encrypted.to_str().unwrap(),
+        ],
+    );
+
+    assert!(
+        pack_cmd.status.success(),
+        "pack failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&pack_cmd.stdout),
+        String::from_utf8_lossy(&pack_cmd.stderr)
+    );
+    assert!(!source.exists());
+    assert!(encrypted.exists());
+}

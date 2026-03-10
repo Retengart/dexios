@@ -6,8 +6,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use core::header::legacy::{HashingAlgorithm, HeaderType, HeaderVersion};
-use core::primitives::legacy::{Algorithm, Mode};
+use core::kdf::Kdf;
 use core::protected::Protected;
 use domain::encrypt;
 use zip::write::SimpleFileOptions;
@@ -93,12 +92,7 @@ fn encrypt_archive(input_path: &Path, output_path: &Path) {
         writer: &output,
         header_writer: None,
         raw_key: Protected::new(PASSWORD.as_bytes().to_vec()),
-        header_type: HeaderType {
-            version: HeaderVersion::V5,
-            algorithm: Algorithm::XChaCha20Poly1305,
-            mode: Mode::StreamMode,
-        },
-        hashing_algorithm: HashingAlgorithm::Blake3Balloon(5),
+        kdf: Kdf::Blake3Balloon,
     })
     .unwrap();
 
@@ -212,8 +206,8 @@ fn unpack_cli_rejects_duplicate_normalized_targets() {
 }
 
 #[test]
-fn unpack_cli_erase_removes_archive_after_success() {
-    let test_dir = TestDir::new("unpack-cli-erase");
+fn unpack_cli_delete_input_removes_archive_after_success() {
+    let test_dir = TestDir::new("unpack-cli-delete-input");
     let plain_zip = test_dir.path().join("plain.zip");
     let encrypted_archive = test_dir.path().join("archive.enc");
     let output_dir = test_dir.path().join("out");
@@ -221,7 +215,7 @@ fn unpack_cli_erase_removes_archive_after_success() {
     write_zip_with_entries(&plain_zip, &[("payload/file.txt", b"top secret")]);
     encrypt_archive(&plain_zip, &encrypted_archive);
 
-    let output = run_unpack_with_args(&encrypted_archive, &output_dir, &["--erase"]);
+    let output = run_unpack_with_args(&encrypted_archive, &output_dir, &["--delete-input"]);
 
     assert!(
         output.status.success(),

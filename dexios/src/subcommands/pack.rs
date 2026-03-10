@@ -8,10 +8,9 @@ use anyhow::{Context, Result};
 use core::header::legacy::{HEADER_VERSION, HeaderType};
 use core::primitives::legacy::{Algorithm, Mode};
 
-use crate::global::states::{HashMode, HeaderLocation, PasswordState, PrintMode};
+use crate::global::states::{DeleteSource, HashMode, HeaderLocation, PasswordState, PrintMode};
 use crate::info;
 use crate::{
-    global::states::EraseSourceDir,
     global::{
         states::Compression,
         structs::{CryptoParams, PackParams},
@@ -314,8 +313,8 @@ pub fn execute(req: &Request) -> Result<()> {
     )?;
 
     // 3. flush result
-    if let Some(header_file) = header_file {
-        stor.flush_file(&header_file)?;
+    if let Some(header_file) = header_file.as_ref() {
+        stor.flush_file(header_file)?;
     }
     stor.flush_file(&output_file)?;
 
@@ -323,10 +322,12 @@ pub fn execute(req: &Request) -> Result<()> {
         super::hashing::hash_stream(&[req.output_file.to_string()])?;
     }
 
-    if req.pack_params.erase_source == EraseSourceDir::Erase {
-        req.input_file.iter().try_for_each(|file_name| {
-            super::erase::secure_erase(file_name, 1, req.crypto_params.force)
-        })?;
+    if req.pack_params.delete_source == DeleteSource::Delete {
+        drop(output_file);
+        drop(header_file);
+        req.input_file
+            .iter()
+            .try_for_each(|file_name| super::delete_path(file_name))?;
     }
 
     Ok(())

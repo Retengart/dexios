@@ -33,14 +33,10 @@ pub fn build_cli() -> Command {
                 .help("Use a keyfile instead of a password"),
         )
         .arg(
-            Arg::new("erase")
-                .long("erase")
-                .value_name("# of passes")
-                .action(ArgAction::Set)
-                .require_equals(true)
-                .help("Securely erase the input file once complete (default is 1 pass)")
-                .num_args(0..=1)
-                .default_missing_value("1"),
+            Arg::new("delete-input")
+                .long("delete-input")
+                .action(ArgAction::SetTrue)
+                .help("Delete the input file after a successful encrypt"),
         )
         .arg(
             Arg::new("hash")
@@ -120,14 +116,10 @@ pub fn build_cli() -> Command {
                 .help("Use a header file that was dumped"),
         )
         .arg(
-            Arg::new("erase")
-                .long("erase")
-                .value_name("# of passes")
-                .action(ArgAction::Set)
-                .require_equals(true)
-                .help("Securely erase the input file once complete (default is 1 pass)")
-                .num_args(0..=1)
-                .default_missing_value("1"),
+            Arg::new("delete-input")
+                .long("delete-input")
+                .action(ArgAction::SetTrue)
+                .help("Delete the input file after a successful decrypt"),
         )
         .arg(
             Arg::new("hash")
@@ -152,34 +144,6 @@ pub fn build_cli() -> Command {
         .arg_required_else_help(true)
         .subcommand(encrypt.clone())
         .subcommand(decrypt.clone())
-        .subcommand(
-            Command::new("erase")
-                .about("Erase a file completely")
-                .arg(
-                    Arg::new("input")
-                        .value_name("input")
-                        .action(ArgAction::Set)
-                        .required(true)
-                        .help("The file to erase"),
-                )
-                .arg(
-                    Arg::new("force")
-                        .short('f')
-                        .long("force")
-                        .action(ArgAction::SetTrue)
-                        .help("Force all actions"),
-                )
-                .arg(
-                    Arg::new("passes")
-                        .long("passes")
-                        .value_name("# of passes")
-                        .action(ArgAction::Set)
-                        .require_equals(true)
-                        .help("Specify the number of passes (default is 1)")
-                        .num_args(0..=1)
-                        .default_missing_value("1"),
-                ),
-        )
         .subcommand(
             Command::new("hash").about("Hash files with BLAKE3").arg(
                 Arg::new("input")
@@ -210,10 +174,10 @@ pub fn build_cli() -> Command {
                     .help("The output file"),
             )
             .arg(
-                Arg::new("erase")
-                    .long("erase")
+                Arg::new("delete-source")
+                    .long("delete-source")
                     .action(ArgAction::SetTrue)
-                    .help("Securely erase every file from the source directory, before deleting the directory")
+                    .help("Delete the source directories after a successful pack")
             )
             .arg(
                 Arg::new("argon")
@@ -323,14 +287,10 @@ pub fn build_cli() -> Command {
                         .help("Use a header file that was dumped"),
                 )
                 .arg(
-                    Arg::new("erase")
-                        .long("erase")
-                        .value_name("# of passes")
-                        .action(ArgAction::Set)
-                        .require_equals(true)
-                        .help("Securely erase the input file once complete (default is 1 pass)")
-                        .num_args(0..=1)
-                        .default_missing_value("1"),
+                    Arg::new("delete-input")
+                        .long("delete-input")
+                        .action(ArgAction::SetTrue)
+                        .help("Delete the encrypted input after a successful unpack"),
                 )
                 .arg(
                     Arg::new("verbose")

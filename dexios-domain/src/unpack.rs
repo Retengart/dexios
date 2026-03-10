@@ -10,15 +10,13 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use crate::storage::{self, Storage};
-use crate::{decrypt, overwrite};
+use crate::decrypt;
 use core::protected::Protected;
 
 trait TempArtifactLike {
     fn with_reader<T, E>(&self, f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>) -> Result<T, E>;
     fn with_writer<T, E>(&self, f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>)
     -> Result<T, E>;
-    fn len(&self) -> Result<usize, Error>;
-    fn sync_all(&self) -> Result<(), Error>;
 }
 
 trait ReadSeek: Read + Seek {}
@@ -39,13 +37,6 @@ impl TempArtifactLike for storage::TempArtifact {
         storage::TempArtifact::with_writer(self, |file| f(file))
     }
 
-    fn len(&self) -> Result<usize, Error> {
-        storage::TempArtifact::len(self).map_err(Error::Storage)
-    }
-
-    fn sync_all(&self) -> Result<(), Error> {
-        storage::TempArtifact::sync_all(self).map_err(|_| Error::TempCleanup)
-    }
 }
 
 #[derive(Debug)]
@@ -58,7 +49,6 @@ pub enum Error {
     DuplicateOutputPath(PathBuf),
     Storage(storage::Error),
     Decrypt(decrypt::Error),
-    TempCleanup,
     OnZipFile(String),
 }
 
@@ -81,7 +71,6 @@ impl std::fmt::Display for Error {
             }
             Error::Storage(inner) => write!(f, "Storage error: {inner}"),
             Error::Decrypt(inner) => write!(f, "Decrypt error: {inner}"),
-            Error::TempCleanup => f.write_str("Unable to securely clean up temporary archive"),
             Error::OnZipFile(inner) => write!(f, "Zip file callback error: {inner}"),
         }
     }
@@ -144,8 +133,6 @@ where
         })
         .map_err(Error::Decrypt)
     })?;
-
-    let buf_capacity = tmp_file.len()?;
 
     // 3. Recover files from temp archive.
     tmp_file.with_reader(|tmp_reader| {
@@ -221,7 +208,7 @@ where
             })
     })?;
 
-    cleanup_temp_archive(tmp_file, buf_capacity)?;
+    drop(tmp_file);
 
     Ok(())
 }
@@ -258,27 +245,9 @@ fn map_storage_path_error(err: storage::Error) -> Error {
     }
 }
 
-fn cleanup_temp_archive(tmp_file: impl TempArtifactLike, buf_capacity: usize) -> Result<(), Error> {
-    // Finally erase temp zip archive with zeros.
-    tmp_file.with_writer(|tmp_writer| {
-        let writer = RefCell::new(tmp_writer);
-        overwrite::execute(overwrite::Request {
-            buf_capacity,
-            writer: &writer,
-            passes: 1,
-        })
-        .map_err(|_| Error::TempCleanup)
-    })?;
-
-    tmp_file.sync_all()?;
-    drop(tmp_file);
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{Cursor, Write};
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -340,36 +309,6 @@ mod tests {
                 assert_eq!(buf, expected.as_bytes());
             }
             _ => panic!("missing file: {path}"),
-        }
-    }
-
-    struct FailingTempArtifact {
-        file: RefCell<Cursor<Vec<u8>>>,
-    }
-
-    impl TempArtifactLike for FailingTempArtifact {
-        fn with_reader<T, E>(
-            &self,
-            f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>,
-        ) -> Result<T, E> {
-            let mut file = self.file.borrow_mut();
-            f(&mut *file)
-        }
-
-        fn with_writer<T, E>(
-            &self,
-            f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>,
-        ) -> Result<T, E> {
-            let mut file = self.file.borrow_mut();
-            f(&mut *file)
-        }
-
-        fn len(&self) -> Result<usize, Error> {
-            Ok(self.file.borrow().get_ref().len())
-        }
-
-        fn sync_all(&self) -> Result<(), Error> {
-            Err(Error::TempCleanup)
         }
     }
 
@@ -441,48 +380,5 @@ mod tests {
         assert_text(&stor, "archive-out/bar/.hello.txt", "hello");
         assert_text(&stor, "archive-out/bar/world.txt", "world");
         assert_text(&stor, "archive-out/bar/.foo/world.txt", "world");
-    }
-
-    #[test]
-    fn unpack_fails_if_temp_artifact_sync_fails() {
-        let stor = Arc::new(InMemoryStorage::default());
-        let setup_stor = Arc::new(InMemoryStorage::default());
-        pack_bar_directory(setup_stor.clone(), "archive.enc", None);
-
-        let archive = setup_stor.read_file("archive.enc").unwrap();
-        let mut archive_buf = Vec::new();
-        archive
-            .try_reader()
-            .unwrap()
-            .borrow_mut()
-            .read_to_end(&mut archive_buf)
-            .unwrap();
-        let archive_file = stor.create_file("archive.enc").unwrap();
-        archive_file
-            .try_writer()
-            .unwrap()
-            .borrow_mut()
-            .write_all(&archive_buf)
-            .unwrap();
-        stor.flush_file(&archive_file).unwrap();
-
-        let archive = stor.read_file("archive.enc").unwrap();
-        let req = Request {
-            reader: archive.try_reader().unwrap(),
-            header_reader: None,
-            raw_key: Protected::new(PASSWORD.to_vec()),
-            output_dir_path: PathBuf::from("out"),
-            on_decrypted_header: None,
-            on_archive_info: None,
-            on_zip_file: None,
-        };
-
-        let result = execute_with_temp_artifact(stor, req, || {
-            Ok(FailingTempArtifact {
-                file: RefCell::new(Cursor::new(Vec::new())),
-            })
-        });
-
-        assert!(matches!(result, Err(Error::TempCleanup)));
     }
 }

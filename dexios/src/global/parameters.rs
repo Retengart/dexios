@@ -1,10 +1,9 @@
 // this file handles getting parameters from clap's ArgMatches
 // it returns information (e.g. CryptoParams) to functions that require it
 
-use crate::global::states::{EraseMode, EraseSourceDir, ForceMode, HashMode, HeaderLocation};
+use crate::global::states::{DeleteInput, DeleteSource, ForceMode, HashMode, HeaderLocation};
 use crate::global::structs::CryptoParams;
 use crate::global::structs::PackParams;
-use crate::warn;
 use anyhow::{Context, Result};
 use clap::ArgMatches;
 use core::header::legacy::{ARGON2ID_LATEST, BLAKE3BALLOON_LATEST, HashingAlgorithm};
@@ -44,20 +43,10 @@ pub fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
 
     let force = forcemode(sub_matches);
 
-    let erase = if sub_matches.get_one::<String>("erase").is_some() {
-        let result = sub_matches
-            .get_one::<String>("erase")
-            .context("No amount of passes specified")?
-            .parse();
-
-        if let Ok(value) = result {
-            EraseMode::EraseFile(value)
-        } else {
-            warn!("No amount of passes provided - using the default.");
-            EraseMode::EraseFile(1)
-        }
+    let delete_input = if sub_matches.get_flag("delete-input") {
+        DeleteInput::Delete
     } else {
-        EraseMode::IgnoreFile
+        DeleteInput::Retain
     };
 
     let header_location = if sub_matches.get_one::<String>("header").is_some() {
@@ -76,7 +65,7 @@ pub fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
     Ok(CryptoParams {
         hash_mode,
         force,
-        erase,
+        delete_input,
         key,
         header_location,
         hashing_algorithm,
@@ -107,28 +96,6 @@ pub fn algorithm(sub_matches: &ArgMatches) -> Algorithm {
     }
 }
 
-pub fn erase_params(sub_matches: &ArgMatches) -> Result<(i32, ForceMode)> {
-    let passes = if sub_matches.get_one::<String>("passes").is_some() {
-        let result = sub_matches
-            .get_one::<String>("passes")
-            .context("No amount of passes specified")?
-            .parse::<i32>();
-        if let Ok(value) = result {
-            value
-        } else {
-            warn!("Unable to read number of passes provided - using the default.");
-            1
-        }
-    } else {
-        warn!("Number of passes not provided - using the default.");
-        1
-    };
-
-    let force = forcemode(sub_matches);
-
-    Ok((passes, force))
-}
-
 pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams)> {
     let key = Key::init(sub_matches, &KeyParams::default(), "keyfile")?;
 
@@ -141,8 +108,6 @@ pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams
     };
 
     let force = forcemode(sub_matches);
-
-    let erase = EraseMode::IgnoreFile;
 
     let header_location = if sub_matches.get_one::<String>("header").is_some() {
         HeaderLocation::Detached(
@@ -160,7 +125,7 @@ pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams
     let crypto_params = CryptoParams {
         hash_mode,
         force,
-        erase,
+        delete_input: DeleteInput::Retain,
         key,
         header_location,
         hashing_algorithm,
@@ -182,10 +147,10 @@ pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams
         DirectoryMode::Singular
     };
 
-    let erase_source = if sub_matches.get_flag("erase") {
-        EraseSourceDir::Erase
+    let delete_source = if sub_matches.get_flag("delete-source") {
+        DeleteSource::Delete
     } else {
-        EraseSourceDir::Retain
+        DeleteSource::Retain
     };
 
     let compression = if sub_matches.get_flag("zstd") {
@@ -197,7 +162,7 @@ pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams
     let pack_params = PackParams {
         dir_mode,
         print_mode,
-        erase_source,
+        delete_source,
         compression,
     };
 

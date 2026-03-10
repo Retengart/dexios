@@ -2,7 +2,7 @@ use std::process::exit;
 use std::sync::Arc;
 
 use crate::cli::prompt::overwrite_check;
-use crate::global::states::{EraseMode, HashMode, HeaderLocation, PasswordState};
+use crate::global::states::{DeleteInput, HashMode, HeaderLocation, PasswordState};
 use crate::global::structs::CryptoParams;
 
 use anyhow::Result;
@@ -56,8 +56,11 @@ pub fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> Result<(
         super::hashing::hash_stream(&[input.to_string()])?;
     }
 
-    if let EraseMode::EraseFile(passes) = params.erase {
-        super::erase::secure_erase(input, passes, params.force)?;
+    if params.delete_input == DeleteInput::Delete {
+        drop(output_file);
+        drop(header_file);
+        drop(input_file);
+        super::delete_path(input)?;
     }
 
     Ok(())

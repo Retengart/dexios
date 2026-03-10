@@ -1,9 +1,10 @@
 use crate::cli::prompt::overwrite_check;
-use crate::global::states::{EraseMode, HashMode, HeaderLocation, PasswordState};
+use crate::global::states::{DeleteInput, HashMode, HeaderLocation, PasswordState};
 use crate::global::structs::CryptoParams;
 use anyhow::Result;
-use core::header::legacy::{HEADER_VERSION, HeaderType};
-use core::primitives::legacy::{Algorithm, Mode};
+use core::header::legacy::HashingAlgorithm;
+use core::kdf::Kdf;
+use core::primitives::legacy::Algorithm;
 use std::sync::Arc;
 
 use domain::storage::Storage;
@@ -26,7 +27,7 @@ pub fn stream_mode(
     input: &str,
     output: &str,
     params: &CryptoParams,
-    algorithm: Algorithm,
+    _algorithm: Algorithm,
 ) -> Result<()> {
     // TODO: It is necessary to raise it to a higher level
     let stor = Arc::new(domain::storage::FileStorage);
@@ -66,18 +67,16 @@ pub fn stream_mode(
         writer: output_file.try_writer()?,
         header_writer: header_file.as_ref().and_then(|f| f.try_writer().ok()),
         raw_key,
-        header_type: HeaderType {
-            version: HEADER_VERSION,
-            mode: Mode::StreamMode,
-            algorithm,
+        kdf: match params.hashing_algorithm {
+            HashingAlgorithm::Argon2id(_) => Kdf::Argon2id,
+            HashingAlgorithm::Blake3Balloon(_) => Kdf::Blake3Balloon,
         },
-        hashing_algorithm: params.hashing_algorithm,
     };
     domain::encrypt::execute(req)?;
 
     // 3. flush result
-    if let Some(header_file) = header_file {
-        stor.flush_file(&header_file)?;
+    if let Some(header_file) = header_file.as_ref() {
+        stor.flush_file(header_file)?;
     }
     stor.flush_file(&output_file)?;
 
@@ -85,8 +84,11 @@ pub fn stream_mode(
         super::hashing::hash_stream(&[output.to_string()])?;
     }
 
-    if let EraseMode::EraseFile(passes) = params.erase {
-        super::erase::secure_erase(input, passes, params.force)?;
+    if params.delete_input == DeleteInput::Delete {
+        drop(header_file);
+        drop(output_file);
+        drop(input_file);
+        super::delete_path(input)?;
     }
 
     Ok(())

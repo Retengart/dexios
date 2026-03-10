@@ -21,9 +21,6 @@ fn main() -> Result<()> {
         Some(("decrypt", sub_matches)) => {
             subcommands::decrypt(sub_matches)?;
         }
-        Some(("erase", sub_matches)) => {
-            subcommands::erase(sub_matches)?;
-        }
         Some(("pack", sub_matches)) => {
             subcommands::pack(sub_matches)?;
         }

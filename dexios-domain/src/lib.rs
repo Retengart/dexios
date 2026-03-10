@@ -6,7 +6,6 @@
 //!
 //! - V1 encrypt/decrypt request execution,
 //! - pack and unpack workflows,
-//! - secure erase helpers,
 //! - header dump/restore/strip operations,
 //! - V1 keyslot manipulation over a shared wrapped master key,
 //! - and storage abstractions for the real filesystem and tests.
@@ -36,13 +35,10 @@
 
 pub mod decrypt;
 pub mod encrypt;
-pub mod erase;
-pub mod erase_dir;
 pub mod hash;
 pub mod hasher;
 pub mod header;
 pub mod key;
-pub mod overwrite;
 pub mod pack;
 pub mod storage;
 pub mod unpack;

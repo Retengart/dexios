@@ -6,7 +6,7 @@ use clap::ArgMatches;
 
 use crate::global::{
     parameters::{
-        algorithm, erase_params, forcemode, get_param, get_params, key_manipulation_params,
+        algorithm, forcemode, get_param, get_params, key_manipulation_params,
         pack_params, parameter_handler,
     },
     states::{Key, KeyParams},
@@ -14,12 +14,26 @@ use crate::global::{
 
 pub mod decrypt;
 pub mod encrypt;
-pub mod erase;
 pub mod hashing;
 pub mod header;
 pub mod key;
 pub mod pack;
 pub mod unpack;
+
+pub fn delete_path(path: &str) -> Result<()> {
+    if std::fs::symlink_metadata(path).is_err() {
+        return Ok(());
+    }
+
+    let metadata = std::fs::symlink_metadata(path)?;
+    if metadata.is_dir() {
+        std::fs::remove_dir_all(path)?;
+    } else {
+        std::fs::remove_file(path)?;
+    }
+
+    Ok(())
+}
 
 pub fn encrypt(sub_matches: &ArgMatches) -> Result<()> {
     let params = parameter_handler(sub_matches)?;
@@ -43,12 +57,6 @@ pub fn decrypt(sub_matches: &ArgMatches) -> Result<()> {
         &get_param("output", sub_matches)?,
         &params,
     )
-}
-
-pub fn erase(sub_matches: &ArgMatches) -> Result<()> {
-    let (passes, force) = erase_params(sub_matches)?;
-
-    erase::secure_erase(&get_param("input", sub_matches)?, passes, force)
 }
 
 pub fn pack(sub_matches: &ArgMatches) -> Result<()> {

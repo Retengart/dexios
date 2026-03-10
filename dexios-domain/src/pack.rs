@@ -1,6 +1,6 @@
 //! This contains the logic for traversing one or more directories, placing
 //! their files into a temporary zip archive, and encrypting that archive. The
-//! temporary zip file is then cleaned up through the overwrite helper.
+//! temporary zip file is then dropped and deleted by the OS.
 //!
 //! This is known as "packing" within Dexios.
 //!
@@ -24,8 +24,6 @@ trait TempArtifactLike {
     fn with_reader<T, E>(&self, f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>) -> Result<T, E>;
     fn with_writer<T, E>(&self, f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>)
     -> Result<T, E>;
-    fn len(&self) -> Result<usize, Error>;
-    fn sync_all(&self) -> Result<(), Error>;
 }
 
 trait ReadSeek: Read + Seek {}
@@ -46,13 +44,6 @@ impl TempArtifactLike for crate::storage::TempArtifact {
         crate::storage::TempArtifact::with_writer(self, |file| f(file))
     }
 
-    fn len(&self) -> Result<usize, Error> {
-        crate::storage::TempArtifact::len(self).map_err(|_| Error::FinishArchive)
-    }
-
-    fn sync_all(&self) -> Result<(), Error> {
-        crate::storage::TempArtifact::sync_all(self).map_err(|_| Error::TempCleanup)
-    }
 }
 
 #[derive(Debug)]
@@ -64,7 +55,6 @@ pub enum Error {
     ReadData,
     WriteData,
     Encrypt(crate::encrypt::Error),
-    TempCleanup,
 }
 
 impl std::fmt::Display for Error {
@@ -77,7 +67,6 @@ impl std::fmt::Display for Error {
             Error::ReadData => f.write_str("Unable to read data"),
             Error::WriteData => f.write_str("Unable to write data"),
             Error::Encrypt(inner) => write!(f, "Unable to encrypt archive: {inner}"),
-            Error::TempCleanup => f.write_str("Unable to securely clean up temporary archive"),
         }
     }
 }
@@ -169,8 +158,6 @@ where
         Ok(())
     })?;
 
-    let buf_capacity = tmp_file.len()?;
-
     // 4. Encrypt zip archive
     let encrypt_res = tmp_file.with_reader(|tmp_reader| {
         tmp_reader.rewind().map_err(|_| Error::FinishArchive)?;
@@ -188,26 +175,9 @@ where
         .map_err(Error::Encrypt)
     });
 
-    cleanup_temp_archive(tmp_file, buf_capacity)?;
+    drop(tmp_file);
 
     encrypt_res
-}
-
-fn cleanup_temp_archive(tmp_file: impl TempArtifactLike, buf_capacity: usize) -> Result<(), Error> {
-    // Finally erase zip archive with zeros.
-    tmp_file.with_writer(|tmp_writer| {
-        let writer = RefCell::new(tmp_writer);
-        crate::overwrite::execute(crate::overwrite::Request {
-            buf_capacity,
-            writer: &writer,
-            passes: 2,
-        })
-        .map_err(|_| Error::TempCleanup)
-    })?;
-
-    tmp_file.sync_all()?;
-    drop(tmp_file);
-    Ok(())
 }
 
 #[cfg(test)]
@@ -281,36 +251,6 @@ pub(crate) mod tests {
         229, 39, 224, 19, 92, 220, 151, 154, 193, 191, 30,
     ];
 
-    struct FailingTempArtifact {
-        file: RefCell<Cursor<Vec<u8>>>,
-    }
-
-    impl TempArtifactLike for FailingTempArtifact {
-        fn with_reader<T, E>(
-            &self,
-            f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>,
-        ) -> Result<T, E> {
-            let mut file = self.file.borrow_mut();
-            f(&mut *file)
-        }
-
-        fn with_writer<T, E>(
-            &self,
-            f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>,
-        ) -> Result<T, E> {
-            let mut file = self.file.borrow_mut();
-            f(&mut *file)
-        }
-
-        fn len(&self) -> Result<usize, Error> {
-            Ok(self.file.borrow().get_ref().len())
-        }
-
-        fn sync_all(&self) -> Result<(), Error> {
-            Err(Error::TempCleanup)
-        }
-    }
-
     #[test]
     fn should_pack_bar_directory() {
         let stor = Arc::new(InMemoryStorage::default());
@@ -360,47 +300,5 @@ pub(crate) mod tests {
             }
             _ => unreachable!(),
         }
-    }
-
-    #[test]
-    fn pack_fails_if_temp_artifact_sync_fails() {
-        let stor = Arc::new(InMemoryStorage::default());
-        stor.add_hello_txt();
-        stor.add_bar_foo_folder_with_hidden();
-
-        let file = stor.read_file("bar/").unwrap();
-        let mut compress_files = stor.read_dir(&file).unwrap();
-        compress_files.sort_by(|a, b| a.path().cmp(b.path()));
-        let entries = compress_files
-            .into_iter()
-            .map(|source| ArchiveSourceEntry {
-                archive_path: source.path().to_path_buf(),
-                source,
-            })
-            .collect::<Vec<_>>();
-
-        let output_file = stor.create_file("bar.zip.enc").unwrap();
-
-        let req = Request {
-            entries,
-            compression_method: zip::CompressionMethod::Stored,
-            writer: output_file.try_writer().unwrap(),
-            header_writer: None,
-            raw_key: Protected::new(PASSWORD.to_vec()),
-            header_type: HeaderType {
-                version: HeaderVersion::V5,
-                algorithm: Algorithm::XChaCha20Poly1305,
-                mode: Mode::StreamMode,
-            },
-            hashing_algorithm: HashingAlgorithm::Blake3Balloon(5),
-        };
-
-        let result = execute_with_temp_artifact(req, || {
-            Ok(FailingTempArtifact {
-                file: RefCell::new(Cursor::new(Vec::new())),
-            })
-        });
-
-        assert!(matches!(result, Err(Error::TempCleanup)));
     }
 }
