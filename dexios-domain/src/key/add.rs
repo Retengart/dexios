@@ -57,7 +57,8 @@ where
     }
 
     let salt = gen_salt();
-    let master_key_nonce = gen_nonce(&header.header_type.algorithm, &Mode::MemoryMode);
+    let master_key_nonce =
+        gen_nonce(&header.header_type.algorithm, &Mode::MemoryMode).map_err(|_| Error::CipherInit)?;
 
     let key_new = req
         .hash_algorithm

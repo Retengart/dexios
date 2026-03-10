@@ -18,6 +18,8 @@ pub const PAYLOAD_NONCE_LEN: usize = 20;
 pub const KEYSLOT_NONCE_LEN: usize = 24;
 
 pub mod legacy {
+    use std::fmt::{Display, Formatter};
+
     use rand::Rng;
 
     use super::{KEYSLOT_NONCE_LEN, PAYLOAD_NONCE_LEN};
@@ -58,28 +60,43 @@ pub mod legacy {
         }
     }
 
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum LegacySuiteError {
+        UnsupportedAlgorithm(Algorithm),
+    }
+
+    impl Display for LegacySuiteError {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Self::UnsupportedAlgorithm(algorithm) => {
+                    write!(f, "Unsupported legacy cipher suite: {algorithm}")
+                }
+            }
+        }
+    }
+
+    impl std::error::Error for LegacySuiteError {}
+
     /// Legacy compatibility nonce generator.
     ///
     /// New V1 code should use `gen_payload_nonce()` or `gen_keyslot_nonce()`.
-    #[must_use]
-    pub fn gen_nonce(algorithm: &Algorithm, mode: &Mode) -> Vec<u8> {
-        let nonce_len = get_nonce_len(algorithm, mode);
+    pub fn gen_nonce(algorithm: &Algorithm, mode: &Mode) -> Result<Vec<u8>, LegacySuiteError> {
+        let nonce_len = get_nonce_len(algorithm, mode)?;
         let mut nonce = vec![0u8; nonce_len];
         rand::rng().fill_bytes(&mut nonce);
-        nonce
+        Ok(nonce)
     }
 
     /// Legacy compatibility nonce-length helper.
     ///
     /// New V1 code should use `PAYLOAD_NONCE_LEN` and `KEYSLOT_NONCE_LEN`
     /// directly.
-    #[must_use]
-    pub fn get_nonce_len(algorithm: &Algorithm, mode: &Mode) -> usize {
+    pub fn get_nonce_len(algorithm: &Algorithm, mode: &Mode) -> Result<usize, LegacySuiteError> {
         match (algorithm, mode) {
-            (Algorithm::XChaCha20Poly1305, Mode::StreamMode) => PAYLOAD_NONCE_LEN,
-            (Algorithm::XChaCha20Poly1305, Mode::MemoryMode) => KEYSLOT_NONCE_LEN,
+            (Algorithm::XChaCha20Poly1305, Mode::StreamMode) => Ok(PAYLOAD_NONCE_LEN),
+            (Algorithm::XChaCha20Poly1305, Mode::MemoryMode) => Ok(KEYSLOT_NONCE_LEN),
             (Algorithm::Aes256Gcm, _) | (Algorithm::DeoxysII256, _) => {
-                panic!("AES and Deoxys-II are no longer supported")
+                Err(LegacySuiteError::UnsupportedAlgorithm(*algorithm))
             }
         }
     }

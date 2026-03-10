@@ -58,7 +58,8 @@ where
         .hash(req.raw_key_new, &salt)
         .map_err(|_| Error::KeyHash)?;
 
-    let master_key_nonce = gen_nonce(&header.header_type.algorithm, &Mode::MemoryMode);
+    let master_key_nonce =
+        gen_nonce(&header.header_type.algorithm, &Mode::MemoryMode).map_err(|_| Error::CipherInit)?;
 
     let encrypted_master_key = super::encrypt_master_key(
         master_key,

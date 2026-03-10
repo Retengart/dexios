@@ -76,7 +76,8 @@ where
     // 4. generate master key
     let master_key = gen_master_key();
 
-    let master_key_nonce = gen_nonce(&req.header_type.algorithm, &Mode::MemoryMode);
+    let master_key_nonce =
+        gen_nonce(&req.header_type.algorithm, &Mode::MemoryMode).map_err(|_| Error::CreateAad)?;
 
     // 5. encrypt master key
     let master_key_encrypted = {
@@ -100,7 +101,8 @@ where
 
     let keyslots = vec![keyslot];
 
-    let header_nonce = gen_nonce(&req.header_type.algorithm, &req.header_type.mode);
+    let header_nonce =
+        gen_nonce(&req.header_type.algorithm, &req.header_type.mode).map_err(|_| Error::CreateAad)?;
     let streams =
         legacy_stream::initialize_encryption(master_key, &header_nonce, &req.header_type.algorithm)
             .map_err(|_| Error::InitializeStreams)?;

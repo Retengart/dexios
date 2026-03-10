@@ -23,7 +23,12 @@ pub use core::primitives::gen_master_key;
 #[cfg(not(test))]
 pub use core::primitives::gen_salt;
 #[cfg(not(test))]
-pub use core::primitives::legacy::gen_nonce;
+pub fn gen_nonce(
+    algorithm: &core::primitives::legacy::Algorithm,
+    mode: &core::primitives::legacy::Mode,
+) -> Result<Vec<u8>, core::primitives::legacy::LegacySuiteError> {
+    core::primitives::legacy::gen_nonce(algorithm, mode)
+}
 
 #[cfg(test)]
 mod test {
@@ -45,7 +50,7 @@ mod test {
 
     #[must_use]
     pub fn gen_nonce(algorithm: &Algorithm, mode: &Mode) -> Vec<u8> {
-        let nonce_len = get_nonce_len(algorithm, mode);
+        let nonce_len = get_nonce_len(algorithm, mode).expect("supported legacy test nonce");
         let mut nonce = vec![0u8; nonce_len];
         StdRng::seed_from_u64(NONCE_SEED).fill_bytes(&mut nonce);
         nonce
