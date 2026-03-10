@@ -4,11 +4,11 @@
 //! It owns the higher-level operations that are awkward to model as raw
 //! primitives alone, including:
 //!
-//! - encrypt/decrypt request execution,
+//! - V1 encrypt/decrypt request execution,
 //! - pack and unpack workflows,
 //! - secure erase helpers,
 //! - header dump/restore/strip operations,
-//! - V5 key manipulation,
+//! - V1 keyslot manipulation over a shared wrapped master key,
 //! - and storage abstractions for the real filesystem and tests.
 //!
 //! The CLI primarily validates user intent and then dispatches work through

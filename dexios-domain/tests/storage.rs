@@ -1,6 +1,10 @@
 #[path = "support/common.rs"]
 mod common;
 use common::*;
+use core::header::{ParsedHeader, read_header};
+use core::kdf::Kdf;
+use core::protected::Protected;
+use dexios_domain::encrypt;
 use dexios_domain::storage::*;
 use std::fs;
 use std::io::{Read, Write};
@@ -128,6 +132,34 @@ fn should_write_content_to_file() {
         }
         _ => unreachable!(),
     }
+}
+
+#[test]
+fn storage_backed_encrypt_writes_a_v1_header() {
+    let stor = TestFileStorage::new(16);
+    fs::remove_file("hello_16.enc").ok();
+    save_text_file(&stor, "hello_16.txt", "hello world").unwrap();
+
+    let input = stor.read_file("hello_16.txt").unwrap();
+    let output = stor.create_file("hello_16.enc").unwrap();
+
+    encrypt::execute(encrypt::Request {
+        reader: &input.try_reader().unwrap(),
+        writer: &output.try_writer().unwrap(),
+        header_writer: None,
+        raw_key: Protected::new(b"test-password".to_vec()),
+        kdf: Kdf::Blake3Balloon,
+    })
+    .unwrap();
+    stor.flush_file(&output).unwrap();
+
+    let encrypted = stor.read_file("hello_16.enc").unwrap();
+    let (parsed, _) = read_header(&mut *encrypted.try_reader().unwrap().borrow_mut()).unwrap();
+
+    let ParsedHeader::V1(header) = parsed;
+    assert_eq!(header.keyslots().len(), 1);
+
+    fs::remove_file("hello_16.enc").ok();
 }
 
 #[test]
