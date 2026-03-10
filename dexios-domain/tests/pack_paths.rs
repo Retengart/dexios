@@ -104,3 +104,34 @@ fn pack_writes_relative_archive_paths() {
         ]
     );
 }
+
+#[test]
+fn pack_does_not_delete_source_directory_or_files() {
+    let root = tempfile::tempdir().unwrap();
+    let source_dir = create_source_dir(root.path());
+    let output_path = root.path().join("archive.enc");
+
+    let stor = Arc::new(FileStorage);
+    let entries = build_archive_entries(&stor, &source_dir);
+    let output_file = stor.create_file(&output_path).unwrap();
+
+    let req = pack::Request {
+        entries,
+        compression_method: zip::CompressionMethod::Stored,
+        writer: output_file.try_writer().unwrap(),
+        header_writer: None,
+        raw_key: Protected::new(PASSWORD.to_vec()),
+        header_type: HeaderType {
+            version: HeaderVersion::V5,
+            algorithm: Algorithm::XChaCha20Poly1305,
+            mode: Mode::StreamMode,
+        },
+        hashing_algorithm: HashingAlgorithm::Blake3Balloon(5),
+    };
+
+    pack::execute(stor, req).unwrap();
+
+    assert!(source_dir.exists());
+    assert!(source_dir.join("hello.txt").exists());
+    assert!(source_dir.join("nested/world.txt").exists());
+}

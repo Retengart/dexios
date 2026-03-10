@@ -250,3 +250,28 @@ fn pack_recursive_flag_matches_default_recursive_behavior() {
     assert_eq!(default_names, recursive_names);
     assert!(default_names.contains(&"source/nested/deeper/world.txt".to_string()));
 }
+
+#[test]
+fn pack_delete_source_removes_source_directory_after_success() {
+    let test_dir = TestDir::new("pack-delete-source");
+    let source_dir = test_dir.path().join("source");
+    fs::create_dir_all(source_dir.join("nested")).unwrap();
+    fs::write(source_dir.join("hello.txt"), b"hello").unwrap();
+    fs::write(source_dir.join("nested/world.txt"), b"world").unwrap();
+
+    let output = run_pack(
+        test_dir.path(),
+        &["--delete-source"],
+        &["source"],
+        "archive.enc",
+    );
+
+    assert!(
+        output.status.success(),
+        "pack failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!source_dir.exists());
+    assert!(test_dir.path().join("archive.enc").exists());
+}
