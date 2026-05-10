@@ -3,7 +3,7 @@ use dexios_core::header::common::{
     HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN, KeyslotNonce, PayloadNonce, Salt as HeaderSalt,
 };
 use dexios_core::header::v1::{KeyslotKdf, V1Header, V1Keyslot, V1Keyslots};
-use dexios_core::header::{HeaderReadError, ParsedHeader};
+use dexios_core::header::{HeaderReadError, ParsedHeader, ParsedV1Payload};
 use dexios_core::kdf::{Kdf, Salt};
 use dexios_core::protected::Protected;
 use dexios_core::stream::{DecryptionStreams, EncryptionStreams, V1PayloadStream};
@@ -202,18 +202,36 @@ fn v1_payload_stream_uses_header_derived_aad() {
 }
 
 #[test]
+fn read_header_returns_v1_payload_with_header_and_matching_aad() {
+    let header = support::sample_v1_header();
+    let bytes = header.serialize().unwrap();
+
+    let parsed = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes)).unwrap();
+    let ParsedHeader::V1(payload) = parsed;
+
+    let _: &ParsedV1Payload = &payload;
+    assert_eq!(
+        payload.header().payload_nonce().as_bytes(),
+        header.payload_nonce().as_bytes()
+    );
+    assert_eq!(payload.header().keyslots().len(), 1);
+    assert_eq!(payload.aad(), &payload.header().aad());
+    assert_eq!(payload.payload_nonce(), payload.header().payload_nonce());
+}
+
+#[test]
 fn deserialize_roundtrip_preserves_payload_nonce_and_keyslots() {
     let header = support::sample_v1_header();
     let bytes = header.serialize().unwrap();
-    let (parsed, aad) = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes)).unwrap();
+    let parsed = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes)).unwrap();
 
     let dexios_core::header::ParsedHeader::V1(parsed) = parsed;
     assert_eq!(
         parsed.payload_nonce().as_bytes(),
         header.payload_nonce().as_bytes()
     );
-    assert_eq!(parsed.keyslots().len(), 1);
-    assert_eq!(aad.as_bytes().len(), 32);
+    assert_eq!(parsed.header().keyslots().len(), 1);
+    assert_eq!(parsed.aad().as_bytes().len(), 32);
 }
 
 #[test]
@@ -238,13 +256,13 @@ fn serializes_sample_v1_header_to_exact_bytes() {
 fn fixture_v1_valid_single_keyslot_roundtrips() {
     let path = fixture_path("v1_valid_single_keyslot.hex");
     let original_bytes = decode_hex_fixture(&path);
-    let (parsed, aad) =
+    let parsed =
         dexios_core::header::read_header(&mut std::io::Cursor::new(&original_bytes)).unwrap();
 
     let ParsedHeader::V1(parsed) = parsed;
-    assert_eq!(parsed.keyslots().len(), 1);
-    assert_eq!(aad.as_bytes().len(), 32);
-    assert_eq!(parsed.serialize().unwrap(), original_bytes);
+    assert_eq!(parsed.header().keyslots().len(), 1);
+    assert_eq!(parsed.aad().as_bytes().len(), 32);
+    assert_eq!(parsed.header().serialize().unwrap(), original_bytes);
 }
 
 #[test]
@@ -276,10 +294,10 @@ fn detached_v1_header_bytes_are_exactly_416_bytes() {
     let bytes = header.serialize().unwrap();
     assert_eq!(bytes.len(), HEADER_LEN);
 
-    let (parsed, _) = dexios_core::header::read_header(&mut std::io::Cursor::new(&bytes)).unwrap();
+    let parsed = dexios_core::header::read_header(&mut std::io::Cursor::new(&bytes)).unwrap();
     let ParsedHeader::V1(parsed) = parsed;
 
-    assert_eq!(parsed.serialize().unwrap(), bytes);
+    assert_eq!(parsed.header().serialize().unwrap(), bytes);
 }
 
 #[test]
@@ -366,11 +384,14 @@ fn v1_header_preserves_historical_argon2id_tag_as_unsupported() {
     let mut bytes = support::sample_v1_header().serialize().unwrap();
     bytes[HEADER_STATIC_LEN..HEADER_STATIC_LEN + 2].copy_from_slice(&[0xDF, 0x02]);
 
-    let (parsed, _) = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
+    let parsed = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
         .expect("historical Argon2id tag remains structurally recognized");
 
     let ParsedHeader::V1(parsed) = parsed;
-    assert_eq!(parsed.keyslots()[0].kdf(), KeyslotKdf::UnsupportedArgon2id);
+    assert_eq!(
+        parsed.header().keyslots()[0].kdf(),
+        KeyslotKdf::UnsupportedArgon2id
+    );
 }
 
 #[test]
