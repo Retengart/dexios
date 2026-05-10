@@ -1,12 +1,15 @@
-use dexios_core::cipher::Ciphers;
 use dexios_core::header::common::{
     HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN, KeyslotNonce, PayloadNonce, Salt as HeaderSalt,
 };
-use dexios_core::header::v1::{KeyslotKdf, V1Header, V1Keyslot, V1Keyslots};
+use dexios_core::header::v1::{
+    EncryptedMasterKey, KeyslotKdf, V1Header, V1Keyslot, V1Keyslots,
+};
 use dexios_core::header::{HeaderReadError, ParsedHeader, ParsedV1Payload};
 use dexios_core::kdf::{Kdf, Salt};
-use dexios_core::protected::Protected;
-use dexios_core::stream::{DecryptionStreams, EncryptionStreams, V1PayloadStream};
+use dexios_core::primitives::{MasterKey, WrappingKey};
+use dexios_core::stream::{
+    StreamError, V1PayloadDecryptor, V1PayloadEncryptor, V1PayloadStream,
+};
 use std::path::Path;
 
 mod support {
@@ -21,6 +24,13 @@ mod support {
         ));
 
         V1Header::new(PayloadNonce::new([7u8; 20]), keyslots).expect("sample v1 header")
+    }
+
+    pub fn parsed_payload_for(header: &V1Header) -> ParsedV1Payload {
+        let bytes = header.serialize().unwrap();
+        let ParsedHeader::V1(payload) =
+            dexios_core::header::read_header(&mut std::io::Cursor::new(bytes)).unwrap();
+        payload
     }
 }
 
@@ -102,54 +112,70 @@ fn keyslot_nonce_length_is_fixed_for_v1() {
 }
 
 #[test]
-fn cipher_initialization_uses_the_single_suite_signature() {
-    let key = Kdf::Blake3Balloon
-        .derive(
-            dexios_core::protected::Protected::new(b"password".to_vec()),
-            &Salt::new([9u8; 16]),
-        )
-        .unwrap();
+fn keyslot_wrap_unwrap_uses_typed_nonce_and_key_inputs() {
+    let header = support::sample_v1_header();
+    let payload = support::parsed_payload_for(&header);
+    let nonce = KeyslotNonce::new([13u8; 24]);
+    let encrypted_master_key: EncryptedMasterKey = dexios_core::cipher::wrap_v1_master_key(
+        WrappingKey::new([41u8; 32]),
+        &MasterKey::new([31u8; 32]),
+        &nonce,
+    )
+    .expect("wrap typed master key");
 
-    let cipher = Ciphers::initialize(key).unwrap();
-    let nonce = dexios_core::primitives::gen_keyslot_nonce();
-    let encrypted = cipher
-        .encrypt(nonce.as_bytes(), b"hello".as_slice())
-        .unwrap();
-    let decrypted = cipher
-        .decrypt(nonce.as_bytes(), encrypted.as_slice())
-        .unwrap();
+    let unwrapped = dexios_core::cipher::unwrap_v1_master_key(
+        WrappingKey::new([41u8; 32]),
+        &encrypted_master_key,
+        &nonce,
+    )
+    .expect("unwrap typed master key");
 
-    assert_eq!(decrypted, b"hello");
-}
-
-#[test]
-fn stream_initialization_uses_the_single_suite_signature() {
-    let key = Kdf::Blake3Balloon
-        .derive(
-            dexios_core::protected::Protected::new(b"password".to_vec()),
-            &Salt::new([9u8; 16]),
-        )
-        .unwrap();
-
-    let nonce = dexios_core::primitives::gen_payload_nonce();
-    let encrypted = EncryptionStreams::initialize(key, nonce.as_bytes())
+    let encrypted = V1PayloadEncryptor::new(MasterKey::new([31u8; 32]), &header)
         .unwrap()
         .encrypt_last(b"hello".as_slice())
         .unwrap();
-
-    let key = Kdf::Blake3Balloon
-        .derive(
-            dexios_core::protected::Protected::new(b"password".to_vec()),
-            &Salt::new([9u8; 16]),
-        )
-        .unwrap();
-
-    let decrypted = DecryptionStreams::initialize(key, nonce.as_bytes())
+    let decrypted = V1PayloadDecryptor::new(unwrapped, &payload)
         .unwrap()
         .decrypt_last(encrypted.as_slice())
         .unwrap();
 
     assert_eq!(decrypted, b"hello");
+
+    let wrong_key = dexios_core::cipher::unwrap_v1_master_key(
+        WrappingKey::new([42u8; 32]),
+        &encrypted_master_key,
+        &nonce,
+    );
+    assert!(matches!(
+        wrong_key,
+        Err(dexios_core::cipher::CipherError::Authentication)
+    ));
+}
+
+#[test]
+fn stream_initialization_uses_typed_master_key_and_payload_nonce() {
+    let header = support::sample_v1_header();
+    let payload = support::parsed_payload_for(&header);
+
+    let encrypted = V1PayloadEncryptor::new(MasterKey::new([31u8; 32]), &header)
+        .expect("typed encryptor")
+        .encrypt_last(b"hello".as_slice())
+        .expect("encrypt final chunk");
+
+    let decrypted = V1PayloadDecryptor::new(MasterKey::new([31u8; 32]), &payload)
+        .expect("typed decryptor")
+        .decrypt_last(encrypted.as_slice())
+        .expect("decrypt final chunk");
+
+    assert_eq!(decrypted, b"hello");
+}
+
+#[test]
+fn keyslot_salt_has_named_kdf_salt_boundary() {
+    let header_salt = HeaderSalt::new([17u8; 16]);
+    let kdf_salt: Salt = header_salt.to_kdf_salt();
+
+    assert_eq!(kdf_salt.as_bytes(), header_salt.as_bytes());
 }
 
 #[test]
@@ -169,36 +195,49 @@ fn v1_payload_stream_uses_header_derived_aad() {
     let plaintext = b"v1 aad binds the payload to the serialized header";
     let mut encrypted = Vec::new();
     V1PayloadStream::encrypt_file(
-        Protected::new([31u8; 32]),
+        MasterKey::new([31u8; 32]),
         &header,
         &mut std::io::Cursor::new(plaintext),
         &mut encrypted,
     )
     .expect("encrypt with header-derived aad");
 
+    let payload = support::parsed_payload_for(&header);
     let mut decrypted = Vec::new();
     V1PayloadStream::decrypt_file(
-        Protected::new([31u8; 32]),
-        &header,
-        &header.aad(),
+        MasterKey::new([31u8; 32]),
+        &payload,
         &mut std::io::Cursor::new(&encrypted),
         &mut decrypted,
     )
     .expect("decrypt with matching aad");
     assert_eq!(decrypted, plaintext);
 
-    let wrong_aad = other_header.aad();
-    let wrong_aad_result = V1PayloadStream::decrypt_file(
-        Protected::new([31u8; 32]),
-        &header,
-        &wrong_aad,
+    let wrong_payload = support::parsed_payload_for(&other_header);
+    let wrong_bundle_result = V1PayloadStream::decrypt_file(
+        MasterKey::new([31u8; 32]),
+        &wrong_payload,
         &mut std::io::Cursor::new(&encrypted),
         &mut Vec::new(),
     );
     assert!(
-        wrong_aad_result.is_err(),
-        "decryption should fail when a different valid header's AAD is supplied"
+        wrong_bundle_result.is_err(),
+        "decryption should fail when a different parsed V1 payload bundle is supplied"
     );
+}
+
+#[test]
+fn v1_stream_file_api_returns_typed_stream_errors() {
+    let header = support::sample_v1_header();
+    let payload = support::parsed_payload_for(&header);
+    let result: Result<(), StreamError> = V1PayloadStream::decrypt_file(
+        MasterKey::new([31u8; 32]),
+        &payload,
+        &mut std::io::Cursor::new(Vec::<u8>::new()),
+        &mut Vec::new(),
+    );
+
+    assert!(matches!(result, Err(StreamError::MissingFinalBlock)));
 }
 
 #[test]
