@@ -120,6 +120,7 @@ mod tests {
     use crate::encrypt;
     use crate::encrypt::tests::PASSWORD;
     use core::kdf::Kdf;
+    use core::stream::StreamError;
 
     #[test]
     fn should_decrypt_embedded_v1_content() {
@@ -239,5 +240,24 @@ mod tests {
             encrypted_with_placeholder.borrow().position(),
             u64::try_from(HEADER_LEN + ciphertext.len()).expect("reader position")
         );
+    }
+
+    #[test]
+    fn stream_error_variants_map_to_decrypt_data_without_message_matching() {
+        let variants = [
+            StreamError::InvalidNonceLength(19),
+            StreamError::CipherInit,
+            StreamError::Read(std::io::Error::other("read")),
+            StreamError::Write(std::io::Error::other("write")),
+            StreamError::Flush(std::io::Error::other("flush")),
+            StreamError::Authentication,
+            StreamError::TruncatedCiphertext,
+            StreamError::MissingFinalBlock,
+            StreamError::FinalBlockAuthentication,
+        ];
+
+        for error in variants {
+            assert!(matches!(map_stream_error(error), Error::DecryptData));
+        }
     }
 }
