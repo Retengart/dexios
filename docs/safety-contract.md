@@ -69,11 +69,24 @@ invariant.
 
 ## No-Unjustified-Unsafe Policy
 
-The no-unjustified-unsafe policy is defined in this contract and enforced by
-crate-root lint attributes in the core and domain crates.
+`dexios-core/src/lib.rs` and `dexios-domain/src/lib.rs` must keep
+`#![forbid(unsafe_code)]`. The Rust Reference describes `forbid` as identical
+to `deny`, with the additional effect that later code cannot change the lint
+level. That makes the crate-root lint the compiler-backed baseline for SAFE-03.
+
+Any future exception requires all of these before acceptance:
+
+1. a dedicated invariant row in `docs/safety-contract.md`;
+2. a proof comment explaining why safe Rust cannot express the boundary;
+3. an owning test boundary in the crate that uses the exception;
+4. explicit maintainer review in the phase summary.
 
 ## Verification Gate
 
 Phase plans that depend on these invariants must run the relevant focused tests
-or inspection commands listed by each task, then include the applicable
-workspace formatting, lint, and test gates for the files they touch.
+or inspection commands listed by each task, then include these commands:
+
+- `cargo fmt --all --check`
+- `cargo clippy --workspace --all-targets --all-features --no-deps`
+- `cargo test --workspace --all-features --release --verbose`
+- `rg -n "#!\\[forbid\\(unsafe_code\\)\\]" dexios-core/src/lib.rs dexios-domain/src/lib.rs`
