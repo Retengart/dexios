@@ -35,8 +35,13 @@ Unused keyslot regions are serialized as all-zero 96-byte blocks.
 
 The current V1 format recognizes:
 
-- `[0xDF, 0x01]` = `Blake3Balloon`
-- `[0xDF, 0x02]` = `Argon2id`
+- `[0xDF, 0x01]` = `Blake3Balloon`, the only normal KDF tag emitted for new V1 keyslots
+- `[0xDF, 0x02]` = `Argon2id`, an unsupported historical tag recognized for explicit diagnostics
+
+New V1 writes do not expose alternate KDF selection or user-configurable KDF
+parameters. The unsupported historical Argon2id tag can be parsed from an old
+header, but workflow code reports it as unsupported instead of deriving a key
+from it.
 
 ## Key Manipulation
 

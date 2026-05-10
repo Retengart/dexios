@@ -9,7 +9,7 @@
 Current defaults for new encrypted files:
 
 - `XChaCha20-Poly1305`
-- `BLAKE3-Balloon`
+- `BLAKE3-Balloon` as the only normal KDF for new V1 writes
 - V1 headers
 - LE31 stream encryption
 
@@ -67,6 +67,8 @@ Current precedence is:
 
 - The supported file format is V1-only.
 - Legacy Dexios formats are intentionally unsupported after the Phase 2 refactor.
+- New V1 writes do not expose alternate KDF selection; historical Argon2id
+  keyslot tags are reported as unsupported historical metadata.
 - The CLI no longer exposes alternate cipher selection or secure-erase flags.
 
 ## More Information

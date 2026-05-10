@@ -2,19 +2,45 @@
 
 Dexios derives 32-byte wrapping keys from user-provided key material and a 16-byte salt.
 
-The current code supports two hashing families:
+The normal V1 KDF contract supports one hashing family for new files and new
+keyslots:
 
-- `Argon2id`
 - `BLAKE3-Balloon`
 
 ## Current Defaults
 
 For new files:
 
-- the default is `Blake3Balloon`
-- `--argon` switches new encryption to `Argon2id`
+- `Blake3Balloon` is the only normal KDF selector
+- KDF parameters are not user-configurable in Phase 3
+- the historical Argon2id tag is no longer supported for new writes
 
 For decryption and key manipulation, Dexios reads the required KDF family from the current keyslot metadata.
+The V1 keyslot tag `[0xDF, 0x02]` is recognized as an unsupported historical Argon2id tag and reported before any key derivation attempt.
+
+## Frozen BLAKE3-Balloon Parameters
+
+Phase 3 freezes the BLAKE3-Balloon contract for current V1 output:
+
+- space cost: `278_528`
+- time cost: `1`
+- p-cost: `1`
+- output length: `32` bytes
+- Balloon algorithm delta: `3`
+
+The p-cost is the value passed to `balloon_hash::Params::new`. The delta is a
+separate Balloon algorithm constant recorded in the vector metadata.
+
+The checked KDF vector lives in `dexios-core/tests/testdata/kdf_vectors.toml`
+and is exercised by `dexios-core/tests/key_derivation.rs`. Context7
+`/rustcrypto/password-hashes` documents the raw-output `Balloon` API that writes
+derived bytes into a caller-provided output buffer; Dexios uses that API with
+BLAKE3 as the Balloon hash primitive.
+
+The same Context7 `/rustcrypto/password-hashes` source documents historical
+unsupported Argon2id as a RustCrypto implementation API. In Dexios, that tag is
+now a file-format diagnosis only, not a required dependency or normal write
+policy.
 
 ## Handling the Hash
 
@@ -24,5 +50,5 @@ The implementation is intentionally explicit:
 
 - raw key material is read into owned byte buffers
 - the selected KDF derives a 32-byte value
-- the raw input is dropped
+- raw input access is scoped through the secret wrapper
 - the derived key is only exposed to the encrypt/decrypt primitives

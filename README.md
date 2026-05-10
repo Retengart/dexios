@@ -13,7 +13,7 @@ Dexios is a Rust command-line file encryption utility built around a small, vers
 Current defaults for new encryption:
 
 - `XChaCha20-Poly1305`
-- `BLAKE3-Balloon`
+- `BLAKE3-Balloon` as the only normal KDF for new V1 writes
 - V1 headers
 - LE31 stream encryption
 
@@ -59,7 +59,11 @@ For user-facing and technical docs, see:
 
 ## Notes
 
-- `argon2id` is available for new output via `--argon`.
+- New V1 output does not expose user-configurable KDF parameters or an
+  alternate KDF selector.
+- Historical V1 files may contain the unsupported Argon2id keyslot tag `[0xDF, 0x02]`;
+  Dexios recognizes that tag as unsupported historical metadata rather than
+  using it for new writes.
 - delete-after-success flags are available for `encrypt`, `decrypt`, `pack`, and `unpack`
 - the supported file format is V1-only
 - legacy Dexios formats are intentionally unsupported after the Phase 2 refactor

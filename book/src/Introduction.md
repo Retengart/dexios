@@ -13,7 +13,11 @@ The current workspace is split into four crates:
 - `dexios-domain`: the higher-level workflows used by the CLI
 - `dexios-gui`: an experimental GUI crate
 
-For normal encryption, Dexios now writes V1 headers and uses one suite: `XChaCha20-Poly1305` with LE31 stream encryption. The default password hashing algorithm for new files is `BLAKE3-Balloon`; `argon2id` can be selected with `--argon`.
+For normal encryption, Dexios writes V1 headers and uses one suite:
+`XChaCha20-Poly1305` with LE31 stream encryption. The normal KDF for new V1
+writes is BLAKE3-Balloon only. Historical unsupported Argon2id keyslot tags remain
+recognized as unsupported historical metadata so old headers can fail with a
+specific diagnosis.
 
 ## Security Notices
 
@@ -34,7 +38,7 @@ dexios encrypt input.txt output.enc
 uses the following defaults:
 
 - `XChaCha20-Poly1305`
-- `BLAKE3-Balloon` password hashing
+- `BLAKE3-Balloon` password hashing with frozen Phase 3 parameters
 - V1 headers
 - stream encryption with 1 MiB blocks
 - protected in-memory handling of secret material
