@@ -80,3 +80,129 @@ pub fn get_password(pass_state: &PasswordState) -> Result<Protected<Vec<u8>>> {
         }
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::anyhow;
+    use std::collections::VecDeque;
+
+    struct PromptScript {
+        prompts: Vec<String>,
+        answers: VecDeque<Result<String>>,
+    }
+
+    impl PromptScript {
+        fn new(answers: Vec<Result<String>>) -> Self {
+            Self {
+                prompts: Vec::new(),
+                answers: VecDeque::from(answers),
+            }
+        }
+
+        fn prompt(&mut self, prompt: &str) -> Result<String> {
+            self.prompts.push(prompt.to_owned());
+            self.answers
+                .pop_front()
+                .expect("test prompt script should provide enough answers")
+        }
+    }
+
+    #[test]
+    fn direct_prompt_returns_protected_key() {
+        let mut script = PromptScript::new(vec![Ok("direct secret".to_owned())]);
+
+        let key =
+            get_password_with_prompt(&PasswordState::Direct, |prompt| script.prompt(prompt))
+                .expect("direct prompt should return a protected key");
+
+        assert_eq!(
+            script.prompts,
+            ["Password: "],
+            "direct mode should not ask for confirmation"
+        );
+        assert!(key.with_exposed(|key| key == b"direct secret"));
+    }
+
+    #[test]
+    fn validate_prompt_accepts_matching_confirmation() {
+        let mut script = PromptScript::new(vec![
+            Ok("confirmed secret".to_owned()),
+            Ok("confirmed secret".to_owned()),
+        ]);
+
+        let key =
+            get_password_with_prompt(&PasswordState::Validate, |prompt| script.prompt(prompt))
+                .expect("matching confirmation should return a protected key");
+
+        assert_eq!(script.prompts, ["Password: ", "Confirm password: "]);
+        assert!(key.with_exposed(|key| key == b"confirmed secret"));
+    }
+
+    #[test]
+    fn validate_prompt_retries_after_mismatch() {
+        let mut script = PromptScript::new(vec![
+            Ok("first secret".to_owned()),
+            Ok("different secret".to_owned()),
+            Ok("matched secret".to_owned()),
+            Ok("matched secret".to_owned()),
+        ]);
+
+        let key =
+            get_password_with_prompt(&PasswordState::Validate, |prompt| script.prompt(prompt))
+                .expect("mismatch should retry until confirmation matches");
+
+        assert_eq!(
+            script.prompts,
+            [
+                "Password: ",
+                "Confirm password: ",
+                "Password: ",
+                "Confirm password: "
+            ]
+        );
+        assert!(key.with_exposed(|key| key == b"matched secret"));
+    }
+
+    #[test]
+    fn validate_prompt_retries_after_empty_input() {
+        let mut script = PromptScript::new(vec![
+            Ok(String::new()),
+            Ok(String::new()),
+            Ok("nonempty secret".to_owned()),
+            Ok("nonempty secret".to_owned()),
+        ]);
+
+        let key =
+            get_password_with_prompt(&PasswordState::Validate, |prompt| script.prompt(prompt))
+                .expect("empty password should retry until non-empty confirmation matches");
+
+        assert_eq!(
+            script.prompts,
+            [
+                "Password: ",
+                "Confirm password: ",
+                "Password: ",
+                "Confirm password: "
+            ]
+        );
+        assert!(key.with_exposed(|key| key == b"nonempty secret"));
+    }
+
+    #[test]
+    fn prompt_errors_do_not_format_entered_secret() {
+        let entered_secret = "entered secret should stay out of errors";
+        let mut script = PromptScript::new(vec![
+            Ok(entered_secret.to_owned()),
+            Err(anyhow!("prompt backend failed")),
+        ]);
+
+        let err =
+            get_password_with_prompt(&PasswordState::Validate, |prompt| script.prompt(prompt))
+                .expect_err("confirmation prompt failure should be returned");
+        let formatted = format!("{err:#}");
+
+        assert!(!formatted.contains(entered_secret));
+        assert!(formatted.contains("Unable to read password"));
+    }
+}
