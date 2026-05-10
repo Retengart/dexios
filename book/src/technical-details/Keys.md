@@ -8,6 +8,8 @@ The CLI rejects empty key material.
 
 `--auto` uses Dexios' bundled wordlist to generate a passphrase. The current implementation generates `n` random words joined with `-`, with `7` words used by default.
 
+The generated passphrase is intentionally shown to the user because it is the only copy the user receives. This disclosure can be captured by terminal scrollback or logs. Dexios treats this output as deliberate disclosure, not as an accidental leak, and still keeps the returned key bytes inside `Protected<Vec<u8>>`.
+
 Examples:
 
 ```text
@@ -25,7 +27,9 @@ Interactive passwords are read with `rpassword`.
 - encryption asks twice and compares the entries
 - decryption asks once
 
-The resulting string is consumed into bytes and wrapped in `Protected<Vec<u8>>`.
+Prompt strings are wrapped in `zeroize::Zeroizing<String>` as soon as they are read. This applies to direct prompts, confirmation prompts, mismatch retries, empty-input retries, and prompt-error paths.
+
+On success, the accepted prompt string is copied into `Protected<Vec<u8>>`. The prompt temporaries remain `Zeroizing<String>` values and are cleared when dropped.
 
 ## Reading from a Keyfile
 

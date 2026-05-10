@@ -1,11 +1,21 @@
 ## Protected Wrapper
 
-We have implemented our own `Protected<>` wrapper/type, that implements zeroize-on-drop. This ensures all sensitive information is securely zeroed-out once it is no longer required, and that the sensitive informatiton is only accessed when explicit calls are made. Our implementation was inspired by the `secrecy` crate's functionality, so I'd like to provide a huge thanks to the original creators.
+Dexios uses `Protected<T>` for in-memory secret values whose inner type implements `zeroize::Zeroize`.
 
-Protected values do not implement any copying. This is to prevent possible leaks of data.
+Current contract:
 
-Protected values may be explicitly cloned, but this requires `.clone()` or similar - you can easily find these within a codebase.
+- `Protected<T>` implements zeroize-on-drop by calling `Zeroize` when the wrapper is dropped.
+- `fmt::Debug` is redacted and prints `[REDACTED]`.
+- `Protected<T>` does not implement `fmt::Display`.
+- `Protected<T>` has no blanket clone implementation and does not implement `Deref`.
+- `Protected<T>` has no public direct exposure API.
+- Secret access is closure-scoped through `with_exposed`, which keeps each exposure lifetime local and easy to audit.
 
-The only way to access the information held within this type, is to call `.expose()` - this makes things very manageable. With this, we are able to quickly and easily see wherever protected information is accessed. Not only does this allow us to detect potentially malicious pull requests and such, but it also makes [auditing](Auditing.md) a lot easier.
+The wrapper deliberately does not make secret copying convenient. If a caller needs bytes from a protected value, it must do the work inside a `with_exposed` closure and return only the non-secret result or a newly owned protected value.
 
-Protected values are also redcated from debug logs and such, and they will show "[REDACTED]" whenever they are printed. They do not implement `fmt::display`.
+This is an in-process handling contract. It reduces accidental disclosure through debug output, clone paths, and long-lived references, but it does not claim that every historical CPU, allocator, terminal, or OS copy can be erased.
+
+Implementation and regression coverage:
+
+- `dexios-core/src/protected.rs`
+- `dexios-core/tests/protected.rs`
