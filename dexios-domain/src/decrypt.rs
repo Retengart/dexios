@@ -7,7 +7,7 @@ use core::header::common::HEADER_LEN;
 use core::header::v1::V1Header;
 use core::header::{ParsedHeader, read_header};
 use core::protected::Protected;
-use core::stream::V1PayloadStream;
+use core::stream::{StreamError, V1PayloadStream};
 
 use crate::key::decrypt_v1_master_key_with_index;
 
@@ -107,9 +107,23 @@ where
         &mut *req.reader.borrow_mut(),
         &mut *req.writer.borrow_mut(),
     )
-    .map_err(|_| Error::DecryptData)?;
+    .map_err(map_stream_error)?;
 
     Ok(())
+}
+
+fn map_stream_error(error: StreamError) -> Error {
+    match error {
+        StreamError::InvalidNonceLength(_)
+        | StreamError::CipherInit
+        | StreamError::Read(_)
+        | StreamError::Write(_)
+        | StreamError::Flush(_)
+        | StreamError::Authentication
+        | StreamError::TruncatedCiphertext
+        | StreamError::MissingFinalBlock
+        | StreamError::FinalBlockAuthentication => Error::DecryptData,
+    }
 }
 
 #[cfg(test)]
