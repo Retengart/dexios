@@ -71,19 +71,8 @@ pub fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
     })
 }
 
-pub fn kdf(sub_matches: &ArgMatches) -> Kdf {
-    let use_argon = sub_matches
-        .try_get_one::<bool>("argon")
-        .ok()
-        .flatten()
-        .copied()
-        .unwrap_or(false);
-
-    if use_argon {
-        Kdf::Argon2id
-    } else {
-        Kdf::Blake3Balloon
-    }
+pub fn kdf(_sub_matches: &ArgMatches) -> Kdf {
+    Kdf::Blake3Balloon
 }
 
 pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams)> {

@@ -16,6 +16,7 @@ pub mod verify;
 pub enum Error {
     HeaderSizeParse,
     Unsupported,
+    UnsupportedKdf([u8; 2]),
     IncorrectKey,
     MasterKeyEncrypt,
     TooManyKeyslots,
@@ -44,6 +45,9 @@ impl std::fmt::Display for Error {
             Error::Unsupported => {
                 f.write_str("The provided request is unsupported with this header version")
             }
+            Error::UnsupportedKdf(tag) => {
+                write!(f, "Unsupported keyslot KDF tag: {tag:02X?}")
+            }
             Error::IncorrectKey => f.write_str("The provided key is incorrect"),
         }
     }
@@ -55,12 +59,16 @@ pub fn decrypt_v1_master_key_with_index(
 ) -> Result<(Protected<[u8; MASTER_KEY_LEN]>, V1KeyslotIndex), Error> {
     let mut index = None;
     let mut master_key = [0u8; MASTER_KEY_LEN];
+    let mut saw_unsupported_kdf = None;
 
     // we need the index, so we can't use `decrypt_master_key()`
     for (i, keyslot) in keyslots.as_slice().iter().enumerate() {
         let kdf = match keyslot.kdf() {
             KeyslotKdf::Blake3Balloon => Kdf::Blake3Balloon,
-            KeyslotKdf::UnsupportedArgon2id => continue,
+            KeyslotKdf::UnsupportedArgon2id => {
+                saw_unsupported_kdf = Some([0xDF, 0x02]);
+                continue;
+            }
         };
         let salt = core::kdf::Salt::new(*keyslot.salt().as_bytes());
         let key_old = kdf
@@ -94,6 +102,9 @@ pub fn decrypt_v1_master_key_with_index(
     drop(raw_key_old);
 
     let Some(index) = index else {
+        if let Some(tag) = saw_unsupported_kdf {
+            return Err(Error::UnsupportedKdf(tag));
+        }
         return Err(Error::IncorrectKey);
     };
 

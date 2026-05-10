@@ -18,6 +18,7 @@ pub enum Error {
     DeserializeHeader,
     ReadEncryptedData,
     DecryptMasterKey,
+    UnsupportedKdf([u8; 2]),
     DecryptData,
     WriteData,
     RewindDataReader,
@@ -31,6 +32,7 @@ impl std::fmt::Display for Error {
             Error::DeserializeHeader => f.write_str("Cannot deserialize header"),
             Error::ReadEncryptedData => f.write_str("Unable to read encrypted data"),
             Error::DecryptMasterKey => f.write_str("Cannot decrypt master key"),
+            Error::UnsupportedKdf(tag) => write!(f, "Unsupported keyslot KDF tag: {tag:02X?}"),
             Error::DecryptData => f.write_str("Unable to decrypt data"),
             Error::WriteData => f.write_str("Unable to write data"),
             Error::RewindDataReader => f.write_str("Unable to rewind the reader"),
@@ -94,8 +96,12 @@ where
     }
 
     let (master_key, _) =
-        decrypt_v1_master_key_with_index(header.keyslots_collection(), req.raw_key)
-            .map_err(|_| Error::DecryptMasterKey)?;
+        decrypt_v1_master_key_with_index(header.keyslots_collection(), req.raw_key).map_err(
+            |err| match err {
+                crate::key::Error::UnsupportedKdf(tag) => Error::UnsupportedKdf(tag),
+                _ => Error::DecryptMasterKey,
+            },
+        )?;
 
     V1PayloadStream::decrypt_file(
         master_key,
