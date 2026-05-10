@@ -32,8 +32,8 @@ impl MasterKey {
     }
 
     #[must_use]
-    pub(crate) fn as_bytes(&self) -> &[u8; MASTER_KEY_LEN] {
-        self.0.expose()
+    pub(crate) fn with_exposed<R>(&self, f: impl FnOnce(&[u8; MASTER_KEY_LEN]) -> R) -> R {
+        self.0.with_exposed(f)
     }
 }
 
@@ -57,8 +57,8 @@ impl WrappingKey {
     }
 
     #[must_use]
-    pub(crate) fn as_bytes(&self) -> &[u8; DERIVED_KEY_LEN] {
-        self.0.expose()
+    pub(crate) fn with_exposed<R>(&self, f: impl FnOnce(&[u8; DERIVED_KEY_LEN]) -> R) -> R {
+        self.0.with_exposed(f)
     }
 }
 

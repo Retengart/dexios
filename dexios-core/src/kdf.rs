@@ -79,7 +79,8 @@ pub(crate) fn derive_balloon_with_params(
 
     let mut key = [0u8; DERIVED_KEY_LEN];
     let balloon = Balloon::<blake3::Hasher>::new(balloon_hash::Algorithm::Balloon, params, None);
-    let result = balloon.hash_into(raw_key.expose(), salt.as_bytes(), &mut key);
+    let result =
+        raw_key.with_exposed(|raw_key| balloon.hash_into(raw_key, salt.as_bytes(), &mut key));
     drop(raw_key);
 
     if result.is_err() {

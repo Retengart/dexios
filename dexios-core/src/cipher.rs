@@ -64,7 +64,8 @@ pub fn wrap_v1_master_key(
     nonce: &KeyslotNonce,
 ) -> Result<EncryptedMasterKey, CipherError> {
     let cipher = Ciphers::initialize(wrapping_key)?;
-    let encrypted = cipher.encrypt(nonce, master_key.as_bytes().as_slice())?;
+    let encrypted =
+        master_key.with_exposed(|master_key| cipher.encrypt(nonce, master_key.as_slice()))?;
     EncryptedMasterKey::try_from_slice(&encrypted)
         .map_err(|_| CipherError::InvalidEncryptedMasterKeyLength(encrypted.len()))
 }
@@ -113,8 +114,9 @@ impl Ciphers {
     ///
     /// Returns an error if the hashed key cannot initialize the fixed cipher.
     pub(crate) fn initialize(key: WrappingKey) -> Result<Self, CipherError> {
-        let cipher = XChaCha20Poly1305::new_from_slice(key.as_bytes())
-            .map_err(|_| CipherError::CipherInit)?;
+        let cipher = key.with_exposed(|key| {
+            XChaCha20Poly1305::new_from_slice(key).map_err(|_| CipherError::CipherInit)
+        })?;
 
         Ok(Self(Box::new(cipher)))
     }

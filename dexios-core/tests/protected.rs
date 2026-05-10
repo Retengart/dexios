@@ -22,6 +22,16 @@ fn with_exposed_scopes_secret_access_to_closure() {
 #[test]
 fn protected_source_has_no_blanket_clone_public_expose_or_deref() {
     let source = include_str!("../src/protected.rs");
+    let public_direct_accessor = ["pub fn ", "expose", "("].concat();
+    let blanket_deref_prefix = "impl<T> std::ops::";
+    let blanket_deref_trait = "Deref";
+    let blanket_deref_suffix = " for Protected<T>";
+    let blanket_deref_impl = [
+        blanket_deref_prefix,
+        blanket_deref_trait,
+        blanket_deref_suffix,
+    ]
+    .concat();
 
     assert!(
         !source.contains("#[derive(Clone)]"),
@@ -32,11 +42,11 @@ fn protected_source_has_no_blanket_clone_public_expose_or_deref() {
         "Protected<T> must not provide blanket Clone"
     );
     assert!(
-        !source.contains("pub fn expose("),
+        !source.contains(&public_direct_accessor),
         "Protected<T> must not expose secrets through a public direct accessor"
     );
     assert!(
-        !source.contains("impl<T> std::ops::Deref for Protected<T>"),
+        !source.contains(&blanket_deref_impl),
         "Protected<T> must not implement Deref"
     );
 }

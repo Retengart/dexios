@@ -48,10 +48,6 @@ where
     pub fn with_exposed<R>(&self, f: impl FnOnce(&T) -> R) -> R {
         f(&self.data)
     }
-
-    pub(crate) fn expose(&self) -> &T {
-        &self.data
-    }
 }
 
 impl<T> Drop for Protected<T>

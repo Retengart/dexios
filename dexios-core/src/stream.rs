@@ -283,8 +283,9 @@ impl EncryptionStreams {
             return Err(StreamError::InvalidNonceLength(nonce.as_bytes().len()));
         }
 
-        let cipher = XChaCha20Poly1305::new_from_slice(key.as_bytes())
-            .map_err(|_| StreamError::CipherInit)?;
+        let cipher = key.with_exposed(|key| {
+            XChaCha20Poly1305::new_from_slice(key).map_err(|_| StreamError::CipherInit)
+        })?;
         let stream = EncryptorLE31::from_aead(cipher, nonce.as_bytes().as_ref().into());
 
         Ok(Self::XChaCha20Poly1305(Box::new(stream)))
@@ -323,8 +324,9 @@ impl DecryptionStreams {
             return Err(StreamError::InvalidNonceLength(nonce.as_bytes().len()));
         }
 
-        let cipher = XChaCha20Poly1305::new_from_slice(key.as_bytes())
-            .map_err(|_| StreamError::CipherInit)?;
+        let cipher = key.with_exposed(|key| {
+            XChaCha20Poly1305::new_from_slice(key).map_err(|_| StreamError::CipherInit)
+        })?;
         let stream = DecryptorLE31::from_aead(cipher, nonce.as_bytes().as_ref().into());
 
         Ok(Self::XChaCha20Poly1305(Box::new(stream)))
