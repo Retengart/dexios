@@ -34,9 +34,10 @@ fn mark_keyslot_unsupported_argon2id(encrypted: &RefCell<Cursor<Vec<u8>>>, index
 fn keyslot_kdfs(encrypted: &RefCell<Cursor<Vec<u8>>>) -> Vec<KeyslotKdf> {
     let mut handle = encrypted.borrow_mut();
     handle.rewind().expect("rewind before header read");
-    let (parsed, _) = read_header(&mut *handle).expect("read V1 header");
-    let ParsedHeader::V1(header) = parsed;
-    header
+    let parsed = read_header(&mut *handle).expect("read V1 header");
+    let ParsedHeader::V1(payload) = parsed;
+    payload
+        .header()
         .keyslots()
         .iter()
         .map(|keyslot| keyslot.kdf())

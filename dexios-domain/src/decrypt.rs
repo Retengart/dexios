@@ -201,4 +201,46 @@ mod tests {
             _ => unreachable!(),
         }
     }
+
+    #[test]
+    fn should_decrypt_detached_v1_content_after_zero_header_placeholder() {
+        let input_cur = RefCell::new(Cursor::new(b"Hello world".to_vec()));
+        let encrypted_cur = RefCell::new(Cursor::new(Vec::new()));
+        let header_cur = RefCell::new(Cursor::new(Vec::new()));
+
+        encrypt::execute(encrypt::Request {
+            reader: &input_cur,
+            writer: &encrypted_cur,
+            header_writer: Some(&header_cur),
+            raw_key: Protected::new(PASSWORD.to_vec()),
+            kdf: Kdf::Blake3Balloon,
+        })
+        .expect("encrypt detached fixture");
+
+        let ciphertext = encrypted_cur.into_inner().into_inner();
+        let mut content_with_placeholder = vec![0u8; HEADER_LEN];
+        content_with_placeholder.extend_from_slice(&ciphertext);
+
+        let encrypted_with_placeholder = RefCell::new(Cursor::new(content_with_placeholder));
+        header_cur.borrow_mut().rewind().expect("rewind header");
+
+        let mut output_content = vec![];
+        let output_cur = RefCell::new(Cursor::new(&mut output_content));
+
+        let req = Request {
+            header_reader: Some(&header_cur),
+            reader: &encrypted_with_placeholder,
+            writer: &output_cur,
+            raw_key: Protected::new(PASSWORD.to_vec()),
+            on_decrypted_header: None,
+        };
+
+        execute(req).expect("decrypt detached fixture with zero placeholder");
+
+        assert_eq!(output_content, b"Hello world");
+        assert_eq!(
+            encrypted_with_placeholder.borrow().position(),
+            u64::try_from(HEADER_LEN + ciphertext.len()).expect("reader position")
+        );
+    }
 }

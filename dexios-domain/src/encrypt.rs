@@ -146,8 +146,9 @@ pub mod tests {
         .expect("encrypt");
 
         let mut encrypted = output_cur.into_inner().into_inner();
-        let (parsed, _) = read_header(&mut Cursor::new(&encrypted)).expect("read header");
-        let ParsedHeader::V1(header) = parsed;
+        let parsed = read_header(&mut Cursor::new(&encrypted)).expect("read header");
+        let ParsedHeader::V1(payload) = parsed;
+        let header = payload.header();
 
         assert_eq!(header.keyslots().len(), 1);
         assert_eq!(encrypted.len(), HEADER_LEN + b"Hello world".len() + 16);
@@ -173,9 +174,9 @@ pub mod tests {
 
         let output_content = output_cur.into_inner().into_inner();
         let output_header = output_header_cur.into_inner().into_inner();
-        let (parsed, _) =
-            read_header(&mut Cursor::new(&output_header)).expect("read detached header");
-        let ParsedHeader::V1(header) = parsed;
+        let parsed = read_header(&mut Cursor::new(&output_header)).expect("read detached header");
+        let ParsedHeader::V1(payload) = parsed;
+        let header = payload.header();
 
         assert_eq!(header.keyslots().len(), 1);
         assert_eq!(output_header.len(), HEADER_LEN);
