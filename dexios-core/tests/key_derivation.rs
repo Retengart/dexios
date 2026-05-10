@@ -1,4 +1,7 @@
-use dexios_core::kdf::{Kdf, Salt};
+use dexios_core::kdf::{
+    BLAKE3_BALLOON_ALGORITHM_DELTA, BLAKE3_BALLOON_P_COST, BLAKE3_BALLOON_SPACE_COST,
+    BLAKE3_BALLOON_TIME_COST, Kdf, Salt,
+};
 use dexios_core::protected::Protected;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -69,20 +72,13 @@ fn kdf_vector_file_contains_expected_cases() {
         assert!(vector.metadata.contains_key("source_name"));
 
         match vector.algorithm.as_str() {
-            "argon2id" => {
-                assert!(vector.metadata.contains_key("source_version"));
-                assert!(vector.metadata.contains_key("source_entrypoint"));
-                assert!(vector.metadata.contains_key("params_memory_kib"));
-                assert!(vector.metadata.contains_key("params_time_cost"));
-                assert!(vector.metadata.contains_key("params_parallelism"));
-                assert!(vector.metadata.contains_key("params_hash_len"));
-            }
             "balloon" => {
                 assert!(vector.metadata.contains_key("source_repo"));
                 assert!(vector.metadata.contains_key("source_commit"));
                 assert!(vector.metadata.contains_key("source_hash_primitive"));
                 assert!(vector.metadata.contains_key("params_space_cost"));
                 assert!(vector.metadata.contains_key("params_time_cost"));
+                assert!(vector.metadata.contains_key("params_p_cost"));
                 assert!(vector.metadata.contains_key("params_delta"));
             }
             other => panic!("unexpected KDF algorithm in testdata: {other}"),
@@ -90,9 +86,8 @@ fn kdf_vector_file_contains_expected_cases() {
     }
 
     assert!(
-        vectors
-            .iter()
-            .any(|vector| vector.algorithm == "argon2id" && vector.case == "stable")
+        vectors.iter().all(|vector| vector.algorithm != "argon2id"),
+        "Argon2id is a historical unsupported keyslot tag, not a normal KDF vector"
     );
     assert!(
         vectors
@@ -102,11 +97,14 @@ fn kdf_vector_file_contains_expected_cases() {
 }
 
 #[test]
-fn argon2id_derives_a_32_byte_key() {
-    let derived = Kdf::Argon2id
-        .derive(Protected::new(b"password".to_vec()), &Salt::new([7; 16]))
-        .unwrap();
-    assert_eq!(derived.expose().len(), 32);
+fn normal_kdf_selector_is_blake3_balloon_only() {
+    let supported = [Kdf::Blake3Balloon];
+
+    for selector in supported {
+        match selector {
+            Kdf::Blake3Balloon => {}
+        }
+    }
 }
 
 #[test]
@@ -118,8 +116,26 @@ fn blake3_balloon_derives_a_32_byte_key() {
 }
 
 #[test]
-fn argon2id_matches_stable_known_vector() {
-    assert_vector(Kdf::Argon2id, "argon2id", "stable");
+fn blake3_balloon_vector_metadata_matches_frozen_contract() {
+    let vectors = load_vectors();
+    let vector = find_vector(&vectors, "balloon", "stable");
+
+    assert_eq!(
+        vector.metadata["params_space_cost"].as_integer(),
+        Some(i64::from(BLAKE3_BALLOON_SPACE_COST))
+    );
+    assert_eq!(
+        vector.metadata["params_time_cost"].as_integer(),
+        Some(i64::from(BLAKE3_BALLOON_TIME_COST))
+    );
+    assert_eq!(
+        vector.metadata["params_p_cost"].as_integer(),
+        Some(i64::from(BLAKE3_BALLOON_P_COST))
+    );
+    assert_eq!(
+        vector.metadata["params_delta"].as_integer(),
+        Some(i64::from(BLAKE3_BALLOON_ALGORITHM_DELTA))
+    );
 }
 
 #[test]
