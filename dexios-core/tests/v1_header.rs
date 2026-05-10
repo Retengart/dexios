@@ -362,6 +362,36 @@ fn v1_header_rejects_invalid_kdf_tag() {
 }
 
 #[test]
+fn v1_header_preserves_historical_argon2id_tag_as_unsupported() {
+    let mut bytes = support::sample_v1_header().serialize().unwrap();
+    bytes[HEADER_STATIC_LEN..HEADER_STATIC_LEN + 2].copy_from_slice(&[0xDF, 0x02]);
+
+    let (parsed, _) = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
+        .expect("historical Argon2id tag remains structurally recognized");
+
+    let ParsedHeader::V1(parsed) = parsed;
+    assert_eq!(
+        parsed.keyslots()[0].kdf(),
+        KeyslotKdf::UnsupportedArgon2id
+    );
+}
+
+#[test]
+fn new_keyslot_constructor_uses_supported_kdf_selector() {
+    let keyslot = V1Keyslot::new(
+        Kdf::Blake3Balloon,
+        [11u8; 48],
+        KeyslotNonce::new([13u8; 24]),
+        HeaderSalt::new([17u8; 16]),
+    );
+    let header = V1Header::new(PayloadNonce::new([7u8; 20]), V1Keyslots::single(keyslot))
+        .expect("sample v1 header");
+    let bytes = header.serialize().unwrap();
+
+    assert_eq!(&bytes[HEADER_STATIC_LEN..HEADER_STATIC_LEN + 2], &[0xDF, 0x01]);
+}
+
+#[test]
 fn v1_header_rejects_active_keyslot_padding() {
     let mut bytes = support::sample_v1_header().serialize().unwrap();
     bytes[HEADER_STATIC_LEN + 90] = 1;
