@@ -1,21 +1,4 @@
 [[vector]]
-id = "argon2id-stable"
-algorithm = "argon2id"
-case = "stable"
-password = "test-password"
-salt_hex = "03030303030303030303030303030303"
-expected_hex = "d49ccf1e57a8d4a38a039adec6a48f67665d9b3262e571a6c95be7647cf1248b"
-provenance = "Generated on 2026-03-07 with Python argon2-cffi 25.1.0 via argon2.low_level.hash_secret_raw(Type.ID), independent from Dexios."
-source_kind = "python-library"
-source_name = "argon2-cffi"
-source_version = "25.1.0"
-source_entrypoint = "argon2.low_level.hash_secret_raw"
-params_memory_kib = 262144
-params_time_cost = 10
-params_parallelism = 4
-params_hash_len = 32
-
-[[vector]]
 id = "balloon-stable"
 algorithm = "balloon"
 case = "stable"
@@ -30,4 +13,5 @@ source_commit = "8e28a7822113f1e8ef56b175550210c1a8e36c1a"
 source_hash_primitive = "blake3 1.0.8"
 params_space_cost = 278528
 params_time_cost = 1
+params_p_cost = 1
 params_delta = 3

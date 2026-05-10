@@ -34,16 +34,6 @@ impl From<Kdf> for KeyslotKdf {
     fn from(value: Kdf) -> Self {
         match value {
             Kdf::Blake3Balloon => Self::Blake3Balloon,
-            Kdf::Argon2id => Self::Argon2id,
-        }
-    }
-}
-
-impl From<KeyslotKdf> for Kdf {
-    fn from(value: KeyslotKdf) -> Self {
-        match value {
-            KeyslotKdf::Blake3Balloon => Self::Blake3Balloon,
-            KeyslotKdf::Argon2id => Self::Argon2id,
         }
     }
 }

@@ -36,7 +36,6 @@ aead.workspace = true
 zeroize.workspace = true
 
 # for password hashing
-argon2.workspace = true
 balloon-hash.workspace = true
 blake3 = { workspace = true, features = ["traits-preview"] }
 
