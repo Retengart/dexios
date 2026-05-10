@@ -217,9 +217,19 @@ mod tests {
 
     #[test]
     fn generated_passphrase_disclosure_message_includes_secret() {
-        assert_eq!(
-            generated_passphrase_disclosure("alpha-beta"),
-            "Your generated passphrase is: alpha-beta"
+        let message = generated_passphrase_disclosure("alpha-beta");
+
+        assert!(
+            message.contains("intentionally shown"),
+            "generated passphrase disclosure should state intentional display: {message}"
+        );
+        assert!(
+            message.contains("terminal scrollback") || message.contains("logs"),
+            "generated passphrase disclosure should warn about terminal/log capture: {message}"
+        );
+        assert!(
+            message.contains("alpha-beta"),
+            "generated passphrase disclosure should keep the secret available to the user: {message}"
         );
     }
 
