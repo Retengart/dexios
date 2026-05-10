@@ -39,7 +39,10 @@ pub fn details(input: &str) -> Result<()> {
                     "  Encrypted master key: {} (hex)",
                     hex_encode(keyslot.encrypted_master_key())
                 );
-                println!("  Keyslot nonce: {} (hex)", hex_encode(keyslot.nonce().as_bytes()));
+                println!(
+                    "  Keyslot nonce: {} (hex)",
+                    hex_encode(keyslot.nonce().as_bytes())
+                );
             }
 
             Ok(())
