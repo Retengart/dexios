@@ -7,6 +7,8 @@ use dexios_domain::{decrypt, encrypt, key};
 use std::cell::RefCell;
 use std::io::{Cursor, Seek};
 
+const DOMAIN_KEY_SOURCE: &str = include_str!("../src/key.rs");
+
 fn encrypted_v1_fixture() -> RefCell<Cursor<Vec<u8>>> {
     let input = RefCell::new(Cursor::new(b"Hello world".to_vec()));
     let output = RefCell::new(Cursor::new(Vec::new()));
@@ -42,6 +44,14 @@ fn keyslot_kdfs(encrypted: &RefCell<Cursor<Vec<u8>>>) -> Vec<KeyslotKdf> {
         .iter()
         .map(|keyslot| keyslot.kdf())
         .collect()
+}
+
+fn keyslots(encrypted: &RefCell<Cursor<Vec<u8>>>) -> core::header::v1::V1Keyslots {
+    let mut handle = encrypted.borrow_mut();
+    handle.rewind().expect("rewind before header read");
+    let parsed = read_header(&mut *handle).expect("read V1 header");
+    let ParsedHeader::V1(payload) = parsed;
+    payload.header().keyslots_collection().clone()
 }
 
 fn decrypt_fixture(
@@ -96,6 +106,67 @@ fn argon2id_only_keyslot_returns_unsupported_kdf_for_decrypt() {
         decrypt,
         Err(decrypt::Error::UnsupportedKdf([0xDF, 0x02]))
     ));
+}
+
+#[test]
+fn decrypt_v1_master_key_tries_later_supported_keyslot_without_raw_key_clone_contract() {
+    let encrypted = encrypted_v1_fixture();
+
+    key::add::execute(key::add::Request {
+        handle: &encrypted,
+        raw_key_old: Protected::new(b"old-pass".to_vec()),
+        raw_key_new: Protected::new(b"new-pass".to_vec()),
+        kdf: Kdf::Blake3Balloon,
+    })
+    .expect("add second supported keyslot");
+
+    let keyslots = keyslots(&encrypted);
+    let (_master_key, index) = key::decrypt_v1_master_key_with_index(
+        &keyslots,
+        Protected::new(b"new-pass".to_vec()),
+    )
+    .expect("later supported keyslot should decrypt");
+
+    assert_eq!(
+        index.get(),
+        1,
+        "wrong first keyslot should not prevent trying the later supported keyslot"
+    );
+}
+
+#[test]
+fn unsupported_kdf_wins_when_no_supported_keyslot_decrypts() {
+    let encrypted = encrypted_v1_fixture();
+
+    key::add::execute(key::add::Request {
+        handle: &encrypted,
+        raw_key_old: Protected::new(b"old-pass".to_vec()),
+        raw_key_new: Protected::new(b"new-pass".to_vec()),
+        kdf: Kdf::Blake3Balloon,
+    })
+    .expect("add second supported keyslot");
+    mark_keyslot_unsupported_argon2id(&encrypted, 0);
+
+    let keyslots = keyslots(&encrypted);
+    let decrypt =
+        key::decrypt_v1_master_key_with_index(&keyslots, Protected::new(b"wrong-pass".to_vec()));
+
+    assert!(matches!(
+        decrypt,
+        Err(key::Error::UnsupportedKdf([0xDF, 0x02]))
+    ));
+}
+
+#[test]
+fn domain_key_decrypt_source_avoids_raw_key_clone_and_unwrap_regressions() {
+    let forbidden = ["raw_key_old.clone()", ".unwrap()"];
+
+    for pattern in forbidden {
+        assert!(
+            !DOMAIN_KEY_SOURCE.contains(pattern),
+            "`dexios-domain/src/key.rs` must not contain `{pattern}` in the keyslot decrypt path"
+        );
+    }
 }
 
 #[test]
