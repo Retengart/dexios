@@ -262,7 +262,7 @@ fn ensure_delete_source_does_not_target_generated_paths(req: &Request) -> Result
 // once it has the total number of files/folders, it creates a temporary zip file
 // it compresses all of the files into the temporary archive
 // once compressed, it encrypts the zip file
-// it erases the temporary archive afterwards, to stop any residual data from remaining
+// it drops/deletes the temporary archive afterwards; this is cleanup only, not a secure-erase guarantee
 pub fn execute(req: &Request) -> Result<()> {
     // TODO: It is necessary to raise it to a higher level
     let stor = Arc::new(domain::storage::FileStorage);
