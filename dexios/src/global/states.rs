@@ -78,6 +78,24 @@ fn get_bytes<R: std::io::Read>(reader: &mut R) -> Result<Protected<Vec<u8>>> {
     Ok(Protected::new(data))
 }
 
+fn generated_passphrase_disclosure(passphrase: &str) -> String {
+    format!("Your generated passphrase is: {passphrase}")
+}
+
+fn generated_passphrase_secret<F>(total_words: &i32, mut disclose: F) -> Protected<Vec<u8>>
+where
+    F: FnMut(&str),
+{
+    let passphrase = generate_passphrase(total_words);
+    let key = passphrase.with_exposed(|passphrase| {
+        let message = generated_passphrase_disclosure(passphrase);
+        disclose(&message);
+        Protected::new(passphrase.as_bytes().to_vec())
+    });
+    drop(passphrase);
+    key
+}
+
 impl Key {
     pub(crate) fn resolve_key_source(
         keyfile: Option<&str>,
@@ -137,15 +155,7 @@ impl Key {
                     .into_bytes(),
             ),
             Key::User => get_password(pass_state)?,
-            Key::Generate(i) => {
-                let passphrase = generate_passphrase(i);
-                let key = passphrase.with_exposed(|passphrase| {
-                    warn!("Your generated passphrase is: {passphrase}");
-                    Protected::new(passphrase.as_bytes().to_vec())
-                });
-                drop(passphrase);
-                key
-            }
+            Key::Generate(i) => generated_passphrase_secret(i, |message| warn!("{message}")),
         };
 
         if secret.with_exposed(|secret| secret.is_empty()) {
