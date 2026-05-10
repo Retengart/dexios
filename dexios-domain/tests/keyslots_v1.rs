@@ -40,6 +40,25 @@ fn decrypt_fixture(
 }
 
 #[test]
+#[ignore = "known bug: Phase 1 baseline; unignore in Phase 5"]
+fn quarantined_known_bug_key_del_rejects_final_keyslot() {
+    let encrypted = encrypted_v1_fixture();
+
+    let deletion = key::delete::execute(key::delete::Request {
+        handle: &encrypted,
+        raw_key_old: Protected::new(b"old-pass".to_vec()),
+    });
+
+    assert!(
+        deletion.is_err(),
+        "deleting the final usable keyslot should be rejected before writing the header"
+    );
+
+    let plaintext = decrypt_fixture(&encrypted, b"old-pass").expect("decrypt with original key");
+    assert_eq!(plaintext, b"Hello world");
+}
+
+#[test]
 fn wrong_key_current_v1_fixture_rejects_verification_and_decrypt() {
     // Manifest fixture: wrong-key-current-v1.
     let encrypted = encrypted_v1_fixture();
