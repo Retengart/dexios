@@ -17,6 +17,19 @@ later tasks remove the old format paths entirely.
   `8e28a7822113f1e8ef56b175550210c1a8e36c1a`, adapted locally to use Python
   `blake3` 1.0.8 as the hash primitive with `delta=3`.
 
+## Phase 1 Fixture Corpus Policy
+
+Phase 1 fixture data uses disposable keys and non-secret payloads only. Byte
+fixtures are stored as reviewable text formats by default, and generated
+workflow fixtures must be tied to a manifest row with purpose, expected
+behavior, owning invariant, and owner phase.
+
+When a fixture is used as correctness evidence, its provenance must be
+independent enough for the claim being made. Fixtures generated from current
+Dexios code can document current compatibility behavior, but they must not be
+treated as independent cryptographic or format truth unless a separate source
+or reviewable byte fixture supports the same claim.
+
 ## Generation Notes
 
 The checked-in stable vectors were generated on 2026-03-07 with:
