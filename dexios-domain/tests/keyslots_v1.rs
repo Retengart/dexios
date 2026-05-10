@@ -8,6 +8,9 @@ use std::cell::RefCell;
 use std::io::{Cursor, Seek};
 
 const DOMAIN_KEY_SOURCE: &str = include_str!("../src/key.rs");
+const DOMAIN_ENCRYPT_SOURCE: &str = include_str!("../src/encrypt.rs");
+const DOMAIN_KEY_ADD_SOURCE: &str = include_str!("../src/key/add.rs");
+const DOMAIN_KEY_CHANGE_SOURCE: &str = include_str!("../src/key/change.rs");
 
 fn encrypted_v1_fixture() -> RefCell<Cursor<Vec<u8>>> {
     let input = RefCell::new(Cursor::new(b"Hello world".to_vec()));
@@ -167,6 +170,48 @@ fn domain_key_decrypt_source_avoids_raw_key_clone_and_unwrap_regressions() {
             "`dexios-domain/src/key.rs` must not contain `{pattern}` in the keyslot decrypt path"
         );
     }
+}
+
+#[test]
+fn domain_encrypt_add_change_sources_keep_borrowed_secret_contract() {
+    let sources = [
+        ("dexios-domain/src/encrypt.rs", DOMAIN_ENCRYPT_SOURCE),
+        ("dexios-domain/src/key.rs", DOMAIN_KEY_SOURCE),
+        ("dexios-domain/src/key/add.rs", DOMAIN_KEY_ADD_SOURCE),
+        ("dexios-domain/src/key/change.rs", DOMAIN_KEY_CHANGE_SOURCE),
+    ];
+    let forbidden = [
+        ".expose(",
+        "raw_key.clone()",
+        "raw_key_old.clone()",
+        "raw_key_new.clone()",
+    ];
+
+    for (path, source) in sources {
+        for pattern in forbidden {
+            assert!(
+                !source.contains(pattern),
+                "`{path}` must not contain `{pattern}` after the borrowed secret API migration"
+            );
+        }
+    }
+
+    assert!(
+        DOMAIN_ENCRYPT_SOURCE.contains(".derive(&raw_key,"),
+        "`encrypt.rs` should borrow raw_key for KDF derivation"
+    );
+    assert!(
+        DOMAIN_KEY_SOURCE.contains(".derive(&raw_key_old,"),
+        "`key.rs` should borrow raw_key_old while trying keyslots"
+    );
+    assert!(
+        DOMAIN_KEY_ADD_SOURCE.contains(".derive(&raw_key_new,"),
+        "`key/add.rs` should borrow raw_key_new for new keyslot derivation"
+    );
+    assert!(
+        DOMAIN_KEY_CHANGE_SOURCE.contains(".derive(&raw_key_new,"),
+        "`key/change.rs` should borrow raw_key_new for replacement keyslot derivation"
+    );
 }
 
 #[test]
