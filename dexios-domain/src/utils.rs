@@ -23,8 +23,7 @@ pub use core::primitives::gen_salt;
 
 #[cfg(test)]
 mod test {
-    use core::primitives::{MASTER_KEY_LEN, SALT_LEN};
-    use core::protected::Protected;
+    use core::primitives::{MASTER_KEY_LEN, MasterKey, SALT_LEN};
     use rand::{Rng, SeedableRng, rngs::StdRng};
 
     const SALT_SEED: u64 = 123_456;
@@ -38,9 +37,9 @@ mod test {
     }
 
     #[must_use]
-    pub fn gen_master_key() -> Protected<[u8; MASTER_KEY_LEN]> {
+    pub fn gen_master_key() -> MasterKey {
         let mut master_key = [0u8; MASTER_KEY_LEN];
         StdRng::seed_from_u64(MASTER_KEY_SEED).fill_bytes(&mut master_key);
-        Protected::new(master_key)
+        MasterKey::new(master_key)
     }
 }

@@ -74,7 +74,7 @@ where
         .map_err(|_| Error::HashKey)?;
     drop(raw_key);
 
-    let master_key: MasterKey = gen_master_key().into();
+    let master_key: MasterKey = gen_master_key();
     let master_key_nonce = gen_keyslot_nonce();
     let master_key_encrypted =
         wrap_v1_master_key(WrappingKey::from(key), &master_key, &master_key_nonce)

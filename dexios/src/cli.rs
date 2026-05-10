@@ -334,7 +334,7 @@ pub fn build_cli() -> Command {
                 )
                 .subcommand(
                     Command::new("add")
-                        .about("Add a key to an encrypted file (for advanced users)")
+                        .about("Check whether a key can be added to an encrypted file")
                         .arg_required_else_help(true)
                         .arg(
                             Arg::new("input")
@@ -344,31 +344,12 @@ pub fn build_cli() -> Command {
                                 .help("The encrypted file/header file"),
                         )
                         .arg(
-                            Arg::new("autogenerate")
-                                .long("auto")
-                                .value_name("# of words")
-                                .num_args(0..=1)
-                                .default_missing_value("7")
-                                .action(ArgAction::Set)
-                                .require_equals(true)
-                                .help("Autogenerate a passphrase (default is 7 words)")
-                                .conflicts_with("keyfile-new"),
-                        )
-                        .arg(
                             Arg::new("keyfile-old")
                                 .short('k')
                                 .long("keyfile-old")
                                 .value_name("file")
                                 .action(ArgAction::Set)
                                 .help("Use an old keyfile to decrypt the master key"),
-                        )
-                        .arg(
-                            Arg::new("keyfile-new")
-                                .short('n')
-                                .long("keyfile-new")
-                                .value_name("file")
-                                .action(ArgAction::Set)
-                                .help("Use a keyfile as the new key"),
                         ),
                 )
                 .subcommand(
@@ -596,18 +577,9 @@ mod tests {
     }
 
     #[test]
-    fn key_add_command_accepts_old_and_new_keyfiles() {
+    fn key_add_command_accepts_old_keyfile_only() {
         let matches = super::build_cli()
-            .try_get_matches_from([
-                "dexios",
-                "key",
-                "add",
-                "-k",
-                "old.key",
-                "-n",
-                "new.key",
-                "cipher.enc",
-            ])
+            .try_get_matches_from(["dexios", "key", "add", "-k", "old.key", "cipher.enc"])
             .expect("CLI should parse");
 
         let (name, sub) = matches.subcommand().expect("subcommand");
@@ -618,12 +590,32 @@ mod tests {
             Some("old.key")
         );
         assert_eq!(
-            add.get_one::<String>("keyfile-new").map(String::as_str),
-            Some("new.key")
-        );
-        assert_eq!(
             add.get_one::<String>("input").map(String::as_str),
             Some("cipher.enc")
+        );
+    }
+
+    #[test]
+    fn key_add_command_rejects_new_key_sources_while_unsupported() {
+        assert!(
+            super::build_cli()
+                .try_get_matches_from([
+                    "dexios",
+                    "key",
+                    "add",
+                    "-k",
+                    "old.key",
+                    "-n",
+                    "new.key",
+                    "cipher.enc",
+                ])
+                .is_err()
+        );
+
+        assert!(
+            super::build_cli()
+                .try_get_matches_from(["dexios", "key", "add", "--auto=7", "cipher.enc"])
+                .is_err()
         );
     }
 

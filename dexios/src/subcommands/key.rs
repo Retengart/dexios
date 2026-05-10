@@ -21,7 +21,7 @@ fn ensure_v1_header<R: std::io::Read>(reader: &mut R) -> Result<()> {
     }
 }
 
-pub fn add(input: &str, params: &KeyManipulationParams) -> Result<()> {
+pub fn add(input: &str, key_old: &Key) -> Result<()> {
     let input_file = RefCell::new(
         OpenOptions::new()
             .read(true)
@@ -37,23 +37,15 @@ pub fn add(input: &str, params: &KeyManipulationParams) -> Result<()> {
         .rewind()
         .context("Unable to rewind the reader")?;
 
-    if params.key_old == Key::User {
+    if key_old == &Key::User {
         info!("Please enter your old key below");
     }
 
-    let raw_key_old = params.key_old.get_secret(&PasswordState::Direct)?;
-
-    if params.key_new == Key::User {
-        info!("Please enter your new key below");
-    }
-
-    let raw_key_new = params.key_new.get_secret(&PasswordState::Validate)?;
+    let raw_key_old = key_old.get_secret(&PasswordState::Direct)?;
 
     domain::key::add::execute(domain::key::add::Request {
         handle: &input_file,
-        kdf: params.kdf,
         raw_key_old,
-        raw_key_new,
     })?;
 
     Ok(())

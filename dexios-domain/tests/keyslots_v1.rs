@@ -239,6 +239,10 @@ fn domain_encrypt_add_change_sources_keep_borrowed_secret_contract() {
         "`key/add.rs` should reject V1 count-changing keyslot additions until payload re-encryption exists"
     );
     assert!(
+        !DOMAIN_KEY_ADD_SOURCE.contains("raw_key_new"),
+        "`key/add.rs` should not request a new secret while V1 keyslot additions are rejected"
+    );
+    assert!(
         DOMAIN_KEY_CHANGE_SOURCE.contains(".derive(&raw_key_new,"),
         "`key/change.rs` should borrow raw_key_new for replacement keyslot derivation"
     );
@@ -283,8 +287,6 @@ fn key_add_rejects_v1_count_change_without_breaking_existing_decrypt() {
     let add = key::add::execute(key::add::Request {
         handle: &encrypted,
         raw_key_old: Protected::new(b"old-pass".to_vec()),
-        raw_key_new: Protected::new(b"new-pass".to_vec()),
-        kdf: Kdf::Blake3Balloon,
     });
 
     assert!(matches!(
