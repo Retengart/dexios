@@ -71,7 +71,7 @@ pub fn decrypt_v1_master_key_with_index(
         };
         let salt = keyslot.salt().to_kdf_salt();
         let key_old = kdf
-            .derive(raw_key_old.clone(), &salt)
+            .derive(&raw_key_old, &salt)
             .map_err(|_| Error::KeyHash)?;
 
         let encrypted_master_key = EncryptedMasterKey::new(*keyslot.encrypted_master_key());

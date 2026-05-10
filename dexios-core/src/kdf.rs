@@ -33,7 +33,7 @@ pub enum Kdf {
 impl Kdf {
     pub fn derive(
         self,
-        raw_key: Protected<Vec<u8>>,
+        raw_key: &Protected<Vec<u8>>,
         salt: &Salt,
     ) -> Result<Protected<[u8; DERIVED_KEY_LEN]>, KdfError> {
         match self {
@@ -66,7 +66,7 @@ impl Display for KdfError {
 impl std::error::Error for KdfError {}
 
 pub(crate) fn derive_balloon_with_params(
-    raw_key: Protected<Vec<u8>>,
+    raw_key: &Protected<Vec<u8>>,
     salt: &Salt,
     space_cost: u32,
     time_cost: u32,
@@ -81,7 +81,6 @@ pub(crate) fn derive_balloon_with_params(
     let balloon = Balloon::<blake3::Hasher>::new(balloon_hash::Algorithm::Balloon, params, None);
     let result =
         raw_key.with_exposed(|raw_key| balloon.hash_into(raw_key, salt.as_bytes(), &mut key));
-    drop(raw_key);
 
     if result.is_err() {
         return Err(KdfError::DeriveFailed("Error while hashing your key"));

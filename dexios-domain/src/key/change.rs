@@ -27,12 +27,18 @@ pub fn execute<RW>(req: Request<'_, RW>) -> Result<(), Error>
 where
     RW: Read + Write + Seek,
 {
-    let parsed =
-        read_header(&mut *req.handle.borrow_mut()).map_err(|_| Error::HeaderDeserialize)?;
+    let Request {
+        handle,
+        raw_key_old,
+        raw_key_new,
+        kdf,
+    } = req;
+
+    let parsed = read_header(&mut *handle.borrow_mut()).map_err(|_| Error::HeaderDeserialize)?;
     let ParsedHeader::V1(payload) = parsed;
     let header = payload.header();
 
-    req.handle
+    handle
         .borrow_mut()
         .seek(std::io::SeekFrom::Current(
             -i64::try_from(HEADER_LEN).map_err(|_| Error::HeaderSizeParse)?,
@@ -42,14 +48,14 @@ where
     let mut keyslots = header.keyslots_collection().clone();
 
     // all of these functions need either the master key, or the index
-    let (master_key, index) = super::decrypt_v1_master_key_with_index(&keyslots, req.raw_key_old)?;
+    let (master_key, index) = super::decrypt_v1_master_key_with_index(&keyslots, raw_key_old)?;
 
     let salt_bytes = gen_salt();
     let salt = Salt::new(salt_bytes);
-    let key_new = req
-        .kdf
-        .derive(req.raw_key_new, &salt.to_kdf_salt())
+    let key_new = kdf
+        .derive(&raw_key_new, &salt.to_kdf_salt())
         .map_err(|_| Error::KeyHash)?;
+    drop(raw_key_new);
 
     let master_key_nonce = gen_keyslot_nonce();
 
@@ -58,7 +64,7 @@ where
     keyslots
         .replace(
             index,
-            V1Keyslot::new(req.kdf, encrypted_master_key, master_key_nonce, salt),
+            V1Keyslot::new(kdf, encrypted_master_key, master_key_nonce, salt),
         )
         .map_err(|_| Error::HeaderWrite)?;
 
@@ -67,7 +73,7 @@ where
 
     // write the header to the handle
     header_new
-        .write(&mut *req.handle.borrow_mut())
+        .write(&mut *handle.borrow_mut())
         .map_err(|_| Error::HeaderWrite)?;
 
     Ok(())

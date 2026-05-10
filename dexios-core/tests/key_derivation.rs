@@ -54,7 +54,7 @@ fn assert_vector(algorithm: Kdf, algorithm_name: &str, case: &str) {
     let salt = Salt::new(decode_hex::<16>(&vector.salt_hex));
     let expected = decode_hex::<32>(&vector.expected_hex);
     let key = algorithm
-        .derive(Protected::new(vector.password.as_bytes().to_vec()), &salt)
+        .derive(&Protected::new(vector.password.as_bytes().to_vec()), &salt)
         .expect("KDF hash");
 
     key.with_exposed(|key_bytes| assert_eq!(key_bytes, &expected));
@@ -110,7 +110,7 @@ fn normal_kdf_selector_is_blake3_balloon_only() {
 #[test]
 fn blake3_balloon_derives_a_32_byte_key() {
     let derived = Kdf::Blake3Balloon
-        .derive(Protected::new(b"password".to_vec()), &Salt::new([9; 16]))
+        .derive(&Protected::new(b"password".to_vec()), &Salt::new([9; 16]))
         .unwrap();
     derived.with_exposed(|key_bytes| assert_eq!(key_bytes.len(), 32));
 }

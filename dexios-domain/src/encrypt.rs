@@ -57,14 +57,22 @@ where
     R: Read + Seek,
     W: Write + Seek,
 {
+    let Request {
+        reader,
+        writer,
+        header_writer,
+        raw_key,
+        kdf,
+    } = req;
+
     let salt_bytes = gen_salt();
     let header_salt = Salt::new(salt_bytes);
     let kdf_salt = header_salt.to_kdf_salt();
 
-    let key = req
-        .kdf
-        .derive(req.raw_key, &kdf_salt)
+    let key = kdf
+        .derive(&raw_key, &kdf_salt)
         .map_err(|_| Error::HashKey)?;
+    drop(raw_key);
 
     let master_key: MasterKey = gen_master_key().into();
     let master_key_nonce = gen_keyslot_nonce();
@@ -73,7 +81,7 @@ where
             .map_err(|_| Error::EncryptMasterKey)?;
 
     let keyslot = V1Keyslot::new(
-        req.kdf,
+        kdf,
         *master_key_encrypted.as_bytes(),
         master_key_nonce,
         header_salt,
@@ -82,14 +90,14 @@ where
     let header = V1Header::new(payload_nonce, V1Keyslots::single(keyslot))
         .map_err(|_| Error::WriteHeader)?;
 
-    req.writer
+    writer
         .borrow_mut()
         .rewind()
         .map_err(|_| Error::ResetCursorPosition)?;
 
-    match req.header_writer {
+    match header_writer {
         None => {
-            req.writer
+            writer
                 .borrow_mut()
                 .write_all(&header.serialize().map_err(|_| Error::WriteHeader)?)
                 .map_err(|_| Error::WriteHeader)?;
@@ -106,10 +114,10 @@ where
         }
     }
 
-    let mut reader = req.reader.borrow_mut();
+    let mut reader = reader.borrow_mut();
     reader.rewind().map_err(|_| Error::ResetCursorPosition)?;
 
-    let mut writer = req.writer.borrow_mut();
+    let mut writer = writer.borrow_mut();
     V1PayloadStream::encrypt_file(master_key, &header, &mut *reader, &mut *writer)
         .map_err(|_| Error::EncryptFile)?;
 

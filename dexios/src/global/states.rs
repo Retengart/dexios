@@ -117,7 +117,7 @@ impl Key {
             Key::Keyfile(path) if path == "-" => {
                 let mut reader = std::io::stdin();
                 let secret = get_bytes(&mut reader)?;
-                if secret.is_empty() {
+                if secret.with_exposed(|secret| secret.is_empty()) {
                     return Err(anyhow::anyhow!("STDIN is empty"));
                 }
                 secret
@@ -126,7 +126,7 @@ impl Key {
                 let mut reader = std::fs::File::open(path)
                     .with_context(|| format!("Unable to read file: {path}"))?;
                 let secret = get_bytes(&mut reader)?;
-                if secret.is_empty() {
+                if secret.with_exposed(|secret| secret.is_empty()) {
                     return Err(anyhow::anyhow!(format!("Keyfile '{path}' is empty")));
                 }
                 secret
@@ -139,14 +139,16 @@ impl Key {
             Key::User => get_password(pass_state)?,
             Key::Generate(i) => {
                 let passphrase = generate_passphrase(i);
-                warn!("Your generated passphrase is: {}", passphrase.expose());
-                let key = Protected::new(passphrase.expose().clone().into_bytes());
+                let key = passphrase.with_exposed(|passphrase| {
+                    warn!("Your generated passphrase is: {passphrase}");
+                    Protected::new(passphrase.as_bytes().to_vec())
+                });
                 drop(passphrase);
                 key
             }
         };
 
-        if secret.expose().is_empty() {
+        if secret.with_exposed(|secret| secret.is_empty()) {
             Err(anyhow::anyhow!("The specified key is empty!"))
         } else {
             Ok(secret)
