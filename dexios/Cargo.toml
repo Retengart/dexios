@@ -32,3 +32,4 @@ anyhow.workspace = true
 
 zip.workspace = true
 rpassword.workspace = true
+zeroize.workspace = true

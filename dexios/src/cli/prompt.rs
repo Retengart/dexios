@@ -6,8 +6,8 @@ use crate::{
     question, warn,
 };
 
-use core::Zeroize;
 use core::protected::Protected;
+use zeroize::Zeroizing;
 
 // this handles user-interactivity, specifically getting a "yes" or "no" answer from the user
 // it requires the question itself, if the default is true/false
@@ -60,24 +60,47 @@ pub fn overwrite_check(name: &str, force: ForceMode) -> Result<bool> {
     Ok(answer)
 }
 
-pub fn get_password(pass_state: &PasswordState) -> Result<Protected<Vec<u8>>> {
-    Ok(loop {
-        let input = rpassword::prompt_password("Password: ").context("Unable to read password")?;
+fn read_zeroizing_password<F>(prompt: &str, prompt_password: &mut F) -> Result<Zeroizing<String>>
+where
+    F: FnMut(&str) -> Result<String>,
+{
+    prompt_password(prompt)
+        .map(Zeroizing::new)
+        .context("Unable to read password")
+}
+
+fn protected_from_zeroizing_string(input: &Zeroizing<String>) -> Protected<Vec<u8>> {
+    Protected::new(input.as_bytes().to_vec())
+}
+
+fn get_password_with_prompt<F>(
+    pass_state: &PasswordState,
+    mut prompt_password: F,
+) -> Result<Protected<Vec<u8>>>
+where
+    F: FnMut(&str) -> Result<String>,
+{
+    loop {
+        let input = read_zeroizing_password("Password: ", &mut prompt_password)?;
         if pass_state == &PasswordState::Direct {
-            return Ok(Protected::new(input.into_bytes()));
+            return Ok(protected_from_zeroizing_string(&input));
         }
 
-        let mut input_validation =
-            rpassword::prompt_password("Confirm password: ").context("Unable to read password")?;
+        let input_validation = read_zeroizing_password("Confirm password: ", &mut prompt_password)?;
 
-        if input == input_validation && !input.is_empty() {
-            input_validation.zeroize();
-            break Protected::new(input.into_bytes());
+        if input.as_str() == input_validation.as_str() && !input.is_empty() {
+            return Ok(protected_from_zeroizing_string(&input));
         } else if input.is_empty() {
             warn!("Password cannot be empty, please try again.");
         } else {
             warn!("The passwords aren't the same, please try again.");
         }
+    }
+}
+
+pub fn get_password(pass_state: &PasswordState) -> Result<Protected<Vec<u8>>> {
+    get_password_with_prompt(pass_state, |prompt| {
+        rpassword::prompt_password(prompt).map_err(Into::into)
     })
 }
 
@@ -112,9 +135,8 @@ mod tests {
     fn direct_prompt_returns_protected_key() {
         let mut script = PromptScript::new(vec![Ok("direct secret".to_owned())]);
 
-        let key =
-            get_password_with_prompt(&PasswordState::Direct, |prompt| script.prompt(prompt))
-                .expect("direct prompt should return a protected key");
+        let key = get_password_with_prompt(&PasswordState::Direct, |prompt| script.prompt(prompt))
+            .expect("direct prompt should return a protected key");
 
         assert_eq!(
             script.prompts,
