@@ -164,11 +164,11 @@ fn detached_header_current_v1_fixture_keeps_header_separate() {
 
     let header_bytes = fs::read(&header).unwrap();
     let payload_bytes = fs::read(&encrypted).unwrap();
-    let (parsed, _) = read_header(&mut std::io::Cursor::new(&header_bytes))
+    let parsed = read_header(&mut std::io::Cursor::new(&header_bytes))
         .expect("detached header should parse");
     let ParsedHeader::V1(parsed) = parsed;
 
-    assert_eq!(parsed.keyslots().len(), 1);
+    assert_eq!(parsed.header().keyslots().len(), 1);
     assert_eq!(header_bytes.len(), HEADER_LEN);
     assert_eq!(payload_bytes.len(), b"top secret".len() + 16);
     assert!(!payload_bytes.starts_with(&MAGIC));

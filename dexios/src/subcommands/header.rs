@@ -17,15 +17,15 @@ pub fn details(input: &str) -> Result<()> {
         File::open(input).with_context(|| format!("Unable to open input file: {input}"))?;
 
     match read_header(&mut input_file) {
-        Ok((parsed, aad)) => {
-            let ParsedHeader::V1(header) = parsed;
+        Ok(ParsedHeader::V1(payload)) => {
+            let header = payload.header();
             println!("Header version: V1");
             println!("Cipher suite: XChaCha20-Poly1305 / LE31 stream");
             println!(
                 "Payload nonce: {} (hex)",
                 hex_encode(header.payload_nonce().as_bytes())
             );
-            println!("AAD: {} (hex)", hex_encode(aad.as_bytes()));
+            println!("AAD: {} (hex)", hex_encode(payload.aad().as_bytes()));
 
             for (i, keyslot) in header.keyslots().iter().enumerate() {
                 let kdf = match keyslot.kdf() {
