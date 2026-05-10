@@ -79,7 +79,9 @@ fn get_bytes<R: std::io::Read>(reader: &mut R) -> Result<Protected<Vec<u8>>> {
 }
 
 fn generated_passphrase_disclosure(passphrase: &str) -> String {
-    format!("Your generated passphrase is: {passphrase}")
+    format!(
+        "Your generated passphrase is intentionally shown here and may be captured by terminal scrollback or logs: {passphrase}"
+    )
 }
 
 fn generated_passphrase_secret<F>(total_words: &i32, mut disclose: F) -> Protected<Vec<u8>>
@@ -213,7 +215,7 @@ impl KeyParams {
 mod tests {
     use super::*;
 
-    const DISCLOSURE_PREFIX: &str = "Your generated passphrase is: ";
+    const DISCLOSURE_PREFIX: &str = "Your generated passphrase is intentionally shown here and may be captured by terminal scrollback or logs: ";
 
     #[test]
     fn generated_passphrase_disclosure_message_includes_secret() {
