@@ -198,3 +198,55 @@ impl KeyParams {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DISCLOSURE_PREFIX: &str = "Your generated passphrase is: ";
+
+    #[test]
+    fn generated_passphrase_disclosure_message_includes_secret() {
+        assert_eq!(
+            generated_passphrase_disclosure("alpha-beta"),
+            "Your generated passphrase is: alpha-beta"
+        );
+    }
+
+    #[test]
+    fn generated_passphrase_secret_discloses_once_and_returns_same_bytes() {
+        let mut messages = Vec::new();
+
+        let key = generated_passphrase_secret(&3, |message| messages.push(message.to_owned()));
+
+        assert_eq!(messages.len(), 1);
+        let phrase = messages[0]
+            .strip_prefix(DISCLOSURE_PREFIX)
+            .expect("generated passphrase message should use the CLI disclosure prefix");
+        assert_eq!(phrase.split('-').count(), 3);
+        assert!(key.with_exposed(|key| key == phrase.as_bytes()));
+    }
+
+    #[test]
+    fn generated_passphrase_secret_uses_closure_scoped_access() {
+        let source = include_str!("states.rs");
+        let required = ["passphrase", "with_exposed"].join(".");
+        let forbidden = ["passphrase", "expose("].join(".");
+
+        assert!(source.contains(&required));
+        assert!(!source.contains(&forbidden));
+    }
+
+    #[test]
+    fn generated_passphrase_debug_does_not_disclose_secret() {
+        let mut messages = Vec::new();
+
+        let key = generated_passphrase_secret(&2, |message| messages.push(message.to_owned()));
+        let phrase = messages[0]
+            .strip_prefix(DISCLOSURE_PREFIX)
+            .expect("generated passphrase message should use the CLI disclosure prefix");
+
+        assert!(!format!("{key:?}").contains(phrase));
+        assert!(!format!("{:?}", Key::Generate(2)).contains(phrase));
+    }
+}
