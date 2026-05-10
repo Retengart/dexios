@@ -1,8 +1,10 @@
 use dexios_core::cipher::Ciphers;
 use dexios_core::header::common::{KeyslotNonce, PayloadNonce, Salt as HeaderSalt};
 use dexios_core::header::v1::{KeyslotKdf, V1Header, V1Keyslot};
+use dexios_core::header::{HeaderReadError, ParsedHeader};
 use dexios_core::kdf::{Kdf, Salt};
 use dexios_core::stream::{DecryptionStreams, EncryptionStreams};
+use std::path::Path;
 
 mod support {
     use super::*;
@@ -19,6 +21,37 @@ mod support {
         )
         .expect("sample v1 header")
     }
+}
+
+fn fixture_path(name: &str) -> String {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("testdata")
+        .join(name)
+        .to_string_lossy()
+        .into_owned()
+}
+
+fn decode_hex_fixture(path: &str) -> Vec<u8> {
+    let fixture = std::fs::read_to_string(path).expect("read hex fixture");
+    let nibbles: Vec<u8> = fixture
+        .chars()
+        .filter(|ch| !ch.is_ascii_whitespace())
+        .map(|ch| {
+            ch.to_digit(16)
+                .unwrap_or_else(|| panic!("invalid hex digit {ch:?} in {path}")) as u8
+        })
+        .collect();
+
+    assert!(
+        nibbles.len().is_multiple_of(2),
+        "hex fixture {path} must have an even number of digits"
+    );
+
+    nibbles
+        .chunks_exact(2)
+        .map(|pair| (pair[0] << 4) | pair[1])
+        .collect()
 }
 
 #[test]
@@ -121,6 +154,29 @@ fn serializes_sample_v1_header_to_exact_bytes() {
     expected.extend_from_slice(&[0u8; 288]);
 
     assert_eq!(bytes, expected);
+}
+
+#[test]
+fn fixture_v1_valid_single_keyslot_roundtrips() {
+    let path = fixture_path("v1_valid_single_keyslot.hex");
+    let original_bytes = decode_hex_fixture(&path);
+    let (parsed, aad) =
+        dexios_core::header::read_header(&mut std::io::Cursor::new(&original_bytes)).unwrap();
+
+    let ParsedHeader::V1(parsed) = parsed;
+    assert_eq!(parsed.keyslots().len(), 1);
+    assert_eq!(aad.as_bytes().len(), 32);
+    assert_eq!(parsed.serialize().unwrap(), original_bytes);
+}
+
+#[test]
+fn fixture_v1_malformed_reserved_byte_is_rejected() {
+    let path = fixture_path("v1_malformed_reserved_byte.hex");
+    let bytes = decode_hex_fixture(&path);
+    let error = dexios_core::header::read_header(&mut std::io::Cursor::new(&bytes))
+        .expect_err("non-zero reserved byte fixture should fail");
+
+    assert!(matches!(error, HeaderReadError::NonZeroReservedBytes));
 }
 
 #[test]
