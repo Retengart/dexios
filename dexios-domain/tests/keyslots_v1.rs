@@ -124,11 +124,9 @@ fn decrypt_v1_master_key_tries_later_supported_keyslot_without_raw_key_clone_con
     .expect("add second supported keyslot");
 
     let keyslots = keyslots(&encrypted);
-    let (_master_key, index) = key::decrypt_v1_master_key_with_index(
-        &keyslots,
-        Protected::new(b"new-pass".to_vec()),
-    )
-    .expect("later supported keyslot should decrypt");
+    let (_master_key, index) =
+        key::decrypt_v1_master_key_with_index(&keyslots, Protected::new(b"new-pass".to_vec()))
+            .expect("later supported keyslot should decrypt");
 
     assert_eq!(
         index.get(),
