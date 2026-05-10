@@ -1,7 +1,8 @@
-use core::header::common::{HEADER_STATIC_LEN, KEYSLOT_LEN};
-use core::header::v1::KeyslotKdf;
+use core::header::common::{HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN, Salt};
+use core::header::v1::{KeyslotKdf, V1Header, V1Keyslot};
 use core::header::{ParsedHeader, read_header};
 use core::kdf::Kdf;
+use core::primitives::{WrappingKey, gen_keyslot_nonce, gen_salt};
 use core::protected::Protected;
 use dexios_domain::{decrypt, encrypt, key};
 use std::cell::RefCell;
@@ -55,6 +56,49 @@ fn keyslots(encrypted: &RefCell<Cursor<Vec<u8>>>) -> core::header::v1::V1Keyslot
     let parsed = read_header(&mut *handle).expect("read V1 header");
     let ParsedHeader::V1(payload) = parsed;
     payload.header().keyslots_collection().clone()
+}
+
+fn append_synthetic_second_keyslot(
+    encrypted: &RefCell<Cursor<Vec<u8>>>,
+    old_key: &[u8],
+    new_key: &[u8],
+) {
+    let mut handle = encrypted.borrow_mut();
+    handle.rewind().expect("rewind before synthetic keyslot");
+    let parsed = read_header(&mut *handle).expect("read V1 header");
+    let ParsedHeader::V1(payload) = parsed;
+    let header = payload.header();
+    let mut keyslots = header.keyslots_collection().clone();
+
+    let (master_key, _) =
+        key::decrypt_v1_master_key_with_index(&keyslots, Protected::new(old_key.to_vec()))
+            .expect("decrypt existing master key");
+    let salt = Salt::new(gen_salt());
+    let nonce = gen_keyslot_nonce();
+    let wrapping_key = Kdf::Blake3Balloon
+        .derive(&Protected::new(new_key.to_vec()), &salt.to_kdf_salt())
+        .expect("derive synthetic wrapping key");
+    let encrypted_master_key =
+        core::cipher::wrap_v1_master_key(WrappingKey::from(wrapping_key), &master_key, &nonce)
+            .expect("wrap synthetic master key");
+    keyslots
+        .push(V1Keyslot::new(
+            Kdf::Blake3Balloon,
+            *encrypted_master_key.as_bytes(),
+            nonce,
+            salt,
+        ))
+        .expect("append synthetic keyslot");
+
+    let synthetic_header =
+        V1Header::new(*header.payload_nonce(), keyslots).expect("build synthetic header");
+    handle.rewind().expect("rewind before synthetic write");
+    synthetic_header
+        .write(&mut *handle)
+        .expect("write synthetic header");
+    handle
+        .seek(std::io::SeekFrom::Start(HEADER_LEN as u64))
+        .expect("seek after synthetic header");
 }
 
 fn decrypt_fixture(
@@ -115,13 +159,7 @@ fn argon2id_only_keyslot_returns_unsupported_kdf_for_decrypt() {
 fn decrypt_v1_master_key_tries_later_supported_keyslot_without_raw_key_clone_contract() {
     let encrypted = encrypted_v1_fixture();
 
-    key::add::execute(key::add::Request {
-        handle: &encrypted,
-        raw_key_old: Protected::new(b"old-pass".to_vec()),
-        raw_key_new: Protected::new(b"new-pass".to_vec()),
-        kdf: Kdf::Blake3Balloon,
-    })
-    .expect("add second supported keyslot");
+    append_synthetic_second_keyslot(&encrypted, b"old-pass", b"new-pass");
 
     let keyslots = keyslots(&encrypted);
     let (_master_key, index) =
@@ -139,13 +177,7 @@ fn decrypt_v1_master_key_tries_later_supported_keyslot_without_raw_key_clone_con
 fn unsupported_kdf_wins_when_no_supported_keyslot_decrypts() {
     let encrypted = encrypted_v1_fixture();
 
-    key::add::execute(key::add::Request {
-        handle: &encrypted,
-        raw_key_old: Protected::new(b"old-pass".to_vec()),
-        raw_key_new: Protected::new(b"new-pass".to_vec()),
-        kdf: Kdf::Blake3Balloon,
-    })
-    .expect("add second supported keyslot");
+    append_synthetic_second_keyslot(&encrypted, b"old-pass", b"new-pass");
     mark_keyslot_unsupported_argon2id(&encrypted, 0);
 
     let keyslots = keyslots(&encrypted);
@@ -203,8 +235,8 @@ fn domain_encrypt_add_change_sources_keep_borrowed_secret_contract() {
         "`key.rs` should borrow raw_key_old while trying keyslots"
     );
     assert!(
-        DOMAIN_KEY_ADD_SOURCE.contains(".derive(&raw_key_new,"),
-        "`key/add.rs` should borrow raw_key_new for new keyslot derivation"
+        DOMAIN_KEY_ADD_SOURCE.contains("CannotAddV1KeyslotWithoutReencrypt"),
+        "`key/add.rs` should reject V1 count-changing keyslot additions until payload re-encryption exists"
     );
     assert!(
         DOMAIN_KEY_CHANGE_SOURCE.contains(".derive(&raw_key_new,"),
@@ -216,13 +248,7 @@ fn domain_encrypt_add_change_sources_keep_borrowed_secret_contract() {
 fn supported_keyslot_verifies_when_mixed_with_unsupported_argon2id() {
     let encrypted = encrypted_v1_fixture();
 
-    key::add::execute(key::add::Request {
-        handle: &encrypted,
-        raw_key_old: Protected::new(b"old-pass".to_vec()),
-        raw_key_new: Protected::new(b"new-pass".to_vec()),
-        kdf: Kdf::Blake3Balloon,
-    })
-    .expect("add supported keyslot");
+    append_synthetic_second_keyslot(&encrypted, b"old-pass", b"new-pass");
     mark_keyslot_unsupported_argon2id(&encrypted, 0);
 
     key::verify::execute(key::verify::Request {
@@ -251,6 +277,27 @@ fn key_del_rejects_final_keyslot_before_writing_header() {
 }
 
 #[test]
+fn key_add_rejects_v1_count_change_without_breaking_existing_decrypt() {
+    let encrypted = encrypted_v1_fixture();
+
+    let add = key::add::execute(key::add::Request {
+        handle: &encrypted,
+        raw_key_old: Protected::new(b"old-pass".to_vec()),
+        raw_key_new: Protected::new(b"new-pass".to_vec()),
+        kdf: Kdf::Blake3Balloon,
+    });
+
+    assert!(matches!(
+        add,
+        Err(key::Error::CannotAddV1KeyslotWithoutReencrypt)
+    ));
+    assert_eq!(keyslot_kdfs(&encrypted), [KeyslotKdf::Blake3Balloon]);
+
+    let plaintext = decrypt_fixture(&encrypted, b"old-pass").expect("decrypt with original key");
+    assert_eq!(plaintext, b"Hello world");
+}
+
+#[test]
 fn wrong_key_current_v1_fixture_rejects_verification_and_decrypt() {
     // Manifest fixture: wrong-key-current-v1.
     let encrypted = encrypted_v1_fixture();
@@ -269,7 +316,7 @@ fn wrong_key_current_v1_fixture_rejects_verification_and_decrypt() {
 }
 
 #[test]
-fn can_add_verify_change_and_delete_v1_keyslots() {
+fn can_change_and_reject_final_delete_v1_keyslots() {
     // Manifest fixture: keyslot-mutation-two-keyslots.
     let encrypted = encrypted_v1_fixture();
 
@@ -279,18 +326,18 @@ fn can_add_verify_change_and_delete_v1_keyslots() {
     })
     .expect("verify original key");
 
-    encrypted.borrow_mut().rewind().expect("rewind before add");
-    key::add::execute(key::add::Request {
+    encrypted
+        .borrow_mut()
+        .rewind()
+        .expect("rewind before change");
+    key::change::execute(key::change::Request {
         handle: &encrypted,
         raw_key_old: Protected::new(b"old-pass".to_vec()),
         raw_key_new: Protected::new(b"new-pass".to_vec()),
         kdf: Kdf::Blake3Balloon,
     })
-    .expect("add keyslot");
-    assert_eq!(
-        keyslot_kdfs(&encrypted),
-        [KeyslotKdf::Blake3Balloon, KeyslotKdf::Blake3Balloon]
-    );
+    .expect("change keyslot");
+    assert_eq!(keyslot_kdfs(&encrypted), [KeyslotKdf::Blake3Balloon]);
 
     encrypted
         .borrow_mut()
@@ -300,54 +347,21 @@ fn can_add_verify_change_and_delete_v1_keyslots() {
         handle: &encrypted,
         raw_key: Protected::new(b"new-pass".to_vec()),
     })
-    .expect("verify added key");
-
-    encrypted
-        .borrow_mut()
-        .rewind()
-        .expect("rewind before change");
-    key::change::execute(key::change::Request {
-        handle: &encrypted,
-        raw_key_old: Protected::new(b"new-pass".to_vec()),
-        raw_key_new: Protected::new(b"third-pass".to_vec()),
-        kdf: Kdf::Blake3Balloon,
-    })
-    .expect("change keyslot");
-    assert_eq!(
-        keyslot_kdfs(&encrypted),
-        [KeyslotKdf::Blake3Balloon, KeyslotKdf::Blake3Balloon]
-    );
-
-    encrypted
-        .borrow_mut()
-        .rewind()
-        .expect("rewind before verify");
-    key::verify::execute(key::verify::Request {
-        handle: &encrypted,
-        raw_key: Protected::new(b"third-pass".to_vec()),
-    })
     .expect("verify changed key");
 
     encrypted
         .borrow_mut()
         .rewind()
         .expect("rewind before delete");
-    key::delete::execute(key::delete::Request {
+    let delete = key::delete::execute(key::delete::Request {
         handle: &encrypted,
-        raw_key_old: Protected::new(b"third-pass".to_vec()),
-    })
-    .expect("delete keyslot");
-
-    encrypted
-        .borrow_mut()
-        .rewind()
-        .expect("rewind before final verify");
-    let deleted_verify = key::verify::execute(key::verify::Request {
-        handle: &encrypted,
-        raw_key: Protected::new(b"third-pass".to_vec()),
+        raw_key_old: Protected::new(b"new-pass".to_vec()),
     });
-    assert!(matches!(deleted_verify, Err(key::Error::IncorrectKey)));
+    assert!(matches!(
+        delete,
+        Err(key::Error::CannotRemoveFinalV1Keyslot)
+    ));
 
-    let plaintext = decrypt_fixture(&encrypted, b"old-pass").expect("decrypt with original key");
+    let plaintext = decrypt_fixture(&encrypted, b"new-pass").expect("decrypt with changed key");
     assert_eq!(plaintext, b"Hello world");
 }

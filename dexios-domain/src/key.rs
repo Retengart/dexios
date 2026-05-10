@@ -25,6 +25,7 @@ pub enum Error {
     HeaderWrite,
     Seek,
     CannotRemoveFinalV1Keyslot,
+    CannotAddV1KeyslotWithoutReencrypt,
 }
 
 impl std::fmt::Display for Error {
@@ -35,6 +36,9 @@ impl std::fmt::Display for Error {
             Error::HeaderWrite => f.write_str("Unable to write the header"),
             Error::HeaderDeserialize => f.write_str("Unable to deserialize the header"),
             Error::CannotRemoveFinalV1Keyslot => f.write_str("Cannot remove the final V1 keyslot"),
+            Error::CannotAddV1KeyslotWithoutReencrypt => {
+                f.write_str("Cannot add a V1 keyslot without re-encrypting the payload")
+            }
             Error::CipherInit => f.write_str("Unable to initialize a cipher"),
             Error::KeyHash => f.write_str("Unable to hash your key"),
             Error::TooManyKeyslots => {
