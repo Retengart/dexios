@@ -276,11 +276,12 @@ pub(crate) mod tests {
 
                 let mut content = vec![];
                 reader.read_to_end(&mut content).unwrap();
-                let (parsed, aad) = core::header::read_header(&mut Cursor::new(&content)).unwrap();
+                let parsed = core::header::read_header(&mut Cursor::new(&content)).unwrap();
 
-                let core::header::ParsedHeader::V1(header) = parsed;
+                let core::header::ParsedHeader::V1(payload) = parsed;
+                let header = payload.header();
                 assert_eq!(header.keyslots().len(), 1);
-                assert!(!aad.as_bytes().is_empty());
+                assert!(!payload.aad().as_bytes().is_empty());
                 assert!(content.len() > core::header::common::HEADER_LEN);
             }
             _ => unreachable!(),

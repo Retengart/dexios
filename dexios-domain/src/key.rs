@@ -1,10 +1,9 @@
-use core::Zeroize;
-use core::cipher::Ciphers;
-use core::header::v1::{KeyslotKdf, V1KeyslotIndex, V1Keyslots};
+use core::cipher::{unwrap_v1_master_key, wrap_v1_master_key};
+use core::header::common::KeyslotNonce;
+use core::header::v1::{EncryptedMasterKey, KeyslotKdf, V1KeyslotIndex, V1Keyslots};
 use core::kdf::Kdf;
-use core::key::vec_to_arr;
 use core::primitives::ENCRYPTED_MASTER_KEY_LEN;
-use core::primitives::MASTER_KEY_LEN;
+use core::primitives::{MasterKey, WrappingKey};
 use core::protected::Protected;
 
 pub mod add;
@@ -56,9 +55,9 @@ impl std::fmt::Display for Error {
 pub fn decrypt_v1_master_key_with_index(
     keyslots: &V1Keyslots,
     raw_key_old: Protected<Vec<u8>>,
-) -> Result<(Protected<[u8; MASTER_KEY_LEN]>, V1KeyslotIndex), Error> {
+) -> Result<(MasterKey, V1KeyslotIndex), Error> {
     let mut index = None;
-    let mut master_key = [0u8; MASTER_KEY_LEN];
+    let mut master_key = None;
     let mut saw_unsupported_kdf = None;
 
     // we need the index, so we can't use `decrypt_master_key()`
@@ -70,32 +69,28 @@ pub fn decrypt_v1_master_key_with_index(
                 continue;
             }
         };
-        let salt = core::kdf::Salt::new(*keyslot.salt().as_bytes());
+        let salt = keyslot.salt().to_kdf_salt();
         let key_old = kdf
             .derive(raw_key_old.clone(), &salt)
             .map_err(|_| Error::KeyHash)?;
-        let cipher = Ciphers::initialize(key_old).map_err(|_| Error::CipherInit)?;
 
-        let master_key_result = cipher.decrypt(
-            keyslot.nonce().as_bytes(),
-            keyslot.encrypted_master_key().as_slice(),
+        let encrypted_master_key = EncryptedMasterKey::new(*keyslot.encrypted_master_key());
+        let master_key_result = unwrap_v1_master_key(
+            WrappingKey::from(key_old),
+            &encrypted_master_key,
+            keyslot.nonce(),
         );
 
-        if master_key_result.is_err() {
+        let Ok(decrypted_master_key) = master_key_result else {
             continue;
-        }
+        };
 
-        let mut master_key_decrypted = master_key_result.unwrap();
-        let len = MASTER_KEY_LEN.min(master_key_decrypted.len());
-        master_key[..len].copy_from_slice(&master_key_decrypted[..len]);
-        master_key_decrypted.zeroize();
-
+        master_key = Some(decrypted_master_key);
         index = Some(
             V1KeyslotIndex::try_from_usize(i, keyslots.count())
                 .map_err(|_| Error::HeaderDeserialize)?,
         );
 
-        drop(cipher);
         break;
     }
 
@@ -108,24 +103,22 @@ pub fn decrypt_v1_master_key_with_index(
         return Err(Error::IncorrectKey);
     };
 
-    Ok((Protected::new(master_key), index))
+    let Some(master_key) = master_key else {
+        return Err(Error::IncorrectKey);
+    };
+
+    Ok((master_key, index))
 }
 
 impl std::error::Error for Error {}
 
 // TODO(brxken128): make this available in the core
 pub fn encrypt_master_key(
-    master_key: Protected<[u8; MASTER_KEY_LEN]>,
+    master_key: MasterKey,
     key_new: Protected<[u8; 32]>,
-    nonce: &[u8],
+    nonce: &KeyslotNonce,
 ) -> Result<[u8; ENCRYPTED_MASTER_KEY_LEN], Error> {
-    let cipher = Ciphers::initialize(key_new).map_err(|_| Error::CipherInit)?;
-
-    let master_key_result = cipher.encrypt(nonce, master_key.expose().as_slice());
-
-    drop(master_key);
-
-    let master_key_encrypted = master_key_result.map_err(|_| Error::MasterKeyEncrypt)?;
-
-    Ok(vec_to_arr(master_key_encrypted))
+    let encrypted_master_key = wrap_v1_master_key(WrappingKey::from(key_new), &master_key, nonce)
+        .map_err(|_| Error::MasterKeyEncrypt)?;
+    Ok(*encrypted_master_key.as_bytes())
 }

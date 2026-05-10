@@ -3,11 +3,11 @@
 use std::cell::RefCell;
 use std::io::{Read, Seek, Write};
 
-use core::cipher::Ciphers;
+use core::cipher::wrap_v1_master_key;
 use core::header::common::Salt;
 use core::header::v1::{V1Header, V1Keyslot, V1Keyslots};
 use core::kdf::Kdf;
-use core::primitives::{ENCRYPTED_MASTER_KEY_LEN, gen_keyslot_nonce, gen_payload_nonce};
+use core::primitives::{MasterKey, WrappingKey, gen_keyslot_nonce, gen_payload_nonce};
 use core::protected::Protected;
 use core::stream::V1PayloadStream;
 
@@ -59,28 +59,25 @@ where
 {
     let salt_bytes = gen_salt();
     let header_salt = Salt::new(salt_bytes);
-    let kdf_salt = core::kdf::Salt::new(salt_bytes);
+    let kdf_salt = header_salt.to_kdf_salt();
 
     let key = req
         .kdf
         .derive(req.raw_key, &kdf_salt)
         .map_err(|_| Error::HashKey)?;
-    let cipher = Ciphers::initialize(key).map_err(|_| Error::InitializeChiphers)?;
 
-    let master_key = gen_master_key();
+    let master_key: MasterKey = gen_master_key().into();
     let master_key_nonce = gen_keyslot_nonce();
-    let master_key_encrypted = {
-        let encrypted_key = cipher
-            .encrypt(master_key_nonce.as_bytes(), master_key.as_slice())
+    let master_key_encrypted =
+        wrap_v1_master_key(WrappingKey::from(key), &master_key, &master_key_nonce)
             .map_err(|_| Error::EncryptMasterKey)?;
 
-        let mut encrypted_key_arr = [0u8; ENCRYPTED_MASTER_KEY_LEN];
-        let len = ENCRYPTED_MASTER_KEY_LEN.min(encrypted_key.len());
-        encrypted_key_arr[..len].copy_from_slice(&encrypted_key[..len]);
-        encrypted_key_arr
-    };
-
-    let keyslot = V1Keyslot::new(req.kdf, master_key_encrypted, master_key_nonce, header_salt);
+    let keyslot = V1Keyslot::new(
+        req.kdf,
+        *master_key_encrypted.as_bytes(),
+        master_key_nonce,
+        header_salt,
+    );
     let payload_nonce = gen_payload_nonce();
     let header = V1Header::new(payload_nonce, V1Keyslots::single(keyslot))
         .map_err(|_| Error::WriteHeader)?;

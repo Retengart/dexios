@@ -20,10 +20,11 @@ where
     R: Read + Seek,
     W: Write + Seek,
 {
-    let (parsed, _) = read_header(&mut *req.reader.borrow_mut()).map_err(Error::from)?;
-    let ParsedHeader::V1(header) = parsed;
+    let parsed = read_header(&mut *req.reader.borrow_mut()).map_err(Error::from)?;
+    let ParsedHeader::V1(payload) = parsed;
 
-    header
+    payload
+        .header()
         .write(&mut *req.writer.borrow_mut())
         .map_err(|_| Error::Write)?;
 

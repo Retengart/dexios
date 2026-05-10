@@ -61,11 +61,10 @@ where
     R: Read + Seek,
     W: Write + Seek,
 {
-    let (header, aad) = if let Some(header_reader) = req.header_reader {
-        let (parsed, aad) =
+    let payload = if let Some(header_reader) = req.header_reader {
+        let parsed =
             read_header(&mut *header_reader.borrow_mut()).map_err(|_| Error::DeserializeHeader)?;
-        let ParsedHeader::V1(header) = parsed;
-
+        let ParsedHeader::V1(payload) = parsed;
         // Try reading an empty header from the content.
         let mut header_bytes = vec![0u8; HEADER_LEN];
 
@@ -83,30 +82,28 @@ where
                 .map_err(|_| Error::RewindDataReader)?;
         }
 
-        (header, aad)
+        payload
     } else {
-        let (parsed, aad) =
+        let parsed =
             read_header(&mut *req.reader.borrow_mut()).map_err(|_| Error::DeserializeHeader)?;
-        let ParsedHeader::V1(header) = parsed;
-        (header, aad)
+        let ParsedHeader::V1(payload) = parsed;
+        payload
     };
 
     if let Some(cb) = req.on_decrypted_header {
-        cb(&header);
+        cb(payload.header());
     }
 
     let (master_key, _) =
-        decrypt_v1_master_key_with_index(header.keyslots_collection(), req.raw_key).map_err(
-            |err| match err {
+        decrypt_v1_master_key_with_index(payload.header().keyslots_collection(), req.raw_key)
+            .map_err(|err| match err {
                 crate::key::Error::UnsupportedKdf(tag) => Error::UnsupportedKdf(tag),
                 _ => Error::DecryptMasterKey,
-            },
-        )?;
+            })?;
 
     V1PayloadStream::decrypt_file(
         master_key,
-        &header,
-        &aad,
+        &payload,
         &mut *req.reader.borrow_mut(),
         &mut *req.writer.borrow_mut(),
     )

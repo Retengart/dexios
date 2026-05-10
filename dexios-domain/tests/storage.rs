@@ -154,10 +154,10 @@ fn storage_backed_encrypt_writes_a_v1_header() {
     stor.flush_file(&output).unwrap();
 
     let encrypted = stor.read_file("hello_16.enc").unwrap();
-    let (parsed, _) = read_header(&mut *encrypted.try_reader().unwrap().borrow_mut()).unwrap();
+    let parsed = read_header(&mut *encrypted.try_reader().unwrap().borrow_mut()).unwrap();
 
-    let ParsedHeader::V1(header) = parsed;
-    assert_eq!(header.keyslots().len(), 1);
+    let ParsedHeader::V1(payload) = parsed;
+    assert_eq!(payload.header().keyslots().len(), 1);
 
     fs::remove_file("hello_16.enc").ok();
 }

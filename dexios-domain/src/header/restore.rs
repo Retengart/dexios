@@ -21,8 +21,8 @@ where
     R: Read + Seek,
     RW: Read + Write + Seek,
 {
-    let (parsed, _) = read_header(&mut *req.reader.borrow_mut()).map_err(Error::from)?;
-    let ParsedHeader::V1(header) = parsed;
+    let parsed = read_header(&mut *req.reader.borrow_mut()).map_err(Error::from)?;
+    let ParsedHeader::V1(payload) = parsed;
 
     let mut header_bytes = [0u8; HEADER_LEN];
     req.writer
@@ -45,7 +45,8 @@ where
         .rewind()
         .map_err(|_| Error::Rewind)?;
 
-    header
+    payload
+        .header()
         .write(&mut *req.writer.borrow_mut())
         .map_err(|_| Error::Write)?;
 

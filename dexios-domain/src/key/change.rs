@@ -27,9 +27,10 @@ pub fn execute<RW>(req: Request<'_, RW>) -> Result<(), Error>
 where
     RW: Read + Write + Seek,
 {
-    let (parsed, _) =
+    let parsed =
         read_header(&mut *req.handle.borrow_mut()).map_err(|_| Error::HeaderDeserialize)?;
-    let ParsedHeader::V1(header) = parsed;
+    let ParsedHeader::V1(payload) = parsed;
+    let header = payload.header();
 
     req.handle
         .borrow_mut()
@@ -47,13 +48,12 @@ where
     let salt = Salt::new(salt_bytes);
     let key_new = req
         .kdf
-        .derive(req.raw_key_new, &core::kdf::Salt::new(salt_bytes))
+        .derive(req.raw_key_new, &salt.to_kdf_salt())
         .map_err(|_| Error::KeyHash)?;
 
     let master_key_nonce = gen_keyslot_nonce();
 
-    let encrypted_master_key =
-        super::encrypt_master_key(master_key, key_new, master_key_nonce.as_bytes())?;
+    let encrypted_master_key = super::encrypt_master_key(master_key, key_new, &master_key_nonce)?;
 
     keyslots
         .replace(

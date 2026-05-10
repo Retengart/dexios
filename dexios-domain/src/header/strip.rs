@@ -18,7 +18,7 @@ pub fn execute<RW>(req: Request<'_, RW>) -> Result<(), Error>
 where
     RW: Read + Write + Seek,
 {
-    let (parsed, _) = read_header(&mut *req.handle.borrow_mut()).map_err(Error::from)?;
+    let parsed = read_header(&mut *req.handle.borrow_mut()).map_err(Error::from)?;
     match parsed {
         ParsedHeader::V1(_) => {}
     }

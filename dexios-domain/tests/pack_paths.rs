@@ -72,9 +72,9 @@ fn pack_writes_relative_archive_paths() {
     stor.flush_file(&output_file).unwrap();
 
     let output_bytes = fs::read(&output_path).unwrap();
-    let (parsed, _aad) = read_header(&mut Cursor::new(&output_bytes)).unwrap();
-    let ParsedHeader::V1(header) = parsed;
-    assert_eq!(header.keyslots().len(), 1);
+    let parsed = read_header(&mut Cursor::new(&output_bytes)).unwrap();
+    let ParsedHeader::V1(payload) = parsed;
+    assert_eq!(payload.header().keyslots().len(), 1);
 
     let archive = stor.read_file(&output_path).unwrap();
     let decrypted = RefCell::new(Cursor::new(Vec::new()));
