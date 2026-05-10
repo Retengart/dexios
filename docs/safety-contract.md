@@ -1,0 +1,65 @@
+# Dexios Safety Contract
+
+## Purpose
+
+This document is the tracked maintainer-facing safety contract for the Dexios
+core and domain refactor. Later safety-sensitive phase plans must cite the
+relevant invariant IDs below and show coverage by test, inspection, analysis,
+or demonstration before they depend on changed behavior.
+
+The contract describes desired safety invariants and records whether each
+invariant is already proven by current source and tests, known to be broken, or
+assigned to a later phase.
+
+## Status Vocabulary
+
+- `current`: current source and tests prove the invariant today.
+- `broken`: desired safety invariant is currently violated; an ignored known-bug regression or source analysis records the gap.
+- `future phase`: invariant is intentionally assigned to a later roadmap phase and not proven in Phase 1.
+
+## Safety Invariant Matrix
+
+| ID | Domain | Invariant | Status | Authority | Evidence | Requirement | Owner |
+|----|--------|-----------|--------|-----------|----------|-------------|-------|
+| FMT-001 | Headers | V1 header is 416 bytes. | current | Current source and tests | `dexios-core/src/header/common.rs`; `dexios-core/tests/v1_header.rs`; `book/src/dexios-core/Headers.md` | SAFE-01, VERI-02 | Phase 2 |
+| FMT-002 | Headers | The first 32 V1 header bytes are authenticated as payload AAD. | current | Current source and tests | `dexios-core/src/header/v1.rs`; `dexios-core/tests/v1_header.rs`; `book/src/dexios-core/Headers.md` | SAFE-01, FORM-03 | Phase 2 |
+| KDF-001 | KDFs | V1 KDF identifiers for `Blake3Balloon` and `Argon2id` are explicit. | current | Current source and docs | `dexios-core/src/header/v1.rs`; `book/src/dexios-core/Headers.md`; `dexios-core/tests/testdata/kdf_vectors.toml` | SAFE-01, KEY-04 | Phase 3 |
+| STRM-001 | Stream encryption | Stream encryption authenticates header AAD and final chunks. | future phase | Current source and later stream tests | `dexios-core/src/stream.rs`; `book/src/dexios-core/Encryption.md`; final tamper regressions are assigned to Phase 3 | SAFE-01, CRYP-02, CRYP-03 | Phase 3 |
+| KEY-001 | Key material | Committed encrypted artifacts should not end with zero usable keyslots. | broken | Current source analysis | `dexios-domain/src/key/delete.rs` removes the matching keyslot before writing the new header; a quarantined regression is assigned to Phase 1 Plan 01-03 | SAFE-01, KEY-01, KEY-02, VERI-01 | Phase 5 |
+| STOR-001 | Storage writes | Existing final outputs should remain unchanged when an operation fails. | broken | Current source analysis | `dexios-domain/src/storage.rs`; `dexios/src/subcommands/encrypt.rs`; `dexios/src/subcommands/decrypt.rs`; a quarantined regression is assigned to Phase 1 Plan 01-04 | SAFE-01, STOR-01, STOR-02, VERI-01 | Phase 4 |
+| STOR-002 | Path identity | Input/output path aliases should be rejected before final output handles open. | broken | Current source analysis | `dexios/src/subcommands/encrypt.rs` and `dexios/src/subcommands/decrypt.rs` reject equal strings but do not prove resolved path identity before opening outputs; a quarantined regression is assigned to Phase 1 Plan 01-04 | SAFE-01, STOR-03, VERI-01 | Phase 4 |
+| ARCH-001 | Archive boundaries | Temporary ZIP artifacts are plaintext exposure and must not be described as secure erase. | current | Editable docs and current source | `book/src/technical-details/Secure-Erase.md`; `book/src/technical-details/Directory-Packing.md`; `dexios-domain/src/pack.rs`; `dexios-domain/src/unpack.rs` | SAFE-01, ARCH-04 | Phase 6 |
+| ERR-001 | Error handling | Parse, authentication, path, IO, and commit failures should remain distinguishable enough for rollback and user data preservation. | future phase | Later typed-error work | Current source has broad workflow errors; typed rollback and preservation boundaries are assigned to Phase 5 | SAFE-01, ERR-01, ERR-02 | Phase 5 |
+| DOC-001 | Documentation | Source-of-truth precedence is recorded by topic. | current | This contract | `docs/safety-contract.md` Source-of-Truth Matrix | SAFE-04 | Phase 1 |
+
+## Source-of-Truth Matrix
+
+The source-of-truth matrix records topic-specific authority when current source,
+editable docs, generated docs, security policy, or historical specs disagree.
+
+## Known Broken Baselines
+
+| Invariant | Broken baseline | Evidence | Fix owner |
+|-----------|-----------------|----------|-----------|
+| KEY-001 | Deleting the final usable keyslot can create an encrypted artifact with no usable keyslots. | Current source analysis in `dexios-domain/src/key/delete.rs`; quarantined regression planned in Phase 1 Plan 01-03. | Phase 5 |
+| STOR-001 | Workflows can open and truncate existing final outputs before the operation has fully succeeded. | Current source analysis in CLI/domain storage output-open paths; quarantined regression planned in Phase 1 Plan 01-04. | Phase 4 |
+| STOR-002 | Same-file checks are string-level in current CLI encrypt/decrypt paths and do not prove canonical, symlink, or hardlink identity before output handles open. | Current source analysis in `dexios/src/subcommands/encrypt.rs` and `dexios/src/subcommands/decrypt.rs`; quarantined regression planned in Phase 1 Plan 01-04. | Phase 4 |
+
+## Fixture Baseline
+
+Phase 1 fixture work must add reviewable fixture evidence for valid V1 files,
+malformed V1 files, wrong-key cases, detached headers, and header/keyslot
+mutation cases. Fixture rows must cite the owning invariant ID, provenance,
+expected behavior, and owning future phase when a fixture demonstrates a broken
+invariant.
+
+## No-Unjustified-Unsafe Policy
+
+The no-unjustified-unsafe policy is defined in this contract and enforced by
+crate-root lint attributes in the core and domain crates.
+
+## Verification Gate
+
+Phase plans that depend on these invariants must run the relevant focused tests
+or inspection commands listed by each task, then include the applicable
+workspace formatting, lint, and test gates for the files they touch.
