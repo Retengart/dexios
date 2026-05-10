@@ -1,5 +1,6 @@
 use dexios_core::header::common::{HeaderWriteError, KeyslotNonce, PayloadNonce, Salt};
-use dexios_core::header::v1::{KeyslotKdf, V1Header, V1Keyslot, V1Keyslots};
+use dexios_core::header::v1::{V1Header, V1Keyslot, V1Keyslots};
+use dexios_core::kdf::Kdf;
 use std::io::{Cursor, Seek, SeekFrom, Write};
 
 #[derive(Default)]
@@ -51,7 +52,7 @@ fn v1_header_write_must_write_the_full_serialized_header() {
     let header = V1Header::new(
         PayloadNonce::new([7u8; 20]),
         V1Keyslots::single(V1Keyslot::new(
-            KeyslotKdf::Blake3Balloon,
+            Kdf::Blake3Balloon,
             [5u8; 48],
             KeyslotNonce::new([9u8; 24]),
             Salt::new([3u8; 16]),
@@ -70,7 +71,7 @@ fn v1_header_write_preserves_underlying_io_error_details() {
     let header = V1Header::new(
         PayloadNonce::new([7u8; 20]),
         V1Keyslots::single(V1Keyslot::new(
-            KeyslotKdf::Blake3Balloon,
+            Kdf::Blake3Balloon,
             [5u8; 48],
             KeyslotNonce::new([9u8; 24]),
             Salt::new([3u8; 16]),

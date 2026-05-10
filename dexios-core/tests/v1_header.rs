@@ -14,7 +14,7 @@ mod support {
 
     pub fn sample_v1_header() -> V1Header {
         let keyslots = V1Keyslots::single(V1Keyslot::new(
-            KeyslotKdf::Blake3Balloon,
+            Kdf::Blake3Balloon,
             [11u8; 48],
             KeyslotNonce::new([13u8; 24]),
             HeaderSalt::new([17u8; 16]),
@@ -76,7 +76,7 @@ fn v1_header_rejects_zero_keyslots() {
 #[test]
 fn v1_keyslot_collection_rejects_more_than_max() {
     let keyslot = V1Keyslot::new(
-        KeyslotKdf::Blake3Balloon,
+        Kdf::Blake3Balloon,
         [11u8; 48],
         KeyslotNonce::new([13u8; 24]),
         HeaderSalt::new([17u8; 16]),
@@ -158,7 +158,7 @@ fn v1_payload_stream_uses_header_derived_aad() {
     let other_header = V1Header::new(
         PayloadNonce::new([8u8; 20]),
         V1Keyslots::single(V1Keyslot::new(
-            KeyslotKdf::Blake3Balloon,
+            Kdf::Blake3Balloon,
             [21u8; 48],
             KeyslotNonce::new([23u8; 24]),
             HeaderSalt::new([29u8; 16]),
@@ -370,10 +370,7 @@ fn v1_header_preserves_historical_argon2id_tag_as_unsupported() {
         .expect("historical Argon2id tag remains structurally recognized");
 
     let ParsedHeader::V1(parsed) = parsed;
-    assert_eq!(
-        parsed.keyslots()[0].kdf(),
-        KeyslotKdf::UnsupportedArgon2id
-    );
+    assert_eq!(parsed.keyslots()[0].kdf(), KeyslotKdf::UnsupportedArgon2id);
 }
 
 #[test]
@@ -388,7 +385,10 @@ fn new_keyslot_constructor_uses_supported_kdf_selector() {
         .expect("sample v1 header");
     let bytes = header.serialize().unwrap();
 
-    assert_eq!(&bytes[HEADER_STATIC_LEN..HEADER_STATIC_LEN + 2], &[0xDF, 0x01]);
+    assert_eq!(
+        &bytes[HEADER_STATIC_LEN..HEADER_STATIC_LEN + 2],
+        &[0xDF, 0x01]
+    );
 }
 
 #[test]

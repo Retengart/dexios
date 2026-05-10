@@ -10,21 +10,21 @@ use super::common::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KeyslotKdf {
     Blake3Balloon,
-    Argon2id,
+    UnsupportedArgon2id,
 }
 
 impl KeyslotKdf {
     fn serialize(self) -> [u8; 2] {
         match self {
             Self::Blake3Balloon => [0xDF, 0x01],
-            Self::Argon2id => [0xDF, 0x02],
+            Self::UnsupportedArgon2id => [0xDF, 0x02],
         }
     }
 
     fn deserialize(tag: [u8; 2]) -> Result<Self, HeaderReadError> {
         match tag {
             [0xDF, 0x01] => Ok(Self::Blake3Balloon),
-            [0xDF, 0x02] => Ok(Self::Argon2id),
+            [0xDF, 0x02] => Ok(Self::UnsupportedArgon2id),
             _ => Err(HeaderReadError::InvalidKeyslotTag(tag)),
         }
     }
@@ -113,11 +113,15 @@ pub struct V1Keyslot {
 impl V1Keyslot {
     #[must_use]
     pub const fn new(
-        kdf: KeyslotKdf,
+        kdf: Kdf,
         encrypted_master_key: [u8; 48],
         nonce: KeyslotNonce,
         salt: Salt,
     ) -> Self {
+        let kdf = match kdf {
+            Kdf::Blake3Balloon => KeyslotKdf::Blake3Balloon,
+        };
+
         Self {
             kdf,
             encrypted_master_key: EncryptedMasterKey::new(encrypted_master_key),
