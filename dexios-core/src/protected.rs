@@ -5,10 +5,14 @@
 //!
 //! `Protected` values are also hidden from `fmt::Debug`, and will display `[REDACTED]` instead.
 //!
-//! The only way to access the data within a `Protected` value is to call `.expose()` - this is to prevent accidental leakage.
-//! This also makes any `Protected` value easier to audit, as you are able to quickly view wherever the data is accessed.
+//! The only way to access the data within a `Protected` value is to call
+//! `.with_exposed(...)` - this is to prevent accidental leakage by keeping
+//! secret access scoped to a closure.
+//! This also makes any `Protected` value easier to audit, as you are able to
+//! quickly view wherever the data is accessed.
 //!
-//! `Protected` values are not able to be copied within memory, to prevent accidental leakage. They are able to be `cloned` however - but this is always explicit and you will be aware of it.
+//! `Protected` values are not able to be copied or cloned through a blanket
+//! implementation, to prevent accidental leakage.
 //!
 //! I'd like to give a huge thank you to the authors of the [secrecy crate](https://crates.io/crates/secrecy),
 //! as that crate's functionality inspired this implementation.
@@ -19,32 +23,18 @@
 //! let secret_data = "this is classified information".to_string();
 //! let protected_data = Protected::new(secret_data);
 //!
-//! // the only way to access the data within the `Protected` wrapper
-//! // is by calling `.expose()`
-//! let value = protected_data.expose();
+//! let len = protected_data.with_exposed(|value| value.len());
 //! ```
 //!
 
 use std::fmt::Debug;
 use zeroize::Zeroize;
 
-#[derive(Clone)]
 pub struct Protected<T>
 where
     T: Zeroize,
 {
     data: T,
-}
-
-impl<T> std::ops::Deref for Protected<T>
-where
-    T: Zeroize,
-{
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.data
-    }
 }
 
 impl<T> Protected<T>
@@ -55,7 +45,11 @@ where
         Protected { data: value }
     }
 
-    pub fn expose(&self) -> &T {
+    pub fn with_exposed<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        f(&self.data)
+    }
+
+    pub(crate) fn expose(&self) -> &T {
         &self.data
     }
 }
