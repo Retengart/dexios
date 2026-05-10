@@ -1,4 +1,6 @@
 use core::kdf::Kdf;
+use core::header::v1::KeyslotKdf;
+use core::header::{ParsedHeader, read_header};
 use core::protected::Protected;
 use dexios_domain::{decrypt, encrypt, key};
 use std::cell::RefCell;
@@ -21,6 +23,14 @@ fn encrypted_v1_fixture() -> RefCell<Cursor<Vec<u8>>> {
     output
 }
 
+fn keyslot_kdfs(encrypted: &RefCell<Cursor<Vec<u8>>>) -> Vec<KeyslotKdf> {
+    let mut handle = encrypted.borrow_mut();
+    handle.rewind().expect("rewind before header read");
+    let (parsed, _) = read_header(&mut *handle).expect("read V1 header");
+    let ParsedHeader::V1(header) = parsed;
+    header.keyslots().iter().map(|keyslot| keyslot.kdf()).collect()
+}
+
 fn decrypt_fixture(
     encrypted: &RefCell<Cursor<Vec<u8>>>,
     raw_key: &[u8],
@@ -37,6 +47,13 @@ fn decrypt_fixture(
     })?;
 
     Ok(output.into_inner().into_inner())
+}
+
+#[test]
+fn encrypt_writes_blake3_balloon_keyslot() {
+    let encrypted = encrypted_v1_fixture();
+
+    assert_eq!(keyslot_kdfs(&encrypted), [KeyslotKdf::Blake3Balloon]);
 }
 
 #[test]
@@ -91,9 +108,13 @@ fn can_add_verify_change_and_delete_v1_keyslots() {
         handle: &encrypted,
         raw_key_old: Protected::new(b"old-pass".to_vec()),
         raw_key_new: Protected::new(b"new-pass".to_vec()),
-        kdf: Kdf::Argon2id,
+        kdf: Kdf::Blake3Balloon,
     })
     .expect("add keyslot");
+    assert_eq!(
+        keyslot_kdfs(&encrypted),
+        [KeyslotKdf::Blake3Balloon, KeyslotKdf::Blake3Balloon]
+    );
 
     encrypted
         .borrow_mut()
@@ -116,6 +137,10 @@ fn can_add_verify_change_and_delete_v1_keyslots() {
         kdf: Kdf::Blake3Balloon,
     })
     .expect("change keyslot");
+    assert_eq!(
+        keyslot_kdfs(&encrypted),
+        [KeyslotKdf::Blake3Balloon, KeyslotKdf::Blake3Balloon]
+    );
 
     encrypted
         .borrow_mut()
