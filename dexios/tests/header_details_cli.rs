@@ -6,7 +6,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use core::header::common::{HEADER_LEN, MAGIC};
+use core::header::common::{HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN, MAGIC};
 use core::header::{ParsedHeader, read_header};
 use core::kdf::Kdf;
 use core::protected::Protected;
@@ -86,6 +86,13 @@ fn write_malformed_v1_header_fixture(output_path: &Path) {
     file.flush().unwrap();
 }
 
+fn mark_keyslot_unsupported_argon2id(path: &Path, index: usize) {
+    let mut bytes = fs::read(path).unwrap();
+    let offset = HEADER_STATIC_LEN + (index * KEYSLOT_LEN);
+    bytes[offset..offset + 2].copy_from_slice(&[0xDF, 0x02]);
+    fs::write(path, bytes).unwrap();
+}
+
 #[test]
 fn help_does_not_list_aes_or_erase_commands() {
     let test_dir = TestDir::new("help-surface");
@@ -133,6 +140,85 @@ fn header_details_reports_v1_profile() {
     assert!(!stdout.contains("V5"));
     assert!(!stdout.contains("AES-256-GCM"));
     assert!(!stdout.contains("(legacy)"));
+}
+
+#[test]
+fn header_details_reports_supported_blake3_balloon_keyslot() {
+    let test_dir = TestDir::new("header-details-kdf");
+    let plain = test_dir.path().join("plain.txt");
+    let encrypted = test_dir.path().join("plain.enc");
+    fs::write(&plain, b"top secret").unwrap();
+    encrypt_fixture(&plain, &encrypted);
+
+    let output = run_cli(
+        test_dir.path(),
+        &["header", "details", encrypted.to_str().unwrap()],
+    );
+
+    assert!(
+        output.status.success(),
+        "header details failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("KDF: BLAKE3-Balloon"),
+        "header details did not show supported KDF: stdout={stdout}"
+    );
+    assert!(
+        !stdout.contains(PASSWORD),
+        "header details leaked the raw password: stdout={stdout}"
+    );
+    assert!(
+        !stdout.contains("top secret"),
+        "header details leaked plaintext fixture data: stdout={stdout}"
+    );
+    assert!(
+        !stdout.contains("Wrapping Key"),
+        "header details should not print wrapping keys: stdout={stdout}"
+    );
+    assert!(
+        !stdout.contains("Decrypted Master Key"),
+        "header details should not print decrypted master keys: stdout={stdout}"
+    );
+    assert!(
+        !stdout.contains("  Master Key:"),
+        "header details should label only encrypted master-key metadata: stdout={stdout}"
+    );
+}
+
+#[test]
+fn header_details_marks_historical_argon2id_keyslot_unsupported() {
+    let test_dir = TestDir::new("header-details-argon2id");
+    let plain = test_dir.path().join("plain.txt");
+    let encrypted = test_dir.path().join("plain.enc");
+    fs::write(&plain, b"top secret").unwrap();
+    encrypt_fixture(&plain, &encrypted);
+    mark_keyslot_unsupported_argon2id(&encrypted, 0);
+
+    let output = run_cli(
+        test_dir.path(),
+        &["header", "details", encrypted.to_str().unwrap()],
+    );
+
+    assert!(
+        output.status.success(),
+        "header details failed for historical KDF tag: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Argon2id"),
+        "header details did not identify historical Argon2id tag: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains("unsupported") || stdout.contains("historical"),
+        "historical Argon2id tag was not marked unsupported/historical: stdout={stdout}"
+    );
 }
 
 #[test]
