@@ -36,13 +36,10 @@ pub fn details(input: &str) -> Result<()> {
                 println!("  KDF: {kdf}");
                 println!("  Salt: {} (hex)", hex_encode(keyslot.salt().as_bytes()));
                 println!(
-                    "  Master Key: {} (hex, encrypted)",
+                    "  Encrypted master key: {} (hex)",
                     hex_encode(keyslot.encrypted_master_key())
                 );
-                println!(
-                    "  Master Key Nonce: {} (hex)",
-                    hex_encode(keyslot.nonce().as_bytes())
-                );
+                println!("  Keyslot nonce: {} (hex)", hex_encode(keyslot.nonce().as_bytes()));
             }
 
             Ok(())
