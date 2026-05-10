@@ -22,7 +22,7 @@
 //! // aad should be retrieved from the `Header` (with `Header::deserialize()`)
 //! let aad = Vec::new();
 //!
-//! decrypt_stream.decrypt_file(&mut input_file, &mut output_file, &aad);
+//! decrypt_stream.decrypt_file_with_aad_unchecked(&mut input_file, &mut output_file, &aad);
 //! ```
 
 use std::io::{Read, Write};
@@ -49,6 +49,31 @@ pub enum EncryptionStreams {
 ///
 pub enum DecryptionStreams {
     XChaCha20Poly1305(Box<DecryptorLE31<XChaCha20Poly1305>>),
+}
+
+pub struct V1PayloadStream;
+
+impl V1PayloadStream {
+    pub fn encrypt_file(
+        master_key: Protected<[u8; 32]>,
+        header: &crate::header::v1::V1Header,
+        reader: &mut impl Read,
+        writer: &mut impl Write,
+    ) -> anyhow::Result<()> {
+        EncryptionStreams::initialize(master_key, header.payload_nonce().as_bytes())?
+            .encrypt_file_with_aad_unchecked(reader, writer, header.aad().as_bytes())
+    }
+
+    pub fn decrypt_file(
+        master_key: Protected<[u8; 32]>,
+        header: &crate::header::v1::V1Header,
+        aad: &crate::header::V1HeaderAad,
+        reader: &mut impl Read,
+        writer: &mut impl Write,
+    ) -> anyhow::Result<()> {
+        DecryptionStreams::initialize(master_key, header.payload_nonce().as_bytes())?
+            .decrypt_file_with_aad_unchecked(reader, writer, aad.as_bytes())
+    }
 }
 
 impl EncryptionStreams {
@@ -127,6 +152,8 @@ impl EncryptionStreams {
 
     /// This is a convenience function for reading from a reader, encrypting, and writing to the writer.
     ///
+    /// This accepts arbitrary byte-slice AAD and is not for V1 file payloads.
+    ///
     /// Every single block is provided with the AAD
     ///
     /// Valid AAD must be provided if you are using `HeaderVersion::V3` and
@@ -142,18 +169,17 @@ impl EncryptionStreams {
     /// let mut input_file = File::open("input").unwrap();
     /// let mut output_file = File::create("output.encrypted").unwrap();
     ///
-    /// // aad should be generated from the header with `create_aad()`
-    /// let aad = header.create_aad().unwrap();
+    /// let aad = b"custom aad".as_slice();
     ///
     /// let encrypt_stream = EncryptionStreams::initialize(key, nonce.as_bytes()).unwrap();
-    /// encrypt_stream.encrypt_file(&mut input_file, &mut output_file, &aad);
+    /// encrypt_stream.encrypt_file_with_aad_unchecked(&mut input_file, &mut output_file, aad);
     /// ```
     ///
     /// # Errors
     ///
     /// Returns an error if reading from the input fails, writing to the output
     /// fails, flushing the writer fails, or the stream cipher rejects a block.
-    pub fn encrypt_file(
+    pub fn encrypt_file_with_aad_unchecked(
         mut self,
         reader: &mut impl Read,
         writer: &mut impl Write,
@@ -168,9 +194,6 @@ impl EncryptionStreams {
                 .read(&mut read_buffer)
                 .context("Unable to read from the reader")?;
             if read_count == BLOCK_SIZE {
-                // aad is just empty bytes normally
-                // create_aad returns empty bytes if the header isn't V3+
-                // this means we don't need to do anything special in regards to older versions
                 let payload = Payload {
                     aad,
                     msg: read_buffer.as_ref(),
@@ -290,6 +313,8 @@ impl DecryptionStreams {
 
     /// This is a convenience function for reading from a reader, decrypting, and writing to the writer.
     ///
+    /// This accepts arbitrary byte-slice AAD and is not for V1 file payloads.
+    ///
     /// Every single block is provided with the AAD
     ///
     /// Valid AAD must be provided if you are using `HeaderVersion::V3` and above. It must be empty if the `HeaderVersion` is lower. Whatever you provided as AAD while encrypting must be present during decryption, or else you will receive an error.
@@ -306,14 +331,14 @@ impl DecryptionStreams {
     /// let aad = Vec::new();
     ///
     /// let decrypt_stream = DecryptionStreams::initialize(key, nonce.as_bytes()).unwrap();
-    /// decrypt_stream.decrypt_file(&mut input_file, &mut output_file, &aad);
+    /// decrypt_stream.decrypt_file_with_aad_unchecked(&mut input_file, &mut output_file, &aad);
     /// ```
     ///
     /// # Errors
     ///
     /// Returns an error if reading from the input fails, writing to the output
     /// fails, or the stream cipher rejects a block during decryption.
-    pub fn decrypt_file(
+    pub fn decrypt_file_with_aad_unchecked(
         mut self,
         reader: &mut impl Read,
         writer: &mut impl Write,
@@ -366,36 +391,5 @@ impl DecryptionStreams {
         pb.finish_and_clear();
 
         Ok(())
-    }
-}
-
-pub mod legacy {
-    use crate::primitives::legacy::Algorithm;
-    use crate::protected::Protected;
-
-    use super::{DecryptionStreams, EncryptionStreams};
-
-    pub fn initialize_encryption(
-        key: Protected<[u8; 32]>,
-        nonce: &[u8],
-        algorithm: &Algorithm,
-    ) -> anyhow::Result<EncryptionStreams> {
-        if algorithm != &Algorithm::XChaCha20Poly1305 {
-            return Err(anyhow::anyhow!("Unsupported cipher suite"));
-        }
-
-        EncryptionStreams::initialize(key, nonce)
-    }
-
-    pub fn initialize_decryption(
-        key: Protected<[u8; 32]>,
-        nonce: &[u8],
-        algorithm: &Algorithm,
-    ) -> anyhow::Result<DecryptionStreams> {
-        if algorithm != &Algorithm::XChaCha20Poly1305 {
-            return Err(anyhow::anyhow!("Unsupported cipher suite"));
-        }
-
-        DecryptionStreams::initialize(key, nonce)
     }
 }

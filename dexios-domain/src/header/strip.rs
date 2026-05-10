@@ -4,7 +4,8 @@ use super::Error;
 use std::cell::RefCell;
 use std::io::{Read, Seek, Write};
 
-use core::header::legacy::Header;
+use core::header::common::HEADER_LEN;
+use core::header::{ParsedHeader, read_header};
 
 pub struct Request<'a, RW>
 where
@@ -17,25 +18,19 @@ pub fn execute<RW>(req: Request<'_, RW>) -> Result<(), Error>
 where
     RW: Read + Write + Seek,
 {
-    let (header, _) =
-        Header::deserialize(&mut *req.handle.borrow_mut()).map_err(|_| Error::InvalidFile)?;
+    let (parsed, _) = read_header(&mut *req.handle.borrow_mut()).map_err(Error::from)?;
+    match parsed {
+        ParsedHeader::V1(_) => {}
+    }
 
     req.handle
         .borrow_mut()
         .rewind()
         .map_err(|_| Error::Rewind)?;
 
-    let zeroes = vec![
-        0u8;
-        header
-            .get_size()
-            .try_into()
-            .map_err(|_| Error::HeaderSizeParse)?
-    ];
-
     req.handle
         .borrow_mut()
-        .write_all(&zeroes)
+        .write_all(&[0u8; HEADER_LEN])
         .map_err(|_| Error::Write)?;
 
     Ok(())

@@ -4,7 +4,7 @@ use super::Error;
 use std::cell::RefCell;
 use std::io::{Read, Seek, Write};
 
-use core::header::legacy::Header;
+use core::header::{ParsedHeader, read_header};
 
 pub struct Request<'a, R, W>
 where
@@ -20,8 +20,8 @@ where
     R: Read + Seek,
     W: Write + Seek,
 {
-    let (header, _) =
-        Header::deserialize(&mut *req.reader.borrow_mut()).map_err(|_| Error::InvalidFile)?;
+    let (parsed, _) = read_header(&mut *req.reader.borrow_mut()).map_err(Error::from)?;
+    let ParsedHeader::V1(header) = parsed;
 
     header
         .write(&mut *req.writer.borrow_mut())

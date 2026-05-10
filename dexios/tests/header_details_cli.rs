@@ -7,10 +7,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use core::header::common::{HEADER_LEN, MAGIC};
-use core::header::legacy::{Header as LegacyHeader, HeaderType, HeaderVersion};
 use core::header::{ParsedHeader, read_header};
 use core::kdf::Kdf;
-use core::primitives::legacy::{Algorithm, Mode};
 use core::protected::Protected;
 use domain::encrypt;
 
@@ -71,19 +69,9 @@ fn encrypt_fixture(input_path: &Path, output_path: &Path) {
 }
 
 fn write_legacy_header_fixture(output_path: &Path) {
-    let header = LegacyHeader {
-        header_type: HeaderType {
-            version: HeaderVersion::V5,
-            algorithm: Algorithm::XChaCha20Poly1305,
-            mode: Mode::StreamMode,
-        },
-        nonce: vec![7u8; 20],
-        salt: None,
-        keyslots: Some(vec![]),
-    };
-
     let mut file = File::create(output_path).unwrap();
-    file.write_all(&header.serialize().unwrap()).unwrap();
+    file.write_all(&[0xDE, 0x05]).unwrap();
+    file.write_all(&[7u8; 126]).unwrap();
     file.flush().unwrap();
 }
 
@@ -187,7 +175,7 @@ fn detached_header_current_v1_fixture_keeps_header_separate() {
 }
 
 #[test]
-fn header_details_still_reports_legacy_headers_via_fallback() {
+fn header_details_rejects_legacy_headers_without_fallback() {
     let test_dir = TestDir::new("header-details-legacy");
     let legacy = test_dir.path().join("legacy.hdr");
     write_legacy_header_fixture(&legacy);
@@ -198,15 +186,15 @@ fn header_details_still_reports_legacy_headers_via_fallback() {
     );
 
     assert!(
-        output.status.success(),
-        "header details failed: stdout={}\nstderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        !output.status.success(),
+        "header details unexpectedly succeeded"
     );
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Header version: V5 (legacy)"));
-    assert!(stdout.contains("Cipher suite: legacy / compatibility"));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Unsupported Dexios format"),
+        "stderr did not reject legacy format: {stderr}"
+    );
 }
 
 #[test]

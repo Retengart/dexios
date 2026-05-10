@@ -1,4 +1,4 @@
-use core::header::legacy::HashingAlgorithm;
+use core::kdf::Kdf;
 
 use crate::global::states::{ForceMode, HashMode};
 
@@ -12,7 +12,7 @@ pub struct CryptoParams {
     pub delete_input: DeleteInput,
     pub key: Key,
     pub header_location: HeaderLocation,
-    pub hashing_algorithm: HashingAlgorithm,
+    pub kdf: Kdf,
 }
 
 #[allow(dead_code)]
@@ -26,5 +26,5 @@ pub struct PackParams {
 pub struct KeyManipulationParams {
     pub key_old: Key,
     pub key_new: Key,
-    pub hashing_algorithm: HashingAlgorithm,
+    pub kdf: Kdf,
 }

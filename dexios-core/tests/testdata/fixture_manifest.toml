@@ -21,6 +21,39 @@ expected = "dexios_core::header::read_header fails with HeaderReadError::NonZero
 owner_phase = "Phase 2"
 
 [[fixture]]
+id = "v1-zero-keyslot-count"
+group = "malformed-v1"
+path = "dexios-core/tests/v1_header.rs::v1_header_rejects_zero_keyslots"
+purpose = "Prove V1 construction and parsing reject headers with no active keyslots."
+invariant = "KEY-001"
+requirement = "KEY-01"
+source = "Generated from the V1 header test support builder and mutated in memory to count zero."
+expected = "V1Keyslots::try_from_vec rejects empty collections and read_header rejects zero keyslot counts."
+owner_phase = "Phase 2"
+
+[[fixture]]
+id = "v1-invalid-kdf-tag"
+group = "malformed-v1"
+path = "dexios-core/tests/v1_header.rs::v1_header_rejects_invalid_kdf_tag"
+purpose = "Prove V1 parsing rejects unknown active-keyslot KDF tags."
+invariant = "FMT-004"
+requirement = "FORM-01"
+source = "Generated from the V1 header test support builder and mutated in memory at the active keyslot KDF tag bytes."
+expected = "dexios_core::header::read_header fails with HeaderReadError::InvalidKeyslotTag."
+owner_phase = "Phase 2"
+
+[[fixture]]
+id = "legacy-v5-unsupported-format"
+group = "malformed-v1"
+path = "dexios-core/tests/v1_header.rs::read_header_rejects_legacy_prefix_as_unsupported_format"
+purpose = "Prove legacy Dexios V5 headers are intentionally rejected by the V1-only reader."
+invariant = "FMT-006"
+requirement = "FORM-04"
+source = "In-memory legacy V5 prefix [DE, 05] with legacy algorithm and mode bytes."
+expected = "dexios_core::header::read_header fails with HeaderReadError::UnsupportedFormat([0xDE, 0x05])."
+owner_phase = "Phase 2"
+
+[[fixture]]
 id = "wrong-key-current-v1"
 group = "wrong-key"
 path = "dexios-domain/tests/keyslots_v1.rs"

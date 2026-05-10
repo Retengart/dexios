@@ -14,8 +14,6 @@ pub const CORE_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub mod cipher;
 #[path = "header/mod.rs"]
 pub mod header;
-#[path = "header.rs"]
-mod header_legacy;
 pub mod kdf;
 pub mod key;
 pub mod primitives;

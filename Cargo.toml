@@ -21,9 +21,7 @@ rand = "0.10.0"
 clap = { version = "4.5.60", features = ["cargo"] }
 rpassword = "7.4.0"
 zip = { version = "8.2.0", default-features = false, features = ["zstd"] }
-aes-gcm = "0.10.3"
 chacha20poly1305 = "0.10.1"
-deoxys = "0.1.0"
 aead = { version = "0.5.2", features = ["stream"] }
 zeroize = "1.8.2"
 argon2 = "0.5.3"

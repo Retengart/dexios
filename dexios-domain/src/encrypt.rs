@@ -5,11 +5,11 @@ use std::io::{Read, Seek, Write};
 
 use core::cipher::Ciphers;
 use core::header::common::Salt;
-use core::header::v1::{V1Header, V1Keyslot};
+use core::header::v1::{V1Header, V1Keyslot, V1Keyslots};
 use core::kdf::Kdf;
 use core::primitives::{ENCRYPTED_MASTER_KEY_LEN, gen_keyslot_nonce, gen_payload_nonce};
 use core::protected::Protected;
-use core::stream::EncryptionStreams;
+use core::stream::V1PayloadStream;
 
 use crate::utils::{gen_master_key, gen_salt};
 
@@ -87,7 +87,8 @@ where
         header_salt,
     );
     let payload_nonce = gen_payload_nonce();
-    let header = V1Header::new(payload_nonce, vec![keyslot]).map_err(|_| Error::WriteHeader)?;
+    let header = V1Header::new(payload_nonce, V1Keyslots::single(keyslot))
+        .map_err(|_| Error::WriteHeader)?;
 
     req.writer
         .borrow_mut()
@@ -113,14 +114,11 @@ where
         }
     }
 
-    let aad = header.create_aad();
     let mut reader = req.reader.borrow_mut();
     reader.rewind().map_err(|_| Error::ResetCursorPosition)?;
 
     let mut writer = req.writer.borrow_mut();
-    EncryptionStreams::initialize(master_key, header.payload_nonce().as_bytes())
-        .map_err(|_| Error::InitializeStreams)?
-        .encrypt_file(&mut *reader, &mut *writer, aad.as_bytes())
+    V1PayloadStream::encrypt_file(master_key, &header, &mut *reader, &mut *writer)
         .map_err(|_| Error::EncryptFile)?;
 
     Ok(())

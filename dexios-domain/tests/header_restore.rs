@@ -1,27 +1,26 @@
-use core::header::legacy::{Header, HeaderType, HeaderVersion};
-use core::primitives::legacy::{Algorithm, Mode};
+use core::header::common::{HEADER_LEN, KeyslotNonce, PayloadNonce, Salt};
+use core::header::v1::{KeyslotKdf, V1Header, V1Keyslot, V1Keyslots};
 use dexios_domain::header::{self, restore};
 use std::cell::RefCell;
 use std::io::Cursor;
 
-fn legacy_v5_header() -> Header {
-    Header {
-        header_type: HeaderType {
-            version: HeaderVersion::V5,
-            algorithm: Algorithm::XChaCha20Poly1305,
-            mode: Mode::StreamMode,
-        },
-        nonce: vec![7u8; 20],
-        salt: None,
-        keyslots: Some(vec![]),
-    }
+fn v1_header_bytes() -> Vec<u8> {
+    let keyslot = V1Keyslot::new(
+        KeyslotKdf::Blake3Balloon,
+        [1u8; 48],
+        KeyslotNonce::new([2u8; 24]),
+        Salt::new([3u8; 16]),
+    );
+    let header = V1Header::new(PayloadNonce::new([4u8; 20]), V1Keyslots::single(keyslot))
+        .expect("create V1 header");
+
+    header.serialize().expect("serialize V1 header")
 }
 
 #[test]
-fn restores_valid_legacy_v5_header_into_full_zero_target() {
-    let header = legacy_v5_header();
-    let header_bytes = header.serialize().expect("serialize header");
-    let target = RefCell::new(Cursor::new(vec![0u8; header_bytes.len()]));
+fn restores_valid_v1_header_into_full_zero_target() {
+    let header_bytes = v1_header_bytes();
+    let target = RefCell::new(Cursor::new(vec![0u8; HEADER_LEN]));
 
     restore::execute(restore::Request {
         reader: &RefCell::new(Cursor::new(header_bytes.clone())),
@@ -33,12 +32,9 @@ fn restores_valid_legacy_v5_header_into_full_zero_target() {
 }
 
 #[test]
-#[ignore = "known bug: Phase 1 baseline; unignore in Phase 5"]
-fn quarantined_known_bug_header_restore_rejects_short_target() {
-    let header = legacy_v5_header();
-    let header_size = usize::try_from(header.get_size()).expect("header size");
-    let dumped_header = RefCell::new(Cursor::new(header.serialize().expect("serialize header")));
-    let target = RefCell::new(Cursor::new(vec![0u8; header_size - 1]));
+fn header_restore_rejects_short_target_without_writing() {
+    let dumped_header = RefCell::new(Cursor::new(v1_header_bytes()));
+    let target = RefCell::new(Cursor::new(vec![0u8; HEADER_LEN - 1]));
 
     let error = restore::execute(restore::Request {
         reader: &dumped_header,
@@ -46,6 +42,6 @@ fn quarantined_known_bug_header_restore_rejects_short_target() {
     })
     .expect_err("short restore target should be rejected before writing");
 
-    assert!(matches!(error, header::Error::Read));
-    assert_eq!(target.borrow().get_ref().len(), header_size - 1);
+    assert!(matches!(error, header::Error::UnsupportedRestore));
+    assert_eq!(target.borrow().get_ref(), &vec![0u8; HEADER_LEN - 1]);
 }

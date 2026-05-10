@@ -1,6 +1,6 @@
 use core::Zeroize;
 use core::cipher::Ciphers;
-use core::header::v1::V1Keyslot;
+use core::header::v1::{V1KeyslotIndex, V1Keyslots};
 use core::kdf::Kdf;
 use core::key::vec_to_arr;
 use core::primitives::ENCRYPTED_MASTER_KEY_LEN;
@@ -24,6 +24,7 @@ pub enum Error {
     HeaderDeserialize,
     HeaderWrite,
     Seek,
+    CannotRemoveFinalV1Keyslot,
 }
 
 impl std::fmt::Display for Error {
@@ -33,6 +34,7 @@ impl std::fmt::Display for Error {
             Error::Seek => f.write_str("Unable to seek the data's cursor"),
             Error::HeaderWrite => f.write_str("Unable to write the header"),
             Error::HeaderDeserialize => f.write_str("Unable to deserialize the header"),
+            Error::CannotRemoveFinalV1Keyslot => f.write_str("Cannot remove the final V1 keyslot"),
             Error::CipherInit => f.write_str("Unable to initialize a cipher"),
             Error::KeyHash => f.write_str("Unable to hash your key"),
             Error::TooManyKeyslots => {
@@ -48,14 +50,14 @@ impl std::fmt::Display for Error {
 }
 
 pub fn decrypt_v1_master_key_with_index(
-    keyslots: &[V1Keyslot],
+    keyslots: &V1Keyslots,
     raw_key_old: Protected<Vec<u8>>,
-) -> Result<(Protected<[u8; MASTER_KEY_LEN]>, usize), Error> {
-    let mut index = 0;
+) -> Result<(Protected<[u8; MASTER_KEY_LEN]>, V1KeyslotIndex), Error> {
+    let mut index = None;
     let mut master_key = [0u8; MASTER_KEY_LEN];
 
     // we need the index, so we can't use `decrypt_master_key()`
-    for (i, keyslot) in keyslots.iter().enumerate() {
+    for (i, keyslot) in keyslots.as_slice().iter().enumerate() {
         let salt = core::kdf::Salt::new(*keyslot.salt().as_bytes());
         let key_old = Kdf::from(keyslot.kdf())
             .derive(raw_key_old.clone(), &salt)
@@ -76,7 +78,10 @@ pub fn decrypt_v1_master_key_with_index(
         master_key[..len].copy_from_slice(&master_key_decrypted[..len]);
         master_key_decrypted.zeroize();
 
-        index = i;
+        index = Some(
+            V1KeyslotIndex::try_from_usize(i, keyslots.count())
+                .map_err(|_| Error::HeaderDeserialize)?,
+        );
 
         drop(cipher);
         break;
@@ -84,9 +89,9 @@ pub fn decrypt_v1_master_key_with_index(
 
     drop(raw_key_old);
 
-    if master_key == [0u8; MASTER_KEY_LEN] {
+    let Some(index) = index else {
         return Err(Error::IncorrectKey);
-    }
+    };
 
     Ok((Protected::new(master_key), index))
 }

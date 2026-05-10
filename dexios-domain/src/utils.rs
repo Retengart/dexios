@@ -14,45 +14,27 @@ pub fn hex_encode(bytes: &[u8]) -> String {
 #[cfg(test)]
 pub use test::gen_master_key;
 #[cfg(test)]
-pub use test::gen_nonce;
-#[cfg(test)]
 pub use test::gen_salt;
 
 #[cfg(not(test))]
 pub use core::primitives::gen_master_key;
 #[cfg(not(test))]
 pub use core::primitives::gen_salt;
-#[cfg(not(test))]
-pub fn gen_nonce(
-    algorithm: &core::primitives::legacy::Algorithm,
-    mode: &core::primitives::legacy::Mode,
-) -> Result<Vec<u8>, core::primitives::legacy::LegacySuiteError> {
-    core::primitives::legacy::gen_nonce(algorithm, mode)
-}
 
 #[cfg(test)]
 mod test {
-    use core::primitives::legacy::{Algorithm, LegacySuiteError, Mode, get_nonce_len};
     use core::primitives::{MASTER_KEY_LEN, SALT_LEN};
     use core::protected::Protected;
     use rand::{Rng, SeedableRng, rngs::StdRng};
 
     const SALT_SEED: u64 = 123_456;
-    const NONCE_SEED: u64 = SALT_SEED + 1;
-    const MASTER_KEY_SEED: u64 = NONCE_SEED + 2;
+    const MASTER_KEY_SEED: u64 = SALT_SEED + 1;
 
     #[must_use]
     pub fn gen_salt() -> [u8; SALT_LEN] {
         let mut salt = [0u8; SALT_LEN];
         StdRng::seed_from_u64(SALT_SEED).fill_bytes(&mut salt);
         salt
-    }
-
-    pub fn gen_nonce(algorithm: &Algorithm, mode: &Mode) -> Result<Vec<u8>, LegacySuiteError> {
-        let nonce_len = get_nonce_len(algorithm, mode)?;
-        let mut nonce = vec![0u8; nonce_len];
-        StdRng::seed_from_u64(NONCE_SEED).fill_bytes(&mut nonce);
-        Ok(nonce)
     }
 
     #[must_use]

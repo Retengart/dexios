@@ -12,7 +12,6 @@ use std::cell::RefCell;
 use std::io::{BufWriter, Read, Seek, Write};
 use std::sync::Arc;
 
-use core::header::legacy::{HashingAlgorithm, HeaderType};
 use core::kdf::Kdf;
 use core::primitives::BLOCK_SIZE;
 use core::protected::Protected;
@@ -81,9 +80,7 @@ where
     pub compression_method: zip::CompressionMethod,
     pub header_writer: Option<&'a RefCell<RW>>,
     pub raw_key: Protected<Vec<u8>>,
-    // TODO: don't use external types in logic
-    pub header_type: HeaderType,
-    pub hashing_algorithm: HashingAlgorithm,
+    pub kdf: Kdf,
 }
 
 pub struct ArchiveSourceEntry<RW>
@@ -166,10 +163,7 @@ where
             writer: req.writer,
             header_writer: req.header_writer,
             raw_key: req.raw_key,
-            kdf: match req.hashing_algorithm {
-                HashingAlgorithm::Argon2id(_) => Kdf::Argon2id,
-                HashingAlgorithm::Blake3Balloon(_) => Kdf::Blake3Balloon,
-            },
+            kdf: req.kdf,
         })
         .map_err(Error::Encrypt)
     });
@@ -183,9 +177,6 @@ where
 pub(crate) mod tests {
     use super::*;
     use std::io::{Cursor, Read};
-
-    use core::header::legacy::{HeaderType, HeaderVersion};
-    use core::primitives::legacy::{Algorithm, Mode};
 
     use crate::encrypt::tests::PASSWORD;
     use crate::storage::{InMemoryStorage, Storage};
@@ -275,12 +266,7 @@ pub(crate) mod tests {
             writer: output_file.try_writer().unwrap(),
             header_writer: None,
             raw_key: Protected::new(PASSWORD.to_vec()),
-            header_type: HeaderType {
-                version: HeaderVersion::V5,
-                algorithm: Algorithm::XChaCha20Poly1305,
-                mode: Mode::StreamMode,
-            },
-            hashing_algorithm: HashingAlgorithm::Blake3Balloon(5),
+            kdf: Kdf::Blake3Balloon,
         };
 
         match execute(stor, req) {

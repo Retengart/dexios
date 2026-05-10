@@ -4,21 +4,12 @@ use crate::global::states::PasswordState;
 use crate::global::structs::KeyManipulationParams;
 use anyhow::{Context, Result};
 use core::header::common::HeaderReadError;
-use core::header::legacy::HashingAlgorithm;
 use core::header::read_header;
-use core::kdf::Kdf;
 use std::cell::RefCell;
 use std::fs::OpenOptions;
 use std::io::Seek;
 
 use crate::info;
-
-fn to_kdf(hashing_algorithm: HashingAlgorithm) -> Kdf {
-    match hashing_algorithm {
-        HashingAlgorithm::Argon2id(_) => Kdf::Argon2id,
-        HashingAlgorithm::Blake3Balloon(_) => Kdf::Blake3Balloon,
-    }
-}
 
 fn ensure_v1_header<R: std::io::Read>(reader: &mut R) -> Result<()> {
     match read_header(reader) {
@@ -60,7 +51,7 @@ pub fn add(input: &str, params: &KeyManipulationParams) -> Result<()> {
 
     domain::key::add::execute(domain::key::add::Request {
         handle: &input_file,
-        kdf: to_kdf(params.hashing_algorithm),
+        kdf: params.kdf,
         raw_key_old,
         raw_key_new,
     })?;
@@ -98,7 +89,7 @@ pub fn change(input: &str, params: &KeyManipulationParams) -> Result<()> {
 
     domain::key::change::execute(domain::key::change::Request {
         handle: &input_file,
-        kdf: to_kdf(params.hashing_algorithm),
+        kdf: params.kdf,
         raw_key_old,
         raw_key_new,
     })?;

@@ -29,9 +29,7 @@ visual = ["indicatif"]
 anyhow.workspace = true
 
 # AEADS
-aes-gcm.workspace = true
 chacha20poly1305.workspace = true
-deoxys.workspace = true
 aead.workspace = true
 
 # for wiping sensitive information from memory

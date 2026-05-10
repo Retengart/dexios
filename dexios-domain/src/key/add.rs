@@ -38,13 +38,12 @@ where
         ))
         .map_err(|_| Error::Seek)?;
 
-    // this gets modified, then any changes from below are written at the end
-    let mut keyslots = header.keyslots().to_vec();
+    let mut keyslots = header.keyslots_collection().clone();
 
     // all of these functions need either the master key, or the index
     let (master_key, _) = super::decrypt_v1_master_key_with_index(&keyslots, req.raw_key_old)?;
 
-    if keyslots.len() == 4 {
+    if keyslots.is_full() {
         return Err(Error::TooManyKeyslots);
     }
 
@@ -62,7 +61,7 @@ where
 
     let keyslot = V1Keyslot::new(req.kdf.into(), encrypted_master_key, master_key_nonce, salt);
 
-    keyslots.push(keyslot);
+    keyslots.push(keyslot).map_err(|_| Error::HeaderWrite)?;
 
     let header_new = core::header::v1::V1Header::new(*header.payload_nonce(), keyslots)
         .map_err(|_| Error::HeaderWrite)?;

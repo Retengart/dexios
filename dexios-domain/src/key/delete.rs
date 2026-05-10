@@ -31,13 +31,16 @@ where
         ))
         .map_err(|_| Error::Seek)?;
 
-    // this gets modified, then any changes from below are written at the end
-    let mut keyslots = header.keyslots().to_vec();
+    let mut keyslots = header.keyslots_collection().clone();
 
     // all of these functions need either the master key, or the index
     let (_, index) = super::decrypt_v1_master_key_with_index(&keyslots, req.raw_key_old)?;
 
-    keyslots.remove(index);
+    if keyslots.len() == 1 {
+        return Err(Error::CannotRemoveFinalV1Keyslot);
+    }
+
+    keyslots.remove(index).map_err(|_| Error::HeaderWrite)?;
 
     let header_new = core::header::v1::V1Header::new(*header.payload_nonce(), keyslots)
         .map_err(|_| Error::HeaderWrite)?;

@@ -2,9 +2,10 @@
 
 use super::Error;
 use std::cell::RefCell;
-use std::io::{Read, Seek, Write};
+use std::io::{ErrorKind, Read, Seek, Write};
 
-use core::header::legacy::Header;
+use core::header::common::HEADER_LEN;
+use core::header::{ParsedHeader, read_header};
 
 pub struct Request<'a, R, RW>
 where
@@ -20,20 +21,20 @@ where
     R: Read + Seek,
     RW: Read + Write + Seek,
 {
-    let (header, _) =
-        Header::deserialize(&mut *req.reader.borrow_mut()).map_err(|_| Error::InvalidFile)?;
+    let (parsed, _) = read_header(&mut *req.reader.borrow_mut()).map_err(Error::from)?;
+    let ParsedHeader::V1(header) = parsed;
 
-    let mut header_bytes = vec![
-        0u8;
-        header
-            .get_size()
-            .try_into()
-            .map_err(|_| Error::HeaderSizeParse)?
-    ];
+    let mut header_bytes = [0u8; HEADER_LEN];
     req.writer
         .borrow_mut()
-        .read(&mut header_bytes)
-        .map_err(|_| Error::Read)?;
+        .read_exact(&mut header_bytes)
+        .map_err(|err| {
+            if err.kind() == ErrorKind::UnexpectedEof {
+                Error::UnsupportedRestore
+            } else {
+                Error::Read
+            }
+        })?;
 
     if !header_bytes.into_iter().all(|b| b == 0) {
         return Err(Error::UnsupportedRestore);

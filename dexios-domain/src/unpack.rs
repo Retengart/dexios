@@ -250,8 +250,7 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    use core::header::legacy::{HashingAlgorithm, HeaderType, HeaderVersion};
-    use core::primitives::legacy::{Algorithm, Mode};
+    use core::kdf::Kdf;
     use core::protected::Protected;
 
     use crate::encrypt::tests::PASSWORD;
@@ -286,12 +285,7 @@ mod tests {
             writer: output_file.try_writer().unwrap(),
             header_writer: header_file.as_ref().map(|file| file.try_writer().unwrap()),
             raw_key: Protected::new(PASSWORD.to_vec()),
-            header_type: HeaderType {
-                version: HeaderVersion::V5,
-                algorithm: Algorithm::XChaCha20Poly1305,
-                mode: Mode::StreamMode,
-            },
-            hashing_algorithm: HashingAlgorithm::Blake3Balloon(5),
+            kdf: Kdf::Blake3Balloon,
         };
 
         pack::execute(stor.clone(), req).unwrap();

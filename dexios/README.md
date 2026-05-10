@@ -65,8 +65,8 @@ Current precedence is:
 
 ## Compatibility Notes
 
-- The normal encryption and key-management surface is V1-only.
-- `header details` is V1-first and may still inspect legacy headers as a secondary compatibility path.
+- The supported file format is V1-only.
+- Legacy Dexios formats are intentionally unsupported after the Phase 2 refactor.
 - The CLI no longer exposes alternate cipher selection or secure-erase flags.
 
 ## More Information

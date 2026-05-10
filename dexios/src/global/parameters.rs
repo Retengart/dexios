@@ -6,7 +6,7 @@ use crate::global::structs::CryptoParams;
 use crate::global::structs::PackParams;
 use anyhow::{Context, Result};
 use clap::ArgMatches;
-use core::header::legacy::{ARGON2ID_LATEST, BLAKE3BALLOON_LATEST, HashingAlgorithm};
+use core::kdf::Kdf;
 
 use super::states::{Compression, DirectoryMode, Key, KeyParams, PrintMode};
 use super::structs::KeyManipulationParams;
@@ -59,7 +59,7 @@ pub fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
         HeaderLocation::Embedded
     };
 
-    let hashing_algorithm = hashing_algorithm(sub_matches);
+    let kdf = kdf(sub_matches);
 
     Ok(CryptoParams {
         hash_mode,
@@ -67,11 +67,11 @@ pub fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
         delete_input,
         key,
         header_location,
-        hashing_algorithm,
+        kdf,
     })
 }
 
-pub fn hashing_algorithm(sub_matches: &ArgMatches) -> HashingAlgorithm {
+pub fn kdf(sub_matches: &ArgMatches) -> Kdf {
     let use_argon = sub_matches
         .try_get_one::<bool>("argon")
         .ok()
@@ -80,9 +80,9 @@ pub fn hashing_algorithm(sub_matches: &ArgMatches) -> HashingAlgorithm {
         .unwrap_or(false);
 
     if use_argon {
-        HashingAlgorithm::Argon2id(ARGON2ID_LATEST)
+        Kdf::Argon2id
     } else {
-        HashingAlgorithm::Blake3Balloon(BLAKE3BALLOON_LATEST)
+        Kdf::Blake3Balloon
     }
 }
 
@@ -110,7 +110,7 @@ pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams
         HeaderLocation::Embedded
     };
 
-    let hashing_algorithm = hashing_algorithm(sub_matches);
+    let kdf = kdf(sub_matches);
 
     let crypto_params = CryptoParams {
         hash_mode,
@@ -118,7 +118,7 @@ pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams
         delete_input: DeleteInput::Retain,
         key,
         header_location,
-        hashing_algorithm,
+        kdf,
     };
 
     let print_mode = if sub_matches.get_flag("verbose") {
@@ -190,12 +190,12 @@ pub fn key_manipulation_params(sub_matches: &ArgMatches) -> Result<KeyManipulati
         "keyfile-new",
     )?;
 
-    let hashing_algorithm = hashing_algorithm(sub_matches);
+    let kdf = kdf(sub_matches);
 
     Ok(KeyManipulationParams {
         key_old,
         key_new,
-        hashing_algorithm,
+        kdf,
     })
 }
 
@@ -242,10 +242,7 @@ mod tests {
 
         let params = parameter_handler(sub_matches).expect("params");
 
-        assert_eq!(
-            params.hashing_algorithm,
-            HashingAlgorithm::Blake3Balloon(BLAKE3BALLOON_LATEST)
-        );
+        assert_eq!(params.kdf, Kdf::Blake3Balloon);
     }
 
     #[test]
@@ -264,10 +261,7 @@ mod tests {
 
         let params = parameter_handler(sub_matches).expect("params");
 
-        assert_eq!(
-            params.hashing_algorithm,
-            HashingAlgorithm::Blake3Balloon(BLAKE3BALLOON_LATEST)
-        );
+        assert_eq!(params.kdf, Kdf::Blake3Balloon);
     }
 
     #[test]

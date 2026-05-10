@@ -1,8 +1,8 @@
 ## Headers
 
-The normal writable Dexios format is **V1**.
+The supported Dexios format is **V1 only**.
 
-`dexios-core` still contains explicit legacy parsing helpers, but new encryption, new key management, and the normal CLI surface are centered on V1.
+Legacy Dexios formats are intentionally unsupported after the Phase 2 refactor.
 
 ## V1 Layout
 
@@ -48,11 +48,11 @@ Important behavior:
 - matching is determined by successfully decrypting the wrapped master key
 - `change` and `del` affect the first matching keyslot
 
-## Legacy Notes
+## Legacy Removal
 
-Legacy header parsing still exists as an explicit compatibility path. It is mainly relevant for inspection and migration-adjacent code, not for the normal product surface.
+Legacy Dexios headers are intentionally unsupported in this refactor line.
 
-`header details` is V1-first and only falls back to legacy parsing when the input is not a V1 header.
+Inputs beginning with legacy `[DE,01]` through `[DE,05]` prefixes are rejected as unsupported format.
 
 ## Header Operations
 

@@ -1,25 +1,26 @@
 use dexios_core::cipher::Ciphers;
-use dexios_core::header::common::{KeyslotNonce, PayloadNonce, Salt as HeaderSalt};
-use dexios_core::header::v1::{KeyslotKdf, V1Header, V1Keyslot};
+use dexios_core::header::common::{
+    HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN, KeyslotNonce, PayloadNonce, Salt as HeaderSalt,
+};
+use dexios_core::header::v1::{KeyslotKdf, V1Header, V1Keyslot, V1Keyslots};
 use dexios_core::header::{HeaderReadError, ParsedHeader};
 use dexios_core::kdf::{Kdf, Salt};
-use dexios_core::stream::{DecryptionStreams, EncryptionStreams};
+use dexios_core::protected::Protected;
+use dexios_core::stream::{DecryptionStreams, EncryptionStreams, V1PayloadStream};
 use std::path::Path;
 
 mod support {
     use super::*;
 
     pub fn sample_v1_header() -> V1Header {
-        V1Header::new(
-            PayloadNonce::new([7u8; 20]),
-            vec![V1Keyslot::new(
-                KeyslotKdf::Blake3Balloon,
-                [11u8; 48],
-                KeyslotNonce::new([13u8; 24]),
-                HeaderSalt::new([17u8; 16]),
-            )],
-        )
-        .expect("sample v1 header")
+        let keyslots = V1Keyslots::single(V1Keyslot::new(
+            KeyslotKdf::Blake3Balloon,
+            [11u8; 48],
+            KeyslotNonce::new([13u8; 24]),
+            HeaderSalt::new([17u8; 16]),
+        ));
+
+        V1Header::new(PayloadNonce::new([7u8; 20]), keyslots).expect("sample v1 header")
     }
 }
 
@@ -60,6 +61,34 @@ fn serializes_v1_header_to_416_bytes() {
     let bytes = header.serialize().unwrap();
 
     assert_eq!(bytes.len(), 416);
+}
+
+#[test]
+fn v1_header_rejects_zero_keyslots() {
+    let empty = V1Keyslots::try_from_vec(Vec::new()).expect_err("empty keyslots should fail");
+
+    assert!(matches!(
+        empty,
+        dexios_core::header::HeaderWriteError::NoKeyslots
+    ));
+}
+
+#[test]
+fn v1_keyslot_collection_rejects_more_than_max() {
+    let keyslot = V1Keyslot::new(
+        KeyslotKdf::Blake3Balloon,
+        [11u8; 48],
+        KeyslotNonce::new([13u8; 24]),
+        HeaderSalt::new([17u8; 16]),
+    );
+    let too_many = vec![keyslot; 5];
+
+    let error = V1Keyslots::try_from_vec(too_many).expect_err("over-capacity keyslots should fail");
+
+    assert!(matches!(
+        error,
+        dexios_core::header::HeaderWriteError::TooManyKeyslots(5)
+    ));
 }
 
 #[test]
@@ -124,6 +153,55 @@ fn stream_initialization_uses_the_single_suite_signature() {
 }
 
 #[test]
+fn v1_payload_stream_uses_header_derived_aad() {
+    let header = support::sample_v1_header();
+    let other_header = V1Header::new(
+        PayloadNonce::new([8u8; 20]),
+        V1Keyslots::single(V1Keyslot::new(
+            KeyslotKdf::Blake3Balloon,
+            [21u8; 48],
+            KeyslotNonce::new([23u8; 24]),
+            HeaderSalt::new([29u8; 16]),
+        )),
+    )
+    .expect("other valid v1 header");
+
+    let plaintext = b"v1 aad binds the payload to the serialized header";
+    let mut encrypted = Vec::new();
+    V1PayloadStream::encrypt_file(
+        Protected::new([31u8; 32]),
+        &header,
+        &mut std::io::Cursor::new(plaintext),
+        &mut encrypted,
+    )
+    .expect("encrypt with header-derived aad");
+
+    let mut decrypted = Vec::new();
+    V1PayloadStream::decrypt_file(
+        Protected::new([31u8; 32]),
+        &header,
+        &header.aad(),
+        &mut std::io::Cursor::new(&encrypted),
+        &mut decrypted,
+    )
+    .expect("decrypt with matching aad");
+    assert_eq!(decrypted, plaintext);
+
+    let wrong_aad = other_header.aad();
+    let wrong_aad_result = V1PayloadStream::decrypt_file(
+        Protected::new([31u8; 32]),
+        &header,
+        &wrong_aad,
+        &mut std::io::Cursor::new(&encrypted),
+        &mut Vec::new(),
+    );
+    assert!(
+        wrong_aad_result.is_err(),
+        "decryption should fail when a different valid header's AAD is supplied"
+    );
+}
+
+#[test]
 fn deserialize_roundtrip_preserves_payload_nonce_and_keyslots() {
     let header = support::sample_v1_header();
     let bytes = header.serialize().unwrap();
@@ -184,12 +262,33 @@ fn creates_exact_aad_bytes_for_sample_v1_header() {
     let header = support::sample_v1_header();
 
     assert_eq!(
-        header.create_aad().as_bytes(),
+        header.aad().as_bytes(),
         &[
             0x44, 0x58, 0x49, 0x4F, 0x00, 0x01, 0x01, 0x00, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
             7, 7, 7, 7, 7, 7, 7, 0, 0, 0, 0,
         ]
     );
+}
+
+#[test]
+fn detached_v1_header_bytes_are_exactly_416_bytes() {
+    let header = support::sample_v1_header();
+    let bytes = header.serialize().unwrap();
+    assert_eq!(bytes.len(), HEADER_LEN);
+
+    let (parsed, _) = dexios_core::header::read_header(&mut std::io::Cursor::new(&bytes)).unwrap();
+    let ParsedHeader::V1(parsed) = parsed;
+
+    assert_eq!(parsed.serialize().unwrap(), bytes);
+}
+
+#[test]
+fn v1_header_serialization_writes_zero_inactive_keyslots() {
+    let header = support::sample_v1_header();
+    let bytes = header.serialize().unwrap();
+    let inactive_start = HEADER_STATIC_LEN + KEYSLOT_LEN;
+
+    assert_eq!(bytes[inactive_start..], [0u8; KEYSLOT_LEN * 3]);
 }
 
 #[test]
@@ -207,7 +306,91 @@ fn read_header_rejects_invalid_magic_before_dispatching() {
 }
 
 #[test]
-fn read_header_rejects_reserved_bytes_and_inactive_keyslot_padding() {
+fn read_header_rejects_legacy_prefix_as_unsupported_format() {
+    let mut bytes = [0u8; HEADER_LEN];
+    bytes[0..6].copy_from_slice(&[0xDE, 0x05, 0x0E, 0x01, 0x0C, 0x01]);
+
+    let error = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
+        .expect_err("legacy header prefix should fail");
+
+    assert!(matches!(
+        error,
+        dexios_core::header::HeaderReadError::UnsupportedFormat([0xDE, 0x05])
+    ));
+}
+
+#[test]
+fn read_header_rejects_truncated_header() {
+    let bytes = support::sample_v1_header().serialize().unwrap();
+    let truncated = &bytes[..HEADER_LEN - 1];
+
+    let error = dexios_core::header::read_header(&mut std::io::Cursor::new(truncated))
+        .expect_err("truncated V1 header should fail");
+
+    assert!(matches!(
+        error,
+        dexios_core::header::HeaderReadError::TruncatedHeader
+    ));
+}
+
+#[test]
+fn v1_header_rejects_keyslot_count_above_max() {
+    let mut bytes = support::sample_v1_header().serialize().unwrap();
+    bytes[6] = 5;
+
+    let error = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
+        .expect_err("over-capacity keyslot count should fail");
+
+    assert!(matches!(
+        error,
+        dexios_core::header::HeaderReadError::InvalidKeyslotCount(5)
+    ));
+}
+
+#[test]
+fn v1_header_rejects_invalid_kdf_tag() {
+    let mut bytes = support::sample_v1_header().serialize().unwrap();
+    bytes[HEADER_STATIC_LEN..HEADER_STATIC_LEN + 2].copy_from_slice(&[0xAA, 0xBB]);
+
+    let error = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
+        .expect_err("invalid KDF tag should fail");
+
+    assert!(matches!(
+        error,
+        dexios_core::header::HeaderReadError::InvalidKeyslotTag([0xAA, 0xBB])
+    ));
+}
+
+#[test]
+fn v1_header_rejects_active_keyslot_padding() {
+    let mut bytes = support::sample_v1_header().serialize().unwrap();
+    bytes[HEADER_STATIC_LEN + 90] = 1;
+
+    let error = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
+        .expect_err("active keyslot padding should fail");
+
+    assert!(matches!(
+        error,
+        dexios_core::header::HeaderReadError::NonZeroActiveKeyslotPadding(0)
+    ));
+}
+
+#[test]
+fn v1_header_rejects_inactive_keyslot_bytes() {
+    let mut bytes = support::sample_v1_header().serialize().unwrap();
+    bytes[HEADER_STATIC_LEN + KEYSLOT_LEN] = 1;
+
+    let error = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
+        .expect_err("non-zero inactive keyslot bytes should fail");
+
+    assert!(matches!(
+        error,
+        dexios_core::header::HeaderReadError::NonZeroInactiveKeyslotPadding(1)
+    ));
+}
+
+#[test]
+fn v1_header_rejects_nonzero_reserved_bytes() {
     let mut bytes = support::sample_v1_header().serialize().unwrap();
     bytes[7] = 1;
 
@@ -218,15 +401,24 @@ fn read_header_rejects_reserved_bytes_and_inactive_keyslot_padding() {
         error,
         dexios_core::header::HeaderReadError::NonZeroReservedBytes
     ));
+}
 
-    let mut bytes = support::sample_v1_header().serialize().unwrap();
-    bytes[128] = 1;
-
-    let error = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
-        .expect_err("non-zero inactive keyslot bytes should fail");
-
+#[test]
+fn v1_primitives_reject_invalid_lengths() {
     assert!(matches!(
-        error,
-        dexios_core::header::HeaderReadError::NonZeroInactiveKeyslotPadding(1)
+        PayloadNonce::try_from_slice(&[0u8; 19]),
+        Err(HeaderReadError::InvalidPayloadNonceLength(19))
+    ));
+    assert!(matches!(
+        KeyslotNonce::try_from_slice(&[0u8; 23]),
+        Err(HeaderReadError::InvalidKeyslotNonceLength(23))
+    ));
+    assert!(matches!(
+        HeaderSalt::try_from_slice(&[0u8; 15]),
+        Err(HeaderReadError::InvalidSaltLength(15))
+    ));
+    assert!(matches!(
+        dexios_core::header::v1::EncryptedMasterKey::try_from_slice(&[0u8; 47]),
+        Err(HeaderReadError::InvalidEncryptedMasterKeyLength(47))
     ));
 }

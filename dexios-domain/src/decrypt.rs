@@ -7,7 +7,7 @@ use core::header::common::HEADER_LEN;
 use core::header::v1::V1Header;
 use core::header::{ParsedHeader, read_header};
 use core::protected::Protected;
-use core::stream::DecryptionStreams;
+use core::stream::V1PayloadStream;
 
 use crate::key::decrypt_v1_master_key_with_index;
 
@@ -59,56 +59,52 @@ where
     R: Read + Seek,
     W: Write + Seek,
 {
-    let (header, aad) = match req.header_reader {
-        Some(header_reader) => {
-            let (parsed, aad) = read_header(&mut *header_reader.borrow_mut())
-                .map_err(|_| Error::DeserializeHeader)?;
-            let ParsedHeader::V1(header) = parsed;
+    let (header, aad) = if let Some(header_reader) = req.header_reader {
+        let (parsed, aad) =
+            read_header(&mut *header_reader.borrow_mut()).map_err(|_| Error::DeserializeHeader)?;
+        let ParsedHeader::V1(header) = parsed;
 
-            // Try reading an empty header from the content.
-            let mut header_bytes = vec![0u8; HEADER_LEN];
+        // Try reading an empty header from the content.
+        let mut header_bytes = vec![0u8; HEADER_LEN];
 
-            let needs_rewind = match req.reader.borrow_mut().read_exact(&mut header_bytes) {
-                Ok(()) => !header_bytes.into_iter().all(|b| b == 0),
-                Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => true,
-                Err(_) => return Err(Error::ReadEncryptedData),
-            };
+        let needs_rewind = match req.reader.borrow_mut().read_exact(&mut header_bytes) {
+            Ok(()) => !header_bytes.into_iter().all(|b| b == 0),
+            Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => true,
+            Err(_) => return Err(Error::ReadEncryptedData),
+        };
 
-            if needs_rewind {
-                // Return the cursor position to the start if no detached zero header was found.
-                req.reader
-                    .borrow_mut()
-                    .rewind()
-                    .map_err(|_| Error::RewindDataReader)?;
-            }
-
-            (header, aad)
+        if needs_rewind {
+            // Return the cursor position to the start if no detached zero header was found.
+            req.reader
+                .borrow_mut()
+                .rewind()
+                .map_err(|_| Error::RewindDataReader)?;
         }
-        None => {
-            let (parsed, aad) =
-                read_header(&mut *req.reader.borrow_mut()).map_err(|_| Error::DeserializeHeader)?;
-            let ParsedHeader::V1(header) = parsed;
-            (header, aad)
-        }
+
+        (header, aad)
+    } else {
+        let (parsed, aad) =
+            read_header(&mut *req.reader.borrow_mut()).map_err(|_| Error::DeserializeHeader)?;
+        let ParsedHeader::V1(header) = parsed;
+        (header, aad)
     };
 
     if let Some(cb) = req.on_decrypted_header {
         cb(&header);
     }
 
-    let (master_key, _) = decrypt_v1_master_key_with_index(header.keyslots(), req.raw_key)
-        .map_err(|_| Error::DecryptMasterKey)?;
+    let (master_key, _) =
+        decrypt_v1_master_key_with_index(header.keyslots_collection(), req.raw_key)
+            .map_err(|_| Error::DecryptMasterKey)?;
 
-    let streams = DecryptionStreams::initialize(master_key, header.payload_nonce().as_bytes())
-        .map_err(|_| Error::InitializeStreams)?;
-
-    streams
-        .decrypt_file(
-            &mut *req.reader.borrow_mut(),
-            &mut *req.writer.borrow_mut(),
-            aad.as_bytes(),
-        )
-        .map_err(|_| Error::DecryptData)?;
+    V1PayloadStream::decrypt_file(
+        master_key,
+        &header,
+        &aad,
+        &mut *req.reader.borrow_mut(),
+        &mut *req.writer.borrow_mut(),
+    )
+    .map_err(|_| Error::DecryptData)?;
 
     Ok(())
 }

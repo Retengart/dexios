@@ -4,9 +4,8 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use core::header::legacy::{HashingAlgorithm, HeaderType, HeaderVersion};
 use core::header::{ParsedHeader, read_header};
-use core::primitives::legacy::{Algorithm, Mode};
+use core::kdf::Kdf;
 use core::protected::Protected;
 use dexios_domain::decrypt;
 use dexios_domain::pack::{self, ArchiveSourceEntry};
@@ -66,12 +65,7 @@ fn pack_writes_relative_archive_paths() {
         writer: output_file.try_writer().unwrap(),
         header_writer: None,
         raw_key: Protected::new(PASSWORD.to_vec()),
-        header_type: HeaderType {
-            version: HeaderVersion::V5,
-            algorithm: Algorithm::XChaCha20Poly1305,
-            mode: Mode::StreamMode,
-        },
-        hashing_algorithm: HashingAlgorithm::Blake3Balloon(5),
+        kdf: Kdf::Blake3Balloon,
     };
 
     pack::execute(stor.clone(), req).unwrap();
@@ -127,12 +121,7 @@ fn pack_does_not_delete_source_directory_or_files() {
         writer: output_file.try_writer().unwrap(),
         header_writer: None,
         raw_key: Protected::new(PASSWORD.to_vec()),
-        header_type: HeaderType {
-            version: HeaderVersion::V5,
-            algorithm: Algorithm::XChaCha20Poly1305,
-            mode: Mode::StreamMode,
-        },
-        hashing_algorithm: HashingAlgorithm::Blake3Balloon(5),
+        kdf: Kdf::Blake3Balloon,
     };
 
     pack::execute(stor, req).unwrap();

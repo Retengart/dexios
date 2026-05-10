@@ -1,19 +1,9 @@
 pub mod common;
 pub mod v1;
 
-pub use common::{HeaderReadError, HeaderWriteError};
+pub use common::{HeaderReadError, HeaderWriteError, V1HeaderAad};
 
-use common::Aad;
 use common::{HEADER_LEN, MAGIC, VERSION_V1};
-
-pub mod legacy {
-    pub use crate::header_legacy::{
-        ARGON2ID_LATEST, BLAKE3BALLOON_LATEST, HEADER_VERSION, HashingAlgorithm, Header,
-        HeaderType, HeaderVersion, Keyslot,
-    };
-}
-
-pub(crate) use crate::header_legacy::{Header, HeaderVersion};
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
@@ -23,9 +13,17 @@ pub enum ParsedHeader {
 
 pub fn read_header(
     reader: &mut impl std::io::Read,
-) -> Result<(ParsedHeader, Aad), HeaderReadError> {
+) -> Result<(ParsedHeader, V1HeaderAad), HeaderReadError> {
     let mut prefix = [0u8; 6];
     reader.read_exact(&mut prefix)?;
+
+    let format_prefix = [prefix[0], prefix[1]];
+    if matches!(
+        format_prefix,
+        [0xDE, 0x01] | [0xDE, 0x02] | [0xDE, 0x03] | [0xDE, 0x04] | [0xDE, 0x05]
+    ) {
+        return Err(HeaderReadError::UnsupportedFormat(format_prefix));
+    }
 
     let mut magic = [0u8; 4];
     magic.copy_from_slice(&prefix[..4]);
@@ -44,6 +42,6 @@ pub fn read_header(
     reader.read_exact(&mut bytes[6..])?;
 
     let header = v1::V1Header::deserialize_bytes(bytes)?;
-    let aad = header.create_aad();
+    let aad = header.aad();
     Ok((ParsedHeader::V1(header), aad))
 }

@@ -104,18 +104,3 @@ impl Ciphers {
         self.0.decrypt(nonce.as_ref().into(), ciphertext)
     }
 }
-
-pub mod legacy {
-    use crate::primitives::legacy::Algorithm;
-    use crate::protected::Protected;
-
-    use super::Ciphers;
-
-    pub fn initialize(key: Protected<[u8; 32]>, algorithm: &Algorithm) -> anyhow::Result<Ciphers> {
-        if algorithm != &Algorithm::XChaCha20Poly1305 {
-            return Err(anyhow::anyhow!("Unsupported cipher suite"));
-        }
-
-        Ciphers::initialize(key)
-    }
-}

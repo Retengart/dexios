@@ -5,8 +5,6 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use core::header::legacy::{HEADER_VERSION, HeaderType};
-use core::primitives::legacy::{Algorithm, Mode};
 
 use crate::global::states::{DeleteSource, HashMode, HeaderLocation, PasswordState, PrintMode};
 use crate::global::{
@@ -314,7 +312,7 @@ pub fn execute(req: &Request) -> Result<()> {
     let excluded_paths = excluded_pack_paths(req)?;
 
     let mut entries = Vec::new();
-    for (file, archive_root_name) in input_files.into_iter().zip(archive_root_names.into_iter()) {
+    for (file, archive_root_name) in input_files.into_iter().zip(archive_root_names) {
         let root_path = file.path().to_path_buf();
 
         if file.is_dir() {
@@ -370,12 +368,7 @@ pub fn execute(req: &Request) -> Result<()> {
             writer: output_file.try_writer()?,
             header_writer: header_file.as_ref().and_then(|f| f.try_writer().ok()),
             raw_key,
-            header_type: HeaderType {
-                version: HEADER_VERSION,
-                mode: Mode::StreamMode,
-                algorithm: Algorithm::XChaCha20Poly1305,
-            },
-            hashing_algorithm: req.crypto_params.hashing_algorithm,
+            kdf: req.crypto_params.kdf,
         },
     )?;
 

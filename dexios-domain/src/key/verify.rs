@@ -23,10 +23,10 @@ where
     let (parsed, _) =
         read_header(&mut *req.handle.borrow_mut()).map_err(|_| Error::HeaderDeserialize)?;
     let ParsedHeader::V1(header) = parsed;
-    let keyslots = header.keyslots().to_vec();
 
     // all of these functions need either the master key, or the index
-    let (master_key, _) = super::decrypt_v1_master_key_with_index(&keyslots, req.raw_key)?;
+    let (master_key, _) =
+        super::decrypt_v1_master_key_with_index(header.keyslots_collection(), req.raw_key)?;
 
     // ensure the master key is gone from memory in the event that the key is correct
     drop(master_key);

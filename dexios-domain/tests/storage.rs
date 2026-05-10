@@ -144,8 +144,8 @@ fn storage_backed_encrypt_writes_a_v1_header() {
     let output = stor.create_file("hello_16.enc").unwrap();
 
     encrypt::execute(encrypt::Request {
-        reader: &input.try_reader().unwrap(),
-        writer: &output.try_writer().unwrap(),
+        reader: input.try_reader().unwrap(),
+        writer: output.try_writer().unwrap(),
         header_writer: None,
         raw_key: Protected::new(b"test-password".to_vec()),
         kdf: Kdf::Blake3Balloon,

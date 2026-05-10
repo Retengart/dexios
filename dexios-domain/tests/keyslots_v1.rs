@@ -40,8 +40,7 @@ fn decrypt_fixture(
 }
 
 #[test]
-#[ignore = "known bug: Phase 1 baseline; unignore in Phase 5"]
-fn quarantined_known_bug_key_del_rejects_final_keyslot() {
+fn key_del_rejects_final_keyslot_before_writing_header() {
     let encrypted = encrypted_v1_fixture();
 
     let deletion = key::delete::execute(key::delete::Request {

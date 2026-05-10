@@ -13,13 +13,13 @@ It provides:
 - key derivation helpers
 - protected secret handling through `Protected<>`
 
-The current normal writable format is V1.
+The supported format is V1-only.
 
 ## Security Notes
 
-Dexios-Core uses modern AEAD-backed encryption primitives from the Rust ecosystem. The normal write path is built around one suite: `XChaCha20-Poly1305` with LE31 stream encryption.
+Dexios-Core uses modern AEAD-backed encryption primitives from the Rust ecosystem. The supported path is built around one suite: `XChaCha20-Poly1305` with LE31 stream encryption.
 
-Legacy parsing and compatibility helpers still exist internally under explicit legacy boundaries, but they are no longer the normal product surface.
+Legacy Dexios formats are intentionally unsupported after the Phase 2 refactor.
 
 ## Documentation
 

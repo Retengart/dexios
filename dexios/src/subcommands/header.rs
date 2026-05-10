@@ -1,15 +1,12 @@
 use std::{
     cell::RefCell,
     fs::{File, OpenOptions},
-    io::Seek,
 };
 
 use crate::cli::prompt::overwrite_check;
 use crate::global::states::ForceMode;
 use anyhow::{Context, Result};
 use core::header::common::HeaderReadError;
-use core::header::legacy::Header as LegacyHeader;
-use core::header::legacy::HeaderVersion as LegacyHeaderVersion;
 use core::header::v1::KeyslotKdf;
 use core::header::{ParsedHeader, read_header};
 use domain::storage::Storage;
@@ -48,42 +45,29 @@ pub fn details(input: &str) -> Result<()> {
                 );
             }
 
-            return Ok(());
+            Ok(())
         }
-        Err(HeaderReadError::InvalidMagic(_)) | Err(HeaderReadError::UnsupportedVersion(_)) => {}
-        Err(err) => return Err(anyhow::anyhow!(err.to_string())),
+        Err(HeaderReadError::UnsupportedFormat(_))
+        | Err(HeaderReadError::UnsupportedVersion(_)) => {
+            Err(anyhow::anyhow!("Unsupported Dexios format"))
+        }
+        Err(HeaderReadError::InvalidMagic(magic)) => {
+            Err(anyhow::anyhow!("Invalid Dexios header magic: {magic:02X?}"))
+        }
+        Err(
+            err @ (HeaderReadError::TruncatedHeader
+            | HeaderReadError::InvalidKeyslotCount(_)
+            | HeaderReadError::InvalidKeyslotTag(_)
+            | HeaderReadError::InvalidPayloadNonceLength(_)
+            | HeaderReadError::InvalidKeyslotNonceLength(_)
+            | HeaderReadError::InvalidSaltLength(_)
+            | HeaderReadError::InvalidEncryptedMasterKeyLength(_)
+            | HeaderReadError::NonZeroReservedBytes
+            | HeaderReadError::NonZeroActiveKeyslotPadding(_)
+            | HeaderReadError::NonZeroInactiveKeyslotPadding(_)),
+        ) => Err(anyhow::anyhow!("Malformed Dexios V1 header: {err}")),
+        Err(err @ HeaderReadError::Io(_)) => Err(anyhow::anyhow!("{err}")),
     }
-
-    input_file.rewind().with_context(|| {
-        format!("Unable to rewind input file while reading legacy header: {input}")
-    })?;
-    let (header, aad) = LegacyHeader::deserialize(&mut input_file)
-        .map_err(|_| anyhow::anyhow!("This does not seem like a valid Dexios header"))?;
-
-    println!("Header version: {} (legacy)", header.header_type.version);
-    println!("Cipher suite: legacy / compatibility");
-    println!("Payload nonce: {} (hex)", hex_encode(&header.nonce));
-    println!("AAD: {} (hex)", hex_encode(&aad));
-
-    match header.header_type.version {
-        LegacyHeaderVersion::V1 | LegacyHeaderVersion::V2 | LegacyHeaderVersion::V3 => {
-            println!("Salt: {} (hex)", hex_encode(&header.salt.unwrap()));
-        }
-        LegacyHeaderVersion::V4 | LegacyHeaderVersion::V5 => {
-            for (i, keyslot) in header.keyslots.unwrap().iter().enumerate() {
-                println!("Keyslot {i}:");
-                println!("  KDF: {}", keyslot.hash_algorithm);
-                println!("  Salt: {} (hex)", hex_encode(&keyslot.salt));
-                println!(
-                    "  Master Key: {} (hex, encrypted)",
-                    hex_encode(&keyslot.encrypted_key)
-                );
-                println!("  Master Key Nonce: {} (hex)", hex_encode(&keyslot.nonce));
-            }
-        }
-    }
-
-    Ok(())
 }
 
 // this function reads the header fromthe input file and writes it to the output file

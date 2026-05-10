@@ -61,4 +61,5 @@ For user-facing and technical docs, see:
 
 - `argon2id` is available for new output via `--argon`.
 - delete-after-success flags are available for `encrypt`, `decrypt`, `pack`, and `unpack`
-- `header details` is V1-first and only falls back to legacy inspection for older artifacts
+- the supported file format is V1-only
+- legacy Dexios formats are intentionally unsupported after the Phase 2 refactor

@@ -2,8 +2,6 @@ use crate::cli::prompt::overwrite_check;
 use crate::global::states::{DeleteInput, HashMode, HeaderLocation, PasswordState};
 use crate::global::structs::CryptoParams;
 use anyhow::Result;
-use core::header::legacy::HashingAlgorithm;
-use core::kdf::Kdf;
 use std::sync::Arc;
 
 use domain::storage::Storage;
@@ -61,10 +59,7 @@ pub fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> Result<(
         writer: output_file.try_writer()?,
         header_writer: header_file.as_ref().and_then(|f| f.try_writer().ok()),
         raw_key,
-        kdf: match params.hashing_algorithm {
-            HashingAlgorithm::Argon2id(_) => Kdf::Argon2id,
-            HashingAlgorithm::Blake3Balloon(_) => Kdf::Blake3Balloon,
-        },
+        kdf: params.kdf,
     };
     domain::encrypt::execute(req)?;
 
