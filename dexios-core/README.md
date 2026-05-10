@@ -29,6 +29,12 @@ construction paths do not emit that tag.
 
 Dexios-Core uses modern AEAD-backed encryption primitives from the Rust ecosystem. The supported path is built around one suite: `XChaCha20-Poly1305` with LE31 stream encryption.
 
+The normal V1 payload API is the typed `V1PayloadStream` boundary. It derives
+AAD from the V1 header, requires the final block marker, and treats plaintext
+written before a decrypt error as uncommitted scratch until final authentication
+succeeds. The deterministic stream matrix lives in
+`dexios-core/tests/stream_v1.rs`.
+
 Legacy Dexios formats are intentionally unsupported after the Phase 2 refactor.
 
 ## Documentation

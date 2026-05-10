@@ -17,6 +17,15 @@ Current defaults for new encryption:
 - V1 headers
 - LE31 stream encryption
 
+Current V1 stream behavior:
+
+- normal encryption and decryption go through the typed `V1PayloadStream`
+  boundary
+- payload authentication uses header-derived AAD from the V1 header
+- exact-block plaintext emits an authenticated empty final block
+- plaintext written during failed decryption is uncommitted scratch until final
+  authentication succeeds
+
 The workspace is split into:
 
 - `dexios/` for the CLI

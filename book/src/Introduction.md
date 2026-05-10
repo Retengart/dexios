@@ -25,6 +25,10 @@ The RustCrypto `aes-gcm` and `chacha20poly1305` implementations used by Dexios a
 
 Dexios uses authenticated encryption and authenticates header data through AEAD AAD. Integrity of encrypted payloads does not depend on the optional checksum output.
 
+For V1 payloads, the stream layer uses typed header-derived AAD. Decryption may
+write plaintext bytes before it has seen the final block; those bytes are
+uncommitted scratch until final authentication succeeds.
+
 The current product surface does not offer secure-erase behavior. Instead, selected workflows can delete their source inputs after successful completion.
 
 ## The Defaults
@@ -41,6 +45,7 @@ uses the following defaults:
 - `BLAKE3-Balloon` password hashing with frozen Phase 3 parameters
 - V1 headers
 - stream encryption with 1 MiB blocks
+- an authenticated final block, including an empty final marker for exact-block plaintext
 - protected in-memory handling of secret material
 - an embedded header unless `--header` is specified
 
