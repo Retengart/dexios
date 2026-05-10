@@ -320,11 +320,7 @@ fn pack_delete_source_rejects_detached_header_inside_source_and_keeps_source() {
 
     let output = run_pack(
         test_dir.path(),
-        &[
-            "--delete-source",
-            "--header",
-            header_path.to_str().unwrap(),
-        ],
+        &["--delete-source", "--header", header_path.to_str().unwrap()],
         &["source"],
         archive_path.to_str().unwrap(),
     );

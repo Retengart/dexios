@@ -23,11 +23,9 @@ fn to_kdf(hashing_algorithm: HashingAlgorithm) -> Kdf {
 fn ensure_v1_header<R: std::io::Read>(reader: &mut R) -> Result<()> {
     match read_header(reader) {
         Ok(_) => Ok(()),
-        Err(HeaderReadError::InvalidMagic(_)) | Err(HeaderReadError::UnsupportedVersion(_)) => {
-            Err(anyhow::anyhow!(
-                "This function currently only supports Dexios V1 headers"
-            ))
-        }
+        Err(HeaderReadError::InvalidMagic(_)) | Err(HeaderReadError::UnsupportedVersion(_)) => Err(
+            anyhow::anyhow!("This function currently only supports Dexios V1 headers"),
+        ),
         Err(err) => Err(anyhow::anyhow!("Malformed Dexios V1 header: {err}")),
     }
 }

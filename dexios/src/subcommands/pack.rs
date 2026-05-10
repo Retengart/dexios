@@ -9,13 +9,11 @@ use core::header::legacy::{HEADER_VERSION, HeaderType};
 use core::primitives::legacy::{Algorithm, Mode};
 
 use crate::global::states::{DeleteSource, HashMode, HeaderLocation, PasswordState, PrintMode};
-use crate::info;
-use crate::{
-    global::{
-        states::Compression,
-        structs::{CryptoParams, PackParams},
-    },
+use crate::global::{
+    states::Compression,
+    structs::{CryptoParams, PackParams},
 };
+use crate::info;
 use domain::storage::Storage;
 
 use crate::cli::prompt::overwrite_check;
@@ -213,8 +211,8 @@ fn canonicalize_with_missing_suffix(path: &Path) -> Result<PathBuf> {
             .ok_or_else(|| anyhow::anyhow!("Unable to resolve path {}", path.display()))?;
     }
 
-    let mut canonical =
-        fs::canonicalize(existing).with_context(|| format!("Unable to resolve {}", path.display()))?;
+    let mut canonical = fs::canonicalize(existing)
+        .with_context(|| format!("Unable to resolve {}", path.display()))?;
     for component in suffix.iter().rev() {
         canonical.push(component);
     }
@@ -231,13 +229,15 @@ fn ensure_delete_source_does_not_target_generated_paths(req: &Request) -> Result
         .input_file
         .iter()
         .map(|path| {
-            fs::canonicalize(path)
-                .with_context(|| format!("Unable to resolve input path {path}"))
+            fs::canonicalize(path).with_context(|| format!("Unable to resolve input path {path}"))
         })
         .collect::<Result<Vec<_>>>()?;
 
     let output_path = canonicalize_with_missing_suffix(Path::new(req.output_file))?;
-    if source_roots.iter().any(|root| output_path.starts_with(root)) {
+    if source_roots
+        .iter()
+        .any(|root| output_path.starts_with(root))
+    {
         return Err(anyhow::anyhow!(
             "--delete-source cannot be used when the output file is inside a source directory"
         ));
@@ -245,7 +245,10 @@ fn ensure_delete_source_does_not_target_generated_paths(req: &Request) -> Result
 
     if let HeaderLocation::Detached(path) = &req.crypto_params.header_location {
         let header_path = canonicalize_with_missing_suffix(Path::new(path))?;
-        if source_roots.iter().any(|root| header_path.starts_with(root)) {
+        if source_roots
+            .iter()
+            .any(|root| header_path.starts_with(root))
+        {
             return Err(anyhow::anyhow!(
                 "--delete-source cannot be used when the detached header is inside a source directory"
             ));

@@ -6,11 +6,11 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use core::header::legacy::{Header as LegacyHeader, HeaderType, HeaderVersion};
 use core::kdf::Kdf;
+use core::primitives::legacy::{Algorithm, Mode};
 use core::protected::Protected;
 use domain::encrypt;
-use core::header::legacy::{Header as LegacyHeader, HeaderType, HeaderVersion};
-use core::primitives::legacy::{Algorithm, Mode};
 
 const PASSWORD: &str = "12345678";
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
@@ -151,7 +151,10 @@ fn header_details_still_reports_legacy_headers_via_fallback() {
     let legacy = test_dir.path().join("legacy.hdr");
     write_legacy_header_fixture(&legacy);
 
-    let output = run_cli(test_dir.path(), &["header", "details", legacy.to_str().unwrap()]);
+    let output = run_cli(
+        test_dir.path(),
+        &["header", "details", legacy.to_str().unwrap()],
+    );
 
     assert!(
         output.status.success(),
@@ -183,7 +186,8 @@ fn malformed_v1_headers_report_specific_parse_errors() {
         String::from_utf8_lossy(&details_output.stderr)
     );
     assert!(
-        String::from_utf8_lossy(&details_output.stderr).contains("non-zero reserved bytes in V1 header"),
+        String::from_utf8_lossy(&details_output.stderr)
+            .contains("non-zero reserved bytes in V1 header"),
         "stderr did not preserve V1 parse class: {}",
         String::from_utf8_lossy(&details_output.stderr)
     );

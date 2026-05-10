@@ -43,7 +43,6 @@ impl TempArtifactLike for crate::storage::TempArtifact {
     ) -> Result<T, E> {
         crate::storage::TempArtifact::with_writer(self, |file| f(file))
     }
-
 }
 
 #[derive(Debug)]

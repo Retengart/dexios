@@ -234,7 +234,11 @@ fn unpack_cli_delete_input_removes_archive_after_success() {
 fn unpack_help_no_longer_mentions_secure_erase() {
     let test_dir = TestDir::new("unpack-help-surface");
 
-    let output = run_unpack_with_args(test_dir.path().join("missing.enc").as_path(), test_dir.path().join("out").as_path(), &["--help"]);
+    let output = run_unpack_with_args(
+        test_dir.path().join("missing.enc").as_path(),
+        test_dir.path().join("out").as_path(),
+        &["--help"],
+    );
 
     assert!(output.status.success());
 

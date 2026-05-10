@@ -701,16 +701,15 @@ impl Header {
             )),
             HeaderVersion::V3 => self.serialize_v3(&tag),
             HeaderVersion::V4 => {
-                let padding = vec![
-                    0u8;
-                    26 - get_nonce_len(&self.header_type.algorithm, &self.header_type.mode)
-                        .map_err(|err| anyhow::anyhow!(err.to_string()))?
-                ];
-                let master_key_nonce_len = get_nonce_len(
-                    &self.header_type.algorithm,
-                    &Mode::MemoryMode,
-                )
-                .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                let padding =
+                    vec![
+                        0u8;
+                        26 - get_nonce_len(&self.header_type.algorithm, &self.header_type.mode)
+                            .map_err(|err| anyhow::anyhow!(err.to_string()))?
+                    ];
+                let master_key_nonce_len =
+                    get_nonce_len(&self.header_type.algorithm, &Mode::MemoryMode)
+                        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
                 let padding2 = vec![0u8; 32 - master_key_nonce_len];
                 let mut header_bytes = Vec::<u8>::new();
                 header_bytes.extend_from_slice(&tag.version);
@@ -741,7 +740,9 @@ impl Header {
                         &self.header_type.algorithm,
                         &self.header_type.mode
                     )
-                    .map_err(|err| anyhow::anyhow!(err.to_string()))?
+                    .map_err(|err| anyhow::anyhow!(
+                        err.to_string()
+                    ))?
                 ]);
                 Ok(header_bytes)
             }

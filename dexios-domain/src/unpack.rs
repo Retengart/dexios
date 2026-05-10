@@ -9,8 +9,8 @@ use std::io::{Read, Seek, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
-use crate::storage::{self, Storage};
 use crate::decrypt;
+use crate::storage::{self, Storage};
 use core::protected::Protected;
 
 trait TempArtifactLike {
@@ -36,7 +36,6 @@ impl TempArtifactLike for storage::TempArtifact {
     ) -> Result<T, E> {
         storage::TempArtifact::with_writer(self, |file| f(file))
     }
-
 }
 
 #[derive(Debug)]

@@ -22,11 +22,7 @@ where
 // this function is for encrypting a file in stream mode
 // it handles any user-facing interactiveness, opening files
 // it creates the stream object and uses the convenience function provided by dexios-core
-pub fn stream_mode(
-    input: &str,
-    output: &str,
-    params: &CryptoParams,
-) -> Result<()> {
+pub fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> Result<()> {
     // TODO: It is necessary to raise it to a higher level
     let stor = Arc::new(domain::storage::FileStorage);
 

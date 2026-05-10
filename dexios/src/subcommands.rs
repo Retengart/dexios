@@ -6,8 +6,7 @@ use clap::ArgMatches;
 
 use crate::global::{
     parameters::{
-        forcemode, get_param, get_params, key_manipulation_params, pack_params,
-        parameter_handler,
+        forcemode, get_param, get_params, key_manipulation_params, pack_params, parameter_handler,
     },
     states::{Key, KeyParams},
 };
