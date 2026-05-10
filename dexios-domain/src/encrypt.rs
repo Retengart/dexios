@@ -80,12 +80,7 @@ where
         encrypted_key_arr
     };
 
-    let keyslot = V1Keyslot::new(
-        req.kdf.into(),
-        master_key_encrypted,
-        master_key_nonce,
-        header_salt,
-    );
+    let keyslot = V1Keyslot::new(req.kdf, master_key_encrypted, master_key_nonce, header_salt);
     let payload_nonce = gen_payload_nonce();
     let header = V1Header::new(payload_nonce, V1Keyslots::single(keyslot))
         .map_err(|_| Error::WriteHeader)?;

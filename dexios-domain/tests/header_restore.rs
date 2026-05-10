@@ -1,12 +1,13 @@
 use core::header::common::{HEADER_LEN, KeyslotNonce, PayloadNonce, Salt};
-use core::header::v1::{KeyslotKdf, V1Header, V1Keyslot, V1Keyslots};
+use core::header::v1::{V1Header, V1Keyslot, V1Keyslots};
+use core::kdf::Kdf;
 use dexios_domain::header::{self, restore};
 use std::cell::RefCell;
 use std::io::Cursor;
 
 fn v1_header_bytes() -> Vec<u8> {
     let keyslot = V1Keyslot::new(
-        KeyslotKdf::Blake3Balloon,
+        Kdf::Blake3Balloon,
         [1u8; 48],
         KeyslotNonce::new([2u8; 24]),
         Salt::new([3u8; 16]),

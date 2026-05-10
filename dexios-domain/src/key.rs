@@ -1,6 +1,6 @@
 use core::Zeroize;
 use core::cipher::Ciphers;
-use core::header::v1::{V1KeyslotIndex, V1Keyslots};
+use core::header::v1::{KeyslotKdf, V1KeyslotIndex, V1Keyslots};
 use core::kdf::Kdf;
 use core::key::vec_to_arr;
 use core::primitives::ENCRYPTED_MASTER_KEY_LEN;
@@ -58,8 +58,12 @@ pub fn decrypt_v1_master_key_with_index(
 
     // we need the index, so we can't use `decrypt_master_key()`
     for (i, keyslot) in keyslots.as_slice().iter().enumerate() {
+        let kdf = match keyslot.kdf() {
+            KeyslotKdf::Blake3Balloon => Kdf::Blake3Balloon,
+            KeyslotKdf::UnsupportedArgon2id => continue,
+        };
         let salt = core::kdf::Salt::new(*keyslot.salt().as_bytes());
-        let key_old = Kdf::from(keyslot.kdf())
+        let key_old = kdf
             .derive(raw_key_old.clone(), &salt)
             .map_err(|_| Error::KeyHash)?;
         let cipher = Ciphers::initialize(key_old).map_err(|_| Error::CipherInit)?;

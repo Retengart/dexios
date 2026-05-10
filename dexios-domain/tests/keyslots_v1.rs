@@ -1,6 +1,6 @@
-use core::kdf::Kdf;
 use core::header::v1::KeyslotKdf;
 use core::header::{ParsedHeader, read_header};
+use core::kdf::Kdf;
 use core::protected::Protected;
 use dexios_domain::{decrypt, encrypt, key};
 use std::cell::RefCell;
@@ -28,7 +28,11 @@ fn keyslot_kdfs(encrypted: &RefCell<Cursor<Vec<u8>>>) -> Vec<KeyslotKdf> {
     handle.rewind().expect("rewind before header read");
     let (parsed, _) = read_header(&mut *handle).expect("read V1 header");
     let ParsedHeader::V1(header) = parsed;
-    header.keyslots().iter().map(|keyslot| keyslot.kdf()).collect()
+    header
+        .keyslots()
+        .iter()
+        .map(|keyslot| keyslot.kdf())
+        .collect()
 }
 
 fn decrypt_fixture(

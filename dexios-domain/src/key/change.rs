@@ -58,7 +58,7 @@ where
     keyslots
         .replace(
             index,
-            V1Keyslot::new(req.kdf.into(), encrypted_master_key, master_key_nonce, salt),
+            V1Keyslot::new(req.kdf, encrypted_master_key, master_key_nonce, salt),
         )
         .map_err(|_| Error::HeaderWrite)?;
 

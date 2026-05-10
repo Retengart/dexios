@@ -59,7 +59,7 @@ where
     let encrypted_master_key =
         super::encrypt_master_key(master_key, key_new, master_key_nonce.as_bytes())?;
 
-    let keyslot = V1Keyslot::new(req.kdf.into(), encrypted_master_key, master_key_nonce, salt);
+    let keyslot = V1Keyslot::new(req.kdf, encrypted_master_key, master_key_nonce, salt);
 
     keyslots.push(keyslot).map_err(|_| Error::HeaderWrite)?;
 
