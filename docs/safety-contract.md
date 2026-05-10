@@ -54,6 +54,8 @@ Generated docs are not authoritative over book/src and may drift until regenerat
 
 ## Known Broken Baselines
 
+Ignored known-bug regressions are executable evidence for broken invariants; they are not fixes and must remain ignored until the owning phase changes the invariant to current.
+
 | Invariant | Broken baseline | Evidence | Fix owner |
 |-----------|-----------------|----------|-----------|
 | FMT-003 | Restoring a dumped header into a short zero-filled target can extend the target instead of rejecting the partial read. | Current source analysis in `dexios-domain/src/header/restore.rs`; `dexios-domain/tests/header_restore.rs::quarantined_known_bug_header_restore_rejects_short_target`. | Phase 5 |
