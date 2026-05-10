@@ -6,7 +6,9 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use core::header::common::{HEADER_LEN, MAGIC};
 use core::header::legacy::{Header as LegacyHeader, HeaderType, HeaderVersion};
+use core::header::{ParsedHeader, read_header};
 use core::kdf::Kdf;
 use core::primitives::legacy::{Algorithm, Mode};
 use core::protected::Protected;
@@ -143,6 +145,45 @@ fn header_details_reports_v1_profile() {
     assert!(!stdout.contains("V5"));
     assert!(!stdout.contains("AES-256-GCM"));
     assert!(!stdout.contains("(legacy)"));
+}
+
+#[test]
+fn detached_header_current_v1_fixture_keeps_header_separate() {
+    let test_dir = TestDir::new("detached-header-current-v1");
+    let plain = test_dir.path().join("plain.txt");
+    let encrypted = test_dir.path().join("plain.enc");
+    let header = test_dir.path().join("plain.hdr");
+    fs::write(&plain, b"top secret").unwrap();
+
+    // Manifest fixture: detached-header-current-v1.
+    let output = run_cli(
+        test_dir.path(),
+        &[
+            "encrypt",
+            "--header",
+            header.to_str().unwrap(),
+            plain.to_str().unwrap(),
+            encrypted.to_str().unwrap(),
+        ],
+    );
+
+    assert!(
+        output.status.success(),
+        "detached encrypt failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let header_bytes = fs::read(&header).unwrap();
+    let payload_bytes = fs::read(&encrypted).unwrap();
+    let (parsed, _) = read_header(&mut std::io::Cursor::new(&header_bytes))
+        .expect("detached header should parse");
+    let ParsedHeader::V1(parsed) = parsed;
+
+    assert_eq!(parsed.keyslots().len(), 1);
+    assert_eq!(header_bytes.len(), HEADER_LEN);
+    assert_eq!(payload_bytes.len(), b"top secret".len() + 16);
+    assert!(!payload_bytes.starts_with(&MAGIC));
 }
 
 #[test]

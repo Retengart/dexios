@@ -40,7 +40,26 @@ fn decrypt_fixture(
 }
 
 #[test]
+fn wrong_key_current_v1_fixture_rejects_verification_and_decrypt() {
+    // Manifest fixture: wrong-key-current-v1.
+    let encrypted = encrypted_v1_fixture();
+
+    let wrong_verify = key::verify::execute(key::verify::Request {
+        handle: &encrypted,
+        raw_key: Protected::new(b"wrong-pass".to_vec()),
+    });
+    assert!(matches!(wrong_verify, Err(key::Error::IncorrectKey)));
+
+    let wrong_decrypt = decrypt_fixture(&encrypted, b"wrong-pass");
+    assert!(matches!(
+        wrong_decrypt,
+        Err(decrypt::Error::DecryptMasterKey)
+    ));
+}
+
+#[test]
 fn can_add_verify_change_and_delete_v1_keyslots() {
+    // Manifest fixture: keyslot-mutation-two-keyslots.
     let encrypted = encrypted_v1_fixture();
 
     key::verify::execute(key::verify::Request {

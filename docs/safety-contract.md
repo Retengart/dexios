@@ -61,11 +61,16 @@ Generated docs are not authoritative over book/src and may drift until regenerat
 
 ## Fixture Baseline
 
-Phase 1 fixture work must add reviewable fixture evidence for valid V1 files,
-malformed V1 files, wrong-key cases, detached headers, and header/keyslot
-mutation cases. Fixture rows must cite the owning invariant ID, provenance,
-expected behavior, and owning future phase when a fixture demonstrates a broken
-invariant.
+Phase 1 fixture work uses `dexios-core/tests/testdata/fixture_manifest.toml` as
+the manifest for reviewable byte fixtures and generated workflow fixtures.
+
+| Fixture ID | Group | Evidence | Requirement | Invariant |
+|------------|-------|----------|-------------|-----------|
+| `v1-valid-single-keyslot` | `valid-v1` | `dexios-core/tests/testdata/v1_valid_single_keyslot.hex`; `dexios-core/tests/v1_header.rs::fixture_v1_valid_single_keyslot_roundtrips` | VERI-02 | FMT-001 |
+| `v1-malformed-reserved-byte` | `malformed-v1` | `dexios-core/tests/testdata/v1_malformed_reserved_byte.hex`; `dexios-core/tests/v1_header.rs::fixture_v1_malformed_reserved_byte_is_rejected` | VERI-02 | FMT-001 |
+| `wrong-key-current-v1` | `wrong-key` | `dexios-domain/tests/keyslots_v1.rs::wrong_key_current_v1_fixture_rejects_verification_and_decrypt` | VERI-02 | STRM-001 |
+| `detached-header-current-v1` | `detached-header` | `dexios/tests/header_details_cli.rs::detached_header_current_v1_fixture_keeps_header_separate` | VERI-02 | FMT-002 |
+| `keyslot-mutation-two-keyslots` | `keyslot-mutation` | `dexios-domain/tests/keyslots_v1.rs::can_add_verify_change_and_delete_v1_keyslots` | VERI-02 | KEY-001 |
 
 ## No-Unjustified-Unsafe Policy
 
