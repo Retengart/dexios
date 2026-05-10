@@ -10,26 +10,86 @@
 //! // obviously the key should contain data, not be an empty vec
 //! let raw_key = Protected::new(vec![0u8; 128]);
 //! let salt = dexios_core::kdf::Salt::new([9u8; 16]);
-//! let key = dexios_core::kdf::Kdf::Blake3Balloon.derive(raw_key, &salt).unwrap();
-//! let cipher = Ciphers::initialize(key).unwrap();
+//! let key = dexios_core::primitives::WrappingKey::from(
+//!     dexios_core::kdf::Kdf::Blake3Balloon.derive(raw_key, &salt).unwrap(),
+//! );
 //!
-//! let secret = "super secret information";
+//! let master_key = dexios_core::primitives::MasterKey::new([7u8; 32]);
 //!
 //! let nonce = gen_keyslot_nonce();
-//! let encrypted_data = cipher.encrypt(nonce.as_bytes(), secret.as_bytes()).unwrap();
+//! let encrypted = dexios_core::cipher::wrap_v1_master_key(key, &master_key, &nonce).unwrap();
 //!
-//! let decrypted_data = cipher.decrypt(nonce.as_bytes(), encrypted_data.as_slice()).unwrap();
-//!
-//! assert_eq!(secret, decrypted_data);
+//! let key = dexios_core::primitives::WrappingKey::new([9u8; 32]);
+//! let _ = dexios_core::cipher::unwrap_v1_master_key(key, &encrypted, &nonce);
 //! ```
 
-use aead::{Aead, AeadInPlace, KeyInit, Payload};
-use chacha20poly1305::XChaCha20Poly1305;
+use std::fmt::{Display, Formatter};
 
-use crate::protected::Protected;
+use aead::{Aead, KeyInit, Payload};
+use chacha20poly1305::XChaCha20Poly1305;
+use zeroize::Zeroize;
+
+use crate::header::common::KeyslotNonce;
+use crate::header::v1::EncryptedMasterKey;
+use crate::primitives::{MasterKey, WrappingKey};
+
+#[derive(Debug)]
+pub enum CipherError {
+    CipherInit,
+    Authentication,
+    InvalidMasterKeyLength(usize),
+    InvalidEncryptedMasterKeyLength(usize),
+}
+
+impl Display for CipherError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CipherInit => f.write_str("unable to initialize V1 cipher"),
+            Self::Authentication => f.write_str("V1 cipher authentication failed"),
+            Self::InvalidMasterKeyLength(len) => {
+                write!(f, "invalid decrypted V1 master key length: {len}")
+            }
+            Self::InvalidEncryptedMasterKeyLength(len) => {
+                write!(f, "invalid encrypted V1 master key length: {len}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for CipherError {}
+
+pub fn wrap_v1_master_key(
+    wrapping_key: WrappingKey,
+    master_key: &MasterKey,
+    nonce: &KeyslotNonce,
+) -> Result<EncryptedMasterKey, CipherError> {
+    let cipher = Ciphers::initialize(wrapping_key)?;
+    let encrypted = cipher.encrypt(nonce, master_key.as_bytes().as_slice())?;
+    EncryptedMasterKey::try_from_slice(&encrypted)
+        .map_err(|_| CipherError::InvalidEncryptedMasterKeyLength(encrypted.len()))
+}
+
+pub fn unwrap_v1_master_key(
+    wrapping_key: WrappingKey,
+    encrypted_master_key: &EncryptedMasterKey,
+    nonce: &KeyslotNonce,
+) -> Result<MasterKey, CipherError> {
+    let cipher = Ciphers::initialize(wrapping_key)?;
+    let mut decrypted = cipher.decrypt(nonce, encrypted_master_key.as_bytes().as_slice())?;
+    if decrypted.len() != crate::primitives::MASTER_KEY_LEN {
+        let len = decrypted.len();
+        decrypted.zeroize();
+        return Err(CipherError::InvalidMasterKeyLength(len));
+    }
+
+    let mut master_key = [0u8; crate::primitives::MASTER_KEY_LEN];
+    master_key.copy_from_slice(&decrypted);
+    decrypted.zeroize();
+    Ok(MasterKey::new(master_key))
+}
 
 /// Direct AEAD helper for the single supported Dexios suite.
-pub struct Ciphers(Box<XChaCha20Poly1305>);
+pub(crate) struct Ciphers(Box<XChaCha20Poly1305>);
 
 impl Ciphers {
     /// This can be used to quickly initialise a `Cipher`
@@ -43,18 +103,19 @@ impl Ciphers {
     /// // obviously the key should contain data, not be an empty vec
     /// let raw_key = Protected::new(vec![0u8; 128]);
     /// let salt = dexios_core::kdf::Salt::new([9u8; 16]);
-    /// let key = dexios_core::kdf::Kdf::Blake3Balloon.derive(raw_key, &salt).unwrap();
+    /// let key = dexios_core::primitives::WrappingKey::from(
+    ///     dexios_core::kdf::Kdf::Blake3Balloon.derive(raw_key, &salt).unwrap(),
+    /// );
     /// let cipher = Ciphers::initialize(key).unwrap();
     /// ```
     ///
     /// # Errors
     ///
     /// Returns an error if the hashed key cannot initialize the fixed cipher.
-    pub fn initialize(key: Protected<[u8; 32]>) -> anyhow::Result<Self> {
-        let cipher = XChaCha20Poly1305::new_from_slice(key.expose())
-            .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
+    pub(crate) fn initialize(key: WrappingKey) -> Result<Self, CipherError> {
+        let cipher = XChaCha20Poly1305::new_from_slice(key.as_bytes())
+            .map_err(|_| CipherError::CipherInit)?;
 
-        drop(key);
         Ok(Self(Box::new(cipher)))
     }
 
@@ -65,26 +126,14 @@ impl Ciphers {
     /// # Errors
     ///
     /// Returns an error if the AEAD rejects the supplied nonce, plaintext, or AAD.
-    pub fn encrypt<'msg, 'aad>(
+    pub(crate) fn encrypt<'msg, 'aad>(
         &self,
-        nonce: &[u8],
+        nonce: &KeyslotNonce,
         plaintext: impl Into<Payload<'msg, 'aad>>,
-    ) -> aead::Result<Vec<u8>> {
-        self.0.encrypt(nonce.as_ref().into(), plaintext)
-    }
-
-    /// This encrypts the provided buffer in place with the supplied nonce and AAD.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the AEAD rejects the supplied nonce, buffer contents, or AAD.
-    pub fn encrypt_in_place(
-        &self,
-        nonce: &[u8],
-        aad: &[u8],
-        buffer: &mut dyn aead::Buffer,
-    ) -> Result<(), aead::Error> {
-        self.0.encrypt_in_place(nonce.as_ref().into(), aad, buffer)
+    ) -> Result<Vec<u8>, CipherError> {
+        self.0
+            .encrypt(nonce.as_bytes().as_ref().into(), plaintext)
+            .map_err(|_| CipherError::Authentication)
     }
 
     /// This can be used to decrypt data with a given `Ciphers` object
@@ -96,11 +145,13 @@ impl Ciphers {
     /// # Errors
     ///
     /// Returns an error if the AEAD rejects the supplied nonce, ciphertext, or AAD.
-    pub fn decrypt<'msg, 'aad>(
+    pub(crate) fn decrypt<'msg, 'aad>(
         &self,
-        nonce: &[u8],
+        nonce: &KeyslotNonce,
         ciphertext: impl Into<Payload<'msg, 'aad>>,
-    ) -> aead::Result<Vec<u8>> {
-        self.0.decrypt(nonce.as_ref().into(), ciphertext)
+    ) -> Result<Vec<u8>, CipherError> {
+        self.0
+            .decrypt(nonce.as_bytes().as_ref().into(), ciphertext)
+            .map_err(|_| CipherError::Authentication)
     }
 }

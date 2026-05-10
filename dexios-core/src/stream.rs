@@ -1,230 +1,167 @@
-//! This module contains the LE31 stream-mode helpers used by Dexios for file
-//! payload encryption and decryption.
+//! This module contains the typed LE31 stream-mode helpers used by Dexios for
+//! V1 file payload encryption and decryption.
 //!
-//! Current Dexios write paths use this module for new encrypted files.
-//!
-//! # Examples
-//!
-//! ```rust,ignore
-//! // obviously the key should contain data, not be an empty vec
-//! let raw_key = Protected::new(vec![0u8; 128]);
-//! let salt = dexios_core::kdf::Salt::new([9u8; 16]);
-//! let key = dexios_core::kdf::Kdf::Blake3Balloon.derive(raw_key, &salt).unwrap();
-//!
-//! // this nonce should be read from somewhere, not generated
-//! let nonce = gen_payload_nonce();
-//!
-//! let decrypt_stream = DecryptionStreams::initialize(key, nonce.as_bytes()).unwrap();
-//!
-//! let mut input_file = File::open("input.encrypted").unwrap();
-//! let mut output_file = File::create("output").unwrap();
-//!
-//! // aad should be retrieved from the `Header` (with `Header::deserialize()`)
-//! let aad = Vec::new();
-//!
-//! decrypt_stream.decrypt_file_with_aad_unchecked(&mut input_file, &mut output_file, &aad);
-//! ```
+//! Normal V1 callers provide a typed master key and a V1 header or parsed V1
+//! payload bundle. The stream layer derives AAD from those typed inputs; it does
+//! not accept arbitrary caller-supplied AAD for the normal V1 API.
 
+use std::fmt::{Display, Formatter};
 use std::io::{Read, Write};
 
 use aead::{
     KeyInit, Payload,
     stream::{DecryptorLE31, EncryptorLE31},
 };
-use anyhow::Context;
 use chacha20poly1305::XChaCha20Poly1305;
-// use rand::{prelude::StdRng, Rng, SeedableRng, RngCore};
 use zeroize::Zeroize;
 
-use crate::primitives::{BLOCK_SIZE, PAYLOAD_NONCE_LEN};
-use crate::protected::Protected;
+use crate::header::ParsedV1Payload;
+use crate::header::common::{PayloadNonce, V1HeaderAad};
+use crate::header::v1::V1Header;
+use crate::primitives::{BLOCK_SIZE, MasterKey};
 
-/// This `enum` contains streams for that are used solely for encryption
-///
-pub enum EncryptionStreams {
-    XChaCha20Poly1305(Box<EncryptorLE31<XChaCha20Poly1305>>),
+#[derive(Debug)]
+pub enum StreamError {
+    InvalidNonceLength(usize),
+    CipherInit,
+    Read(std::io::Error),
+    Write(std::io::Error),
+    Flush(std::io::Error),
+    Authentication,
+    TruncatedCiphertext,
+    MissingFinalBlock,
+    FinalBlockAuthentication,
 }
 
-/// This `enum` contains streams for that are used solely for decryption
-///
-pub enum DecryptionStreams {
-    XChaCha20Poly1305(Box<DecryptorLE31<XChaCha20Poly1305>>),
+impl Display for StreamError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidNonceLength(len) => write!(f, "invalid V1 stream nonce length: {len}"),
+            Self::CipherInit => f.write_str("unable to initialize V1 stream cipher"),
+            Self::Read(error) => write!(f, "unable to read V1 stream data: {error}"),
+            Self::Write(error) => write!(f, "unable to write V1 stream data: {error}"),
+            Self::Flush(error) => write!(f, "unable to flush V1 stream output: {error}"),
+            Self::Authentication => f.write_str("V1 stream authentication failed"),
+            Self::TruncatedCiphertext => f.write_str("truncated V1 stream ciphertext"),
+            Self::MissingFinalBlock => f.write_str("missing V1 stream final block"),
+            Self::FinalBlockAuthentication => {
+                f.write_str("V1 stream final block authentication failed")
+            }
+        }
+    }
+}
+
+impl std::error::Error for StreamError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Read(error) | Self::Write(error) | Self::Flush(error) => Some(error),
+            _ => None,
+        }
+    }
 }
 
 pub struct V1PayloadStream;
 
 impl V1PayloadStream {
     pub fn encrypt_file(
-        master_key: Protected<[u8; 32]>,
-        header: &crate::header::v1::V1Header,
+        master_key: MasterKey,
+        header: &V1Header,
         reader: &mut impl Read,
         writer: &mut impl Write,
-    ) -> anyhow::Result<()> {
-        EncryptionStreams::initialize(master_key, header.payload_nonce().as_bytes())?
-            .encrypt_file_with_aad_unchecked(reader, writer, header.aad().as_bytes())
+    ) -> Result<(), StreamError> {
+        V1PayloadEncryptor::new(master_key, header)?.encrypt_file(reader, writer)
     }
 
+    /// Decrypts into `writer` as uncommitted scratch; callers must only commit
+    /// the plaintext after this function returns `Ok(())`.
     pub fn decrypt_file(
-        master_key: Protected<[u8; 32]>,
-        header: &crate::header::v1::V1Header,
-        aad: &crate::header::V1HeaderAad,
+        master_key: MasterKey,
+        payload: &ParsedV1Payload,
         reader: &mut impl Read,
         writer: &mut impl Write,
-    ) -> anyhow::Result<()> {
-        DecryptionStreams::initialize(master_key, header.payload_nonce().as_bytes())?
-            .decrypt_file_with_aad_unchecked(reader, writer, aad.as_bytes())
+    ) -> Result<(), StreamError> {
+        V1PayloadDecryptor::new(master_key, payload)?.decrypt_file(reader, writer)
     }
 }
 
-impl EncryptionStreams {
-    /// This method can be used to quickly create an `EncryptionStreams` object
-    ///
-    /// It requies a 32-byte hashed key, which will be dropped once the stream has been initialized
-    ///
-    /// It requires a pre-generated payload nonce.
-    ///
-    /// If the nonce length is not exact, you will receive an error.
-    ///
-    /// It will create the stream with the specified algorithm, and it will also generate the appropriate nonce
-    ///
-    /// The `EncryptionStreams` object is returned
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// // obviously the key should contain data, not be an empty vec
-    /// let raw_key = Protected::new(vec![0u8; 128]);
-    /// let salt = dexios_core::kdf::Salt::new([9u8; 16]);
-    /// let key = dexios_core::kdf::Kdf::Blake3Balloon.derive(raw_key, &salt).unwrap();
-    ///
-    /// let nonce = dexios_core::primitives::gen_payload_nonce();
-    /// let encrypt_stream = EncryptionStreams::initialize(key, nonce.as_bytes()).unwrap();
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the nonce length is invalid for V1 or if the hashed
-    /// key cannot initialize the stream cipher.
-    pub fn initialize(key: Protected<[u8; 32]>, nonce: &[u8]) -> anyhow::Result<Self> {
-        if nonce.len() != PAYLOAD_NONCE_LEN {
-            return Err(anyhow::anyhow!("Nonce is not the correct length"));
-        }
+pub struct V1PayloadEncryptor {
+    stream: EncryptionStreams,
+    aad: V1HeaderAad,
+}
 
-        let cipher = XChaCha20Poly1305::new_from_slice(key.expose())
-            .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
-        let stream = EncryptorLE31::from_aead(cipher, nonce.into());
-
-        drop(key);
-        Ok(EncryptionStreams::XChaCha20Poly1305(Box::new(stream)))
+impl V1PayloadEncryptor {
+    pub fn new(master_key: MasterKey, header: &V1Header) -> Result<Self, StreamError> {
+        Ok(Self {
+            stream: EncryptionStreams::initialize(master_key, header.payload_nonce())?,
+            aad: header.aad(),
+        })
     }
 
-    /// This is used for encrypting the *next* block of data in streaming mode
-    ///
-    /// It requires either some plaintext, or an `aead::Payload` (that contains the plaintext and the AAD)
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the AEAD rejects the supplied payload or AAD.
-    pub fn encrypt_next<'msg, 'aad>(
-        &mut self,
-        payload: impl Into<Payload<'msg, 'aad>>,
-    ) -> aead::Result<Vec<u8>> {
-        match self {
-            EncryptionStreams::XChaCha20Poly1305(s) => s.encrypt_next(payload),
-        }
+    pub fn encrypt_next(&mut self, plaintext: &[u8]) -> Result<Vec<u8>, StreamError> {
+        let payload = Payload {
+            aad: self.aad.as_bytes(),
+            msg: plaintext,
+        };
+        self.stream.encrypt_next(payload)
     }
 
-    /// This is used for encrypting the *last* block of data in streaming mode. It consumes the stream object to prevent further usage.
-    ///
-    /// It requires either some plaintext, or an `aead::Payload` (that contains the plaintext and the AAD)
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the AEAD rejects the supplied payload or AAD.
-    pub fn encrypt_last<'msg, 'aad>(
-        self,
-        payload: impl Into<Payload<'msg, 'aad>>,
-    ) -> aead::Result<Vec<u8>> {
-        match self {
-            EncryptionStreams::XChaCha20Poly1305(s) => s.encrypt_last(payload),
-        }
+    pub fn encrypt_last(self, plaintext: &[u8]) -> Result<Vec<u8>, StreamError> {
+        let payload = Payload {
+            aad: self.aad.as_bytes(),
+            msg: plaintext,
+        };
+        self.stream.encrypt_last(payload)
     }
 
-    /// This is a convenience function for reading from a reader, encrypting, and writing to the writer.
-    ///
-    /// This accepts arbitrary byte-slice AAD and is not for V1 file payloads.
-    ///
-    /// Every single block is provided with the AAD
-    ///
-    /// Valid AAD must be provided if you are using `HeaderVersion::V3` and
-    /// above. It must be empty if the header version is lower.
-    ///
-    /// You are free to use a custom AAD, just ensure that it is present for decryption, or else you will receive an error.
-    ///
-    /// This does not handle writing the header.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// let mut input_file = File::open("input").unwrap();
-    /// let mut output_file = File::create("output.encrypted").unwrap();
-    ///
-    /// let aad = b"custom aad".as_slice();
-    ///
-    /// let encrypt_stream = EncryptionStreams::initialize(key, nonce.as_bytes()).unwrap();
-    /// encrypt_stream.encrypt_file_with_aad_unchecked(&mut input_file, &mut output_file, aad);
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if reading from the input fails, writing to the output
-    /// fails, flushing the writer fails, or the stream cipher rejects a block.
-    pub fn encrypt_file_with_aad_unchecked(
+    pub fn encrypt_file(
         mut self,
         reader: &mut impl Read,
         writer: &mut impl Write,
-        aad: &[u8],
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), StreamError> {
         #[cfg(feature = "visual")]
         let pb = crate::visual::create_spinner();
 
         let mut read_buffer = vec![0u8; BLOCK_SIZE].into_boxed_slice();
         loop {
-            let read_count = reader
-                .read(&mut read_buffer)
-                .context("Unable to read from the reader")?;
-            if read_count == BLOCK_SIZE {
-                let payload = Payload {
-                    aad,
-                    msg: read_buffer.as_ref(),
-                };
+            let read_count = match reader.read(&mut read_buffer) {
+                Ok(read_count) => read_count,
+                Err(error) => {
+                    read_buffer.zeroize();
+                    return Err(StreamError::Read(error));
+                }
+            };
 
-                let encrypted_data = self
-                    .encrypt_next(payload)
-                    .map_err(|_| anyhow::anyhow!("Unable to encrypt the data"))?;
-
-                writer
-                    .write_all(&encrypted_data)
-                    .context("Unable to write to the output")?;
+            let encrypted_data = if read_count == BLOCK_SIZE {
+                match self.encrypt_next(read_buffer.as_ref()) {
+                    Ok(encrypted_data) => encrypted_data,
+                    Err(error) => {
+                        read_buffer.zeroize();
+                        return Err(error);
+                    }
+                }
             } else {
-                // if we read something less than BLOCK_SIZE, and have hit the end of the file
-                let payload = Payload {
-                    aad,
-                    msg: &read_buffer[..read_count],
+                let encrypted_data = match self.encrypt_last(&read_buffer[..read_count]) {
+                    Ok(encrypted_data) => encrypted_data,
+                    Err(error) => {
+                        read_buffer.zeroize();
+                        return Err(error);
+                    }
                 };
-
-                let encrypted_data = self
-                    .encrypt_last(payload)
-                    .map_err(|_| anyhow::anyhow!("Unable to encrypt the data"))?;
-
-                writer
-                    .write_all(&encrypted_data)
-                    .context("Unable to write to the output")?;
+                if let Err(error) = writer.write_all(&encrypted_data) {
+                    read_buffer.zeroize();
+                    return Err(StreamError::Write(error));
+                }
                 break;
+            };
+
+            if let Err(error) = writer.write_all(&encrypted_data) {
+                read_buffer.zeroize();
+                return Err(StreamError::Write(error));
             }
         }
+
         read_buffer.zeroize();
-        writer.flush().context("Unable to flush the output")?;
+        writer.flush().map_err(StreamError::Flush)?;
 
         #[cfg(feature = "visual")]
         pb.finish_and_clear();
@@ -233,163 +170,185 @@ impl EncryptionStreams {
     }
 }
 
-impl DecryptionStreams {
-    /// This method can be used to quickly create an `DecryptionStreams` object
-    ///
-    /// It requies a 32-byte hashed key, which will be dropped once the stream has been initialized
-    ///
-    /// It requires the same nonce that was returned upon initializing `EncryptionStreams`
-    ///
-    /// It will create the stream with the specified algorithm
-    ///
-    /// The `DecryptionStreams` object will be returned
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// // obviously the key should contain data, not be an empty vec
-    /// let raw_key = Protected::new(vec![0u8; 128]);
-    /// let salt = dexios_core::kdf::Salt::new([9u8; 16]);
-    /// let key = dexios_core::kdf::Kdf::Blake3Balloon.derive(raw_key, &salt).unwrap();
-    ///
-    /// // this nonce should be read from somewhere, not generated
-    /// let nonce = dexios_core::primitives::gen_payload_nonce();
-    ///
-    /// let decrypt_stream = DecryptionStreams::initialize(key, nonce.as_bytes()).unwrap();
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the nonce length is invalid for V1 or if the hashed
-    /// key cannot initialize the stream cipher.
-    pub fn initialize(key: Protected<[u8; 32]>, nonce: &[u8]) -> anyhow::Result<Self> {
-        if nonce.len() != PAYLOAD_NONCE_LEN {
-            return Err(anyhow::anyhow!("Nonce is not the correct length"));
-        }
+pub struct V1PayloadDecryptor {
+    stream: DecryptionStreams,
+    aad: V1HeaderAad,
+}
 
-        let cipher = XChaCha20Poly1305::new_from_slice(key.expose())
-            .map_err(|_| anyhow::anyhow!("Unable to create cipher with hashed key."))?;
-        let stream = DecryptorLE31::from_aead(cipher, nonce.into());
-
-        drop(key);
-        Ok(DecryptionStreams::XChaCha20Poly1305(Box::new(stream)))
+impl V1PayloadDecryptor {
+    pub fn new(master_key: MasterKey, payload: &ParsedV1Payload) -> Result<Self, StreamError> {
+        Ok(Self {
+            stream: DecryptionStreams::initialize(master_key, payload.payload_nonce())?,
+            aad: *payload.aad(),
+        })
     }
 
-    /// This is used for decrypting the *next* block of data in streaming mode
-    ///
-    /// It requires either some plaintext, or an `aead::Payload` (that contains the plaintext and the AAD)
-    ///
-    /// Whatever you provided as AAD while encrypting must be present during decryption, or else you will receive an error.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the AEAD rejects the supplied payload or AAD.
-    pub fn decrypt_next<'msg, 'aad>(
-        &mut self,
-        payload: impl Into<Payload<'msg, 'aad>>,
-    ) -> aead::Result<Vec<u8>> {
-        match self {
-            DecryptionStreams::XChaCha20Poly1305(s) => s.decrypt_next(payload),
+    pub fn decrypt_next(&mut self, ciphertext: &[u8]) -> Result<Vec<u8>, StreamError> {
+        if ciphertext.len() < 16 {
+            return Err(StreamError::TruncatedCiphertext);
         }
+        let payload = Payload {
+            aad: self.aad.as_bytes(),
+            msg: ciphertext,
+        };
+        self.stream.decrypt_next(payload)
     }
 
-    /// This is used for decrypting the *last* block of data in streaming mode. It consumes the stream object to prevent further usage.
-    ///
-    /// It requires either some plaintext, or an `aead::Payload` (that contains the plaintext and the AAD)
-    ///
-    /// Whatever you provided as AAD while encrypting must be present during decryption, or else you will receive an error.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the AEAD rejects the supplied payload or AAD.
-    pub fn decrypt_last<'msg, 'aad>(
-        self,
-        payload: impl Into<Payload<'msg, 'aad>>,
-    ) -> aead::Result<Vec<u8>> {
-        match self {
-            DecryptionStreams::XChaCha20Poly1305(s) => s.decrypt_last(payload),
+    pub fn decrypt_last(self, ciphertext: &[u8]) -> Result<Vec<u8>, StreamError> {
+        if ciphertext.is_empty() {
+            return Err(StreamError::MissingFinalBlock);
         }
+        if ciphertext.len() < 16 {
+            return Err(StreamError::TruncatedCiphertext);
+        }
+        let payload = Payload {
+            aad: self.aad.as_bytes(),
+            msg: ciphertext,
+        };
+        self.stream.decrypt_last(payload)
     }
 
-    /// This is a convenience function for reading from a reader, decrypting, and writing to the writer.
-    ///
-    /// This accepts arbitrary byte-slice AAD and is not for V1 file payloads.
-    ///
-    /// Every single block is provided with the AAD
-    ///
-    /// Valid AAD must be provided if you are using `HeaderVersion::V3` and above. It must be empty if the `HeaderVersion` is lower. Whatever you provided as AAD while encrypting must be present during decryption, or else you will receive an error.
-    ///
-    /// This does not handle writing the header.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// let mut input_file = File::open("input.encrypted").unwrap();
-    /// let mut output_file = File::create("output").unwrap();
-    ///
-    /// // aad should be retrieved from the `Header` (with `Header::deserialize()`)
-    /// let aad = Vec::new();
-    ///
-    /// let decrypt_stream = DecryptionStreams::initialize(key, nonce.as_bytes()).unwrap();
-    /// decrypt_stream.decrypt_file_with_aad_unchecked(&mut input_file, &mut output_file, &aad);
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if reading from the input fails, writing to the output
-    /// fails, or the stream cipher rejects a block during decryption.
-    pub fn decrypt_file_with_aad_unchecked(
+    pub fn decrypt_file(
         mut self,
         reader: &mut impl Read,
         writer: &mut impl Write,
-        aad: &[u8],
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), StreamError> {
         #[cfg(feature = "visual")]
         let pb = crate::visual::create_spinner();
 
         let mut buffer = vec![0u8; BLOCK_SIZE + 16].into_boxed_slice();
         loop {
-            let read_count = reader.read(&mut buffer)?;
-            if read_count == (BLOCK_SIZE + 16) {
-                let payload = Payload {
-                    aad,
-                    msg: buffer.as_ref(),
+            let read_count = match reader.read(&mut buffer) {
+                Ok(read_count) => read_count,
+                Err(error) => {
+                    buffer.zeroize();
+                    return Err(StreamError::Read(error));
+                }
+            };
+
+            if read_count == 0 {
+                buffer.zeroize();
+                return Err(StreamError::MissingFinalBlock);
+            }
+
+            if read_count == BLOCK_SIZE + 16 {
+                let mut decrypted_data = match self.decrypt_next(buffer.as_ref()) {
+                    Ok(decrypted_data) => decrypted_data,
+                    Err(error) => {
+                        buffer.zeroize();
+                        return Err(error);
+                    }
                 };
-
-                let mut decrypted_data = self.decrypt_next(payload).map_err(|_| {
-                    anyhow::anyhow!("Unable to decrypt the data. This means either: you're using the wrong key, this isn't an encrypted file, or the header has been tampered with.")
-                })?;
-
-                writer
-                    .write_all(&decrypted_data)
-                    .context("Unable to write to the output")?;
-
+                if let Err(error) = writer.write_all(&decrypted_data) {
+                    decrypted_data.zeroize();
+                    buffer.zeroize();
+                    return Err(StreamError::Write(error));
+                }
                 decrypted_data.zeroize();
             } else {
-                // if we read something less than BLOCK_SIZE+16, and have hit the end of the file
-                let payload = Payload {
-                    aad,
-                    msg: &buffer[..read_count],
+                let mut decrypted_data = match self.decrypt_last(&buffer[..read_count]) {
+                    Ok(decrypted_data) => decrypted_data,
+                    Err(error) => {
+                        buffer.zeroize();
+                        return Err(error);
+                    }
                 };
-
-                let mut decrypted_data = self.decrypt_last(payload).map_err(|_| {
-                    anyhow::anyhow!("Unable to decrypt the final block of data. This means either: you're using the wrong key, this isn't an encrypted file, or the header has been tampered with.")
-                })?;
-
-                writer
-                    .write_all(&decrypted_data)
-                    .context("Unable to write to the output file")?;
-
+                if let Err(error) = writer.write_all(&decrypted_data) {
+                    decrypted_data.zeroize();
+                    buffer.zeroize();
+                    return Err(StreamError::Write(error));
+                }
                 decrypted_data.zeroize();
                 break;
             }
         }
 
-        writer.flush().context("Unable to flush the output")?;
+        buffer.zeroize();
+        writer.flush().map_err(StreamError::Flush)?;
 
         #[cfg(feature = "visual")]
         pb.finish_and_clear();
 
         Ok(())
+    }
+}
+
+enum EncryptionStreams {
+    XChaCha20Poly1305(Box<EncryptorLE31<XChaCha20Poly1305>>),
+}
+
+impl EncryptionStreams {
+    fn initialize(key: MasterKey, nonce: &PayloadNonce) -> Result<Self, StreamError> {
+        if nonce.as_bytes().len() != crate::primitives::PAYLOAD_NONCE_LEN {
+            return Err(StreamError::InvalidNonceLength(nonce.as_bytes().len()));
+        }
+
+        let cipher = XChaCha20Poly1305::new_from_slice(key.as_bytes())
+            .map_err(|_| StreamError::CipherInit)?;
+        let stream = EncryptorLE31::from_aead(cipher, nonce.as_bytes().as_ref().into());
+
+        Ok(Self::XChaCha20Poly1305(Box::new(stream)))
+    }
+
+    fn encrypt_next<'msg, 'aad>(
+        &mut self,
+        payload: impl Into<Payload<'msg, 'aad>>,
+    ) -> Result<Vec<u8>, StreamError> {
+        match self {
+            Self::XChaCha20Poly1305(stream) => stream
+                .encrypt_next(payload)
+                .map_err(|_| StreamError::Authentication),
+        }
+    }
+
+    fn encrypt_last<'msg, 'aad>(
+        self,
+        payload: impl Into<Payload<'msg, 'aad>>,
+    ) -> Result<Vec<u8>, StreamError> {
+        match self {
+            Self::XChaCha20Poly1305(stream) => stream
+                .encrypt_last(payload)
+                .map_err(|_| StreamError::Authentication),
+        }
+    }
+}
+
+enum DecryptionStreams {
+    XChaCha20Poly1305(Box<DecryptorLE31<XChaCha20Poly1305>>),
+}
+
+impl DecryptionStreams {
+    fn initialize(key: MasterKey, nonce: &PayloadNonce) -> Result<Self, StreamError> {
+        if nonce.as_bytes().len() != crate::primitives::PAYLOAD_NONCE_LEN {
+            return Err(StreamError::InvalidNonceLength(nonce.as_bytes().len()));
+        }
+
+        let cipher = XChaCha20Poly1305::new_from_slice(key.as_bytes())
+            .map_err(|_| StreamError::CipherInit)?;
+        let stream = DecryptorLE31::from_aead(cipher, nonce.as_bytes().as_ref().into());
+
+        Ok(Self::XChaCha20Poly1305(Box::new(stream)))
+    }
+
+    fn decrypt_next<'msg, 'aad>(
+        &mut self,
+        payload: impl Into<Payload<'msg, 'aad>>,
+    ) -> Result<Vec<u8>, StreamError> {
+        match self {
+            Self::XChaCha20Poly1305(stream) => stream
+                .decrypt_next(payload)
+                .map_err(|_| StreamError::Authentication),
+        }
+    }
+
+    fn decrypt_last<'msg, 'aad>(
+        self,
+        payload: impl Into<Payload<'msg, 'aad>>,
+    ) -> Result<Vec<u8>, StreamError> {
+        match self {
+            Self::XChaCha20Poly1305(stream) => stream
+                .decrypt_last(payload)
+                .map_err(|_| StreamError::FinalBlockAuthentication),
+        }
     }
 }

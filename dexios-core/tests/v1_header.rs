@@ -1,15 +1,11 @@
 use dexios_core::header::common::{
     HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN, KeyslotNonce, PayloadNonce, Salt as HeaderSalt,
 };
-use dexios_core::header::v1::{
-    EncryptedMasterKey, KeyslotKdf, V1Header, V1Keyslot, V1Keyslots,
-};
+use dexios_core::header::v1::{EncryptedMasterKey, KeyslotKdf, V1Header, V1Keyslot, V1Keyslots};
 use dexios_core::header::{HeaderReadError, ParsedHeader, ParsedV1Payload};
 use dexios_core::kdf::{Kdf, Salt};
 use dexios_core::primitives::{MasterKey, WrappingKey};
-use dexios_core::stream::{
-    StreamError, V1PayloadDecryptor, V1PayloadEncryptor, V1PayloadStream,
-};
+use dexios_core::stream::{StreamError, V1PayloadDecryptor, V1PayloadEncryptor, V1PayloadStream};
 use std::path::Path;
 
 mod support {

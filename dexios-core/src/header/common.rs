@@ -81,6 +81,11 @@ impl Salt {
     pub const fn as_bytes(&self) -> &[u8; 16] {
         &self.0
     }
+
+    #[must_use]
+    pub const fn to_kdf_salt(&self) -> crate::kdf::Salt {
+        crate::kdf::Salt::new(self.0)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
