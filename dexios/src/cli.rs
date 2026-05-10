@@ -518,6 +518,18 @@ pub fn get_matches() -> clap::ArgMatches {
 
 #[cfg(test)]
 mod tests {
+    fn assert_argon_is_rejected<const N: usize>(args: [&str; N]) {
+        let error = super::build_cli()
+            .try_get_matches_from(args)
+            .expect_err("--argon should not be a supported normal KDF selector");
+
+        assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
+        assert!(
+            error.to_string().contains("--argon"),
+            "error should name the removed flag: {error}"
+        );
+    }
+
     #[test]
     fn cli_definition_passes_clap_debug_assertions() {
         super::build_cli().debug_assert();
@@ -536,8 +548,7 @@ mod tests {
     fn encrypt_command_accepts_header_and_auto() {
         let matches = super::build_cli()
             .try_get_matches_from([
-                "dexios", "encrypt", "--header", "file.hdr", "--argon", "--auto=7", "in.bin",
-                "out.enc",
+                "dexios", "encrypt", "--header", "file.hdr", "--auto=7", "in.bin", "out.enc",
             ])
             .expect("CLI should parse");
 
@@ -559,7 +570,16 @@ mod tests {
             sub.get_one::<String>("autogenerate").map(String::as_str),
             Some("7")
         );
-        assert!(sub.get_flag("argon"));
+    }
+
+    #[test]
+    fn removed_argon_flag_is_rejected_for_encrypt() {
+        assert_argon_is_rejected(["dexios", "encrypt", "--argon", "in.bin", "out.enc"]);
+    }
+
+    #[test]
+    fn removed_argon_flag_is_rejected_for_pack() {
+        assert_argon_is_rejected(["dexios", "pack", "--argon", "dir-a", "archive.dex"]);
     }
 
     #[test]
@@ -632,13 +652,12 @@ mod tests {
     }
 
     #[test]
-    fn key_change_command_accepts_argon_and_old_new_keyfiles() {
+    fn key_change_command_accepts_old_and_new_keyfiles() {
         let matches = super::build_cli()
             .try_get_matches_from([
                 "dexios",
                 "key",
                 "change",
-                "--argon",
                 "-k",
                 "old.key",
                 "-n",
@@ -650,7 +669,6 @@ mod tests {
         let (name, sub) = matches.subcommand().expect("subcommand");
         assert_eq!(name, "key");
         let change = sub.subcommand_matches("change").expect("key change");
-        assert!(change.get_flag("argon"));
         assert_eq!(
             change.get_one::<String>("keyfile-old").map(String::as_str),
             Some("old.key")
@@ -663,6 +681,16 @@ mod tests {
             change.get_one::<String>("input").map(String::as_str),
             Some("cipher.enc")
         );
+    }
+
+    #[test]
+    fn removed_argon_flag_is_rejected_for_key_add() {
+        assert_argon_is_rejected(["dexios", "key", "add", "--argon", "cipher.enc"]);
+    }
+
+    #[test]
+    fn removed_argon_flag_is_rejected_for_key_change() {
+        assert_argon_is_rejected(["dexios", "key", "change", "--argon", "cipher.enc"]);
     }
 
     #[test]

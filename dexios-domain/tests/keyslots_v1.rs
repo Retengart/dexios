@@ -1,3 +1,4 @@
+use core::header::common::{HEADER_STATIC_LEN, KEYSLOT_LEN};
 use core::header::v1::KeyslotKdf;
 use core::header::{ParsedHeader, read_header};
 use core::kdf::Kdf;
@@ -21,6 +22,13 @@ fn encrypted_v1_fixture() -> RefCell<Cursor<Vec<u8>>> {
 
     output.borrow_mut().rewind().expect("rewind fixture");
     output
+}
+
+fn mark_keyslot_unsupported_argon2id(encrypted: &RefCell<Cursor<Vec<u8>>>, index: usize) {
+    let mut handle = encrypted.borrow_mut();
+    let offset = HEADER_STATIC_LEN + (index * KEYSLOT_LEN);
+    handle.get_mut()[offset..offset + 2].copy_from_slice(&[0xDF, 0x02]);
+    handle.rewind().expect("rewind after KDF tag mutation");
 }
 
 fn keyslot_kdfs(encrypted: &RefCell<Cursor<Vec<u8>>>) -> Vec<KeyslotKdf> {
@@ -58,6 +66,59 @@ fn encrypt_writes_blake3_balloon_keyslot() {
     let encrypted = encrypted_v1_fixture();
 
     assert_eq!(keyslot_kdfs(&encrypted), [KeyslotKdf::Blake3Balloon]);
+}
+
+#[test]
+fn argon2id_only_keyslot_returns_unsupported_kdf_for_verify() {
+    let encrypted = encrypted_v1_fixture();
+    mark_keyslot_unsupported_argon2id(&encrypted, 0);
+
+    let verify = key::verify::execute(key::verify::Request {
+        handle: &encrypted,
+        raw_key: Protected::new(b"old-pass".to_vec()),
+    });
+
+    assert!(matches!(
+        verify,
+        Err(key::Error::UnsupportedKdf([0xDF, 0x02]))
+    ));
+}
+
+#[test]
+fn argon2id_only_keyslot_returns_unsupported_kdf_for_decrypt() {
+    let encrypted = encrypted_v1_fixture();
+    mark_keyslot_unsupported_argon2id(&encrypted, 0);
+
+    let decrypt = decrypt_fixture(&encrypted, b"old-pass");
+
+    assert!(matches!(
+        decrypt,
+        Err(decrypt::Error::UnsupportedKdf([0xDF, 0x02]))
+    ));
+}
+
+#[test]
+fn supported_keyslot_is_tried_when_mixed_with_unsupported_argon2id() {
+    let encrypted = encrypted_v1_fixture();
+
+    key::add::execute(key::add::Request {
+        handle: &encrypted,
+        raw_key_old: Protected::new(b"old-pass".to_vec()),
+        raw_key_new: Protected::new(b"new-pass".to_vec()),
+        kdf: Kdf::Blake3Balloon,
+    })
+    .expect("add supported keyslot");
+    mark_keyslot_unsupported_argon2id(&encrypted, 0);
+
+    key::verify::execute(key::verify::Request {
+        handle: &encrypted,
+        raw_key: Protected::new(b"new-pass".to_vec()),
+    })
+    .expect("supported keyslot should still verify");
+
+    let plaintext =
+        decrypt_fixture(&encrypted, b"new-pass").expect("supported keyslot should still decrypt");
+    assert_eq!(plaintext, b"Hello world");
 }
 
 #[test]
