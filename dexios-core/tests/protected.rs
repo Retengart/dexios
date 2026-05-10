@@ -40,3 +40,22 @@ fn protected_source_has_no_blanket_clone_public_expose_or_deref() {
         "Protected<T> must not implement Deref"
     );
 }
+
+#[test]
+fn core_secret_consumers_do_not_call_direct_exposure() {
+    let direct_accessor_call = [".", "expose", "("].concat();
+    let core_sources = [
+        ("kdf.rs", include_str!("../src/kdf.rs")),
+        ("cipher.rs", include_str!("../src/cipher.rs")),
+        ("stream.rs", include_str!("../src/stream.rs")),
+        ("key.rs", include_str!("../src/key.rs")),
+        ("primitives.rs", include_str!("../src/primitives.rs")),
+    ];
+
+    for (path, source) in core_sources {
+        assert!(
+            !source.contains(&direct_accessor_call),
+            "{path} must access protected secrets through with_exposed or typed closure helpers"
+        );
+    }
+}
