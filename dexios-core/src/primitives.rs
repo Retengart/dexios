@@ -104,7 +104,7 @@ pub fn gen_master_key() -> MasterKey {
 
 /// Generates a salt, of the specified `SALT_LEN`
 ///
-/// This salt can be directly passed to `argon2id_hash()` or `balloon_hash()`
+/// This salt can be used at the current BLAKE3-Balloon KDF boundary.
 ///
 /// # Examples
 ///

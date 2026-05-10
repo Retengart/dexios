@@ -6,7 +6,7 @@
 //! not accept arbitrary caller-supplied AAD for the normal V1 API.
 
 use std::fmt::{Display, Formatter};
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 
 use aead::{
     KeyInit, Payload,
@@ -58,6 +58,21 @@ impl std::error::Error for StreamError {
             _ => None,
         }
     }
+}
+
+fn read_up_to_full(reader: &mut impl Read, buffer: &mut [u8]) -> Result<usize, StreamError> {
+    let mut filled = 0;
+
+    while filled < buffer.len() {
+        match reader.read(&mut buffer[filled..]) {
+            Ok(0) => break,
+            Ok(read_count) => filled += read_count,
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(error) => return Err(StreamError::Read(error)),
+        }
+    }
+
+    Ok(filled)
 }
 
 pub struct V1PayloadStream;
@@ -123,11 +138,11 @@ impl V1PayloadEncryptor {
 
         let mut read_buffer = vec![0u8; BLOCK_SIZE].into_boxed_slice();
         loop {
-            let read_count = match reader.read(&mut read_buffer) {
+            let read_count = match read_up_to_full(reader, &mut read_buffer) {
                 Ok(read_count) => read_count,
                 Err(error) => {
                     read_buffer.zeroize();
-                    return Err(StreamError::Read(error));
+                    return Err(error);
                 }
             };
 
@@ -218,11 +233,11 @@ impl V1PayloadDecryptor {
 
         let mut buffer = vec![0u8; BLOCK_SIZE + 16].into_boxed_slice();
         loop {
-            let read_count = match reader.read(&mut buffer) {
+            let read_count = match read_up_to_full(reader, &mut buffer) {
                 Ok(read_count) => read_count,
                 Err(error) => {
                     buffer.zeroize();
-                    return Err(StreamError::Read(error));
+                    return Err(error);
                 }
             };
 

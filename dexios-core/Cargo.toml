@@ -25,9 +25,6 @@ default = []
 visual = ["indicatif"]
 
 [dependencies]
-# for errors, only temporary
-anyhow.workspace = true
-
 # AEADS
 chacha20poly1305.workspace = true
 aead.workspace = true

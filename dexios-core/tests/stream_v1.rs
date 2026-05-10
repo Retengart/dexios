@@ -1,4 +1,4 @@
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 
 use dexios_core::header::common::{KeyslotNonce, PayloadNonce, Salt as HeaderSalt};
 use dexios_core::header::v1::{V1Header, V1Keyslot, V1Keyslots};
@@ -106,6 +106,25 @@ fn decrypt_file_with(
     (result, scratch)
 }
 
+struct ShortRead<R> {
+    inner: R,
+    max_chunk: usize,
+}
+
+impl<R> ShortRead<R> {
+    fn new(inner: R, max_chunk: usize) -> Self {
+        assert!(max_chunk > 0, "short-read chunk size must be nonzero");
+        Self { inner, max_chunk }
+    }
+}
+
+impl<R: Read> Read for ShortRead<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let limit = buf.len().min(self.max_chunk);
+        self.inner.read(&mut buf[..limit])
+    }
+}
+
 #[test]
 fn v1_stream_roundtrips_with_header_derived_aad() {
     let header = support::sample_v1_header();
@@ -129,6 +148,52 @@ fn v1_stream_roundtrips_with_header_derived_aad() {
         &mut decrypted,
     )
     .expect("decrypt v1 stream");
+
+    assert_eq!(decrypted, plaintext);
+}
+
+#[test]
+fn encrypt_file_fills_plaintext_block_before_finalizing_on_short_reads() {
+    let header = support::sample_v1_header();
+    let payload = support::parsed_payload_for(&header);
+    let plaintext = plaintext_spanning_normal_chunks();
+
+    let mut encrypted = Vec::new();
+    let mut reader = ShortRead::new(Cursor::new(plaintext.as_slice()), 257);
+    V1PayloadStream::encrypt_file(support::master_key(), &header, &mut reader, &mut encrypted)
+        .expect("encrypt v1 stream from short-reading source");
+
+    let mut decrypted = Vec::new();
+    V1PayloadStream::decrypt_file(
+        support::master_key(),
+        &payload,
+        &mut Cursor::new(encrypted),
+        &mut decrypted,
+    )
+    .expect("decrypt v1 stream");
+
+    assert_eq!(decrypted, plaintext);
+}
+
+#[test]
+fn decrypt_file_fills_ciphertext_block_before_finalizing_on_short_reads() {
+    let header = support::sample_v1_header();
+    let payload = support::parsed_payload_for(&header);
+    let plaintext = plaintext_spanning_normal_chunks();
+
+    let mut encrypted = Vec::new();
+    V1PayloadStream::encrypt_file(
+        support::master_key(),
+        &header,
+        &mut Cursor::new(plaintext.as_slice()),
+        &mut encrypted,
+    )
+    .expect("encrypt v1 stream");
+
+    let mut decrypted = Vec::new();
+    let mut reader = ShortRead::new(Cursor::new(encrypted.as_slice()), 257);
+    V1PayloadStream::decrypt_file(support::master_key(), &payload, &mut reader, &mut decrypted)
+        .expect("decrypt v1 stream from short-reading source");
 
     assert_eq!(decrypted, plaintext);
 }

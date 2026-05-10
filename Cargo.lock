@@ -317,7 +317,6 @@ name = "dexios-core"
 version = "1.2.0"
 dependencies = [
  "aead",
- "anyhow",
  "balloon-hash",
  "blake3",
  "chacha20poly1305",

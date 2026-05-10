@@ -21,7 +21,7 @@ specific diagnosis.
 
 ## Security Notices
 
-The RustCrypto `aes-gcm` and `chacha20poly1305` implementations used by Dexios are based on audited upstream crates. Dexios itself does not claim a full-project external audit.
+The RustCrypto `chacha20poly1305` implementation used by Dexios is based on audited upstream crates. Dexios itself does not claim a full-project external audit.
 
 Dexios uses authenticated encryption and authenticates header data through AEAD AAD. Integrity of encrypted payloads does not depend on the optional checksum output.
 
