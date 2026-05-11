@@ -1,9 +1,7 @@
-use std::ffi::OsString;
 use std::fs;
-use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 use crate::global::states::{
     DeleteSource, DirectoryMode, HeaderLocation, PasswordState, PrintMode,
@@ -11,7 +9,7 @@ use crate::global::states::{
 use crate::global::structs::{CryptoParams, PackParams};
 use crate::info;
 use domain::archive::ArchivePolicy;
-use domain::storage::Storage;
+use domain::pack::{DetachedHeaderTarget, PackIntent};
 use domain::storage::identity::OverwritePolicy;
 
 use crate::cli::prompt::overwrite_check;
@@ -34,143 +32,6 @@ pub struct Request<'a> {
     pub crypto_params: CryptoParams,
 }
 
-#[cfg(windows)]
-fn prefix_label(prefix: std::path::PrefixComponent<'_>) -> OsString {
-    use std::path::Prefix;
-
-    match prefix.kind() {
-        Prefix::Disk(drive) | Prefix::VerbatimDisk(drive) => {
-            OsString::from(format!("drive-{}", char::from(drive).to_ascii_uppercase()))
-        }
-        Prefix::UNC(server, share) | Prefix::VerbatimUNC(server, share) => {
-            let mut label = OsString::from("unc-");
-            label.push(server);
-            label.push("-");
-            label.push(share);
-            label
-        }
-        Prefix::DeviceNS(device) => {
-            let mut label = OsString::from("device-");
-            label.push(device);
-            label
-        }
-        Prefix::Verbatim(name) => {
-            let mut label = OsString::from("verbatim-");
-            label.push(name);
-            label
-        }
-    }
-}
-
-fn normalized_absolute_components(path: &Path) -> Vec<OsString> {
-    let mut components = Vec::new();
-
-    for component in path.components() {
-        match component {
-            #[cfg(windows)]
-            Component::Prefix(prefix) => components.push(prefix_label(prefix)),
-            #[cfg(not(windows))]
-            Component::Prefix(_) => {}
-            Component::RootDir | Component::CurDir => {}
-            Component::ParentDir => {
-                components.pop();
-            }
-            Component::Normal(part) => components.push(part.to_os_string()),
-        }
-    }
-
-    components
-}
-
-fn normalized_path_components(path: &Path) -> Result<Vec<OsString>> {
-    let current_dir = std::env::current_dir().context("Unable to read current directory")?;
-    let current_dir_components = normalized_absolute_components(&current_dir);
-    let resolved = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        current_dir.join(path)
-    };
-    let mut components = normalized_absolute_components(&resolved);
-
-    if components.starts_with(&current_dir_components) {
-        let relative = components.split_off(current_dir_components.len());
-        if relative.is_empty() {
-            let fallback = current_dir
-                .file_name()
-                .map(|name| name.to_os_string())
-                .unwrap_or_else(|| OsString::from("root"));
-            return Ok(vec![fallback]);
-        }
-        return Ok(relative);
-    }
-
-    if components.is_empty() {
-        return Err(anyhow::anyhow!(
-            "Unable to derive archive root name from input path"
-        ));
-    }
-
-    Ok(components)
-}
-
-fn suffix_path(components: &[OsString], suffix_len: usize) -> PathBuf {
-    let start = components.len().saturating_sub(suffix_len);
-    let mut path = PathBuf::new();
-    for component in &components[start..] {
-        path.push(component);
-    }
-    path
-}
-
-fn archive_root_names(inputs: &[String]) -> Result<Vec<PathBuf>> {
-    let components = inputs
-        .iter()
-        .map(|input| normalized_path_components(Path::new(input)))
-        .collect::<Result<Vec<_>>>()?;
-
-    let mut suffix_lengths = vec![1usize; components.len()];
-
-    loop {
-        let roots = components
-            .iter()
-            .zip(&suffix_lengths)
-            .map(|(parts, suffix_len)| suffix_path(parts, *suffix_len))
-            .collect::<Vec<_>>();
-
-        let mut collisions = std::collections::HashMap::<PathBuf, Vec<usize>>::new();
-        for (index, root) in roots.iter().enumerate() {
-            collisions.entry(root.clone()).or_default().push(index);
-        }
-
-        let mut progressed = false;
-        let mut has_collision = false;
-
-        for indexes in collisions.into_values() {
-            if indexes.len() == 1 {
-                continue;
-            }
-
-            has_collision = true;
-            for index in indexes {
-                if suffix_lengths[index] < components[index].len() {
-                    suffix_lengths[index] += 1;
-                    progressed = true;
-                }
-            }
-        }
-
-        if !has_collision {
-            return Ok(roots);
-        }
-
-        if !progressed {
-            return Err(anyhow::anyhow!(
-                "Input paths must resolve to unique archive roots"
-            ));
-        }
-    }
-}
-
 fn overwrite_policy_for(path: &Path) -> OverwritePolicy {
     if fs::symlink_metadata(path).is_ok() {
         OverwritePolicy::ReplaceAtCommit
@@ -185,9 +46,6 @@ fn overwrite_policy_for(path: &Path) -> OverwritePolicy {
 // once compressed, it encrypts the zip file
 // it drops/deletes the temporary archive afterwards; this is cleanup only, not a secure-erase guarantee
 pub fn execute(req: &Request) -> Result<()> {
-    // TODO: It is necessary to raise it to a higher level
-    let stor = Arc::new(domain::storage::FileStorage);
-
     // 1. validate and prepare options
     if req.input_file.iter().any(|f| f == req.output_file) {
         return Err(anyhow::anyhow!(
@@ -224,66 +82,29 @@ pub fn execute(req: &Request) -> Result<()> {
         return Ok(());
     }
 
-    let input_files = req
-        .input_file
-        .iter()
-        .map(|file_name| stor.read_file(file_name))
-        .collect::<Result<Vec<_>, _>>()?;
+    let input_files = req.input_file.iter().map(PathBuf::from).collect::<Vec<_>>();
     let raw_key = req.crypto_params.key.get_secret(&PasswordState::Validate)?;
 
-    let archive_root_names = archive_root_names(req.input_file)?;
-
-    let mut entries = Vec::new();
-    for (file, archive_root_name) in input_files.into_iter().zip(archive_root_names) {
-        let root_path = file.path().to_path_buf();
-
-        if file.is_dir() {
-            let files = stor.read_dir(&file)?;
-            for source in files {
-                let relative = source
-                    .path()
-                    .strip_prefix(&root_path)
-                    .map_err(|_| domain::storage::Error::DirEntries)?;
-                let archive_path = if relative.as_os_str().is_empty() {
-                    archive_root_name.clone()
-                } else {
-                    archive_root_name.join(relative)
-                };
-
-                if req.pack_params.print_mode == PrintMode::Verbose {
-                    info!("Packing {}", archive_path.display());
-                }
-
-                entries.push(domain::pack::ArchiveSourceEntry {
-                    source,
-                    archive_path,
-                });
-            }
-        } else {
-            if req.pack_params.print_mode == PrintMode::Verbose {
-                info!("Packing {}", archive_root_name.display());
-            }
-            entries.push(domain::pack::ArchiveSourceEntry {
-                source: file,
-                archive_path: archive_root_name,
-            });
-        }
-    }
+    let on_archive_entry = (req.pack_params.print_mode == PrintMode::Verbose).then(|| {
+        Box::new(|archive_path: &Path| {
+            info!("Packing {}", archive_path.display());
+        }) as domain::pack::OnArchiveEntryFn
+    });
 
     // 2. compress and encrypt files
-    let commit_receipt =
-        domain::pack::execute_transactional(domain::pack::TransactionalPackRequest {
-            source_paths: req.input_file.iter().map(PathBuf::from).collect(),
-            entries,
-            output_path,
-            detached_header_path,
-            output_overwrite_policy,
-            detached_header_overwrite_policy,
-            raw_key,
-            kdf: req.crypto_params.kdf,
-            archive_policy: ArchivePolicy::default(),
-            recursive: req.pack_params.dir_mode == DirectoryMode::Recursive,
-        })?;
+    let intent = PackIntent::new(
+        input_files,
+        output_path,
+        output_overwrite_policy,
+        detached_header_path
+            .map(|path| DetachedHeaderTarget::new(path, detached_header_overwrite_policy)),
+        raw_key,
+        req.crypto_params.kdf,
+        ArchivePolicy::default(),
+        req.pack_params.dir_mode == DirectoryMode::Recursive,
+        on_archive_entry,
+    )?;
+    let commit_receipt = domain::pack::execute_transactional(intent)?;
 
     let hash_verification =
         super::hash_after_commit(&[req.output_file.to_string()], req.crypto_params.hash_mode)?;
@@ -297,42 +118,6 @@ pub fn execute(req: &Request) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
-    #[test]
-    fn archive_root_names_expand_to_minimal_unique_suffixes() {
-        let roots =
-            super::archive_root_names(&["parent1/foo".to_string(), "parent2/foo".to_string()])
-                .unwrap();
-
-        assert_eq!(
-            roots,
-            vec![PathBuf::from("parent1/foo"), PathBuf::from("parent2/foo")]
-        );
-    }
-
-    #[test]
-    fn archive_root_names_keep_shorter_visible_path_when_sibling_is_more_specific() {
-        let roots = super::archive_root_names(&["foo".to_string(), "bar/foo".to_string()]).unwrap();
-
-        assert_eq!(roots, vec![PathBuf::from("foo"), PathBuf::from("bar/foo")]);
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn archive_root_names_distinguish_drive_prefixes_when_needed() {
-        let roots =
-            super::archive_root_names(&[r"C:\foo".to_string(), r"D:\foo".to_string()]).unwrap();
-
-        assert_eq!(
-            roots,
-            vec![
-                PathBuf::from("drive-C").join("foo"),
-                PathBuf::from("drive-D").join("foo"),
-            ]
-        );
-    }
-
     #[test]
     fn detached_header_decline_returns_false_before_work_starts() {
         assert!(!super::should_continue_after_overwrite_checks(true, || Ok(Some(false))).unwrap());

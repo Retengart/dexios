@@ -9,11 +9,11 @@
 //! at-rest archival use, where the user controls the packed input.
 
 use std::cell::RefCell;
+use std::ffi::OsString;
 use std::fs;
 use std::io::{self, BufWriter, Read, Seek, SeekFrom, Write};
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::rc::Rc;
-use std::sync::Arc;
 
 use core::kdf::Kdf;
 use core::primitives::BLOCK_SIZE;
@@ -64,6 +64,8 @@ pub enum Error {
     PathIdentity(IdentityError),
     Transaction(TransactionError),
     TransactionWriter,
+    ArchiveRootName,
+    ReadSource,
 }
 
 impl std::fmt::Display for Error {
@@ -79,6 +81,8 @@ impl std::fmt::Display for Error {
             Error::PathIdentity(inner) => write!(f, "Pack path identity check failed: {inner}"),
             Error::Transaction(inner) => write!(f, "Pack transaction failed: {inner}"),
             Error::TransactionWriter => f.write_str("Unable to release staged pack writers"),
+            Error::ArchiveRootName => f.write_str("Unable to derive archive root names"),
+            Error::ReadSource => f.write_str("Unable to read pack source"),
         }
     }
 }
@@ -97,61 +101,147 @@ impl From<TransactionError> for Error {
     }
 }
 
-pub struct Request<'a, SRW, W>
+pub type OnArchiveEntryFn = Box<dyn Fn(&Path)>;
+
+pub struct DetachedHeaderTarget {
+    path: PathBuf,
+    overwrite: OverwritePolicy,
+}
+
+impl DetachedHeaderTarget {
+    pub fn new<P: AsRef<Path>>(path: P, overwrite: OverwritePolicy) -> Self {
+        Self {
+            path: path.as_ref().to_path_buf(),
+            overwrite,
+        }
+    }
+}
+
+struct PackSource {
+    target: ResolvedTarget,
+    archive_root: PathBuf,
+}
+
+pub struct PackIntent {
+    sources: Vec<PackSource>,
+    output_target: ResolvedTarget,
+    detached_header_target: Option<ResolvedTarget>,
+    raw_key: Protected<Vec<u8>>,
+    kdf: Kdf,
+    archive_policy: ArchivePolicy,
+    on_archive_entry: Option<OnArchiveEntryFn>,
+}
+
+impl PackIntent {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new<S, O>(
+        source_paths: Vec<S>,
+        output_path: O,
+        output_overwrite: OverwritePolicy,
+        detached_header: Option<DetachedHeaderTarget>,
+        raw_key: Protected<Vec<u8>>,
+        kdf: Kdf,
+        archive_policy: ArchivePolicy,
+        _recursive: bool,
+        on_archive_entry: Option<OnArchiveEntryFn>,
+    ) -> Result<Self, Error>
+    where
+        S: AsRef<Path>,
+        O: AsRef<Path>,
+    {
+        let source_paths = source_paths
+            .into_iter()
+            .map(|path| path.as_ref().to_path_buf())
+            .collect::<Vec<_>>();
+        if source_paths.is_empty() {
+            return Err(Error::ArchiveRootName);
+        }
+
+        let archive_roots = archive_root_names(&source_paths)?;
+        let mut graph = PathIdentityGraph::new();
+        let sources = source_paths
+            .iter()
+            .zip(archive_roots)
+            .map(|(source_path, archive_root)| {
+                graph
+                    .add_existing(source_path, PathRole::Input)
+                    .map(|target| PackSource {
+                        target,
+                        archive_root,
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Error::PathIdentity)?;
+
+        let output_target = graph
+            .add_output(output_path, PathRole::GeneratedOutput, output_overwrite)
+            .map_err(Error::PathIdentity)?;
+        let detached_header_target = detached_header
+            .map(|target| {
+                graph.add_output(
+                    target.path,
+                    PathRole::GeneratedDetachedHeader,
+                    target.overwrite,
+                )
+            })
+            .transpose()
+            .map_err(Error::PathIdentity)?;
+        graph.validate().map_err(Error::PathIdentity)?;
+
+        Ok(Self {
+            sources,
+            output_target,
+            detached_header_target,
+            raw_key,
+            kdf,
+            archive_policy,
+            on_archive_entry,
+        })
+    }
+}
+
+struct HandleRequest<'a, SRW, W>
 where
     SRW: Read + Write + Seek,
     W: Write + Seek,
 {
-    pub writer: &'a RefCell<W>,
-    pub entries: Vec<ArchiveSourceEntry<SRW>>,
-    pub archive_policy: ArchivePolicy,
-    pub header_writer: Option<&'a RefCell<W>>,
-    pub raw_key: Protected<Vec<u8>>,
-    pub kdf: Kdf,
+    writer: &'a RefCell<W>,
+    entries: Vec<ArchiveSourceEntry<SRW>>,
+    archive_policy: ArchivePolicy,
+    header_writer: Option<&'a RefCell<W>>,
+    raw_key: Protected<Vec<u8>>,
+    kdf: Kdf,
 }
 
-pub struct TransactionalPackRequest<RW>
+struct ArchiveSourceEntry<RW>
 where
     RW: Read + Write + Seek,
 {
-    pub source_paths: Vec<PathBuf>,
-    pub entries: Vec<ArchiveSourceEntry<RW>>,
-    pub output_path: PathBuf,
-    pub detached_header_path: Option<PathBuf>,
-    pub output_overwrite_policy: OverwritePolicy,
-    pub detached_header_overwrite_policy: OverwritePolicy,
-    pub raw_key: Protected<Vec<u8>>,
-    pub kdf: Kdf,
-    pub archive_policy: ArchivePolicy,
-    pub recursive: bool,
+    source: crate::storage::Entry<RW>,
+    archive_path: PathBuf,
 }
 
-pub struct ArchiveSourceEntry<RW>
-where
-    RW: Read + Write + Seek,
-{
-    pub source: crate::storage::Entry<RW>,
-    pub archive_path: PathBuf,
+pub fn execute(intent: PackIntent) -> Result<CommitReceipt, Error> {
+    execute_transactional(intent)
 }
 
-pub fn execute<SRW, W>(_stor: Arc<impl Storage<SRW>>, req: Request<'_, SRW, W>) -> Result<(), Error>
-where
-    SRW: Read + Write + Seek,
-    W: Write + Seek,
-{
-    execute_with_temp_artifact(req, || {
-        crate::storage::FileStorage
-            .create_temp_artifact()
-            .map_err(|_| Error::CreateArchive)
-    })
-}
+pub fn execute_transactional(intent: PackIntent) -> Result<CommitReceipt, Error> {
+    let PackIntent {
+        sources,
+        output_target,
+        detached_header_target,
+        raw_key,
+        kdf,
+        archive_policy,
+        on_archive_entry,
+    } = intent;
 
-pub fn execute_transactional<RW>(req: TransactionalPackRequest<RW>) -> Result<CommitReceipt, Error>
-where
-    RW: Read + Write + Seek,
-{
-    let (output_target, detached_header_target) = resolve_pack_targets(&req)?;
-    validate_generated_targets_against_entries(&req)?;
+    let entries = materialize_archive_entries(&sources, on_archive_entry.as_deref())?;
+    validate_generated_targets_against_entries(
+        &entries,
+        &output_target,
+        detached_header_target.as_ref(),
+    )?;
 
     let mut transaction = LinkedOutputTransaction::new();
     let output_index = transaction.stage(output_target)?;
@@ -168,13 +258,13 @@ where
         .map(|index| RefCell::new(LinkedStagedWriter::new(Rc::clone(&transaction), index)));
 
     execute_with_temp_artifact(
-        Request {
-            entries: req.entries,
-            archive_policy: req.archive_policy,
+        HandleRequest {
+            entries,
+            archive_policy,
             writer: &output_writer,
             header_writer: detached_header_writer.as_ref(),
-            raw_key: req.raw_key,
-            kdf: req.kdf,
+            raw_key,
+            kdf,
         },
         || {
             crate::storage::FileStorage
@@ -192,7 +282,7 @@ where
 }
 
 fn execute_with_temp_artifact<SRW, W, T, F>(
-    req: Request<'_, SRW, W>,
+    req: HandleRequest<'_, SRW, W>,
     temp_factory: F,
 ) -> Result<(), Error>
 where
@@ -272,58 +362,71 @@ fn zip_compression_method(policy: ArchivePolicy) -> zip::CompressionMethod {
     }
 }
 
-fn resolve_pack_targets<RW>(
-    req: &TransactionalPackRequest<RW>,
-) -> Result<(ResolvedTarget, Option<ResolvedTarget>), Error>
-where
-    RW: Read + Write + Seek,
-{
-    let mut graph = PathIdentityGraph::new();
+fn materialize_archive_entries(
+    sources: &[PackSource],
+    on_archive_entry: Option<&dyn Fn(&Path)>,
+) -> Result<Vec<ArchiveSourceEntry<fs::File>>, Error> {
+    let stor = crate::storage::FileStorage;
+    let mut entries = Vec::new();
 
-    for source_path in &req.source_paths {
-        graph.add_existing(source_path, PathRole::Input)?;
+    for source_root in sources {
+        let file = stor
+            .read_file(source_root.target.target_path())
+            .map_err(|_| Error::ReadSource)?;
+        let root_path = file.path().to_path_buf();
+
+        if file.is_dir() {
+            let files = stor.read_dir(&file).map_err(|_| Error::ReadSource)?;
+            for source in files {
+                let relative = source
+                    .path()
+                    .strip_prefix(&root_path)
+                    .map_err(|_| Error::ReadSource)?;
+                let archive_path = if relative.as_os_str().is_empty() {
+                    source_root.archive_root.clone()
+                } else {
+                    source_root.archive_root.join(relative)
+                };
+
+                if let Some(on_archive_entry) = on_archive_entry {
+                    on_archive_entry(&archive_path);
+                }
+
+                entries.push(ArchiveSourceEntry {
+                    source,
+                    archive_path,
+                });
+            }
+        } else {
+            if let Some(on_archive_entry) = on_archive_entry {
+                on_archive_entry(&source_root.archive_root);
+            }
+            entries.push(ArchiveSourceEntry {
+                source: file,
+                archive_path: source_root.archive_root.clone(),
+            });
+        }
     }
 
-    let output_target = graph.add_output(
-        &req.output_path,
-        PathRole::GeneratedOutput,
-        req.output_overwrite_policy,
-    )?;
-
-    let detached_header_target = req
-        .detached_header_path
-        .as_ref()
-        .map(|path| {
-            graph.add_output(
-                path,
-                PathRole::GeneratedDetachedHeader,
-                req.detached_header_overwrite_policy,
-            )
-        })
-        .transpose()?;
-
-    graph.validate()?;
-
-    Ok((output_target, detached_header_target))
+    Ok(entries)
 }
 
 fn validate_generated_targets_against_entries<RW>(
-    req: &TransactionalPackRequest<RW>,
+    entries: &[ArchiveSourceEntry<RW>],
+    output_target: &ResolvedTarget,
+    detached_header_target: Option<&ResolvedTarget>,
 ) -> Result<(), Error>
 where
     RW: Read + Write + Seek,
 {
-    let generated_target_exists = fs::symlink_metadata(&req.output_path).is_ok()
-        || req
-            .detached_header_path
-            .as_ref()
-            .is_some_and(|path| fs::symlink_metadata(path).is_ok());
+    let generated_target_exists =
+        output_target.exists() || detached_header_target.is_some_and(ResolvedTarget::exists);
 
     if !generated_target_exists {
         return Ok(());
     }
 
-    for entry in &req.entries {
+    for entry in entries {
         if entry.source.is_dir() {
             continue;
         }
@@ -331,21 +434,157 @@ where
         let mut graph = PathIdentityGraph::new();
         graph.add_existing(entry.source.path(), PathRole::Input)?;
         graph.add_output(
-            &req.output_path,
+            output_target.original_path(),
             PathRole::GeneratedOutput,
-            req.output_overwrite_policy,
+            output_target
+                .overwrite_policy()
+                .expect("generated output target has overwrite policy"),
         )?;
-        if let Some(path) = &req.detached_header_path {
+        if let Some(target) = detached_header_target {
             graph.add_output(
-                path,
+                target.original_path(),
                 PathRole::GeneratedDetachedHeader,
-                req.detached_header_overwrite_policy,
+                target
+                    .overwrite_policy()
+                    .expect("generated detached header target has overwrite policy"),
             )?;
         }
         graph.validate()?;
     }
 
     Ok(())
+}
+
+#[cfg(windows)]
+fn prefix_label(prefix: std::path::PrefixComponent<'_>) -> OsString {
+    use std::path::Prefix;
+
+    match prefix.kind() {
+        Prefix::Disk(drive) | Prefix::VerbatimDisk(drive) => {
+            OsString::from(format!("drive-{}", char::from(drive).to_ascii_uppercase()))
+        }
+        Prefix::UNC(server, share) | Prefix::VerbatimUNC(server, share) => {
+            let mut label = OsString::from("unc-");
+            label.push(server);
+            label.push("-");
+            label.push(share);
+            label
+        }
+        Prefix::DeviceNS(device) => {
+            let mut label = OsString::from("device-");
+            label.push(device);
+            label
+        }
+        Prefix::Verbatim(name) => {
+            let mut label = OsString::from("verbatim-");
+            label.push(name);
+            label
+        }
+    }
+}
+
+fn normalized_absolute_components(path: &Path) -> Vec<OsString> {
+    let mut components = Vec::new();
+
+    for component in path.components() {
+        match component {
+            #[cfg(windows)]
+            Component::Prefix(prefix) => components.push(prefix_label(prefix)),
+            #[cfg(not(windows))]
+            Component::Prefix(_) => {}
+            Component::RootDir | Component::CurDir => {}
+            Component::ParentDir => {
+                components.pop();
+            }
+            Component::Normal(part) => components.push(part.to_os_string()),
+        }
+    }
+
+    components
+}
+
+fn normalized_path_components(path: &Path) -> Result<Vec<OsString>, Error> {
+    let current_dir = std::env::current_dir().map_err(|_| Error::ArchiveRootName)?;
+    let current_dir_components = normalized_absolute_components(&current_dir);
+    let resolved = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        current_dir.join(path)
+    };
+    let mut components = normalized_absolute_components(&resolved);
+
+    if components.starts_with(&current_dir_components) {
+        let relative = components.split_off(current_dir_components.len());
+        if relative.is_empty() {
+            let fallback = current_dir
+                .file_name()
+                .map_or_else(|| OsString::from("root"), std::ffi::OsStr::to_os_string);
+            return Ok(vec![fallback]);
+        }
+        return Ok(relative);
+    }
+
+    if components.is_empty() {
+        return Err(Error::ArchiveRootName);
+    }
+
+    Ok(components)
+}
+
+fn suffix_path(components: &[OsString], suffix_len: usize) -> PathBuf {
+    let start = components.len().saturating_sub(suffix_len);
+    let mut path = PathBuf::new();
+    for component in &components[start..] {
+        path.push(component);
+    }
+    path
+}
+
+fn archive_root_names(inputs: &[PathBuf]) -> Result<Vec<PathBuf>, Error> {
+    let components = inputs
+        .iter()
+        .map(|input| normalized_path_components(input))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut suffix_lengths = vec![1usize; components.len()];
+
+    loop {
+        let roots = components
+            .iter()
+            .zip(&suffix_lengths)
+            .map(|(parts, suffix_len)| suffix_path(parts, *suffix_len))
+            .collect::<Vec<_>>();
+
+        let mut collisions = std::collections::HashMap::<PathBuf, Vec<usize>>::new();
+        for (index, root) in roots.iter().enumerate() {
+            collisions.entry(root.clone()).or_default().push(index);
+        }
+
+        let mut progressed = false;
+        let mut has_collision = false;
+
+        for indexes in collisions.into_values() {
+            if indexes.len() == 1 {
+                continue;
+            }
+
+            has_collision = true;
+            for index in indexes {
+                if suffix_lengths[index] < components[index].len() {
+                    suffix_lengths[index] += 1;
+                    progressed = true;
+                }
+            }
+        }
+
+        if !has_collision {
+            return Ok(roots);
+        }
+
+        if !progressed {
+            return Err(Error::ArchiveRootName);
+        }
+    }
 }
 
 struct LinkedStagedWriter {
@@ -394,6 +633,7 @@ fn transaction_to_io_error(error: TransactionError) -> io::Error {
 pub(crate) mod tests {
     use super::*;
     use std::io::{Cursor, Read};
+    use std::sync::Arc;
 
     use crate::archive::ArchivePolicy;
     use crate::encrypt::tests::PASSWORD;
@@ -478,7 +718,7 @@ pub(crate) mod tests {
 
         let output_file = stor.create_file("bar.zip.enc").unwrap();
 
-        let req = Request {
+        let req = HandleRequest {
             entries,
             archive_policy: ArchivePolicy::default(),
             writer: output_file.try_writer().unwrap(),
@@ -487,7 +727,11 @@ pub(crate) mod tests {
             kdf: Kdf::Blake3Balloon,
         };
 
-        match execute(stor, req) {
+        match execute_with_temp_artifact(req, || {
+            crate::storage::FileStorage
+                .create_temp_artifact()
+                .map_err(|_| Error::CreateArchive)
+        }) {
             Ok(()) => {
                 let reader = &mut *output_file.try_writer().unwrap().borrow_mut();
                 reader.rewind().unwrap();
