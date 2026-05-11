@@ -7,6 +7,8 @@ use core::primitives::ENCRYPTED_MASTER_KEY_LEN;
 use core::primitives::{MasterKey, WrappingKey};
 use core::protected::Protected;
 
+use crate::storage::identity::IdentityError;
+use crate::storage::transaction::TransactionError;
 use crate::workflow_error::WorkflowErrorClass;
 
 pub mod add;
@@ -32,6 +34,8 @@ pub enum Error {
     ReadIo,
     HeaderWrite,
     Seek,
+    PathIdentity(IdentityError),
+    Transaction(TransactionError),
     CannotRemoveFinalV1Keyslot,
     CannotAddV1KeyslotWithoutReencrypt,
 }
@@ -50,6 +54,8 @@ impl Error {
             Self::UnsupportedKdf(_) | Self::KeyHash => WorkflowErrorClass::KdfFailure,
             Self::IncorrectKey => WorkflowErrorClass::IncorrectKey,
             Self::HeaderWrite | Self::Seek | Self::ReadIo => WorkflowErrorClass::IoFailure,
+            Self::PathIdentity(error) => crate::workflow_error::classify_identity_error(error),
+            Self::Transaction(error) => crate::workflow_error::classify_transaction_error(error),
             Self::TooManyKeyslots
             | Self::CannotRemoveFinalV1Keyslot
             | Self::CannotAddV1KeyslotWithoutReencrypt => WorkflowErrorClass::UnsupportedWorkflow,
@@ -74,6 +80,8 @@ impl std::fmt::Display for Error {
             }
             Error::MalformedV1Header(error) => write!(f, "Malformed Dexios V1 header: {error}"),
             Error::ReadIo => f.write_str("Unable to read key workflow target"),
+            Error::PathIdentity(error) => write!(f, "{error}"),
+            Error::Transaction(error) => write!(f, "{error}"),
             Error::CannotRemoveFinalV1Keyslot => f.write_str("Cannot remove the final V1 keyslot"),
             Error::CannotAddV1KeyslotWithoutReencrypt => {
                 f.write_str("Cannot add a V1 keyslot without re-encrypting the payload")
@@ -183,7 +191,7 @@ pub(crate) fn all_keyslots_have_unsupported_kdf(keyslots: &V1Keyslots) -> Option
 
 // TODO(brxken128): make this available in the core
 pub fn encrypt_master_key(
-    master_key: MasterKey,
+    master_key: &MasterKey,
     key_new: Protected<[u8; 32]>,
     nonce: &KeyslotNonce,
 ) -> Result<[u8; ENCRYPTED_MASTER_KEY_LEN], Error> {

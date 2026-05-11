@@ -7,7 +7,7 @@ use core::protected::Protected;
 use dexios_domain::{decrypt, encrypt, key};
 use std::cell::RefCell;
 use std::fs::{self, File};
-use std::io::{Cursor, Seek, Write};
+use std::io::{Cursor, Seek};
 use std::path::{Path, PathBuf};
 
 const DOMAIN_KEY_SOURCE: &str = include_str!("../src/key.rs");
@@ -577,7 +577,9 @@ fn key_change_commits_replacement_header_that_only_new_key_can_use() {
         original_header.payload_nonce(),
         "key change must preserve payload nonce"
     );
-    let serialized = changed_header.serialize().expect("serialize changed header");
+    let serialized = changed_header
+        .serialize()
+        .expect("serialize changed header");
     assert_eq!(serialized.len(), HEADER_LEN);
     let reparsed =
         V1Header::deserialize(&mut Cursor::new(serialized)).expect("reparse changed header");
@@ -660,31 +662,30 @@ fn key_delete_failure_preserves_original_header() {
 #[test]
 fn can_change_and_reject_final_delete_v1_keyslots() {
     // Manifest fixture: keyslot-mutation-two-keyslots.
-    let encrypted = encrypted_v1_fixture();
+    let (_dir, encrypted_path) = encrypted_v1_file("change-final-delete");
 
-    verify_fixture(&encrypted, b"old-pass").expect("verify original key");
+    verify_file(&encrypted_path, b"old-pass").expect("verify original key");
 
-    encrypted
-        .borrow_mut()
-        .rewind()
-        .expect("rewind before change");
-    key::change::execute(key::change::Request {
-        handle: &encrypted,
-        raw_key_old: Protected::new(b"old-pass".to_vec()),
-        raw_key_new: Protected::new(b"new-pass".to_vec()),
-        kdf: Kdf::Blake3Balloon,
-    })
+    let intent = key::change::ChangeIntent::new(&encrypted_path).expect("prepare change intent");
+    let proven = intent
+        .verify_old_key(Protected::new(b"old-pass".to_vec()))
+        .expect("old key proof");
+    key::change::execute(
+        proven,
+        Protected::new(b"new-pass".to_vec()),
+        Kdf::Blake3Balloon,
+    )
     .expect("change keyslot");
-    assert_eq!(keyslot_kdfs(&encrypted), [KeyslotKdf::Blake3Balloon]);
 
-    verify_fixture(&encrypted, b"new-pass").expect("verify changed key");
+    let changed = RefCell::new(Cursor::new(
+        fs::read(&encrypted_path).expect("read changed fixture"),
+    ));
+    assert_eq!(keyslot_kdfs(&changed), [KeyslotKdf::Blake3Balloon]);
 
-    encrypted
-        .borrow_mut()
-        .rewind()
-        .expect("rewind before delete");
-    let delete = key::delete::execute(key::delete::Request {
-        handle: &encrypted,
+    verify_file(&encrypted_path, b"new-pass").expect("verify changed key");
+
+    let delete = key::delete::execute_transactional(key::delete::TransactionalRequest {
+        target_path: &encrypted_path,
         raw_key_old: Protected::new(b"new-pass".to_vec()),
     });
     assert!(matches!(
@@ -692,6 +693,6 @@ fn can_change_and_reject_final_delete_v1_keyslots() {
         Err(key::Error::CannotRemoveFinalV1Keyslot)
     ));
 
-    let plaintext = decrypt_fixture(&encrypted, b"new-pass").expect("decrypt with changed key");
+    let plaintext = decrypt_file(&encrypted_path, b"new-pass").expect("decrypt with changed key");
     assert_eq!(plaintext, b"Hello world");
 }

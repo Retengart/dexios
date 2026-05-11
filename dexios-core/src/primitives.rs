@@ -35,6 +35,11 @@ impl MasterKey {
     pub(crate) fn with_exposed<R>(&self, f: impl FnOnce(&[u8; MASTER_KEY_LEN]) -> R) -> R {
         self.0.with_exposed(f)
     }
+
+    #[must_use]
+    pub fn same_secret_as(&self, other: &Self) -> bool {
+        self.with_exposed(|left| other.with_exposed(|right| left == right))
+    }
 }
 
 impl From<Protected<[u8; MASTER_KEY_LEN]>> for MasterKey {
