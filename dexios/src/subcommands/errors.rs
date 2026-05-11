@@ -107,6 +107,15 @@ pub fn map_header_error(error: domain::header::Error) -> anyhow::Error {
 
 pub fn map_key_error(error: domain::key::Error) -> anyhow::Error {
     match error {
+        domain::key::Error::InvalidMagic(magic) => {
+            anyhow!("Invalid Dexios header magic: {magic:02X?}")
+        }
+        domain::key::Error::UnsupportedFormat(_) | domain::key::Error::UnsupportedVersion(_) => {
+            anyhow!("Unsupported Dexios format")
+        }
+        domain::key::Error::MalformedV1Header(error) => {
+            anyhow!("Malformed Dexios V1 header: {error}")
+        }
         domain::key::Error::UnsupportedKdf(tag) => {
             anyhow!("Unsupported keyslot KDF tag: {tag:02X?}")
         }
@@ -126,6 +135,7 @@ pub fn map_key_error(error: domain::key::Error) -> anyhow::Error {
         domain::key::Error::HeaderSizeParse | domain::key::Error::HeaderDeserialize => {
             anyhow!("Malformed Dexios V1 header")
         }
+        domain::key::Error::ReadIo => anyhow!("I/O failure while reading key workflow target"),
         domain::key::Error::KeyHash => anyhow!("Unable to derive key"),
         domain::key::Error::HeaderWrite | domain::key::Error::Seek => {
             anyhow!("I/O failure while updating keyslots")
