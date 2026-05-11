@@ -6,6 +6,8 @@ mod fs;
 #[cfg(test)]
 mod memory;
 mod temp;
+/// Deterministic failure hooks for storage safety tests; runtime workflows do not use them.
+pub mod test_support;
 
 pub use entry::{Entry, FileData};
 pub use fs::FileStorage;

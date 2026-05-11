@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use dexios_domain::storage::test_support::{FailureHooks, FailurePoint};
+
 struct TestDir {
     _dir: tempfile::TempDir,
     path: PathBuf,
@@ -34,4 +36,23 @@ fn cleanup_receipt_harness_uses_disposable_targets() {
     // D-17 requires delete-after-success tests to use real cleanup targets.
     assert_eq!(fs::read(&committed_output).unwrap(), b"committed output");
     assert!(!cleanup_target.exists());
+}
+
+#[test]
+fn failure_hooks_select_cleanup_failure_point() {
+    let hooks = FailureHooks::fail_on(FailurePoint::Cleanup);
+
+    for point in [
+        FailurePoint::Write,
+        FailurePoint::Flush,
+        FailurePoint::Sync,
+        FailurePoint::Persist,
+    ] {
+        assert!(hooks.check(point).is_ok(), "non-cleanup point should pass");
+    }
+
+    let error = hooks
+        .check(FailurePoint::Cleanup)
+        .expect_err("cleanup point should fail");
+    assert_eq!(error.point(), FailurePoint::Cleanup);
 }
