@@ -26,6 +26,9 @@ use crate::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
 };
 use crate::storage::transaction::{CommitReceipt, LinkedOutputTransaction, TransactionError};
+use crate::workflow_error::{
+    WorkflowErrorClass, classify_identity_error, classify_transaction_error,
+};
 
 trait TempArtifactLike {
     fn with_reader<T, E>(&self, f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>) -> Result<T, E>;
@@ -90,6 +93,26 @@ impl std::fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+impl Error {
+    #[must_use]
+    pub fn workflow_class(&self) -> WorkflowErrorClass {
+        match self {
+            Self::Encrypt(error) => error.workflow_class(),
+            Self::PathIdentity(error) => classify_identity_error(error),
+            Self::Transaction(error) => classify_transaction_error(error),
+            Self::ArchiveLimit(_) | Self::ArchiveRootName => WorkflowErrorClass::UnsafePath,
+            Self::CreateArchive
+            | Self::AddDirToArchive
+            | Self::AddFileToArchive
+            | Self::FinishArchive
+            | Self::ReadData
+            | Self::WriteData
+            | Self::TransactionWriter
+            | Self::ReadSource => WorkflowErrorClass::IoFailure,
+        }
+    }
+}
 
 impl From<IdentityError> for Error {
     fn from(value: IdentityError) -> Self {

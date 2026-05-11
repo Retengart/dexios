@@ -5,6 +5,7 @@ use anyhow::Result;
 
 use domain::storage::Storage;
 
+use super::errors::map_unpack_error;
 use crate::global::{
     states::{ForceMode, HeaderLocation, PasswordState, PrintMode},
     structs::CryptoParams,
@@ -76,17 +77,22 @@ pub fn unpack(
             on_archive_info: None,
             on_zip_file: Some(Box::new(move |file_path| {
                 should_unpack_entry(&file_path, params.force, verbose, get_answer)
-                    .map_err(|err| err.to_string())
+                    .map_err(|_| String::from("prompt failed"))
             })),
         },
-    )?;
+    )
+    .map_err(map_unpack_error)?;
 
-    let hash_verification = super::hash_after_commit(&[input.to_string()], params.hash_mode)?;
+    let hash_verification = super::hash_after_commit(&[String::from(input)], params.hash_mode)?;
 
     if params.delete_input == DeleteInput::Delete {
         drop(header_file);
         drop(input_file);
-        super::cleanup_after_commit(&[input.to_string()], &extraction_receipt, hash_verification)?;
+        super::cleanup_after_commit(
+            &[String::from(input)],
+            &extraction_receipt,
+            hash_verification,
+        )?;
     }
 
     Ok(())

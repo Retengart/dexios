@@ -44,6 +44,49 @@ pub fn map_decrypt_error(error: domain::decrypt::Error) -> anyhow::Error {
     }
 }
 
+pub fn map_pack_error(error: domain::pack::Error) -> anyhow::Error {
+    match error.workflow_class() {
+        WorkflowErrorClass::UnsafePath => match error {
+            domain::pack::Error::ArchiveLimit(_) => anyhow!("Archive limit error: {error}"),
+            _ => anyhow!("Unsafe path: {error}"),
+        },
+        WorkflowErrorClass::IoFailure => anyhow!("I/O failure while packing archive"),
+        WorkflowErrorClass::TransactionCommitFailure => {
+            anyhow!("Unable to commit packed archive")
+        }
+        WorkflowErrorClass::AuthenticationFailure | WorkflowErrorClass::IncorrectKey => {
+            anyhow!("Authentication failed")
+        }
+        WorkflowErrorClass::MalformedFormat => anyhow!("Malformed archive data"),
+        WorkflowErrorClass::UnsupportedFormat => anyhow!("Unsupported archive format"),
+        WorkflowErrorClass::KdfFailure => anyhow!("Unable to derive archive encryption key"),
+        WorkflowErrorClass::OverwriteDenied => anyhow!("Output already exists"),
+        WorkflowErrorClass::UnsupportedWorkflow | WorkflowErrorClass::Other => {
+            anyhow!("Archive packing failed")
+        }
+    }
+}
+
+pub fn map_unpack_error(error: domain::unpack::Error) -> anyhow::Error {
+    match error.workflow_class() {
+        WorkflowErrorClass::UnsafePath => anyhow!("Unsafe archive path: {error}"),
+        WorkflowErrorClass::MalformedFormat => anyhow!("Malformed archive data"),
+        WorkflowErrorClass::UnsupportedFormat => anyhow!("Unsupported archive format"),
+        WorkflowErrorClass::AuthenticationFailure | WorkflowErrorClass::IncorrectKey => {
+            anyhow!("Authentication failed")
+        }
+        WorkflowErrorClass::KdfFailure => anyhow!("Unable to derive archive decryption key"),
+        WorkflowErrorClass::IoFailure => anyhow!("I/O failure while unpacking archive"),
+        WorkflowErrorClass::TransactionCommitFailure => {
+            anyhow!("Unable to commit unpacked output")
+        }
+        WorkflowErrorClass::OverwriteDenied => anyhow!("Output already exists"),
+        WorkflowErrorClass::UnsupportedWorkflow | WorkflowErrorClass::Other => {
+            anyhow!("Archive unpacking failed")
+        }
+    }
+}
+
 pub fn map_header_error(error: domain::header::Error) -> anyhow::Error {
     match error {
         domain::header::Error::InvalidMagic(magic) => {

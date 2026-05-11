@@ -6,6 +6,8 @@ const CLI_STATES: &str = include_str!("../../dexios/src/global/states.rs");
 const CLI_PARAMETERS: &str = include_str!("../../dexios/src/global/parameters.rs");
 const CLI: &str = include_str!("../../dexios/src/cli.rs");
 const CLI_PACK: &str = include_str!("../../dexios/src/subcommands/pack.rs");
+const CLI_UNPACK: &str = include_str!("../../dexios/src/subcommands/unpack.rs");
+const CLI_ERRORS: &str = include_str!("../../dexios/src/subcommands/errors.rs");
 
 #[derive(Clone, Copy)]
 struct Source<'a> {
@@ -48,6 +50,14 @@ fn cli_archive_sources() -> Vec<Source<'static>> {
         Source {
             path: "dexios/src/subcommands/pack.rs",
             text: CLI_PACK,
+        },
+        Source {
+            path: "dexios/src/subcommands/unpack.rs",
+            text: CLI_UNPACK,
+        },
+        Source {
+            path: "dexios/src/subcommands/errors.rs",
+            text: CLI_ERRORS,
         },
     ]
 }
@@ -257,6 +267,60 @@ fn d10_pack_execution_requires_validated_domain_intent() {
     assert_no_violations(cli_violations);
 }
 
+#[test]
+fn archive_cli_errors_use_typed_mappers_without_formatted_error_control_flow() {
+    assert!(
+        CLI_ERRORS.contains("map_pack_error") && CLI_PACK.contains("map_pack_error"),
+        "pack CLI must route domain errors through map_pack_error"
+    );
+    assert!(
+        CLI_ERRORS.contains("map_unpack_error") && CLI_UNPACK.contains("map_unpack_error"),
+        "unpack CLI must route domain errors through map_unpack_error"
+    );
+
+    let violations = collect_violations(
+        &[
+            Source {
+                path: "dexios/src/subcommands/errors.rs",
+                text: CLI_ERRORS,
+            },
+            Source {
+                path: "dexios/src/subcommands/pack.rs",
+                text: CLI_PACK,
+            },
+            Source {
+                path: "dexios/src/subcommands/unpack.rs",
+                text: CLI_UNPACK,
+            },
+        ],
+        |source| {
+            source
+                .text
+                .lines()
+                .enumerate()
+                .filter_map(|(index, line)| {
+                    let compact = line.split_whitespace().collect::<String>();
+                    if compact.contains("to_string()")
+                        || (compact.contains("format!(") && compact.contains("{err"))
+                        || compact.contains("contains(err")
+                        || compact.contains("contains(error")
+                    {
+                        Some(violation(
+                            source.path,
+                            index,
+                            "archive CLI mapping must not inspect formatted error text",
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        },
+    );
+
+    assert_no_violations(violations);
+}
+
 fn collect_violations(
     sources: &[Source<'_>],
     scan: impl Fn(Source<'_>) -> Vec<String>,
@@ -280,10 +344,7 @@ fn public_line_exposes_zip_type(trimmed: &str) -> bool {
 }
 
 fn public_stored_or_no_compression_policy(trimmed: &str) -> bool {
-    trimmed == "Stored,"
-        || trimmed == "NoCompression,"
-        || trimmed == "Uncompressed,"
-        || trimmed == "None,"
+    trimmed == "Stored," || trimmed == "NoCompression," || trimmed == "Uncompressed,"
 }
 
 fn public_line_exposes_zip_metadata_knob(trimmed: &str) -> bool {

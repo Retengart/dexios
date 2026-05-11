@@ -8,6 +8,7 @@ use crate::global::states::{
 };
 use crate::global::structs::{CryptoParams, PackParams};
 use crate::info;
+use crate::subcommands::errors::map_pack_error;
 use domain::archive::ArchivePolicy;
 use domain::pack::{DetachedHeaderTarget, PackIntent};
 use domain::storage::identity::OverwritePolicy;
@@ -103,11 +104,14 @@ pub fn execute(req: &Request) -> Result<()> {
         ArchivePolicy::default(),
         req.pack_params.dir_mode == DirectoryMode::Recursive,
         on_archive_entry,
-    )?;
-    let commit_receipt = domain::pack::execute_transactional(intent)?;
+    )
+    .map_err(map_pack_error)?;
+    let commit_receipt = domain::pack::execute_transactional(intent).map_err(map_pack_error)?;
 
-    let hash_verification =
-        super::hash_after_commit(&[req.output_file.to_string()], req.crypto_params.hash_mode)?;
+    let hash_verification = super::hash_after_commit(
+        &[String::from(req.output_file)],
+        req.crypto_params.hash_mode,
+    )?;
 
     if req.pack_params.delete_source == DeleteSource::Delete {
         super::cleanup_after_commit(req.input_file, &commit_receipt, hash_verification)?;

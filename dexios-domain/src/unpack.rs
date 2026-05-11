@@ -19,6 +19,9 @@ use crate::storage::identity::{
 };
 use crate::storage::transaction::{CommitReceipt, LinkedOutputTransaction, TransactionError};
 use crate::storage::{self, Storage};
+use crate::workflow_error::{
+    WorkflowErrorClass, classify_identity_error, classify_transaction_error,
+};
 use core::protected::Protected;
 
 trait TempArtifactLike {
@@ -90,6 +93,24 @@ impl std::fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+impl Error {
+    #[must_use]
+    pub fn workflow_class(&self) -> WorkflowErrorClass {
+        match self {
+            Self::UnsafeOutputPath(_) | Self::DuplicateOutputPath(_) | Self::ArchiveLimit(_) => {
+                WorkflowErrorClass::UnsafePath
+            }
+            Self::OpenArchive | Self::OpenArchivedFile => WorkflowErrorClass::MalformedFormat,
+            Self::Decrypt(error) => error.workflow_class(),
+            Self::Storage(error) => classify_storage_error(error),
+            Self::PathIdentity(error) => classify_identity_error(error),
+            Self::Transaction(error) => classify_transaction_error(error),
+            Self::WriteData | Self::ResetCursorPosition => WorkflowErrorClass::IoFailure,
+            Self::OnZipFile(_) => WorkflowErrorClass::Other,
+        }
+    }
+}
 
 type OnArchiveInfo = Box<dyn FnOnce(usize)>;
 type OnZipFileFn = Box<dyn Fn(PathBuf) -> Result<bool, String>>;
@@ -418,6 +439,22 @@ fn map_identity_error(err: IdentityError) -> Error {
     match err {
         IdentityError::UnsafePath(path) => Error::UnsafeOutputPath(path),
         other => Error::PathIdentity(other),
+    }
+}
+
+fn classify_storage_error(error: &storage::Error) -> WorkflowErrorClass {
+    match error {
+        storage::Error::UnsafePath(_) => WorkflowErrorClass::UnsafePath,
+        storage::Error::CreateDir
+        | storage::Error::CreateFile
+        | storage::Error::OpenFile(_)
+        | storage::Error::RemoveFile
+        | storage::Error::RemoveDir
+        | storage::Error::DirEntries
+        | storage::Error::FlushFile
+        | storage::Error::SyncFile
+        | storage::Error::FileAccess
+        | storage::Error::FileLen => WorkflowErrorClass::IoFailure,
     }
 }
 

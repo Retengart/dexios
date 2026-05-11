@@ -6,6 +6,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use core::header::common::{HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN};
+use core::kdf::Kdf;
+use core::protected::Protected;
+use domain::encrypt;
+use domain::storage::identity::OverwritePolicy;
+use zip::write::SimpleFileOptions;
 
 const CORRECT_PASSWORD: &str = "correct-password";
 const WRONG_PASSWORD: &str = "wrong-password";
@@ -15,6 +20,8 @@ const ENCRYPT_SOURCE: &str = include_str!("../src/subcommands/encrypt.rs");
 const DECRYPT_SOURCE: &str = include_str!("../src/subcommands/decrypt.rs");
 const HEADER_SOURCE: &str = include_str!("../src/subcommands/header.rs");
 const KEY_SOURCE: &str = include_str!("../src/subcommands/key.rs");
+const PACK_SOURCE: &str = include_str!("../src/subcommands/pack.rs");
+const UNPACK_SOURCE: &str = include_str!("../src/subcommands/unpack.rs");
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 
 struct TestDir {
@@ -78,6 +85,35 @@ fn encrypt_fixture(test_dir: &TestDir) {
     );
 }
 
+fn write_zip_with_entries(path: &Path, entries: &[(&str, &[u8])]) {
+    let file = fs::File::create(path).unwrap();
+    let mut zip_writer = zip::ZipWriter::new(file);
+    let options = SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored)
+        .large_file(true)
+        .unix_permissions(0o755);
+
+    for (name, body) in entries {
+        zip_writer.start_file(*name, options).unwrap();
+        zip_writer.write_all(body).unwrap();
+    }
+
+    zip_writer.finish().unwrap();
+}
+
+fn encrypt_archive(input_path: &Path, output_path: &Path) {
+    let intent = encrypt::EncryptIntent::new(
+        input_path,
+        output_path,
+        OverwritePolicy::CreateNew,
+        None,
+        Protected::new(CORRECT_PASSWORD.as_bytes().to_vec()),
+        Kdf::Blake3Balloon,
+    )
+    .unwrap();
+    encrypt::execute(intent).unwrap();
+}
+
 fn write_legacy_header(path: &Path) {
     let mut file = fs::File::create(path).unwrap();
     file.write_all(&[0xDE, 0x05]).unwrap();
@@ -105,11 +141,15 @@ fn cli_workflow_errors_are_routed_through_mapping_helpers() {
     assert!(SUBCOMMANDS_SOURCE.contains("pub mod errors;"));
     assert!(ERRORS_SOURCE.contains("map_encrypt_error"));
     assert!(ERRORS_SOURCE.contains("map_decrypt_error"));
+    assert!(ERRORS_SOURCE.contains("map_pack_error"));
+    assert!(ERRORS_SOURCE.contains("map_unpack_error"));
     assert!(ERRORS_SOURCE.contains("map_header_error"));
     assert!(ERRORS_SOURCE.contains("map_key_error"));
     assert!(ERRORS_SOURCE.contains("WorkflowErrorClass::TransactionCommitFailure"));
     assert!(ENCRYPT_SOURCE.contains("map_encrypt_error"));
     assert!(DECRYPT_SOURCE.contains("map_decrypt_error"));
+    assert!(PACK_SOURCE.contains("map_pack_error"));
+    assert!(UNPACK_SOURCE.contains("map_unpack_error"));
     assert!(HEADER_SOURCE.contains("map_header_error"));
     assert!(KEY_SOURCE.contains("map_key_error"));
     assert!(!ERRORS_SOURCE.contains("to_string()"));
@@ -182,6 +222,97 @@ fn unsafe_path_and_transaction_errors_use_typed_cli_mapping() {
         transaction_stderr.contains("commit"),
         "stderr did not expose the transaction failure class: {transaction_stderr}"
     );
+}
+
+#[test]
+fn archive_pack_errors_use_typed_cli_mapping() {
+    let test_dir = TestDir::new("workflow-error-pack");
+    let source_dir = test_dir.path().join("source");
+    fs::create_dir_all(&source_dir).unwrap();
+    fs::write(source_dir.join("hello.txt"), b"hello").unwrap();
+
+    let alias_output = run_cli(
+        test_dir.path(),
+        CORRECT_PASSWORD,
+        &["pack", "--force", "source", "source/archive.enc"],
+    );
+    assert!(!alias_output.status.success());
+    let alias_stderr = stderr(&alias_output);
+    assert!(
+        alias_stderr.contains("Unsafe path"),
+        "pack alias did not expose typed unsafe path class: {alias_stderr}"
+    );
+}
+
+#[test]
+fn archive_unpack_errors_use_typed_cli_mapping() {
+    let test_dir = TestDir::new("workflow-error-unpack");
+    let unsafe_zip = test_dir.path().join("unsafe.zip");
+    let unsafe_archive = test_dir.path().join("unsafe.enc");
+    write_zip_with_entries(&unsafe_zip, &[("../escape.txt", b"escape")]);
+    encrypt_archive(&unsafe_zip, &unsafe_archive);
+
+    let unsafe_output = run_cli(
+        test_dir.path(),
+        CORRECT_PASSWORD,
+        &["unpack", "--force", "unsafe.enc", "out"],
+    );
+    assert!(!unsafe_output.status.success());
+    let unsafe_stderr = stderr(&unsafe_output);
+    assert!(
+        unsafe_stderr.contains("Unsafe archive path"),
+        "unsafe unpack did not expose typed unsafe path class: {unsafe_stderr}"
+    );
+    assert!(!test_dir.path().join("escape.txt").exists());
+
+    let collision_zip = test_dir.path().join("collision.zip");
+    let collision_archive = test_dir.path().join("collision.enc");
+    write_zip_with_entries(&collision_zip, &[("a", b"file"), ("a/b", b"child")]);
+    encrypt_archive(&collision_zip, &collision_archive);
+
+    let collision_output = run_cli(
+        test_dir.path(),
+        CORRECT_PASSWORD,
+        &["unpack", "--force", "collision.enc", "collision-out"],
+    );
+    assert!(!collision_output.status.success());
+    let collision_stderr = stderr(&collision_output);
+    assert!(
+        collision_stderr.contains("Unsafe archive path"),
+        "collision unpack did not expose typed unsafe path class: {collision_stderr}"
+    );
+
+    fs::create_dir_all(test_dir.path().join("packed-source")).unwrap();
+    fs::write(
+        test_dir.path().join("packed-source/plain.txt"),
+        b"top secret",
+    )
+    .unwrap();
+    let pack_output = run_cli(
+        test_dir.path(),
+        CORRECT_PASSWORD,
+        &["pack", "--force", "packed-source", "packed.enc"],
+    );
+    assert!(
+        pack_output.status.success(),
+        "pack fixture failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&pack_output.stdout),
+        stderr(&pack_output)
+    );
+
+    let wrong_key_output = run_cli(
+        test_dir.path(),
+        WRONG_PASSWORD,
+        &["unpack", "--force", "packed.enc", "wrong-key-out"],
+    );
+    assert!(!wrong_key_output.status.success());
+    let wrong_key_stderr = stderr(&wrong_key_output);
+    assert!(
+        wrong_key_stderr.contains("Authentication failed"),
+        "wrong-key unpack did not expose terse auth class: {wrong_key_stderr}"
+    );
+    assert!(!wrong_key_stderr.contains(WRONG_PASSWORD));
+    assert!(!wrong_key_stderr.contains("master key"));
 }
 
 #[test]
