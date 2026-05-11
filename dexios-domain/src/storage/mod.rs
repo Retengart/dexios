@@ -9,12 +9,13 @@ mod memory;
 mod temp;
 /// Deterministic failure hooks for storage safety tests; runtime workflows do not use them.
 pub mod test_support;
+pub mod transaction;
 
 pub use entry::{Entry, FileData};
 pub use fs::FileStorage;
 #[cfg(test)]
 pub use memory::{IMFile, InMemoryFile, InMemoryStorage};
-pub use temp::TempArtifact;
+pub use temp::{NamedStagedOutput, TempArtifact};
 
 #[derive(Debug)]
 pub enum FileMode {
