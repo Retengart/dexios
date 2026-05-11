@@ -1,4 +1,5 @@
 use core::cipher::{unwrap_v1_master_key, wrap_v1_master_key};
+use core::header::HeaderReadError;
 use core::header::common::KeyslotNonce;
 use core::header::v1::{EncryptedMasterKey, KeyslotKdf, V1KeyslotIndex, V1Keyslots};
 use core::kdf::Kdf;
@@ -24,6 +25,11 @@ pub enum Error {
     KeyHash,
     CipherInit,
     HeaderDeserialize,
+    InvalidMagic([u8; 4]),
+    UnsupportedFormat([u8; 2]),
+    UnsupportedVersion([u8; 2]),
+    MalformedV1Header(HeaderReadError),
+    ReadIo,
     HeaderWrite,
     Seek,
     CannotRemoveFinalV1Keyslot,
@@ -35,10 +41,14 @@ impl Error {
     pub fn workflow_class(&self) -> WorkflowErrorClass {
         match self {
             Self::HeaderSizeParse | Self::HeaderDeserialize => WorkflowErrorClass::MalformedFormat,
+            Self::MalformedV1Header(_) => WorkflowErrorClass::MalformedFormat,
+            Self::InvalidMagic(_) | Self::UnsupportedFormat(_) | Self::UnsupportedVersion(_) => {
+                WorkflowErrorClass::UnsupportedFormat
+            }
             Self::Unsupported => WorkflowErrorClass::UnsupportedFormat,
             Self::UnsupportedKdf(_) | Self::KeyHash => WorkflowErrorClass::KdfFailure,
             Self::IncorrectKey => WorkflowErrorClass::IncorrectKey,
-            Self::HeaderWrite | Self::Seek => WorkflowErrorClass::IoFailure,
+            Self::HeaderWrite | Self::Seek | Self::ReadIo => WorkflowErrorClass::IoFailure,
             Self::TooManyKeyslots
             | Self::CannotRemoveFinalV1Keyslot
             | Self::CannotAddV1KeyslotWithoutReencrypt => WorkflowErrorClass::UnsupportedWorkflow,
@@ -54,6 +64,15 @@ impl std::fmt::Display for Error {
             Error::Seek => f.write_str("Unable to seek the data's cursor"),
             Error::HeaderWrite => f.write_str("Unable to write the header"),
             Error::HeaderDeserialize => f.write_str("Unable to deserialize the header"),
+            Error::InvalidMagic(magic) => write!(f, "Invalid Dexios header magic: {magic:02X?}"),
+            Error::UnsupportedFormat(prefix) => {
+                write!(f, "Unsupported Dexios header format: {prefix:02X?}")
+            }
+            Error::UnsupportedVersion(version) => {
+                write!(f, "Unsupported Dexios header version: {version:02X?}")
+            }
+            Error::MalformedV1Header(error) => write!(f, "Malformed Dexios V1 header: {error}"),
+            Error::ReadIo => f.write_str("Unable to read key workflow target"),
             Error::CannotRemoveFinalV1Keyslot => f.write_str("Cannot remove the final V1 keyslot"),
             Error::CannotAddV1KeyslotWithoutReencrypt => {
                 f.write_str("Cannot add a V1 keyslot without re-encrypting the payload")
@@ -134,6 +153,32 @@ pub fn decrypt_v1_master_key_with_index(
 }
 
 impl std::error::Error for Error {}
+
+pub(crate) fn map_header_read_error(error: HeaderReadError) -> Error {
+    match error {
+        HeaderReadError::Io(_) => Error::ReadIo,
+        HeaderReadError::InvalidMagic(magic) => Error::InvalidMagic(magic),
+        HeaderReadError::UnsupportedFormat(prefix) => Error::UnsupportedFormat(prefix),
+        HeaderReadError::UnsupportedVersion(version) => Error::UnsupportedVersion(version),
+        error => Error::MalformedV1Header(error),
+    }
+}
+
+pub(crate) fn unsupported_keyslot_kdf_tag(keyslots: &V1Keyslots) -> Option<[u8; 2]> {
+    keyslots
+        .as_slice()
+        .iter()
+        .find(|keyslot| matches!(keyslot.kdf(), KeyslotKdf::UnsupportedArgon2id))
+        .map(|_| [0xDF, 0x02])
+}
+
+pub(crate) fn all_keyslots_have_unsupported_kdf(keyslots: &V1Keyslots) -> Option<[u8; 2]> {
+    keyslots
+        .as_slice()
+        .iter()
+        .all(|keyslot| matches!(keyslot.kdf(), KeyslotKdf::UnsupportedArgon2id))
+        .then_some([0xDF, 0x02])
+}
 
 // TODO(brxken128): make this available in the core
 pub fn encrypt_master_key(

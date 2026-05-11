@@ -129,10 +129,7 @@ fn key_add_intent_reports_unsupported_kdf_before_mutation_or_secret_use() {
 
     let add = key::add::AddIntent::new(&encrypted_path);
 
-    assert!(matches!(
-        add,
-        Err(key::Error::UnsupportedKdf([0xDF, 0x02]))
-    ));
+    assert!(matches!(add, Err(key::Error::UnsupportedKdf([0xDF, 0x02]))));
     assert_eq!(
         fs::read(&encrypted_path).expect("read after unsupported KDF add"),
         original,
@@ -291,6 +288,16 @@ fn decrypt_fixture(
     Ok(fs::read(output_path).expect("read decrypted fixture"))
 }
 
+fn verify_fixture(encrypted: &RefCell<Cursor<Vec<u8>>>, raw_key: &[u8]) -> Result<(), key::Error> {
+    encrypted.borrow_mut().rewind().expect("rewind encrypted");
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let encrypted_path = temp_dir.path().join("plain.enc");
+    fs::write(&encrypted_path, encrypted.borrow().get_ref()).expect("write encrypted fixture");
+
+    let intent = key::verify::VerifyIntent::new(&encrypted_path)?;
+    key::verify::execute(intent, Protected::new(raw_key.to_vec()))
+}
+
 #[test]
 fn encrypt_writes_blake3_balloon_keyslot() {
     let encrypted = encrypted_v1_fixture();
@@ -303,10 +310,7 @@ fn argon2id_only_keyslot_returns_unsupported_kdf_for_verify() {
     let encrypted = encrypted_v1_fixture();
     mark_keyslot_unsupported_argon2id(&encrypted, 0);
 
-    let verify = key::verify::execute(key::verify::Request {
-        handle: &encrypted,
-        raw_key: Protected::new(b"old-pass".to_vec()),
-    });
+    let verify = verify_fixture(&encrypted, b"old-pass");
 
     assert!(matches!(
         verify,
@@ -427,11 +431,7 @@ fn supported_keyslot_verifies_when_mixed_with_unsupported_argon2id() {
     append_synthetic_second_keyslot(&encrypted, b"old-pass", b"new-pass");
     mark_keyslot_unsupported_argon2id(&encrypted, 0);
 
-    key::verify::execute(key::verify::Request {
-        handle: &encrypted,
-        raw_key: Protected::new(b"new-pass".to_vec()),
-    })
-    .expect("supported keyslot should still verify");
+    verify_fixture(&encrypted, b"new-pass").expect("supported keyslot should still verify");
 }
 
 #[test]
@@ -455,17 +455,19 @@ fn key_del_rejects_final_keyslot_before_writing_header() {
 #[test]
 fn key_add_rejects_v1_count_change_without_breaking_existing_decrypt() {
     let encrypted = encrypted_v1_fixture();
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let encrypted_path = temp_dir.path().join("plain.enc");
+    fs::write(&encrypted_path, encrypted.borrow().get_ref()).expect("write encrypted fixture");
+    let original = fs::read(&encrypted_path).expect("read original fixture");
 
-    let add = key::add::execute(key::add::Request {
-        handle: &encrypted,
-        raw_key_old: Protected::new(b"old-pass".to_vec()),
-    });
+    let intent = key::add::AddIntent::new(&encrypted_path).expect("prepare key add intent");
+    let add = key::add::execute(intent);
 
     assert!(matches!(
         add,
         Err(key::Error::CannotAddV1KeyslotWithoutReencrypt)
     ));
-    assert_eq!(keyslot_kdfs(&encrypted), [KeyslotKdf::Blake3Balloon]);
+    assert_eq!(fs::read(&encrypted_path).expect("read after add"), original);
 
     let plaintext = decrypt_fixture(&encrypted, b"old-pass").expect("decrypt with original key");
     assert_eq!(plaintext, b"Hello world");
@@ -476,10 +478,7 @@ fn wrong_key_current_v1_fixture_rejects_verification_and_decrypt() {
     // Manifest fixture: wrong-key-current-v1.
     let encrypted = encrypted_v1_fixture();
 
-    let wrong_verify = key::verify::execute(key::verify::Request {
-        handle: &encrypted,
-        raw_key: Protected::new(b"wrong-pass".to_vec()),
-    });
+    let wrong_verify = verify_fixture(&encrypted, b"wrong-pass");
     assert!(matches!(wrong_verify, Err(key::Error::IncorrectKey)));
 
     let wrong_decrypt = decrypt_fixture(&encrypted, b"wrong-pass");
@@ -537,11 +536,7 @@ fn can_change_and_reject_final_delete_v1_keyslots() {
     // Manifest fixture: keyslot-mutation-two-keyslots.
     let encrypted = encrypted_v1_fixture();
 
-    key::verify::execute(key::verify::Request {
-        handle: &encrypted,
-        raw_key: Protected::new(b"old-pass".to_vec()),
-    })
-    .expect("verify original key");
+    verify_fixture(&encrypted, b"old-pass").expect("verify original key");
 
     encrypted
         .borrow_mut()
@@ -556,15 +551,7 @@ fn can_change_and_reject_final_delete_v1_keyslots() {
     .expect("change keyslot");
     assert_eq!(keyslot_kdfs(&encrypted), [KeyslotKdf::Blake3Balloon]);
 
-    encrypted
-        .borrow_mut()
-        .rewind()
-        .expect("rewind before verify");
-    key::verify::execute(key::verify::Request {
-        handle: &encrypted,
-        raw_key: Protected::new(b"new-pass".to_vec()),
-    })
-    .expect("verify changed key");
+    verify_fixture(&encrypted, b"new-pass").expect("verify changed key");
 
     encrypted
         .borrow_mut()

@@ -1,37 +1,38 @@
-//! This provides functionality for adding a key to a header that adheres to the
-//! Dexios V1 format.
+//! This provides functionality for checking whether a key can be added to a
+//! header that adheres to the Dexios V1 format.
 
-use std::io::Seek;
+use std::fs::File;
+use std::path::Path;
 
 use super::Error;
 use core::header::{ParsedHeader, read_header};
-use core::protected::Protected;
-use std::cell::RefCell;
-use std::io::{Read, Write};
 
-pub struct Request<'a, RW>
-where
-    RW: Read + Write + Seek,
-{
-    pub handle: &'a RefCell<RW>, // header read+write+seek
-    pub raw_key_old: Protected<Vec<u8>>,
+pub struct AddIntent {
+    _private: (),
 }
 
-pub fn execute<RW>(req: Request<'_, RW>) -> Result<(), Error>
-where
-    RW: Read + Write + Seek,
-{
-    let parsed =
-        read_header(&mut *req.handle.borrow_mut()).map_err(|_| Error::HeaderDeserialize)?;
-    let ParsedHeader::V1(payload) = parsed;
-    let keyslots = payload.header().keyslots_collection().clone();
+impl AddIntent {
+    pub fn new<P>(target_path: P) -> Result<Self, Error>
+    where
+        P: AsRef<Path>,
+    {
+        let mut target = File::open(target_path).map_err(|_| Error::ReadIo)?;
+        let parsed = read_header(&mut target).map_err(super::map_header_read_error)?;
+        let ParsedHeader::V1(payload) = parsed;
+        let keyslots = payload.header().keyslots_collection();
 
-    // all of these functions need either the master key, or the index
-    let (_, _) = super::decrypt_v1_master_key_with_index(&keyslots, req.raw_key_old)?;
+        if let Some(tag) = super::unsupported_keyslot_kdf_tag(keyslots) {
+            return Err(Error::UnsupportedKdf(tag));
+        }
 
-    if keyslots.is_full() {
-        return Err(Error::TooManyKeyslots);
+        if keyslots.is_full() {
+            return Err(Error::TooManyKeyslots);
+        }
+
+        Ok(Self { _private: () })
     }
+}
 
+pub fn execute(_intent: AddIntent) -> Result<(), Error> {
     Err(Error::CannotAddV1KeyslotWithoutReencrypt)
 }
