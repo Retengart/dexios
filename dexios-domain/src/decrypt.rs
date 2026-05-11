@@ -220,7 +220,7 @@ fn map_stream_error(error: StreamError) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
+    use std::io::{self, Cursor};
 
     use crate::encrypt;
     use crate::encrypt::tests::PASSWORD;
@@ -352,9 +352,9 @@ mod tests {
         let variants = [
             StreamError::InvalidNonceLength(19),
             StreamError::CipherInit,
-            StreamError::Read(std::io::Error::other("read")),
-            StreamError::Write(std::io::Error::other("write")),
-            StreamError::Flush(std::io::Error::other("flush")),
+            StreamError::Read(io::Error::other("read")),
+            StreamError::Write(io::Error::other("write")),
+            StreamError::Flush(io::Error::other("flush")),
             StreamError::Authentication,
             StreamError::TruncatedCiphertext,
             StreamError::MissingFinalBlock,
