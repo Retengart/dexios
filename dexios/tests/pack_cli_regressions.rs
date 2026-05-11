@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -8,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use core::protected::Protected;
 use domain::decrypt;
+use domain::storage::identity::OverwritePolicy;
 
 const PASSWORD: &str = "12345678";
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
@@ -67,21 +67,23 @@ fn run_pack(
 }
 
 fn decrypt_archive_entry_names(archive_path: &Path, header_path: Option<&Path>) -> Vec<String> {
-    let archive = fs::File::open(archive_path).unwrap();
-    let archive_reader = RefCell::new(archive);
-    let header_reader = header_path.map(|path| RefCell::new(fs::File::open(path).unwrap()));
-    let decrypted = RefCell::new(Cursor::new(Vec::new()));
-
-    decrypt::execute(decrypt::Request {
-        header_reader: header_reader.as_ref(),
-        reader: &archive_reader,
-        writer: &decrypted,
-        raw_key: Protected::new(PASSWORD.as_bytes().to_vec()),
-        on_decrypted_header: None,
-    })
+    let seq = NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);
+    let decrypted_path = archive_path
+        .parent()
+        .unwrap()
+        .join(format!("decrypted-{seq}.zip"));
+    let intent = decrypt::DecryptIntent::new(
+        archive_path,
+        &decrypted_path,
+        OverwritePolicy::CreateNew,
+        header_path,
+        Protected::new(PASSWORD.as_bytes().to_vec()),
+        None,
+    )
     .unwrap();
+    decrypt::execute(intent).unwrap();
 
-    let bytes = decrypted.into_inner().into_inner();
+    let bytes = fs::read(decrypted_path).unwrap();
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
     let mut names = (0..zip.len())
         .map(|index| zip.by_index(index).unwrap().name().to_string())

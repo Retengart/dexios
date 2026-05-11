@@ -142,7 +142,10 @@ fn decrypt_with_detached_header_round_trips() {
         String::from_utf8_lossy(&decrypt_output.stderr)
     );
 
-    assert_eq!(fs::read(test_dir.path().join("plain.out")).unwrap(), b"detached secret");
+    assert_eq!(
+        fs::read(test_dir.path().join("plain.out")).unwrap(),
+        b"detached secret"
+    );
 }
 
 #[test]
