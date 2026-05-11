@@ -8,6 +8,7 @@ use core::header::read_header;
 use std::cell::RefCell;
 use std::fs::OpenOptions;
 use std::io::Seek;
+use std::path::Path;
 
 use crate::info;
 
@@ -19,6 +20,12 @@ fn ensure_v1_header<R: std::io::Read>(reader: &mut R) -> Result<()> {
         ),
         Err(err) => Err(anyhow::anyhow!("Malformed Dexios V1 header: {err}")),
     }
+}
+
+fn ensure_v1_header_path(input: &str) -> Result<()> {
+    let mut input_file = std::fs::File::open(input)
+        .with_context(|| format!("Unable to open input file: {input}"))?;
+    ensure_v1_header(&mut input_file)
 }
 
 pub fn add(input: &str, key_old: &Key) -> Result<()> {
@@ -52,20 +59,7 @@ pub fn add(input: &str, key_old: &Key) -> Result<()> {
 }
 
 pub fn change(input: &str, params: &KeyManipulationParams) -> Result<()> {
-    let input_file = RefCell::new(
-        OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(input)
-            .with_context(|| format!("Unable to open input file: {input}"))?,
-    );
-
-    ensure_v1_header(&mut *input_file.borrow_mut())?;
-
-    input_file
-        .borrow_mut()
-        .rewind()
-        .context("Unable to rewind the reader")?;
+    ensure_v1_header_path(input)?;
 
     if params.key_old == Key::User {
         info!("Please enter your old key below");
@@ -79,8 +73,8 @@ pub fn change(input: &str, params: &KeyManipulationParams) -> Result<()> {
 
     let raw_key_new = params.key_new.get_secret(&PasswordState::Validate)?;
 
-    domain::key::change::execute(domain::key::change::Request {
-        handle: &input_file,
+    domain::key::change::execute_transactional(domain::key::change::TransactionalRequest {
+        target_path: Path::new(input),
         kdf: params.kdf,
         raw_key_old,
         raw_key_new,
@@ -90,20 +84,7 @@ pub fn change(input: &str, params: &KeyManipulationParams) -> Result<()> {
 }
 
 pub fn delete(input: &str, key_old: &Key) -> Result<()> {
-    let input_file = RefCell::new(
-        OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(input)
-            .with_context(|| format!("Unable to open input file: {input}"))?,
-    );
-
-    ensure_v1_header(&mut *input_file.borrow_mut())?;
-
-    input_file
-        .borrow_mut()
-        .rewind()
-        .context("Unable to rewind the reader")?;
+    ensure_v1_header_path(input)?;
 
     if key_old == &Key::User {
         info!("Please enter your key below");
@@ -111,8 +92,8 @@ pub fn delete(input: &str, key_old: &Key) -> Result<()> {
 
     let raw_key_old = key_old.get_secret(&PasswordState::Direct)?;
 
-    domain::key::delete::execute(domain::key::delete::Request {
-        handle: &input_file,
+    domain::key::delete::execute_transactional(domain::key::delete::TransactionalRequest {
+        target_path: Path::new(input),
         raw_key_old,
     })?;
 

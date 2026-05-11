@@ -6,6 +6,7 @@ use core::primitives::{WrappingKey, gen_keyslot_nonce, gen_salt};
 use core::protected::Protected;
 use dexios_domain::{decrypt, encrypt, key};
 use std::cell::RefCell;
+use std::fs;
 use std::io::{Cursor, Seek};
 
 const DOMAIN_KEY_SOURCE: &str = include_str!("../src/key.rs");
@@ -315,6 +316,49 @@ fn wrong_key_current_v1_fixture_rejects_verification_and_decrypt() {
         wrong_decrypt,
         Err(decrypt::Error::DecryptMasterKey)
     ));
+}
+
+#[test]
+fn key_change_failure_preserves_original_header() {
+    let encrypted = encrypted_v1_fixture();
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let encrypted_path = temp_dir.path().join("plain.enc");
+    fs::write(&encrypted_path, encrypted.borrow().get_ref()).expect("write encrypted fixture");
+    let original = fs::read(&encrypted_path).expect("read original fixture");
+
+    let result = key::change::execute_transactional(key::change::TransactionalRequest {
+        target_path: &encrypted_path,
+        raw_key_old: Protected::new(b"wrong-pass".to_vec()),
+        raw_key_new: Protected::new(b"new-pass".to_vec()),
+        kdf: Kdf::Blake3Balloon,
+    });
+
+    assert!(matches!(result, Err(key::Error::IncorrectKey)));
+    let after = fs::read(&encrypted_path).expect("read preserved fixture");
+    assert_eq!(&after[..HEADER_LEN], &original[..HEADER_LEN]);
+    assert_eq!(after, original);
+}
+
+#[test]
+fn key_delete_failure_preserves_original_header() {
+    let encrypted = encrypted_v1_fixture();
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let encrypted_path = temp_dir.path().join("plain.enc");
+    fs::write(&encrypted_path, encrypted.borrow().get_ref()).expect("write encrypted fixture");
+    let original = fs::read(&encrypted_path).expect("read original fixture");
+
+    let result = key::delete::execute_transactional(key::delete::TransactionalRequest {
+        target_path: &encrypted_path,
+        raw_key_old: Protected::new(b"old-pass".to_vec()),
+    });
+
+    assert!(matches!(
+        result,
+        Err(key::Error::CannotRemoveFinalV1Keyslot)
+    ));
+    let after = fs::read(&encrypted_path).expect("read preserved fixture");
+    assert_eq!(&after[..HEADER_LEN], &original[..HEADER_LEN]);
+    assert_eq!(after, original);
 }
 
 #[test]

@@ -251,3 +251,87 @@ fn header_restore_failure_preserves_original_file() {
     );
     assert_eq!(fs::read(&encrypted).unwrap(), original);
 }
+
+#[test]
+fn key_change_failure_preserves_original_header() {
+    let test_dir = TestDir::new("key-change-failure-transaction");
+    let plain = test_dir.path().join("plain.txt");
+    let encrypted = test_dir.path().join("plain.enc");
+    let wrong_key = test_dir.path().join("wrong.key");
+    let new_key = test_dir.path().join("new.key");
+    fs::write(&plain, b"key change plaintext").unwrap();
+    fs::write(&wrong_key, b"wrong-password").unwrap();
+    fs::write(&new_key, b"new-password").unwrap();
+
+    let encrypt_output = run_cli(
+        test_dir.path(),
+        &["encrypt", "--force", "plain.txt", "plain.enc"],
+    );
+    assert!(
+        encrypt_output.status.success(),
+        "encrypt fixture failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&encrypt_output.stdout),
+        String::from_utf8_lossy(&encrypt_output.stderr)
+    );
+    let original = fs::read(&encrypted).unwrap();
+
+    let output = run_cli(
+        test_dir.path(),
+        &[
+            "key",
+            "change",
+            "--keyfile-old",
+            "wrong.key",
+            "--keyfile-new",
+            "new.key",
+            "plain.enc",
+        ],
+    );
+
+    assert!(
+        !output.status.success(),
+        "key change unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let after = fs::read(&encrypted).unwrap();
+    assert_eq!(&after[..HEADER_LEN], &original[..HEADER_LEN]);
+    assert_eq!(after, original);
+}
+
+#[test]
+fn key_delete_failure_preserves_original_header() {
+    let test_dir = TestDir::new("key-delete-failure-transaction");
+    let plain = test_dir.path().join("plain.txt");
+    let encrypted = test_dir.path().join("plain.enc");
+    let keyfile = test_dir.path().join("old.key");
+    fs::write(&plain, b"key delete plaintext").unwrap();
+    fs::write(&keyfile, PASSWORD).unwrap();
+
+    let encrypt_output = run_cli(
+        test_dir.path(),
+        &["encrypt", "--force", "plain.txt", "plain.enc"],
+    );
+    assert!(
+        encrypt_output.status.success(),
+        "encrypt fixture failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&encrypt_output.stdout),
+        String::from_utf8_lossy(&encrypt_output.stderr)
+    );
+    let original = fs::read(&encrypted).unwrap();
+
+    let output = run_cli(
+        test_dir.path(),
+        &["key", "del", "--keyfile", "old.key", "plain.enc"],
+    );
+
+    assert!(
+        !output.status.success(),
+        "key delete unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let after = fs::read(&encrypted).unwrap();
+    assert_eq!(&after[..HEADER_LEN], &original[..HEADER_LEN]);
+    assert_eq!(after, original);
+}
