@@ -2,10 +2,7 @@ use crate::cli::prompt::overwrite_check;
 use crate::global::states::{DeleteInput, ForceMode, HeaderLocation, PasswordState};
 use crate::global::structs::CryptoParams;
 use anyhow::Result;
-use std::path::Path;
-use std::sync::Arc;
 
-use domain::storage::Storage;
 use domain::storage::identity::OverwritePolicy;
 
 use super::errors::map_encrypt_error;
@@ -33,20 +30,6 @@ fn existing_path(path: &str) -> bool {
     std::fs::metadata(path).is_ok()
 }
 
-fn output_target<'a>(path: &'a str, path_exists: bool) -> domain::encrypt::OutputTarget<'a> {
-    domain::encrypt::OutputTarget {
-        path: Path::new(path),
-        overwrite: overwrite_policy(path_exists),
-    }
-}
-
-fn header_target<'a>(path: &'a str, path_exists: bool) -> domain::encrypt::HeaderTarget<'a> {
-    domain::encrypt::HeaderTarget {
-        path: Path::new(path),
-        overwrite: overwrite_policy(path_exists),
-    }
-}
-
 fn overwrite_check_if_needed(path: &str, path_exists: bool, force: ForceMode) -> Result<bool> {
     if path_exists {
         overwrite_check(path, force)
@@ -56,19 +39,9 @@ fn overwrite_check_if_needed(path: &str, path_exists: bool, force: ForceMode) ->
 }
 
 // this function is for encrypting a file in stream mode
-// it handles any user-facing interactiveness, opening files
-// it creates the stream object and uses the convenience function provided by dexios-core
+// it handles user-facing prompts and delegates path validation/opening to domain
 pub fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> Result<()> {
-    // TODO: It is necessary to raise it to a higher level
-    let stor = Arc::new(domain::storage::FileStorage);
-
     // 1. validate and prepare options
-    if input == output {
-        return Err(anyhow::anyhow!(
-            "Input and output files cannot have the same name."
-        ));
-    }
-
     let output_exists = existing_path(output);
     let header_exists = match &params.header_location {
         HeaderLocation::Embedded => None,
@@ -86,29 +59,32 @@ pub fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> Result<(
         return Ok(());
     }
 
-    let input_file = stor.read_file(input)?;
     let raw_key = params.key.get_secret(&PasswordState::Validate)?;
 
     let header = match &params.header_location {
         HeaderLocation::Embedded => None,
-        HeaderLocation::Detached(path) => Some(header_target(path, header_exists.unwrap_or(false))),
+        HeaderLocation::Detached(path) => Some(domain::encrypt::DetachedHeaderTarget::new(
+            path,
+            overwrite_policy(header_exists.unwrap_or(false)),
+        )),
     };
 
     // 2. encrypt file
-    let req = domain::encrypt::TransactionalRequest {
-        input_path: Path::new(input),
-        reader: input_file.try_reader()?,
-        output: output_target(output, output_exists),
+    let intent = domain::encrypt::EncryptIntent::new(
+        input,
+        output,
+        overwrite_policy(output_exists),
         header,
         raw_key,
-        kdf: params.kdf,
-    };
-    let commit_receipt = domain::encrypt::execute_transactional(req).map_err(map_encrypt_error)?;
+        params.kdf,
+    )
+    .map_err(map_encrypt_error)?;
+    let commit_receipt =
+        domain::encrypt::execute_transactional(intent).map_err(map_encrypt_error)?;
 
     let hash_verification = super::hash_after_commit(&[output.to_string()], params.hash_mode)?;
 
     if params.delete_input == DeleteInput::Delete {
-        drop(input_file);
         super::cleanup_after_commit(&[input.to_string()], &commit_receipt, hash_verification)?;
     }
 
