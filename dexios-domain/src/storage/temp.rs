@@ -6,7 +6,7 @@ use std::path::Path;
 use super::Error;
 use super::identity::{OverwritePolicy, ResolvedTarget};
 use super::test_support::{FailureHooks, FailurePoint};
-use super::transaction::{CommittedArtifact, TransactionError};
+use super::transaction::{CommittedArtifact, StagedWriteError, TransactionError};
 
 pub struct TempArtifact {
     file: RefCell<std_fs::File>,
@@ -94,18 +94,30 @@ impl NamedStagedOutput {
         &mut self,
         write: impl FnOnce(&mut std_fs::File) -> io::Result<T>,
     ) -> Result<T, TransactionError> {
+        self.with_writer_result(write).map_err(|error| match error {
+            StagedWriteError::Operation(_) => TransactionError::Write {
+                path: self.target.target_path().to_path_buf(),
+            },
+            StagedWriteError::Transaction(error) => error,
+        })
+    }
+
+    pub(crate) fn with_writer_result<T, E>(
+        &mut self,
+        write: impl FnOnce(&mut std_fs::File) -> Result<T, E>,
+    ) -> Result<T, StagedWriteError<E>> {
         self.hooks
             .check(FailurePoint::Write)
-            .map_err(|_| self.error_at(FailurePoint::Write))?;
+            .map_err(|_| StagedWriteError::Transaction(self.error_at(FailurePoint::Write)))?;
 
         let target_path = self.target.target_path().to_path_buf();
-        let file = self
-            .file
-            .as_mut()
-            .ok_or(TransactionError::Write { path: target_path })?;
-        let result = write(file.as_file_mut()).map_err(|_| TransactionError::Write {
-            path: self.target.target_path().to_path_buf(),
-        })?;
+        let file =
+            self.file
+                .as_mut()
+                .ok_or(StagedWriteError::Transaction(TransactionError::Write {
+                    path: target_path,
+                }))?;
+        let result = write(file.as_file_mut()).map_err(StagedWriteError::Operation)?;
         self.wrote = true;
         self.flushed = false;
         self.synced = false;

@@ -57,6 +57,11 @@ impl fmt::Display for TransactionError {
 
 impl std::error::Error for TransactionError {}
 
+pub(crate) enum StagedWriteError<E> {
+    Operation(E),
+    Transaction(TransactionError),
+}
+
 pub struct StagedOutputTransaction {
     staged: NamedStagedOutput,
 }
@@ -90,6 +95,13 @@ impl StagedOutputTransaction {
         write: impl FnOnce(&mut std::fs::File) -> std::io::Result<T>,
     ) -> Result<T, TransactionError> {
         self.staged.with_writer(write)
+    }
+
+    pub(crate) fn with_writer_result<T, E>(
+        &mut self,
+        write: impl FnOnce(&mut std::fs::File) -> Result<T, E>,
+    ) -> Result<T, StagedWriteError<E>> {
+        self.staged.with_writer_result(write)
     }
 
     pub fn commit(self) -> Result<CommitReceipt, TransactionError> {

@@ -16,7 +16,9 @@ use crate::key::decrypt_v1_master_key_with_index;
 use crate::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
 };
-use crate::storage::transaction::{CommitReceipt, StagedOutputTransaction, TransactionError};
+use crate::storage::transaction::{
+    CommitReceipt, StagedOutputTransaction, StagedWriteError, TransactionError,
+};
 use crate::workflow_error::{
     WorkflowErrorClass, classify_identity_error, classify_transaction_error,
 };
@@ -231,11 +233,13 @@ where
     let mut transaction =
         StagedOutputTransaction::new(output_target).map_err(Error::Transaction)?;
     transaction
-        .with_writer(|writer| {
+        .with_writer_result(|writer| {
             decrypt_payload_with_master_key(&payload, reader, writer, master_key)
-                .map_err(|_| io::Error::other("decrypt payload"))
         })
-        .map_err(map_decrypt_transaction_error)?;
+        .map_err(|error| match error {
+            StagedWriteError::Operation(error) => error,
+            StagedWriteError::Transaction(error) => map_decrypt_transaction_error(error),
+        })?;
     transaction.commit().map_err(Error::Transaction)
 }
 
@@ -327,19 +331,20 @@ fn map_header_read_error(error: HeaderReadError) -> Error {
 
 fn map_decrypt_transaction_error(error: TransactionError) -> Error {
     match error {
-        TransactionError::Write { .. } => Error::DecryptData,
+        TransactionError::Write { .. }
+        | TransactionError::Flush { .. }
+        | TransactionError::Sync { .. } => Error::WriteData,
         error => Error::Transaction(error),
     }
 }
 
 fn map_stream_error(error: StreamError) -> Error {
     match error {
-        StreamError::InvalidNonceLength(_)
-        | StreamError::CipherInit
-        | StreamError::Read(_)
-        | StreamError::Write(_)
-        | StreamError::Flush(_)
-        | StreamError::Authentication
+        StreamError::InvalidNonceLength(_) => Error::InitializeStreams,
+        StreamError::CipherInit => Error::InitializeChiphers,
+        StreamError::Read(_) => Error::ReadEncryptedData,
+        StreamError::Write(_) | StreamError::Flush(_) => Error::WriteData,
+        StreamError::Authentication
         | StreamError::TruncatedCiphertext
         | StreamError::MissingFinalBlock
         | StreamError::FinalBlockAuthentication => Error::DecryptData,
@@ -355,6 +360,52 @@ mod tests {
     use crate::encrypt::tests::PASSWORD;
     use core::kdf::Kdf;
     use core::stream::StreamError;
+
+    struct FailingPayloadReader {
+        inner: Cursor<Vec<u8>>,
+        fail_at: u64,
+    }
+
+    impl FailingPayloadReader {
+        fn new(bytes: Vec<u8>, fail_at: u64) -> Self {
+            Self {
+                inner: Cursor::new(bytes),
+                fail_at,
+            }
+        }
+    }
+
+    impl Read for FailingPayloadReader {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.inner.position() >= self.fail_at {
+                return Err(io::Error::other("payload read failure"));
+            }
+
+            self.inner.read(buf)
+        }
+    }
+
+    impl Seek for FailingPayloadReader {
+        fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+            self.inner.seek(pos)
+        }
+    }
+
+    fn encrypted_embedded_fixture_bytes() -> Vec<u8> {
+        let input_cur = RefCell::new(Cursor::new(b"Hello world".to_vec()));
+        let encrypted_cur = RefCell::new(Cursor::new(Vec::new()));
+
+        encrypt::execute_handles(encrypt::HandleRequest {
+            reader: &input_cur,
+            writer: &encrypted_cur,
+            header_writer: None,
+            raw_key: Protected::new(PASSWORD.to_vec()),
+            kdf: Kdf::Blake3Balloon,
+        })
+        .expect("encrypt fixture");
+
+        encrypted_cur.into_inner().into_inner()
+    }
 
     #[test]
     fn should_decrypt_embedded_v1_content() {
@@ -392,6 +443,44 @@ mod tests {
             }
             _ => unreachable!(),
         }
+    }
+
+    #[test]
+    fn decrypt_transactional_target_preserves_payload_read_error_class() {
+        let test_dir = tempfile::tempdir().expect("temp dir");
+        let input_path = test_dir.path().join("fixture.dx");
+        let output_path = test_dir.path().join("fixture.out");
+        let encrypted_bytes = encrypted_embedded_fixture_bytes();
+        std::fs::write(&input_path, &encrypted_bytes).expect("input path for identity validation");
+
+        let intent = DecryptIntent::new(
+            &input_path,
+            &output_path,
+            OverwritePolicy::CreateNew,
+            None::<&Path>,
+            Protected::new(PASSWORD.to_vec()),
+            None,
+        )
+        .expect("build decrypt intent");
+        let DecryptIntent {
+            output_target,
+            raw_key,
+            ..
+        } = intent;
+        let reader = RefCell::new(FailingPayloadReader::new(
+            encrypted_bytes,
+            u64::try_from(HEADER_LEN).expect("header length"),
+        ));
+
+        let error = execute_transactional_target(None, &reader, output_target, raw_key, None)
+            .expect_err("payload read failure must be reported");
+
+        assert!(matches!(error, Error::ReadEncryptedData));
+        assert_eq!(error.workflow_class(), WorkflowErrorClass::IoFailure);
+        assert!(
+            !output_path.exists(),
+            "failed transactional decrypt must not publish plaintext"
+        );
     }
 
     #[test]
@@ -477,21 +566,62 @@ mod tests {
     }
 
     #[test]
-    fn stream_error_variants_map_to_decrypt_data_without_message_matching() {
+    fn decrypt_stream_error_variants_preserve_workflow_classes_without_message_matching() {
         let variants = [
-            StreamError::InvalidNonceLength(19),
-            StreamError::CipherInit,
-            StreamError::Read(io::Error::other("read")),
-            StreamError::Write(io::Error::other("write")),
-            StreamError::Flush(io::Error::other("flush")),
-            StreamError::Authentication,
-            StreamError::TruncatedCiphertext,
-            StreamError::MissingFinalBlock,
-            StreamError::FinalBlockAuthentication,
+            (
+                StreamError::InvalidNonceLength(19),
+                Error::InitializeStreams,
+                WorkflowErrorClass::Other,
+            ),
+            (
+                StreamError::CipherInit,
+                Error::InitializeChiphers,
+                WorkflowErrorClass::Other,
+            ),
+            (
+                StreamError::Read(io::Error::other("read")),
+                Error::ReadEncryptedData,
+                WorkflowErrorClass::IoFailure,
+            ),
+            (
+                StreamError::Write(io::Error::other("write")),
+                Error::WriteData,
+                WorkflowErrorClass::IoFailure,
+            ),
+            (
+                StreamError::Flush(io::Error::other("flush")),
+                Error::WriteData,
+                WorkflowErrorClass::IoFailure,
+            ),
+            (
+                StreamError::Authentication,
+                Error::DecryptData,
+                WorkflowErrorClass::AuthenticationFailure,
+            ),
+            (
+                StreamError::TruncatedCiphertext,
+                Error::DecryptData,
+                WorkflowErrorClass::AuthenticationFailure,
+            ),
+            (
+                StreamError::MissingFinalBlock,
+                Error::DecryptData,
+                WorkflowErrorClass::AuthenticationFailure,
+            ),
+            (
+                StreamError::FinalBlockAuthentication,
+                Error::DecryptData,
+                WorkflowErrorClass::AuthenticationFailure,
+            ),
         ];
 
-        for error in variants {
-            assert!(matches!(map_stream_error(error), Error::DecryptData));
+        for (stream_error, expected_error, expected_class) in variants {
+            let mapped = map_stream_error(stream_error);
+            assert_eq!(
+                std::mem::discriminant(&mapped),
+                std::mem::discriminant(&expected_error)
+            );
+            assert_eq!(mapped.workflow_class(), expected_class);
         }
     }
 }
