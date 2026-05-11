@@ -1,6 +1,6 @@
 use core::header::common::{HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN, Salt};
 use core::header::v1::{KeyslotKdf, V1Header, V1Keyslot};
-use core::header::{ParsedHeader, read_header};
+use core::header::{HeaderReadError, ParsedHeader, read_header};
 use core::kdf::Kdf;
 use core::primitives::{WrappingKey, gen_keyslot_nonce, gen_salt};
 use core::protected::Protected;
@@ -8,6 +8,7 @@ use dexios_domain::{decrypt, encrypt, key};
 use std::cell::RefCell;
 use std::fs;
 use std::io::{Cursor, Seek};
+use std::path::{Path, PathBuf};
 
 const DOMAIN_KEY_SOURCE: &str = include_str!("../src/key.rs");
 const DOMAIN_ENCRYPT_SOURCE: &str = include_str!("../src/encrypt.rs");
@@ -34,11 +35,50 @@ fn encrypted_v1_fixture() -> RefCell<Cursor<Vec<u8>>> {
     RefCell::new(Cursor::new(fs::read(output_path).unwrap()))
 }
 
+fn encrypted_v1_file(name: &str) -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let input_path = dir.path().join(format!("{name}.txt"));
+    let output_path = dir.path().join(format!("{name}.enc"));
+    fs::write(&input_path, b"Hello world").unwrap();
+
+    let intent = encrypt::EncryptIntent::new(
+        &input_path,
+        &output_path,
+        dexios_domain::storage::identity::OverwritePolicy::CreateNew,
+        None,
+        Protected::new(b"old-pass".to_vec()),
+        Kdf::Blake3Balloon,
+    )
+    .expect("build encrypt intent");
+    encrypt::execute(intent).expect("encrypt fixture");
+
+    (dir, output_path)
+}
+
 fn mark_keyslot_unsupported_argon2id(encrypted: &RefCell<Cursor<Vec<u8>>>, index: usize) {
     let mut handle = encrypted.borrow_mut();
     let offset = HEADER_STATIC_LEN + (index * KEYSLOT_LEN);
     handle.get_mut()[offset..offset + 2].copy_from_slice(&[0xDF, 0x02]);
     handle.rewind().expect("rewind after KDF tag mutation");
+}
+
+fn mark_keyslot_unsupported_argon2id_file(path: &Path, index: usize) {
+    let mut bytes = fs::read(path).expect("read encrypted fixture");
+    let offset = HEADER_STATIC_LEN + (index * KEYSLOT_LEN);
+    bytes[offset..offset + 2].copy_from_slice(&[0xDF, 0x02]);
+    fs::write(path, bytes).expect("write unsupported KDF fixture");
+}
+
+fn write_unsupported_format_fixture(path: &Path) {
+    fs::write(path, [0xDE, 0x01, 0, 0, 0, 0]).expect("write unsupported format fixture");
+}
+
+fn write_malformed_v1_fixture(path: &Path) {
+    let mut bytes = [0u8; HEADER_LEN];
+    bytes[0..4].copy_from_slice(b"DXIO");
+    bytes[4..6].copy_from_slice(&[0x00, 0x01]);
+    bytes[7] = 1;
+    fs::write(path, bytes).expect("write malformed V1 fixture");
 }
 
 fn keyslot_kdfs(encrypted: &RefCell<Cursor<Vec<u8>>>) -> Vec<KeyslotKdf> {
@@ -60,6 +100,129 @@ fn keyslots(encrypted: &RefCell<Cursor<Vec<u8>>>) -> core::header::v1::V1Keyslot
     let parsed = read_header(&mut *handle).expect("read V1 header");
     let ParsedHeader::V1(payload) = parsed;
     payload.header().keyslots_collection().clone()
+}
+
+#[test]
+fn key_add_intent_rejects_supported_v1_without_mutating_header_or_payload() {
+    let (_dir, encrypted_path) = encrypted_v1_file("add-supported-v1");
+    let original = fs::read(&encrypted_path).expect("read original encrypted fixture");
+
+    let intent = key::add::AddIntent::new(&encrypted_path).expect("prepare key add intent");
+    let add = key::add::execute(intent);
+
+    assert!(matches!(
+        add,
+        Err(key::Error::CannotAddV1KeyslotWithoutReencrypt)
+    ));
+    assert_eq!(
+        fs::read(&encrypted_path).expect("read after unsupported add"),
+        original,
+        "unsupported key add must not mutate header or payload bytes"
+    );
+}
+
+#[test]
+fn key_add_intent_reports_unsupported_kdf_before_mutation_or_secret_use() {
+    let (_dir, encrypted_path) = encrypted_v1_file("add-unsupported-kdf");
+    mark_keyslot_unsupported_argon2id_file(&encrypted_path, 0);
+    let original = fs::read(&encrypted_path).expect("read unsupported KDF fixture");
+
+    let add = key::add::AddIntent::new(&encrypted_path);
+
+    assert!(matches!(
+        add,
+        Err(key::Error::UnsupportedKdf([0xDF, 0x02]))
+    ));
+    assert_eq!(
+        fs::read(&encrypted_path).expect("read after unsupported KDF add"),
+        original,
+        "unsupported KDF preflight must be read-only"
+    );
+}
+
+#[test]
+fn key_verify_intent_returns_typed_read_only_outcomes() {
+    let (_dir, encrypted_path) = encrypted_v1_file("verify-outcomes");
+
+    let valid = key::verify::VerifyIntent::new(&encrypted_path).expect("prepare verify intent");
+    key::verify::execute(valid, Protected::new(b"old-pass".to_vec())).expect("verify old key");
+
+    let wrong_key = key::verify::VerifyIntent::new(&encrypted_path).expect("prepare verify intent");
+    let wrong_key_result = key::verify::execute(wrong_key, Protected::new(b"wrong-pass".to_vec()));
+    assert!(matches!(wrong_key_result, Err(key::Error::IncorrectKey)));
+
+    let unsupported_path = encrypted_path.with_file_name("legacy-header.bin");
+    write_unsupported_format_fixture(&unsupported_path);
+    let unsupported = key::verify::VerifyIntent::new(&unsupported_path);
+    assert!(matches!(
+        unsupported,
+        Err(key::Error::UnsupportedFormat([0xDE, 0x01]))
+    ));
+
+    let malformed_path = encrypted_path.with_file_name("malformed-v1.bin");
+    write_malformed_v1_fixture(&malformed_path);
+    let malformed = key::verify::VerifyIntent::new(&malformed_path);
+    assert!(matches!(
+        malformed,
+        Err(key::Error::MalformedV1Header(
+            HeaderReadError::NonZeroReservedBytes
+        ))
+    ));
+
+    let missing = key::verify::VerifyIntent::new(encrypted_path.with_file_name("missing.enc"));
+    assert!(matches!(missing, Err(key::Error::ReadIo)));
+}
+
+#[test]
+fn key_verify_intent_reports_all_unsupported_keyslots_before_prompting() {
+    let (_dir, encrypted_path) = encrypted_v1_file("verify-unsupported-kdf");
+    mark_keyslot_unsupported_argon2id_file(&encrypted_path, 0);
+
+    let verify = key::verify::VerifyIntent::new(&encrypted_path);
+
+    assert!(matches!(
+        verify,
+        Err(key::Error::UnsupportedKdf([0xDF, 0x02]))
+    ));
+}
+
+#[test]
+fn key_verify_intent_does_not_read_or_authenticate_payload_stream() {
+    let (_dir, encrypted_path) = encrypted_v1_file("verify-header-only");
+    let mut bytes = fs::read(&encrypted_path).expect("read encrypted fixture");
+    bytes.truncate(HEADER_LEN);
+    fs::write(&encrypted_path, bytes).expect("write header-only fixture");
+
+    let intent = key::verify::VerifyIntent::new(&encrypted_path).expect("prepare verify intent");
+    key::verify::execute(intent, Protected::new(b"old-pass".to_vec()))
+        .expect("key verify must not inspect payload stream bytes");
+}
+
+#[test]
+fn key_add_verify_sources_do_not_expose_public_raw_request_state() {
+    let sources = [
+        ("dexios-domain/src/key/add.rs", DOMAIN_KEY_ADD_SOURCE),
+        (
+            "dexios-domain/src/key/verify.rs",
+            include_str!("../src/key/verify.rs"),
+        ),
+    ];
+    let forbidden = [
+        "pub struct Request",
+        "pub handle:",
+        "RefCell",
+        "pub raw_key",
+        "raw_key_new",
+    ];
+
+    for (path, source) in sources {
+        for pattern in forbidden {
+            assert!(
+                !source.contains(pattern),
+                "`{path}` must not expose `{pattern}` in public add/verify contracts"
+            );
+        }
+    }
 }
 
 fn append_synthetic_second_keyslot(
