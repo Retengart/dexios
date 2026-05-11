@@ -40,8 +40,9 @@ impl Error {
     #[must_use]
     pub fn workflow_class(&self) -> WorkflowErrorClass {
         match self {
-            Self::HeaderSizeParse | Self::HeaderDeserialize => WorkflowErrorClass::MalformedFormat,
-            Self::MalformedV1Header(_) => WorkflowErrorClass::MalformedFormat,
+            Self::HeaderSizeParse | Self::HeaderDeserialize | Self::MalformedV1Header(_) => {
+                WorkflowErrorClass::MalformedFormat
+            }
             Self::InvalidMagic(_) | Self::UnsupportedFormat(_) | Self::UnsupportedVersion(_) => {
                 WorkflowErrorClass::UnsupportedFormat
             }
