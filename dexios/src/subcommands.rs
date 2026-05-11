@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::ArgMatches;
+use std::path::Path;
 
 // this is called from main.rs
 // it gets params and sends them to the appropriate functions
@@ -8,8 +9,12 @@ use crate::global::{
     parameters::{
         forcemode, get_param, get_params, key_manipulation_params, pack_params, parameter_handler,
     },
-    states::{Key, KeyParams},
+    states::{HashMode, Key, KeyParams},
 };
+use domain::storage::cleanup::{
+    CleanupReceipt, CleanupResult, HashVerification, PostCommitSuccess,
+};
+use domain::storage::transaction::CommitReceipt;
 
 pub mod decrypt;
 pub mod encrypt;
@@ -19,19 +24,44 @@ pub mod key;
 pub mod pack;
 pub mod unpack;
 
-pub fn delete_path(path: &str) -> Result<()> {
-    if std::fs::symlink_metadata(path).is_err() {
+pub fn hash_after_commit(files: &[String], hash_mode: HashMode) -> Result<HashVerification> {
+    if hash_mode == HashMode::CalculateHash {
+        hashing::hash_stream(files)?;
+        Ok(HashVerification::Succeeded)
+    } else {
+        Ok(HashVerification::NotRequested)
+    }
+}
+
+pub fn cleanup_after_commit(
+    paths: &[String],
+    commit_receipt: &CommitReceipt,
+    hash_verification: HashVerification,
+) -> Result<()> {
+    let cleanup_receipt =
+        CleanupReceipt::from_paths(paths.iter().map(|path| Path::new(path.as_str())))?;
+    let proof = PostCommitSuccess::from_commit_and_hash(commit_receipt, hash_verification)?;
+    let result = cleanup_receipt.run(&proof);
+    ensure_cleanup_succeeded(result)
+}
+
+fn ensure_cleanup_succeeded(result: CleanupResult) -> Result<()> {
+    if result.is_success() {
         return Ok(());
     }
 
-    let metadata = std::fs::symlink_metadata(path)?;
-    if metadata.is_dir() {
-        std::fs::remove_dir_all(path)?;
-    } else {
-        std::fs::remove_file(path)?;
-    }
+    let failures = result
+        .failures
+        .iter()
+        .map(|failure| format!("{} ({:?})", failure.target.path.display(), failure.error))
+        .collect::<Vec<_>>()
+        .join(", ");
 
-    Ok(())
+    Err(anyhow::anyhow!(
+        "cleanup failed after output commit; committed outputs were not rolled back; deleted {} target(s), failed to delete: {}",
+        result.deleted.len(),
+        failures
+    ))
 }
 
 pub fn encrypt(sub_matches: &ArgMatches) -> Result<()> {

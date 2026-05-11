@@ -3,7 +3,7 @@ use std::process::exit;
 use std::sync::Arc;
 
 use crate::cli::prompt::overwrite_check;
-use crate::global::states::{DeleteInput, ForceMode, HashMode, HeaderLocation, PasswordState};
+use crate::global::states::{DeleteInput, ForceMode, HeaderLocation, PasswordState};
 use crate::global::structs::CryptoParams;
 
 use anyhow::Result;
@@ -72,24 +72,23 @@ pub fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> Result<(
         HeaderLocation::Embedded => None,
         HeaderLocation::Detached(path) => Some(Path::new(path.as_str())),
     };
-    let _receipt = domain::decrypt::execute_transactional(domain::decrypt::TransactionalRequest {
-        input_path: Path::new(input),
-        detached_header_path,
-        header_reader: header_file.as_ref().and_then(|h| h.try_reader().ok()),
-        reader: input_file.try_reader()?,
-        output: output_target(output, output_exists),
-        raw_key,
-        on_decrypted_header: None,
-    })?;
+    let commit_receipt =
+        domain::decrypt::execute_transactional(domain::decrypt::TransactionalRequest {
+            input_path: Path::new(input),
+            detached_header_path,
+            header_reader: header_file.as_ref().and_then(|h| h.try_reader().ok()),
+            reader: input_file.try_reader()?,
+            output: output_target(output, output_exists),
+            raw_key,
+            on_decrypted_header: None,
+        })?;
 
-    if params.hash_mode == HashMode::CalculateHash {
-        super::hashing::hash_stream(&[input.to_string()])?;
-    }
+    let hash_verification = super::hash_after_commit(&[input.to_string()], params.hash_mode)?;
 
     if params.delete_input == DeleteInput::Delete {
         drop(header_file);
         drop(input_file);
-        super::delete_path(input)?;
+        super::cleanup_after_commit(&[input.to_string()], &commit_receipt, hash_verification)?;
     }
 
     Ok(())

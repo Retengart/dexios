@@ -1,6 +1,7 @@
 use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 
+pub mod cleanup;
 mod entry;
 mod fs;
 pub mod identity;

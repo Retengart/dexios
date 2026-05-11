@@ -1,5 +1,5 @@
 use crate::cli::prompt::overwrite_check;
-use crate::global::states::{DeleteInput, ForceMode, HashMode, HeaderLocation, PasswordState};
+use crate::global::states::{DeleteInput, ForceMode, HeaderLocation, PasswordState};
 use crate::global::structs::CryptoParams;
 use anyhow::Result;
 use std::path::Path;
@@ -101,15 +101,13 @@ pub fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> Result<(
         raw_key,
         kdf: params.kdf,
     };
-    let _receipt = domain::encrypt::execute_transactional(req)?;
+    let commit_receipt = domain::encrypt::execute_transactional(req)?;
 
-    if params.hash_mode == HashMode::CalculateHash {
-        super::hashing::hash_stream(&[output.to_string()])?;
-    }
+    let hash_verification = super::hash_after_commit(&[output.to_string()], params.hash_mode)?;
 
     if params.delete_input == DeleteInput::Delete {
         drop(input_file);
-        super::delete_path(input)?;
+        super::cleanup_after_commit(&[input.to_string()], &commit_receipt, hash_verification)?;
     }
 
     Ok(())

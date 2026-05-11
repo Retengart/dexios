@@ -1,7 +1,4 @@
-use crate::{
-    cli::prompt::get_answer,
-    global::states::{DeleteInput, HashMode},
-};
+use crate::{cli::prompt::get_answer, global::states::DeleteInput};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -84,15 +81,12 @@ pub fn unpack(
         },
     )?;
 
-    if params.hash_mode == HashMode::CalculateHash {
-        super::hashing::hash_stream(&[input.to_string()])?;
-    }
+    let hash_verification = super::hash_after_commit(&[input.to_string()], params.hash_mode)?;
 
     if params.delete_input == DeleteInput::Delete {
-        let _committed_extraction = extraction_receipt;
         drop(header_file);
         drop(input_file);
-        super::delete_path(input)?;
+        super::cleanup_after_commit(&[input.to_string()], &extraction_receipt, hash_verification)?;
     }
 
     Ok(())

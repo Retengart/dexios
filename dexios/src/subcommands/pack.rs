@@ -6,7 +6,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 
 use crate::global::states::{
-    DeleteSource, DirectoryMode, HashMode, HeaderLocation, PasswordState, PrintMode,
+    DeleteSource, DirectoryMode, HeaderLocation, PasswordState, PrintMode,
 };
 use crate::global::{
     states::Compression,
@@ -278,7 +278,7 @@ pub fn execute(req: &Request) -> Result<()> {
     };
 
     // 2. compress and encrypt files
-    let _commit_receipt =
+    let commit_receipt =
         domain::pack::execute_transactional(domain::pack::TransactionalPackRequest {
             source_paths: req.input_file.iter().map(PathBuf::from).collect(),
             entries,
@@ -292,14 +292,11 @@ pub fn execute(req: &Request) -> Result<()> {
             recursive: req.pack_params.dir_mode == DirectoryMode::Recursive,
         })?;
 
-    if req.crypto_params.hash_mode == HashMode::CalculateHash {
-        super::hashing::hash_stream(&[req.output_file.to_string()])?;
-    }
+    let hash_verification =
+        super::hash_after_commit(&[req.output_file.to_string()], req.crypto_params.hash_mode)?;
 
     if req.pack_params.delete_source == DeleteSource::Delete {
-        req.input_file
-            .iter()
-            .try_for_each(|file_name| super::delete_path(file_name))?;
+        super::cleanup_after_commit(req.input_file, &commit_receipt, hash_verification)?;
     }
 
     Ok(())
