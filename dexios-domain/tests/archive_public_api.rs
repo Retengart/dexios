@@ -195,6 +195,68 @@ fn d02_d04_pack_source_keeps_private_zstd_offline_archive_boundary() {
     assert_no_violations(violations);
 }
 
+#[test]
+fn d10_pack_execution_requires_validated_domain_intent() {
+    assert!(
+        DOMAIN_PACK.contains("pub struct PackIntent"),
+        "D-10 public pack execution must be anchored on a validated PackIntent"
+    );
+
+    let domain_violations = collect_violations(
+        &[Source {
+            path: "dexios-domain/src/pack.rs",
+            text: DOMAIN_PACK,
+        }],
+        |source| {
+            source
+                .text
+                .lines()
+                .enumerate()
+                .filter_map(|(index, line)| {
+                    let trimmed = line.trim_start();
+                    if public_raw_pack_execution_bypass(trimmed) {
+                        Some(violation(
+                            source.path,
+                            index,
+                            "D-10 public pack APIs must not expose raw request or entry construction bypasses",
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        },
+    );
+    assert_no_violations(domain_violations);
+
+    let cli_violations = collect_violations(
+        &[Source {
+            path: "dexios/src/subcommands/pack.rs",
+            text: CLI_PACK,
+        }],
+        |source| {
+            source
+                .text
+                .lines()
+                .enumerate()
+                .filter_map(|(index, line)| {
+                    let compact = line.split_whitespace().collect::<String>();
+                    if cli_constructs_raw_pack_request_or_entry(&compact) {
+                        Some(violation(
+                            source.path,
+                            index,
+                            "D-10 CLI must construct PackIntent, not raw domain pack requests or entries",
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        },
+    );
+    assert_no_violations(cli_violations);
+}
+
 fn collect_violations(
     sources: &[Source<'_>],
     scan: impl Fn(Source<'_>) -> Vec<String>,
@@ -249,6 +311,21 @@ fn cli_exposes_compression_selector(compact: &str) -> bool {
         || compact.contains("Arg::new(\"zstd\")")
         || compact.contains(".long(\"zstd\")")
         || compact.contains("zip::CompressionMethod")
+}
+
+fn public_raw_pack_execution_bypass(trimmed: &str) -> bool {
+    [
+        "pub struct Request",
+        "pub struct TransactionalPackRequest",
+        "pub struct ArchiveSourceEntry",
+    ]
+    .into_iter()
+    .any(|pattern| trimmed.starts_with(pattern))
+}
+
+fn cli_constructs_raw_pack_request_or_entry(compact: &str) -> bool {
+    compact.contains("domain::pack::TransactionalPackRequest")
+        || compact.contains("domain::pack::ArchiveSourceEntry{")
 }
 
 fn violation(path: &str, index: usize, message: &str) -> String {
