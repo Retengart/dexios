@@ -41,11 +41,16 @@ Pack and encrypt directories:
 dexios pack photos/ archive.enc
 ```
 
+`pack` uses the default Dexios archive compression policy. It does not expose
+ZIP compression or metadata knobs as CLI options.
+
 Unpack a previously packed archive:
 
 ```bash
 dexios unpack archive.enc output-dir
 ```
+
+`unpack` performs strict path validation before committing extracted files.
 
 ## Key Input
 
@@ -70,6 +75,7 @@ Current precedence is:
 - New V1 writes do not expose alternate KDF selection; historical Argon2id
   keyslot tags are reported as unsupported historical metadata.
 - The CLI no longer exposes alternate cipher selection or secure-erase flags.
+- Delete-after-success flags are ordinary cleanup after commit and requested hash success.
 
 ## More Information
 

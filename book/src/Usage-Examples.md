@@ -80,11 +80,7 @@ dexios hash secret.enc
 dexios pack photos/ archive.enc
 ```
 
-With compression:
-
-```bash
-dexios pack --zstd photos/ archive.enc
-```
+Pack uses the default Dexios archive compression policy.
 
 ## Unpack a Previously Packed Archive
 
@@ -103,3 +99,5 @@ Delete source directories after a successful pack:
 ```bash
 dexios pack --delete-source photos/ archive.enc
 ```
+
+The delete flags run only after the workflow commits its outputs and any requested hash succeeds.

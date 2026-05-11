@@ -33,6 +33,12 @@ The workspace is split into:
 - `dexios-domain/` for higher-level workflows such as pack/unpack and key operations
 - `dexios-gui/` for an experimental GUI crate
 
+Archive workflows:
+
+- `pack` uses the default Dexios archive compression policy and does not expose ZIP compression knobs.
+- `unpack` validates archive paths, collisions, and output targets before committing extracted files.
+- `pack --delete-source` and `unpack --delete-input` are ordinary delete-after-success cleanup flags that run only after commit and requested hash success.
+
 ## Installation
 
 Dexios currently requires Rust `1.88` or newer.
