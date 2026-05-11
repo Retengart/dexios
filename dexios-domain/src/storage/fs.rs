@@ -3,6 +3,7 @@ use std::fs as std_fs;
 use std::io::{self, Write};
 use std::path::{Component, Path, PathBuf};
 
+use super::identity::ResolvedTarget;
 use super::{Entry, Error, FileData, FileMode, Storage, TempArtifact};
 
 pub struct FileStorage;
@@ -13,6 +14,48 @@ impl FileStorage {
 
         Ok(TempArtifact::new(file))
     }
+
+    pub fn revalidate_unpack_target<P: AsRef<Path>>(
+        &self,
+        root: P,
+        relative: &Path,
+        expected_target: &ResolvedTarget,
+    ) -> Result<(), Error> {
+        let root = root.as_ref();
+        reject_mutated_root(root)?;
+
+        let full_path = self.resolve_unpack_path(root, relative)?;
+        if full_path != expected_target.original_path() {
+            return Err(Error::UnsafePath(full_path));
+        }
+
+        match std_fs::symlink_metadata(&full_path) {
+            Ok(meta) if meta.file_type().is_symlink() || meta.is_dir() => {
+                Err(Error::UnsafePath(full_path))
+            }
+            Ok(_) if !expected_target.exists() => Err(Error::UnsafePath(full_path)),
+            Ok(_) => Ok(()),
+            Err(err) if err.kind() == io::ErrorKind::NotFound && expected_target.exists() => {
+                Err(Error::UnsafePath(full_path))
+            }
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(_) => Err(Error::FileAccess),
+        }
+    }
+}
+
+fn reject_mutated_root(root: &Path) -> Result<(), Error> {
+    let metadata = std_fs::symlink_metadata(root).map_err(|_| Error::UnsafePath(root.into()))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(Error::UnsafePath(root.into()));
+    }
+
+    let canonical_root = std_fs::canonicalize(root).map_err(|_| Error::UnsafePath(root.into()))?;
+    if canonical_root != root {
+        return Err(Error::UnsafePath(root.into()));
+    }
+
+    Ok(())
 }
 
 impl Storage<std_fs::File> for FileStorage {

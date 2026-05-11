@@ -109,6 +109,7 @@ where
 
 struct ExtractionEntity {
     full_path: PathBuf,
+    relative_path: PathBuf,
     archive_index: usize,
     kind: ExtractionKind,
 }
@@ -120,6 +121,7 @@ enum ExtractionKind {
 
 struct ScannedEntry {
     full_path: PathBuf,
+    relative_path: PathBuf,
     archive_index: usize,
     kind: ExtractionKind,
 }
@@ -282,6 +284,7 @@ fn prepare_extraction_entities<R: Read + Seek>(
 
         scanned_entries.push(ScannedEntry {
             full_path,
+            relative_path: path,
             archive_index: i,
             kind,
         });
@@ -298,6 +301,7 @@ fn prepare_extraction_entities<R: Read + Seek>(
 
         entities.push(ExtractionEntity {
             full_path: entry.full_path,
+            relative_path: entry.relative_path,
             archive_index: entry.archive_index,
             kind: entry.kind,
         });
@@ -324,7 +328,7 @@ fn stage_and_commit_extraction<R: Read + Seek>(
         .iter()
         .filter(|entity| matches!(entity.kind, ExtractionKind::File(_)))
     {
-        stage_extracted_file(stor, archive, &mut transaction, entity)?;
+        stage_extracted_file(stor, archive, output_dir, &mut transaction, entity)?;
     }
 
     transaction.commit_all().map_err(Error::Transaction)
@@ -333,6 +337,7 @@ fn stage_and_commit_extraction<R: Read + Seek>(
 fn stage_extracted_file<R: Read + Seek>(
     stor: &storage::FileStorage,
     archive: &mut zip::ZipArchive<R>,
+    output_dir: &Path,
     transaction: &mut LinkedOutputTransaction,
     entity: &ExtractionEntity,
 ) -> Result<(), Error> {
@@ -340,9 +345,15 @@ fn stage_extracted_file<R: Read + Seek>(
         unreachable!();
     };
 
+    stor.revalidate_unpack_target(output_dir, &entity.relative_path, target)
+        .map_err(map_storage_path_error)?;
+
     if let Some(parent_dir) = entity.full_path.parent() {
         stor.create_dir_all(parent_dir).map_err(Error::Storage)?;
     }
+
+    stor.revalidate_unpack_target(output_dir, &entity.relative_path, target)
+        .map_err(map_storage_path_error)?;
 
     let transaction_index = transaction
         .stage(target.clone())
