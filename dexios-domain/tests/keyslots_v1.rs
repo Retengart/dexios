@@ -478,19 +478,22 @@ fn supported_keyslot_verifies_when_mixed_with_unsupported_argon2id() {
 
 #[test]
 fn key_del_rejects_final_keyslot_before_writing_header() {
-    let encrypted = encrypted_v1_fixture();
+    let (_dir, encrypted_path) = encrypted_v1_file("delete-final-before-write");
+    let original = fs::read(&encrypted_path).expect("read original fixture");
 
-    let deletion = key::delete::execute(key::delete::Request {
-        handle: &encrypted,
-        raw_key_old: Protected::new(b"old-pass".to_vec()),
-    });
+    let intent = key::delete::DeleteIntent::new(&encrypted_path).expect("prepare delete intent");
+    let deletion = key::delete::execute(intent, Protected::new(b"old-pass".to_vec()));
 
     assert!(
         deletion.is_err(),
         "deleting the final usable keyslot should be rejected before writing the header"
     );
+    assert_eq!(
+        fs::read(&encrypted_path).expect("read after final-slot delete"),
+        original
+    );
 
-    let plaintext = decrypt_fixture(&encrypted, b"old-pass").expect("decrypt with original key");
+    let plaintext = decrypt_file(&encrypted_path, b"old-pass").expect("decrypt with original key");
     assert_eq!(plaintext, b"Hello world");
 }
 

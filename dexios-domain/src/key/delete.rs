@@ -5,95 +5,80 @@ use core::header::common::HEADER_LEN;
 use core::header::v1::V1Header;
 use core::header::{ParsedHeader, read_header};
 use core::protected::Protected;
-use std::cell::RefCell;
 use std::fs;
-use std::io::{Cursor, Read, Seek, Write};
+use std::io::Cursor;
 use std::path::Path;
 
+use crate::storage::identity::ResolvedTarget;
 use crate::storage::identity::{OverwritePolicy, PathIdentityGraph, PathRole};
 use crate::storage::transaction::{CommitReceipt, StagedOutputTransaction};
 
-pub struct Request<'a, RW>
-where
-    RW: Read + Write + Seek,
-{
-    pub handle: &'a RefCell<RW>, // header read+write+seek
-    pub raw_key_old: Protected<Vec<u8>>,
+pub struct DeleteIntent {
+    target: ResolvedTarget,
+    original: Vec<u8>,
+    header: V1Header,
 }
 
-pub struct TransactionalRequest<'a> {
-    pub target_path: &'a Path,
-    pub raw_key_old: Protected<Vec<u8>>,
+impl DeleteIntent {
+    pub fn new<P>(target_path: P) -> Result<Self, Error>
+    where
+        P: AsRef<Path>,
+    {
+        let mut graph = PathIdentityGraph::new();
+        let target = graph
+            .add_output(
+                target_path,
+                PathRole::MutationTarget,
+                OverwritePolicy::ReplaceAtCommit,
+            )
+            .map_err(Error::PathIdentity)?;
+        graph.validate().map_err(Error::PathIdentity)?;
+
+        let original = fs::read(target.target_path()).map_err(|_| Error::ReadIo)?;
+        let header = parse_v1_header(&original)?;
+
+        if let Some(tag) = super::unsupported_keyslot_kdf_tag(header.keyslots_collection()) {
+            return Err(Error::UnsupportedKdf(tag));
+        }
+
+        Ok(Self {
+            target,
+            original,
+            header,
+        })
+    }
 }
 
-pub fn execute<RW>(req: Request<'_, RW>) -> Result<(), Error>
-where
-    RW: Read + Write + Seek,
-{
-    let parsed =
-        read_header(&mut *req.handle.borrow_mut()).map_err(|_| Error::HeaderDeserialize)?;
-    let ParsedHeader::V1(payload) = parsed;
-    let header = payload.header();
-    let header_new = deleted_header(header, req.raw_key_old)?;
-
-    // write the header to the handle
-    req.handle
-        .borrow_mut()
-        .seek(std::io::SeekFrom::Current(
-            -i64::try_from(HEADER_LEN).map_err(|_| Error::HeaderSizeParse)?,
-        ))
-        .map_err(|_| Error::Seek)?;
-    header_new
-        .write(&mut *req.handle.borrow_mut())
-        .map_err(|_| Error::HeaderWrite)?;
-
-    Ok(())
-}
-
-pub fn execute_transactional(req: TransactionalRequest<'_>) -> Result<CommitReceipt, Error> {
-    let mut graph = PathIdentityGraph::new();
-    let target = graph
-        .add_output(
-            req.target_path,
-            PathRole::MutationTarget,
-            OverwritePolicy::ReplaceAtCommit,
-        )
-        .map_err(|_| Error::HeaderDeserialize)?;
-    graph.validate().map_err(|_| Error::HeaderDeserialize)?;
-
-    let original = fs::read(req.target_path).map_err(|_| Error::HeaderDeserialize)?;
-    let replacement = replacement_bytes(original, req.raw_key_old)?;
-
-    let mut transaction = StagedOutputTransaction::new(target).map_err(|_| Error::HeaderWrite)?;
-    transaction
-        .write_all(&replacement)
-        .map_err(|_| Error::HeaderWrite)?;
-    transaction.commit().map_err(|_| Error::HeaderWrite)
-}
-
-fn replacement_bytes(
-    mut original: Vec<u8>,
+pub fn execute(
+    intent: DeleteIntent,
     raw_key_old: Protected<Vec<u8>>,
-) -> Result<Vec<u8>, Error> {
-    let mut reader = Cursor::new(original.as_slice());
-    let parsed = read_header(&mut reader).map_err(|_| Error::HeaderDeserialize)?;
-    let ParsedHeader::V1(payload) = parsed;
-    let header_new = deleted_header(payload.header(), raw_key_old)?;
-    let header_bytes = header_new.serialize().map_err(|_| Error::HeaderWrite)?;
+) -> Result<CommitReceipt, Error> {
+    let DeleteIntent {
+        target,
+        mut original,
+        header,
+    } = intent;
 
+    let replacement_header = deleted_header(&header, raw_key_old)?;
+    let header_bytes = validated_header_bytes(&replacement_header)?;
     let target_header = original
         .get_mut(..HEADER_LEN)
         .ok_or(Error::HeaderDeserialize)?;
     target_header.copy_from_slice(&header_bytes);
 
-    Ok(original)
+    let mut transaction = StagedOutputTransaction::new(target).map_err(Error::Transaction)?;
+    transaction
+        .write_all(&original)
+        .map_err(Error::Transaction)?;
+    transaction.commit().map_err(Error::Transaction)
 }
 
 fn deleted_header(header: &V1Header, raw_key_old: Protected<Vec<u8>>) -> Result<V1Header, Error> {
     let mut keyslots = header.keyslots_collection().clone();
 
     // all of these functions need either the master key, or the index
-    let (_, index) = super::decrypt_v1_master_key_with_index(&keyslots, raw_key_old)?;
+    let (master_key, index) = super::decrypt_v1_master_key_with_index(&keyslots, raw_key_old)?;
+    drop(master_key);
 
     if keyslots.len() == 1 {
         return Err(Error::CannotRemoveFinalV1Keyslot);
@@ -102,4 +87,21 @@ fn deleted_header(header: &V1Header, raw_key_old: Protected<Vec<u8>>) -> Result<
     keyslots.remove(index).map_err(|_| Error::HeaderWrite)?;
 
     V1Header::new(*header.payload_nonce(), keyslots).map_err(|_| Error::HeaderWrite)
+}
+
+fn parse_v1_header(bytes: &[u8]) -> Result<V1Header, Error> {
+    let mut reader = Cursor::new(bytes);
+    let parsed = read_header(&mut reader).map_err(super::map_header_read_error)?;
+    let ParsedHeader::V1(payload) = parsed;
+    Ok(payload.header().clone())
+}
+
+fn validated_header_bytes(header: &V1Header) -> Result<Vec<u8>, Error> {
+    let header_bytes = header.serialize().map_err(|_| Error::HeaderWrite)?;
+    if header_bytes.len() != HEADER_LEN {
+        return Err(Error::HeaderWrite);
+    }
+
+    parse_v1_header(&header_bytes)?;
+    Ok(header_bytes)
 }

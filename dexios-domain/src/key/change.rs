@@ -98,7 +98,7 @@ pub fn execute(
         .ok_or(Error::HeaderDeserialize)?;
     target_header.copy_from_slice(&header_bytes);
 
-    let mut transaction = StagedOutputTransaction::new(target).map_err(|_| Error::HeaderWrite)?;
+    let mut transaction = StagedOutputTransaction::new(target).map_err(Error::Transaction)?;
     transaction
         .write_all(&original)
         .map_err(Error::Transaction)?;
