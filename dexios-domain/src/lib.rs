@@ -33,6 +33,7 @@
     clippy::missing_errors_doc
 )]
 
+pub mod archive;
 pub mod decrypt;
 pub mod encrypt;
 pub mod hash;

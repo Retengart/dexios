@@ -6,6 +6,7 @@ use std::sync::Arc;
 use core::header::{ParsedHeader, read_header};
 use core::kdf::Kdf;
 use core::protected::Protected;
+use dexios_domain::archive::ArchivePolicy;
 use dexios_domain::decrypt;
 use dexios_domain::pack::{self, ArchiveSourceEntry};
 use dexios_domain::storage::identity::OverwritePolicy;
@@ -61,7 +62,7 @@ fn pack_writes_relative_archive_paths() {
 
     let req = pack::Request {
         entries,
-        compression_method: zip::CompressionMethod::Stored,
+        archive_policy: ArchivePolicy::default(),
         writer: output_file.try_writer().unwrap(),
         header_writer: None,
         raw_key: Protected::new(PASSWORD.to_vec()),
@@ -118,7 +119,7 @@ fn pack_does_not_delete_source_directory_or_files() {
 
     let req = pack::Request {
         entries,
-        compression_method: zip::CompressionMethod::Stored,
+        archive_policy: ArchivePolicy::default(),
         writer: output_file.try_writer().unwrap(),
         header_writer: None,
         raw_key: Protected::new(PASSWORD.to_vec()),

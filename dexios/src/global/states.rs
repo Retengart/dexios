@@ -16,11 +16,6 @@ pub enum DirectoryMode {
     Recursive,
 }
 
-pub enum Compression {
-    None,
-    Zstd,
-}
-
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum DeleteSource {
     Delete,

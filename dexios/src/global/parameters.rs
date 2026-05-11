@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use clap::ArgMatches;
 use core::kdf::Kdf;
 
-use super::states::{Compression, DirectoryMode, Key, KeyParams, PrintMode};
+use super::states::{DirectoryMode, Key, KeyParams, PrintMode};
 use super::structs::KeyManipulationParams;
 
 pub fn get_params(name: &str, sub_matches: &ArgMatches) -> Result<Vec<String>> {
@@ -132,17 +132,10 @@ pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams
         DeleteSource::Retain
     };
 
-    let compression = if sub_matches.get_flag("zstd") {
-        Compression::Zstd
-    } else {
-        Compression::None
-    };
-
     let pack_params = PackParams {
         dir_mode,
         print_mode,
         delete_source,
-        compression,
     };
 
     Ok((crypto_params, pack_params))

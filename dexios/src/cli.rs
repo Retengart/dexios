@@ -193,13 +193,6 @@ pub fn build_cli() -> Command {
                     .help("Store the header separately from the file"),
             )
             .arg(
-                Arg::new("zstd")
-                    .short('z')
-                    .long("zstd")
-                    .action(ArgAction::SetTrue)
-                    .help("Use ZSTD compression"),
-            )
-            .arg(
                 Arg::new("recursive")
                     .short('r')
                     .long("recursive")
@@ -556,9 +549,9 @@ mod tests {
     }
 
     #[test]
-    fn pack_command_accepts_multiple_paths_and_zstd() {
+    fn pack_command_accepts_multiple_paths_without_compression_selector() {
         let matches = super::build_cli()
-            .try_get_matches_from(["dexios", "pack", "--zstd", "dir-a", "dir-b", "archive.dex"])
+            .try_get_matches_from(["dexios", "pack", "dir-a", "dir-b", "archive.dex"])
             .expect("CLI should parse");
 
         let (name, sub) = matches.subcommand().expect("subcommand");
@@ -573,7 +566,19 @@ mod tests {
             sub.get_one::<String>("output").map(String::as_str),
             Some("archive.dex")
         );
-        assert!(sub.get_flag("zstd"));
+    }
+
+    #[test]
+    fn removed_zstd_flag_is_rejected_for_pack() {
+        let error = super::build_cli()
+            .try_get_matches_from(["dexios", "pack", "--zstd", "dir-a", "archive.dex"])
+            .expect_err("--zstd should not be a public pack compression selector");
+
+        assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
+        assert!(
+            error.to_string().contains("--zstd"),
+            "error should name the removed flag: {error}"
+        );
     }
 
     #[test]

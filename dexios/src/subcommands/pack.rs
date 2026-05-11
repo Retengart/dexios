@@ -8,11 +8,9 @@ use anyhow::{Context, Result};
 use crate::global::states::{
     DeleteSource, DirectoryMode, HeaderLocation, PasswordState, PrintMode,
 };
-use crate::global::{
-    states::Compression,
-    structs::{CryptoParams, PackParams},
-};
+use crate::global::structs::{CryptoParams, PackParams};
 use crate::info;
+use domain::archive::ArchivePolicy;
 use domain::storage::Storage;
 use domain::storage::identity::OverwritePolicy;
 
@@ -272,11 +270,6 @@ pub fn execute(req: &Request) -> Result<()> {
         }
     }
 
-    let compression_method = match req.pack_params.compression {
-        Compression::None => zip::CompressionMethod::Stored,
-        Compression::Zstd => zip::CompressionMethod::Zstd,
-    };
-
     // 2. compress and encrypt files
     let commit_receipt =
         domain::pack::execute_transactional(domain::pack::TransactionalPackRequest {
@@ -288,7 +281,7 @@ pub fn execute(req: &Request) -> Result<()> {
             detached_header_overwrite_policy,
             raw_key,
             kdf: req.crypto_params.kdf,
-            compression_method,
+            archive_policy: ArchivePolicy::default(),
             recursive: req.pack_params.dir_mode == DirectoryMode::Recursive,
         })?;
 

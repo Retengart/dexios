@@ -2,9 +2,7 @@ use core::kdf::Kdf;
 
 use crate::global::states::{ForceMode, HashMode};
 
-use super::states::{
-    Compression, DeleteInput, DeleteSource, DirectoryMode, HeaderLocation, Key, PrintMode,
-};
+use super::states::{DeleteInput, DeleteSource, DirectoryMode, HeaderLocation, Key, PrintMode};
 
 pub struct CryptoParams {
     pub hash_mode: HashMode,
@@ -20,7 +18,6 @@ pub struct PackParams {
     pub dir_mode: DirectoryMode,
     pub print_mode: PrintMode,
     pub delete_source: DeleteSource,
-    pub compression: Compression,
 }
 
 pub struct KeyManipulationParams {

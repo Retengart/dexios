@@ -20,6 +20,7 @@ use core::primitives::BLOCK_SIZE;
 use core::protected::Protected;
 use zip::write::SimpleFileOptions;
 
+use crate::archive::{ArchiveCompression, ArchivePolicy};
 use crate::storage::Storage;
 use crate::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
@@ -103,7 +104,7 @@ where
 {
     pub writer: &'a RefCell<W>,
     pub entries: Vec<ArchiveSourceEntry<SRW>>,
-    pub compression_method: zip::CompressionMethod,
+    pub archive_policy: ArchivePolicy,
     pub header_writer: Option<&'a RefCell<W>>,
     pub raw_key: Protected<Vec<u8>>,
     pub kdf: Kdf,
@@ -121,7 +122,7 @@ where
     pub detached_header_overwrite_policy: OverwritePolicy,
     pub raw_key: Protected<Vec<u8>>,
     pub kdf: Kdf,
-    pub compression_method: zip::CompressionMethod,
+    pub archive_policy: ArchivePolicy,
     pub recursive: bool,
 }
 
@@ -169,7 +170,7 @@ where
     execute_with_temp_artifact(
         Request {
             entries: req.entries,
-            compression_method: req.compression_method,
+            archive_policy: req.archive_policy,
             writer: &output_writer,
             header_writer: detached_header_writer.as_ref(),
             raw_key: req.raw_key,
@@ -207,7 +208,7 @@ where
         let mut zip_writer = zip::ZipWriter::new(BufWriter::new(tmp_writer));
 
         let options = SimpleFileOptions::default()
-            .compression_method(req.compression_method)
+            .compression_method(zip_compression_method(req.archive_policy))
             .large_file(true)
             .unix_permissions(0o755);
 
@@ -263,6 +264,12 @@ where
     drop(tmp_file);
 
     encrypt_res
+}
+
+fn zip_compression_method(policy: ArchivePolicy) -> zip::CompressionMethod {
+    match policy.compression() {
+        ArchiveCompression::Zstd => zip::CompressionMethod::Zstd,
+    }
 }
 
 fn resolve_pack_targets<RW>(
@@ -388,6 +395,7 @@ pub(crate) mod tests {
     use super::*;
     use std::io::{Cursor, Read};
 
+    use crate::archive::ArchivePolicy;
     use crate::encrypt::tests::PASSWORD;
     use crate::storage::{InMemoryStorage, Storage};
 
@@ -472,7 +480,7 @@ pub(crate) mod tests {
 
         let req = Request {
             entries,
-            compression_method: zip::CompressionMethod::Stored,
+            archive_policy: ArchivePolicy::default(),
             writer: output_file.try_writer().unwrap(),
             header_writer: None,
             raw_key: Protected::new(PASSWORD.to_vec()),
