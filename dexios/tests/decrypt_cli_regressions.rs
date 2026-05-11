@@ -50,7 +50,7 @@ fn run_cli(current_dir: &Path, key: &str, args: &[&str]) -> std::process::Output
 }
 
 #[test]
-fn quarantined_known_bug_decrypt_wrong_key_preserves_existing_output() {
+fn decrypt_wrong_key_preserves_existing_output() {
     let test_dir = TestDir::new("decrypt-wrong-key-preserves-output");
     let plain = test_dir.path().join("plain.txt");
     let encrypted = test_dir.path().join("plain.enc");

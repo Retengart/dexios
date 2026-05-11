@@ -14,10 +14,14 @@ Instead, the CLI offers plain delete-after-success flags:
 The current contract is intentionally narrow:
 
 1. complete the requested workflow successfully
-2. flush and close the produced outputs
-3. delete the selected source inputs
+2. commit every required staged output, detached header, extracted file, or metadata update
+3. complete the requested hash calculation when hashing is enabled
+4. delete the selected source inputs as a post-commit cleanup step
 
 If the workflow fails, the source inputs remain in place.
+
+Cleanup failures are reported after the output commit has already succeeded.
+Dexios does not roll back committed outputs during this cleanup step.
 
 ## Why Secure Erase Was Removed
 
@@ -25,4 +29,4 @@ Overwrite passes are not a trustworthy abstraction on SSDs and other flash-backe
 
 ## Temporary Archives
 
-`pack` and `unpack` still use temporary plaintext zip artifacts internally, but those artifacts are now handled as ordinary temporary files rather than overwritten repeatedly before deletion.
+`pack` and `unpack` still use temporary plaintext zip artifacts internally, but those artifacts are handled as ordinary temporary files rather than overwritten repeatedly before deletion.

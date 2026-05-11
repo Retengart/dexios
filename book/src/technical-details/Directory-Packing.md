@@ -34,7 +34,8 @@ The current implementation:
 4. creates a temporary zip artifact
 5. writes directory and file entries into the archive
 6. encrypts the temporary archive using the same V1 stream encryption path used for normal files
-7. drops the temporary archive
+7. commits the final encrypted output and detached header through staged storage transaction semantics
+8. drops the temporary archive
 
 Files are currently copied into the zip archive in streaming chunks. The code does not attempt to preserve full original filesystem metadata as a stable compatibility guarantee.
 
@@ -46,13 +47,14 @@ The current unpack flow is stricter than the historical docs:
 2. normalize every archive path before writing anything to disk
 3. reject traversal attempts and duplicate output paths after normalization
 4. reject unsafe symlink-based output escapes through the storage layer
-5. create directories and files under the requested output root
-6. clean up the temporary archive
+5. stage selected extracted files under the requested output root
+6. commit the extracted files through storage transaction semantics
+7. clean up the temporary archive
 
 If the CLI is not run with `--force`, unpack may prompt before overwriting existing files.
 
 ## Security Notes
 
 - Packing hides original directory layout inside the encrypted payload, but the outer ciphertext still leaks overall file size.
-- Unpack should still be treated as a risky operation on untrusted input, even though the current implementation has explicit path-safety checks.
+- Unpack should still be treated as a risky operation on untrusted input, even though the current implementation has explicit path identity and path-safety checks.
 - The temporary decrypted archive is plaintext while it exists.

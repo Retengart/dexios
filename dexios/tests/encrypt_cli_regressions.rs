@@ -49,7 +49,7 @@ fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
 }
 
 #[test]
-fn quarantined_known_bug_encrypt_rejects_same_file_alias_before_opening_output() {
+fn encrypt_rejects_same_file_alias_before_opening_output() {
     let test_dir = TestDir::new("encrypt-same-file-alias");
     let plain = test_dir.path().join("plain.txt");
     let sentinel = b"do not truncate";
