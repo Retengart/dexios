@@ -57,12 +57,51 @@ pub fn map_header_error(error: domain::header::Error) -> anyhow::Error {
         domain::header::Error::UnsupportedRestore => {
             anyhow!("Unsupported header workflow for this file")
         }
+        domain::header::Error::ShortDetachedHeader { actual_len } => {
+            anyhow!("Detached header is too short: {actual_len} bytes")
+        }
+        domain::header::Error::TrailingDetachedHeader { actual_len } => {
+            anyhow!("Detached header has trailing bytes: {actual_len} bytes")
+        }
+        domain::header::Error::MissingPayload { actual_len } => {
+            anyhow!("Encrypted artifact is missing payload bytes: {actual_len} bytes")
+        }
+        domain::header::Error::TargetTooShort { actual_len } => {
+            anyhow!("Header restore target is too short: {actual_len} bytes")
+        }
+        domain::header::Error::TargetNotStripped => {
+            anyhow!("Header restore target is not stripped")
+        }
         domain::header::Error::InvalidFile | domain::header::Error::HeaderSizeParse => {
             anyhow!("Malformed Dexios header or payload")
         }
-        domain::header::Error::Read => anyhow!("I/O failure while reading header data"),
-        domain::header::Error::Write => anyhow!("I/O failure while writing header data"),
+        domain::header::Error::Read | domain::header::Error::ReadIo => {
+            anyhow!("I/O failure while reading header data")
+        }
+        domain::header::Error::Write | domain::header::Error::WriteIo => {
+            anyhow!("I/O failure while writing header data")
+        }
         domain::header::Error::Rewind => anyhow!("I/O failure while rewinding header data"),
+        domain::header::Error::PathIdentity(error) => match error {
+            domain::storage::identity::IdentityError::AliasedPath { .. }
+            | domain::storage::identity::IdentityError::UnsafePath(_) => {
+                anyhow!("Unsafe path: {error}")
+            }
+            domain::storage::identity::IdentityError::Io(_) => {
+                anyhow!("I/O failure while checking header paths")
+            }
+        },
+        domain::header::Error::Transaction(error) => match error {
+            domain::storage::transaction::TransactionError::Persist { .. }
+            | domain::storage::transaction::TransactionError::PartialCommit { .. } => {
+                anyhow!("Unable to commit header update")
+            }
+            domain::storage::transaction::TransactionError::Write { .. }
+            | domain::storage::transaction::TransactionError::Flush { .. }
+            | domain::storage::transaction::TransactionError::Sync { .. } => {
+                anyhow!("I/O failure while writing header data")
+            }
+        },
     }
 }
 

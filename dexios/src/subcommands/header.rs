@@ -1,11 +1,10 @@
-use std::{fs::File, path::Path};
+use std::fs::File;
 
 use crate::cli::prompt::overwrite_check;
 use crate::global::states::ForceMode;
 use anyhow::{Context, Result};
 use core::header::v1::KeyslotKdf;
 use core::header::{ParsedHeader, read_header};
-use domain::storage::Storage;
 use domain::storage::identity::OverwritePolicy;
 use domain::utils::hex_encode;
 
@@ -21,13 +20,6 @@ fn overwrite_policy(path_exists: bool) -> OverwritePolicy {
 
 fn existing_path(path: &str) -> bool {
     std::fs::metadata(path).is_ok()
-}
-
-fn output_target<'a>(path: &'a str, path_exists: bool) -> domain::header::dump::OutputTarget<'a> {
-    domain::header::dump::OutputTarget {
-        path: Path::new(path),
-        overwrite: overwrite_policy(path_exists),
-    }
 }
 
 fn overwrite_check_if_needed(path: &str, path_exists: bool, force: ForceMode) -> Result<bool> {
@@ -81,21 +73,16 @@ pub fn details(input: &str) -> Result<()> {
 // it's used for extracting an encrypted file's header for backups and such
 // it implements a check to ensure the header is valid
 pub fn dump(input: &str, output: &str, force: ForceMode) -> Result<()> {
-    let stor = std::sync::Arc::new(domain::storage::FileStorage);
-    let input_file = stor.read_file(input)?;
-
     let output_exists = existing_path(output);
     if !overwrite_check_if_needed(output, output_exists, force)? {
         std::process::exit(0);
     }
 
-    let req = domain::header::dump::TransactionalRequest {
-        input_path: Path::new(input),
-        reader: input_file.try_reader()?,
-        output: output_target(output, output_exists),
-    };
+    let intent =
+        domain::header::dump::DumpIntent::new(input, output, overwrite_policy(output_exists))
+            .map_err(map_header_error)?;
 
-    let _receipt = domain::header::dump::execute_transactional(req).map_err(map_header_error)?;
+    let _receipt = domain::header::dump::execute_transactional(intent).map_err(map_header_error)?;
 
     Ok(())
 }
@@ -106,12 +93,11 @@ pub fn dump(input: &str, output: &str, force: ForceMode) -> Result<()> {
 // this does not work for files encrypted *with* a detached header
 // it implements a check to ensure the header is valid before restoring to a file
 pub fn restore(input: &str, output: &str) -> Result<()> {
-    let req = domain::header::restore::TransactionalRequest {
-        header_path: Path::new(input),
-        target_path: Path::new(output),
-    };
+    let intent = domain::header::restore::RestoreIntent::new(input, output)
+        .map_err(map_header_error)
+        .with_context(|| format!("Unable to restore header into {output}"))?;
 
-    let _receipt = domain::header::restore::execute_transactional(req)
+    let _receipt = domain::header::restore::execute_transactional(intent)
         .map_err(map_header_error)
         .with_context(|| format!("Unable to restore header into {output}"))?;
 
@@ -123,11 +109,11 @@ pub fn restore(input: &str, output: &str) -> Result<()> {
 // it can be useful for storing the header separate from the file, to make an attacker's life that little bit harder
 // it implements a check to ensure the header is valid before stripping
 pub fn strip(input: &str) -> Result<()> {
-    let req = domain::header::strip::TransactionalRequest {
-        target_path: Path::new(input),
-    };
+    let intent = domain::header::strip::StripIntent::new(input)
+        .map_err(map_header_error)
+        .with_context(|| format!("Unable to strip header from {input}"))?;
 
-    let _receipt = domain::header::strip::execute_transactional(req)
+    let _receipt = domain::header::strip::execute_transactional(intent)
         .map_err(map_header_error)
         .with_context(|| format!("Unable to strip header from {input}"))?;
 

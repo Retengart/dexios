@@ -1,80 +1,88 @@
 //! This provides functionality for dumping a header that adheres to the Dexios format.
 
 use super::Error;
-use std::cell::RefCell;
-use std::io::{Read, Seek, Write};
+use std::fs;
+use std::io::Cursor;
 use std::path::Path;
 
+use core::header::common::HEADER_LEN;
 use core::header::{ParsedHeader, read_header};
 
-use crate::storage::identity::{OverwritePolicy, PathIdentityGraph, PathRole};
-use crate::storage::transaction::{CommitReceipt, StagedOutputTransaction};
+use crate::storage::identity::{OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget};
+use crate::storage::transaction::{CommitReceipt, StagedOutputTransaction, TransactionError};
 
-pub struct Request<'a, R, W>
-where
-    R: Read + Seek,
-    W: Write + Seek,
-{
-    pub reader: &'a RefCell<R>,
-    pub writer: &'a RefCell<W>,
+#[derive(Debug)]
+pub struct DumpIntent {
+    input_target: ResolvedTarget,
+    output_target: ResolvedTarget,
 }
 
-pub struct OutputTarget<'a> {
-    pub path: &'a Path,
-    pub overwrite: OverwritePolicy,
+impl DumpIntent {
+    pub fn new<I, O>(
+        input_path: I,
+        output_path: O,
+        overwrite: OverwritePolicy,
+    ) -> Result<Self, Error>
+    where
+        I: AsRef<Path>,
+        O: AsRef<Path>,
+    {
+        let input_path = input_path.as_ref().to_path_buf();
+        let mut graph = PathIdentityGraph::new();
+        let input_target = graph
+            .add_existing(&input_path, PathRole::Input)
+            .map_err(Error::PathIdentity)?;
+        let output_target = graph
+            .add_output(output_path, PathRole::Output, overwrite)
+            .map_err(Error::PathIdentity)?;
+        graph.validate().map_err(Error::PathIdentity)?;
+
+        Ok(Self {
+            input_target,
+            output_target,
+        })
+    }
 }
 
-pub struct TransactionalRequest<'a, R>
-where
-    R: Read + Seek,
-{
-    pub input_path: &'a Path,
-    pub reader: &'a RefCell<R>,
-    pub output: OutputTarget<'a>,
-}
+pub fn execute(intent: DumpIntent) -> Result<CommitReceipt, Error> {
+    let DumpIntent {
+        input_target,
+        output_target,
+    } = intent;
 
-pub fn execute<R, W>(req: Request<'_, R, W>) -> Result<(), Error>
-where
-    R: Read + Seek,
-    W: Write + Seek,
-{
-    let header_bytes = dump_header_bytes(req.reader)?;
-
-    req.writer
-        .borrow_mut()
-        .write_all(&header_bytes)
-        .map_err(|_| Error::Write)?;
-
-    Ok(())
-}
-
-pub fn execute_transactional<R>(req: TransactionalRequest<'_, R>) -> Result<CommitReceipt, Error>
-where
-    R: Read + Seek,
-{
-    let mut graph = PathIdentityGraph::new();
-    graph
-        .add_existing(req.input_path, PathRole::Input)
-        .map_err(|_| Error::InvalidFile)?;
-    let output_target = graph
-        .add_output(req.output.path, PathRole::Output, req.output.overwrite)
-        .map_err(|_| Error::InvalidFile)?;
-    graph.validate().map_err(|_| Error::InvalidFile)?;
-
-    let header_bytes = dump_header_bytes(req.reader)?;
-    let mut transaction = StagedOutputTransaction::new(output_target).map_err(|_| Error::Write)?;
+    let input = fs::read(input_target.target_path()).map_err(|_| Error::ReadIo)?;
+    let header_bytes = dump_header_bytes(&input)?;
+    let mut transaction =
+        StagedOutputTransaction::new(output_target).map_err(Error::Transaction)?;
     transaction
         .write_all(&header_bytes)
-        .map_err(|_| Error::Write)?;
-    transaction.commit().map_err(|_| Error::Write)
+        .map_err(map_write_transaction_error)?;
+    transaction.commit().map_err(Error::Transaction)
 }
 
-fn dump_header_bytes<R>(reader: &RefCell<R>) -> Result<Vec<u8>, Error>
-where
-    R: Read + Seek,
-{
-    let parsed = read_header(&mut *reader.borrow_mut()).map_err(Error::from)?;
-    let ParsedHeader::V1(payload) = parsed;
+pub fn execute_transactional(intent: DumpIntent) -> Result<CommitReceipt, Error> {
+    execute(intent)
+}
 
-    payload.header().serialize().map_err(|_| Error::Write)
+fn dump_header_bytes(input: &[u8]) -> Result<Vec<u8>, Error> {
+    if input.len() <= HEADER_LEN {
+        return Err(Error::MissingPayload {
+            actual_len: input.len(),
+        });
+    }
+
+    let mut reader = Cursor::new(input);
+    let parsed = read_header(&mut reader).map_err(Error::from)?;
+    let ParsedHeader::V1(payload) = parsed;
+    let serialized = payload.header().serialize().map_err(|_| Error::WriteIo)?;
+    debug_assert_eq!(serialized.len(), HEADER_LEN);
+
+    Ok(serialized)
+}
+
+fn map_write_transaction_error(error: TransactionError) -> Error {
+    match error {
+        TransactionError::Write { .. } => Error::WriteIo,
+        error => Error::Transaction(error),
+    }
 }
