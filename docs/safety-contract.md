@@ -126,6 +126,12 @@ Use the `### Breaking Changes`, `### Security`, `### Verification`, or
 must not be required to understand public release notes, user documentation, or
 maintainer verification steps.
 
+VERI-05 measured-check rule: default changes to KDF cost, stream throughput,
+pack/unpack memory behavior, archive structural limits, or temp-space
+assumptions must run `scripts/measure_performance_gate.sh --scenario <name>`
+and record the command, fixture shape, platform, and summary result. If a
+category is not applicable, record the not applicable reason explicitly.
+
 Phase 3 closes with an additional KDF/stream/secret gate:
 
 - stale normal Argon2id wording is rejected, while explicit historical unsupported Argon2id wording is allowed;

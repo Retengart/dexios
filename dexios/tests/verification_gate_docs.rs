@@ -7,8 +7,11 @@ const CHANGELOG: &str = include_str!("../../CHANGELOG.md");
 const GITIGNORE: &str = include_str!("../../.gitignore");
 const VERIFY_PHASE_GATE: &str = include_str!("../../scripts/verify_phase_gate.sh");
 const VERIFY_REPO_HYGIENE: &str = include_str!("../../scripts/verify_repo_hygiene.sh");
+const MEASURE_PERFORMANCE_GATE: &str = include_str!("../../scripts/measure_performance_gate.sh");
 const AUDIT_WORKFLOW: &str = include_str!("../../.github/workflows/audit.yml");
 const DOCS_WORKFLOW: &str = include_str!("../../.github/workflows/docs.yml");
+const PERFORMANCE_NOTES: &str =
+    include_str!("../../book/src/technical-details/Performance-Notes.md");
 
 fn assert_contains(source_name: &str, source: &str, needle: &str) {
     assert!(
@@ -93,5 +96,42 @@ fn ci_workflows_keep_audit_and_docs_fresh() {
         "workflow_dispatch",
     ] {
         assert_contains(".github/workflows/docs.yml", DOCS_WORKFLOW, required);
+    }
+}
+
+#[test]
+fn measurement_policy_is_source_gated() {
+    for required in [
+        "--scenario",
+        "kdf",
+        "stream",
+        "pack-unpack",
+        "temp-space",
+        "target/phase7-measurements",
+        "--dry-run",
+    ] {
+        assert_contains(
+            "scripts/measure_performance_gate.sh",
+            MEASURE_PERFORMANCE_GATE,
+            required,
+        );
+    }
+
+    for required in [
+        "measure_performance_gate.sh",
+        "KDF cost",
+        "stream throughput",
+        "pack/unpack memory",
+        "temp-space",
+    ] {
+        assert_contains(
+            "book/src/technical-details/Performance-Notes.md",
+            PERFORMANCE_NOTES,
+            required,
+        );
+    }
+
+    for required in ["VERI-05", "measure_performance_gate.sh", "not applicable"] {
+        assert_contains("docs/safety-contract.md", SAFETY_CONTRACT, required);
     }
 }
