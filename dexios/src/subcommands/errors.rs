@@ -140,6 +140,26 @@ pub fn map_key_error(error: domain::key::Error) -> anyhow::Error {
         domain::key::Error::HeaderWrite | domain::key::Error::Seek => {
             anyhow!("I/O failure while updating keyslots")
         }
+        domain::key::Error::PathIdentity(error) => match error {
+            domain::storage::identity::IdentityError::AliasedPath { .. }
+            | domain::storage::identity::IdentityError::UnsafePath(_) => {
+                anyhow!("Unsafe path: {error}")
+            }
+            domain::storage::identity::IdentityError::Io(_) => {
+                anyhow!("I/O failure while checking key workflow target")
+            }
+        },
+        domain::key::Error::Transaction(error) => match error {
+            domain::storage::transaction::TransactionError::Persist { .. }
+            | domain::storage::transaction::TransactionError::PartialCommit { .. } => {
+                anyhow!("Unable to commit keyslot update")
+            }
+            domain::storage::transaction::TransactionError::Write { .. }
+            | domain::storage::transaction::TransactionError::Flush { .. }
+            | domain::storage::transaction::TransactionError::Sync { .. } => {
+                anyhow!("I/O failure while updating keyslots")
+            }
+        },
         domain::key::Error::MasterKeyEncrypt | domain::key::Error::CipherInit => {
             anyhow!("Key workflow failed")
         }
