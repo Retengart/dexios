@@ -1,6 +1,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use dexios_domain::storage::identity::{
+    IdentityError, OverwritePolicy, PathIdentityGraph, PathRole,
+};
+
 struct TestDir {
     _dir: tempfile::TempDir,
     path: PathBuf,
@@ -32,4 +36,99 @@ fn path_identity_harness_creates_disposable_real_fs_dir() {
     let temp_root = fs::canonicalize(std::env::temp_dir()).unwrap();
     assert!(test_dir.path().starts_with(&temp_root));
     assert_eq!(fs::read(&input).unwrap(), b"path identity fixture");
+}
+
+fn assert_alias(result: Result<impl std::fmt::Debug, IdentityError>) {
+    assert!(
+        matches!(result, Err(IdentityError::AliasedPath { .. })),
+        "expected AliasedPath, got {result:?}"
+    );
+}
+
+#[test]
+fn identity_rejects_hardlink_alias() {
+    let test_dir = TestDir::new("path-identity-hardlink");
+    let input = test_dir.path().join("input.txt");
+    let alias = test_dir.path().join("alias.txt");
+    fs::write(&input, b"path identity fixture").unwrap();
+
+    if let Err(err) = fs::hard_link(&input, &alias) {
+        eprintln!("skipping hardlink identity check: hard links unsupported here: {err}");
+        return;
+    }
+
+    let mut graph = PathIdentityGraph::new();
+    graph.add_existing(&input, PathRole::Input).unwrap();
+
+    assert_alias(graph.add_output(&alias, PathRole::Output, OverwritePolicy::ReplaceAtCommit));
+}
+
+#[test]
+fn identity_resolves_missing_target_parent_without_canonicalizing_final_path() {
+    let test_dir = TestDir::new("path-identity-missing-target");
+    let target = test_dir.path().join("missing-parent").join("output.dexios");
+
+    let mut graph = PathIdentityGraph::new();
+    let resolved = graph
+        .add_output(&target, PathRole::Output, OverwritePolicy::CreateNew)
+        .unwrap();
+
+    assert_eq!(resolved.target_parent(), test_dir.path());
+    assert_eq!(resolved.target_path(), target);
+    assert_eq!(
+        resolved.missing_components(),
+        &[
+            std::ffi::OsString::from("missing-parent"),
+            std::ffi::OsString::from("output.dexios")
+        ]
+    );
+    assert!(resolved.target_parent().is_dir());
+    assert!(!resolved.target_path().exists());
+    graph.validate().unwrap();
+}
+
+#[cfg(unix)]
+fn symlink_dir_or_skip(src: &Path, dst: &Path) -> bool {
+    match std::os::unix::fs::symlink(src, dst) {
+        Ok(()) => true,
+        Err(err) => {
+            eprintln!("skipping symlink identity check: symlinks unsupported here: {err}");
+            false
+        }
+    }
+}
+
+#[cfg(windows)]
+fn symlink_dir_or_skip(src: &Path, dst: &Path) -> bool {
+    match std::os::windows::fs::symlink_dir(src, dst) {
+        Ok(()) => true,
+        Err(err) => {
+            eprintln!("skipping symlink identity check: symlinks unsupported here: {err}");
+            false
+        }
+    }
+}
+
+#[test]
+fn identity_rejects_symlinked_missing_target_prefix() {
+    let test_dir = TestDir::new("path-identity-symlink-prefix");
+    let outside = test_dir.path().join("outside");
+    let link = test_dir.path().join("link");
+    fs::create_dir(&outside).unwrap();
+
+    if !symlink_dir_or_skip(&outside, &link) {
+        return;
+    }
+
+    let mut graph = PathIdentityGraph::new();
+    let result = graph.add_output(
+        link.join("output.dexios"),
+        PathRole::Output,
+        OverwritePolicy::CreateNew,
+    );
+
+    assert!(
+        matches!(result, Err(IdentityError::UnsafePath(_))),
+        "expected UnsafePath for symlinked prefix, got {result:?}"
+    );
 }
