@@ -245,3 +245,48 @@ fn unpack_rejects_duplicate_targets_after_path_normalization() {
     );
     assert!(!output_dir.join("collision.txt").exists());
 }
+
+#[test]
+fn unpack_preserves_existing_file_when_later_extraction_fails() {
+    let test_dir = TestDir::new("unpack-staged-preserve");
+    let plain_zip = test_dir.path().join("plain.zip");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+    let existing_file = output_dir.join("existing.txt");
+    let blocked_target = output_dir.join("blocked");
+
+    fs::create_dir_all(&blocked_target).unwrap();
+    fs::write(&existing_file, b"original contents").unwrap();
+    write_zip_with_entries(
+        &plain_zip,
+        &[
+            ("existing.txt", b"candidate replacement"),
+            ("blocked", b"cannot replace directory"),
+        ],
+    );
+    encrypt_archive(&plain_zip, &encrypted_archive);
+
+    let stor = Arc::new(FileStorage);
+    let archive = stor.read_file(&encrypted_archive).unwrap();
+    let req = unpack::Request {
+        reader: archive.try_reader().unwrap(),
+        header_reader: None,
+        raw_key: Protected::new(PASSWORD.to_vec()),
+        output_dir_path: output_dir.clone(),
+        on_decrypted_header: None,
+        on_archive_info: None,
+        on_zip_file: None,
+    };
+
+    let result = unpack::execute(stor, req);
+
+    assert!(
+        matches!(
+            result,
+            Err(unpack::Error::UnsafeOutputPath(ref path)) if path == &blocked_target
+        ),
+        "expected unsafe output path error, got {result:?}"
+    );
+    assert_eq!(fs::read(&existing_file).unwrap(), b"original contents");
+    assert!(blocked_target.is_dir());
+}

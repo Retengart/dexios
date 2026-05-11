@@ -231,6 +231,44 @@ fn unpack_cli_delete_input_removes_archive_after_success() {
 }
 
 #[test]
+fn unpack_delete_input_waits_for_extraction_commit_receipt() {
+    let test_dir = TestDir::new("unpack-cli-delete-waits");
+    let plain_zip = test_dir.path().join("plain.zip");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+    let existing_file = output_dir.join("existing.txt");
+    let blocked_target = output_dir.join("blocked");
+
+    fs::create_dir_all(&blocked_target).unwrap();
+    fs::write(&existing_file, b"original contents").unwrap();
+    write_zip_with_entries(
+        &plain_zip,
+        &[
+            ("existing.txt", b"candidate replacement"),
+            ("blocked", b"cannot replace directory"),
+        ],
+    );
+    encrypt_archive(&plain_zip, &encrypted_archive);
+
+    let output = run_unpack_with_args(&encrypted_archive, &output_dir, &["--delete-input"]);
+
+    assert!(
+        !output.status.success(),
+        "unpack unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("Unsafe output path"),
+        "stderr did not mention unsafe output path: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(encrypted_archive.exists());
+    assert_eq!(fs::read(&existing_file).unwrap(), b"original contents");
+    assert!(blocked_target.is_dir());
+}
+
+#[test]
 fn unpack_help_no_longer_mentions_secure_erase() {
     let test_dir = TestDir::new("unpack-help-surface");
 

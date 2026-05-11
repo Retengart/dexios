@@ -5,11 +5,17 @@
 
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::fs;
+use std::io;
 use std::io::{Read, Seek, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use crate::decrypt;
+use crate::storage::identity::{
+    IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
+};
+use crate::storage::transaction::{CommitReceipt, LinkedOutputTransaction, TransactionError};
 use crate::storage::{self, Storage};
 use core::protected::Protected;
 
@@ -47,6 +53,8 @@ pub enum Error {
     UnsafeOutputPath(PathBuf),
     DuplicateOutputPath(PathBuf),
     Storage(storage::Error),
+    PathIdentity(IdentityError),
+    Transaction(TransactionError),
     Decrypt(decrypt::Error),
     OnZipFile(String),
 }
@@ -69,6 +77,8 @@ impl std::fmt::Display for Error {
                 )
             }
             Error::Storage(inner) => write!(f, "Storage error: {inner}"),
+            Error::PathIdentity(inner) => write!(f, "Path identity error: {inner}"),
+            Error::Transaction(inner) => write!(f, "Transaction error: {inner}"),
             Error::Decrypt(inner) => write!(f, "Decrypt error: {inner}"),
             Error::OnZipFile(inner) => write!(f, "Zip file callback error: {inner}"),
         }
@@ -93,10 +103,21 @@ where
     pub on_zip_file: Option<OnZipFileFn>,
 }
 
-pub fn execute<RW: Read + Write + Seek>(
-    stor: Arc<impl Storage<RW> + 'static>,
-    req: Request<'_, RW>,
-) -> Result<(), Error> {
+struct ExtractionEntity {
+    full_path: PathBuf,
+    archive_index: usize,
+    kind: ExtractionKind,
+}
+
+enum ExtractionKind {
+    Directory,
+    File(ResolvedTarget),
+}
+
+pub fn execute(
+    stor: Arc<storage::FileStorage>,
+    req: Request<'_, fs::File>,
+) -> Result<CommitReceipt, Error> {
     execute_with_temp_artifact(stor, req, || {
         storage::FileStorage
             .create_temp_artifact()
@@ -104,13 +125,12 @@ pub fn execute<RW: Read + Write + Seek>(
     })
 }
 
-fn execute_with_temp_artifact<RW, T, F>(
-    stor: Arc<impl Storage<RW> + 'static>,
-    req: Request<'_, RW>,
+fn execute_with_temp_artifact<T, F>(
+    stor: Arc<storage::FileStorage>,
+    req: Request<'_, fs::File>,
     temp_factory: F,
-) -> Result<(), Error>
+) -> Result<CommitReceipt, Error>
 where
-    RW: Read + Write + Seek,
     T: TempArtifactLike,
     F: FnOnce() -> Result<T, Error>,
 {
@@ -134,82 +154,150 @@ where
     })?;
 
     // 3. Recover files from temp archive.
-    tmp_file.with_reader(|tmp_reader| {
+    let receipt = tmp_file.with_reader(|tmp_reader| {
         tmp_reader
             .rewind()
             .map_err(|_| Error::ResetCursorPosition)?;
         let mut archive = zip::ZipArchive::new(tmp_reader).map_err(|_| Error::OpenArchive)?;
 
-        let output_dir = stor
-            .prepare_unpack_root(&req.output_dir_path)
-            .map_err(map_storage_path_error)?;
-
-        // 4. prepare phase
-        let mut entities = Vec::new();
-        let mut seen_paths = HashSet::new();
-        for i in 0..archive.len() {
-            let zip_file = archive.by_index(i).map_err(|_| Error::OpenArchive)?;
-            let Some(path) = zip_file.enclosed_name() else {
-                continue;
-            };
-            let path = normalize_archive_path(&path)?;
-            if !seen_paths.insert(path.clone()) {
-                return Err(Error::DuplicateOutputPath(path));
-            }
-
-            let full_path = stor
-                .resolve_unpack_path(&output_dir, &path)
-                .map_err(map_storage_path_error)?;
-
-            if let Some(on_zip_file) = req.on_zip_file.as_ref() {
-                let should_unpack = on_zip_file(full_path.clone()).map_err(Error::OnZipFile)?;
-                if !should_unpack {
-                    continue;
-                }
-            }
-
-            entities.push((full_path, i, zip_file.is_dir()));
-        }
-
-        let files_count = entities.len();
+        let (output_dir, entities) = prepare_extraction_entities(
+            &stor,
+            &mut archive,
+            &req.output_dir_path,
+            req.on_zip_file.as_ref(),
+        )?;
         if let Some(on_archive_info) = req.on_archive_info {
-            on_archive_info(files_count);
+            on_archive_info(entities.len());
         }
 
-        // 5. create dirs sequentially to avoid unbounded thread fan-out on large archives.
-        entities
-            .iter()
-            .filter(|(_, _, is_dir)| *is_dir)
-            .map(|(fp, ..)| fp)
-            .chain([&output_dir])
-            .try_for_each(|full_path| stor.create_dir_all(full_path).map_err(Error::Storage))?;
-
-        // 6. create files
-        entities
-            .iter()
-            .filter(|(_, _, is_dir)| !*is_dir)
-            .try_for_each(|(full_path, i, _)| {
-                if let Some(parent_dir) = full_path.parent() {
-                    stor.create_dir_all(parent_dir).map_err(Error::Storage)?;
-                }
-                let mut zip_file = archive.by_index(*i).map_err(|_| Error::OpenArchivedFile)?;
-                let file = stor
-                    .create_file(full_path)
-                    .or_else(|_| stor.write_file(full_path))
-                    .map_err(Error::Storage)?;
-                std::io::copy(
-                    &mut zip_file,
-                    &mut *file.try_writer().map_err(Error::Storage)?.borrow_mut(),
-                )
-                .map_err(|_| Error::WriteData)?;
-                stor.flush_file(&file).map_err(Error::Storage)?;
-                Ok(())
-            })
+        stage_and_commit_extraction(&stor, &mut archive, &output_dir, &entities)
     })?;
 
     drop(tmp_file);
 
-    Ok(())
+    Ok(receipt)
+}
+
+fn prepare_extraction_entities<R: Read + Seek>(
+    stor: &storage::FileStorage,
+    archive: &mut zip::ZipArchive<R>,
+    output_dir_path: &Path,
+    on_zip_file: Option<&OnZipFileFn>,
+) -> Result<(PathBuf, Vec<ExtractionEntity>), Error> {
+    let output_dir = stor
+        .prepare_unpack_root(output_dir_path)
+        .map_err(map_storage_path_error)?;
+    let mut identity_graph = PathIdentityGraph::new();
+    identity_graph
+        .add_unpack_root(&output_dir)
+        .map_err(map_identity_error)?;
+
+    let mut entities = Vec::new();
+    let mut seen_paths = HashSet::new();
+    for i in 0..archive.len() {
+        let zip_file = archive.by_index(i).map_err(|_| Error::OpenArchive)?;
+        let Some(path) = zip_file.enclosed_name() else {
+            continue;
+        };
+        let path = normalize_archive_path(&path)?;
+        if !seen_paths.insert(path.clone()) {
+            return Err(Error::DuplicateOutputPath(path));
+        }
+
+        let full_path = stor
+            .resolve_unpack_path(&output_dir, &path)
+            .map_err(map_storage_path_error)?;
+
+        if let Some(on_zip_file) = on_zip_file {
+            let should_unpack = on_zip_file(full_path.clone()).map_err(Error::OnZipFile)?;
+            if !should_unpack {
+                continue;
+            }
+        }
+
+        let kind = if zip_file.is_dir() {
+            ExtractionKind::Directory
+        } else {
+            let overwrite_policy = overwrite_policy_for_extracted_file(&full_path)?;
+            let target = identity_graph
+                .add_output(&full_path, PathRole::Output, overwrite_policy)
+                .map_err(map_identity_error)?;
+            ExtractionKind::File(target)
+        };
+
+        entities.push(ExtractionEntity {
+            full_path,
+            archive_index: i,
+            kind,
+        });
+    }
+
+    Ok((output_dir, entities))
+}
+
+fn stage_and_commit_extraction<R: Read + Seek>(
+    stor: &storage::FileStorage,
+    archive: &mut zip::ZipArchive<R>,
+    output_dir: &Path,
+    entities: &[ExtractionEntity],
+) -> Result<CommitReceipt, Error> {
+    entities
+        .iter()
+        .filter(|entity| matches!(entity.kind, ExtractionKind::Directory))
+        .map(|entity| entity.full_path.as_path())
+        .chain(std::iter::once(output_dir))
+        .try_for_each(|full_path| stor.create_dir_all(full_path).map_err(Error::Storage))?;
+
+    let mut transaction = LinkedOutputTransaction::new();
+    for entity in entities
+        .iter()
+        .filter(|entity| matches!(entity.kind, ExtractionKind::File(_)))
+    {
+        stage_extracted_file(stor, archive, &mut transaction, entity)?;
+    }
+
+    transaction.commit_all().map_err(Error::Transaction)
+}
+
+fn stage_extracted_file<R: Read + Seek>(
+    stor: &storage::FileStorage,
+    archive: &mut zip::ZipArchive<R>,
+    transaction: &mut LinkedOutputTransaction,
+    entity: &ExtractionEntity,
+) -> Result<(), Error> {
+    let ExtractionKind::File(target) = &entity.kind else {
+        unreachable!();
+    };
+
+    if let Some(parent_dir) = entity.full_path.parent() {
+        stor.create_dir_all(parent_dir).map_err(Error::Storage)?;
+    }
+
+    let transaction_index = transaction
+        .stage(target.clone())
+        .map_err(Error::Transaction)?;
+    let staged = transaction
+        .staged_output_mut(transaction_index)
+        .ok_or_else(|| {
+            Error::Transaction(TransactionError::Write {
+                path: entity.full_path.clone(),
+            })
+        })?;
+    let mut zip_file = archive
+        .by_index(entity.archive_index)
+        .map_err(|_| Error::OpenArchivedFile)?;
+    staged
+        .with_writer(|writer| io::copy(&mut zip_file, writer).map(|_| ()))
+        .map_err(Error::Transaction)
+}
+
+fn overwrite_policy_for_extracted_file(path: &Path) -> Result<OverwritePolicy, Error> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_dir() => Err(Error::UnsafeOutputPath(path.to_path_buf())),
+        Ok(_) => Ok(OverwritePolicy::ReplaceAtCommit),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(OverwritePolicy::CreateNew),
+        Err(_) => Err(Error::Storage(storage::Error::FileAccess)),
+    }
 }
 
 fn normalize_archive_path(path: &Path) -> Result<PathBuf, Error> {
@@ -244,134 +332,188 @@ fn map_storage_path_error(err: storage::Error) -> Error {
     }
 }
 
+fn map_identity_error(err: IdentityError) -> Error {
+    match err {
+        IdentityError::UnsafePath(path) => Error::UnsafeOutputPath(path),
+        other => Error::PathIdentity(other),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use std::fs::File;
+    use std::io::Write;
     use std::sync::Arc;
 
     use core::kdf::Kdf;
     use core::protected::Protected;
+    use zip::write::SimpleFileOptions;
 
+    use crate::encrypt;
     use crate::encrypt::tests::PASSWORD;
-    use crate::pack;
-    use crate::storage::{IMFile, InMemoryFile, InMemoryStorage, Storage};
+    use crate::storage::{FileStorage, Storage};
 
-    fn pack_bar_directory(
-        stor: Arc<InMemoryStorage>,
-        output_path: &str,
-        header_path: Option<&str>,
-    ) {
-        stor.add_hello_txt();
-        stor.add_bar_foo_folder_with_hidden();
+    struct TestDir {
+        _dir: tempfile::TempDir,
+        path: PathBuf,
+    }
 
-        let file = stor.read_file("bar/").unwrap();
-        let mut compress_files = stor.read_dir(&file).unwrap();
-        compress_files.sort_by(|a, b| a.path().cmp(b.path()));
-        let entries = compress_files
-            .into_iter()
-            .map(|source| pack::ArchiveSourceEntry {
-                archive_path: source.path().to_path_buf(),
-                source,
-            })
-            .collect::<Vec<_>>();
+    impl TestDir {
+        fn new(prefix: &str) -> Self {
+            let dir = tempfile::Builder::new()
+                .prefix(&format!("dexios-unpack-{prefix}-"))
+                .tempdir()
+                .unwrap();
+            let path = fs::canonicalize(dir.path()).unwrap();
+            Self { _dir: dir, path }
+        }
 
-        let output_file = stor.create_file(output_path).unwrap();
-        let header_file = header_path.map(|path| stor.create_file(path).unwrap());
-
-        let req = pack::Request {
-            entries,
-            compression_method: zip::CompressionMethod::Stored,
-            writer: output_file.try_writer().unwrap(),
-            header_writer: header_file.as_ref().map(|file| file.try_writer().unwrap()),
-            raw_key: Protected::new(PASSWORD.to_vec()),
-            kdf: Kdf::Blake3Balloon,
-        };
-
-        pack::execute(stor.clone(), req).unwrap();
-        stor.flush_file(&output_file).unwrap();
-        if let Some(header_file) = header_file {
-            stor.flush_file(&header_file).unwrap();
+        fn path(&self) -> &Path {
+            &self.path
         }
     }
 
-    fn assert_text(stor: &InMemoryStorage, path: &str, expected: &str) {
-        let file = stor.files().get(&PathBuf::from(path)).cloned();
-        match file {
-            Some(IMFile::File(InMemoryFile { buf, .. })) => {
-                assert_eq!(buf, expected.as_bytes());
-            }
-            _ => panic!("missing file: {path}"),
+    fn write_zip_with_entries(path: &Path, entries: &[(&str, &[u8])]) {
+        let file = File::create(path).unwrap();
+        let mut zip_writer = zip::ZipWriter::new(file);
+        let options = SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored)
+            .large_file(true)
+            .unix_permissions(0o755);
+
+        for (name, body) in entries {
+            zip_writer.start_file(*name, options).unwrap();
+            zip_writer.write_all(body).unwrap();
         }
+
+        zip_writer.finish().unwrap();
+    }
+
+    fn write_bar_zip(path: &Path) {
+        write_zip_with_entries(
+            path,
+            &[
+                ("bar/.hello.txt", b"hello"),
+                ("bar/world.txt", b"world"),
+                ("bar/.foo/world.txt", b"world"),
+            ],
+        );
+    }
+
+    fn encrypt_zip(input_path: &Path, output_path: &Path, header_path: Option<&Path>) {
+        let input = RefCell::new(File::open(input_path).unwrap());
+        let output = RefCell::new(File::create(output_path).unwrap());
+        let header = header_path.map(|path| RefCell::new(File::create(path).unwrap()));
+
+        encrypt::execute(encrypt::Request {
+            reader: &input,
+            writer: &output,
+            header_writer: header.as_ref(),
+            raw_key: Protected::new(PASSWORD.to_vec()),
+            kdf: Kdf::Blake3Balloon,
+        })
+        .unwrap();
+
+        output.borrow_mut().flush().unwrap();
+        if let Some(header) = header {
+            header.borrow_mut().flush().unwrap();
+        }
+    }
+
+    fn assert_text(path: &Path, expected: &str) {
+        assert_eq!(fs::read_to_string(path).unwrap(), expected);
     }
 
     #[test]
     fn should_unpack_encrypted_archive_with_embedded_header() {
-        let stor = Arc::new(InMemoryStorage::default());
-        pack_bar_directory(stor.clone(), "archive.enc", None);
+        let test_dir = TestDir::new("embedded");
+        let plain_zip = test_dir.path().join("plain.zip");
+        let encrypted_archive = test_dir.path().join("archive.enc");
+        let output_dir = test_dir.path().join("out");
 
-        let archive = stor.read_file("archive.enc").unwrap();
+        write_bar_zip(&plain_zip);
+        encrypt_zip(&plain_zip, &encrypted_archive, None);
+
+        let stor = Arc::new(FileStorage);
+        let archive = stor.read_file(&encrypted_archive).unwrap();
         let req = Request {
             reader: archive.try_reader().unwrap(),
             header_reader: None,
             raw_key: Protected::new(PASSWORD.to_vec()),
-            output_dir_path: PathBuf::from("out"),
+            output_dir_path: output_dir.clone(),
             on_decrypted_header: None,
             on_archive_info: None,
             on_zip_file: None,
         };
 
-        execute(stor.clone(), req).unwrap();
+        let receipt = execute(stor.clone(), req).unwrap();
 
-        assert_text(&stor, "out/bar/.hello.txt", "hello");
-        assert_text(&stor, "out/bar/world.txt", "world");
-        assert_text(&stor, "out/bar/.foo/world.txt", "world");
+        assert_eq!(receipt.artifacts.len(), 3);
+        assert_text(&output_dir.join("bar/.hello.txt"), "hello");
+        assert_text(&output_dir.join("bar/world.txt"), "world");
+        assert_text(&output_dir.join("bar/.foo/world.txt"), "world");
     }
 
     #[test]
     fn should_unpack_encrypted_archive_with_detached_header() {
-        let stor = Arc::new(InMemoryStorage::default());
-        pack_bar_directory(stor.clone(), "archive-detached.enc", Some("archive.hdr"));
+        let test_dir = TestDir::new("detached");
+        let plain_zip = test_dir.path().join("plain.zip");
+        let encrypted_archive = test_dir.path().join("archive-detached.enc");
+        let detached_header = test_dir.path().join("archive.hdr");
+        let output_dir = test_dir.path().join("out-detached");
 
-        let archive = stor.read_file("archive-detached.enc").unwrap();
-        let header = stor.read_file("archive.hdr").unwrap();
+        write_bar_zip(&plain_zip);
+        encrypt_zip(&plain_zip, &encrypted_archive, Some(&detached_header));
+
+        let stor = Arc::new(FileStorage);
+        let archive = stor.read_file(&encrypted_archive).unwrap();
+        let header = stor.read_file(&detached_header).unwrap();
         let req = Request {
             reader: archive.try_reader().unwrap(),
             header_reader: Some(header.try_reader().unwrap()),
             raw_key: Protected::new(PASSWORD.to_vec()),
-            output_dir_path: PathBuf::from("out-detached"),
+            output_dir_path: output_dir.clone(),
             on_decrypted_header: None,
             on_archive_info: None,
             on_zip_file: None,
         };
 
-        execute(stor.clone(), req).unwrap();
+        let receipt = execute(stor.clone(), req).unwrap();
 
-        assert_text(&stor, "out-detached/bar/.hello.txt", "hello");
-        assert_text(&stor, "out-detached/bar/world.txt", "world");
-        assert_text(&stor, "out-detached/bar/.foo/world.txt", "world");
+        assert_eq!(receipt.artifacts.len(), 3);
+        assert_text(&output_dir.join("bar/.hello.txt"), "hello");
+        assert_text(&output_dir.join("bar/world.txt"), "world");
+        assert_text(&output_dir.join("bar/.foo/world.txt"), "world");
     }
 
     #[test]
     fn should_unpack_current_generated_archive_fixture() {
-        let stor = Arc::new(InMemoryStorage::default());
-        pack_bar_directory(stor.clone(), "archive.enc", None);
-        let archive = stor.read_file("archive.enc").unwrap();
+        let test_dir = TestDir::new("current-fixture");
+        let plain_zip = test_dir.path().join("plain.zip");
+        let encrypted_archive = test_dir.path().join("archive.enc");
+        let output_dir = test_dir.path().join("archive-out");
 
+        write_bar_zip(&plain_zip);
+        encrypt_zip(&plain_zip, &encrypted_archive, None);
+
+        let stor = Arc::new(FileStorage);
+        let archive = stor.read_file(&encrypted_archive).unwrap();
         let req = Request {
             reader: archive.try_reader().unwrap(),
             header_reader: None,
             raw_key: Protected::new(PASSWORD.to_vec()),
-            output_dir_path: PathBuf::from("archive-out"),
+            output_dir_path: output_dir.clone(),
             on_decrypted_header: None,
             on_archive_info: None,
             on_zip_file: None,
         };
 
-        execute(stor.clone(), req).unwrap();
+        let receipt = execute(stor.clone(), req).unwrap();
 
-        assert_text(&stor, "archive-out/bar/.hello.txt", "hello");
-        assert_text(&stor, "archive-out/bar/world.txt", "world");
-        assert_text(&stor, "archive-out/bar/.foo/world.txt", "world");
+        assert_eq!(receipt.artifacts.len(), 3);
+        assert_text(&output_dir.join("bar/.hello.txt"), "hello");
+        assert_text(&output_dir.join("bar/world.txt"), "world");
+        assert_text(&output_dir.join("bar/.foo/world.txt"), "world");
     }
 }

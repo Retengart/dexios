@@ -68,7 +68,7 @@ pub fn unpack(
     let raw_key = params.key.get_secret(&PasswordState::Direct)?;
     let verbose = print_mode == PrintMode::Verbose;
 
-    domain::unpack::execute(
+    let extraction_receipt = domain::unpack::execute(
         stor,
         domain::unpack::Request {
             header_reader: header_file.as_ref().and_then(|h| h.try_reader().ok()),
@@ -89,6 +89,7 @@ pub fn unpack(
     }
 
     if params.delete_input == DeleteInput::Delete {
+        let _committed_extraction = extraction_receipt;
         drop(header_file);
         drop(input_file);
         super::delete_path(input)?;
