@@ -202,6 +202,33 @@ fn unpack_cli_rejects_duplicate_normalized_targets() {
 }
 
 #[test]
+fn unpack_cli_rejects_file_prefix_collision() {
+    let test_dir = TestDir::new("unpack-cli-prefix-collision");
+    let plain_zip = test_dir.path().join("plain.zip");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+
+    write_zip_with_entries(&plain_zip, &[("a", b"file"), ("a/b", b"child")]);
+    encrypt_archive(&plain_zip, &encrypted_archive);
+
+    let output = run_unpack(&encrypted_archive, &output_dir);
+
+    assert!(
+        !output.status.success(),
+        "unpack unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("Duplicate output path"),
+        "stderr did not mention duplicate output path: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!output_dir.join("a").exists());
+    assert!(!output_dir.join("a/b").exists());
+}
+
+#[test]
 fn unpack_cli_delete_input_removes_archive_after_success() {
     let test_dir = TestDir::new("unpack-cli-delete-input");
     let plain_zip = test_dir.path().join("plain.zip");

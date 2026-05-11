@@ -1,7 +1,10 @@
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 
 use core::kdf::Kdf;
 use core::protected::Protected;
@@ -11,6 +14,7 @@ use dexios_domain::unpack;
 use zip::write::SimpleFileOptions;
 
 const PASSWORD: &[u8; 8] = b"12345678";
+type TestOnZipFile = Box<dyn Fn(PathBuf) -> Result<bool, String>>;
 
 struct TestDir {
     _dir: tempfile::TempDir,
@@ -85,6 +89,26 @@ fn encrypt_archive(input_path: &Path, output_path: &Path) {
     encrypt::execute(intent).unwrap();
 }
 
+fn unpack_archive(
+    encrypted_archive: &Path,
+    output_dir: &Path,
+    on_zip_file: Option<TestOnZipFile>,
+) -> Result<dexios_domain::storage::transaction::CommitReceipt, unpack::Error> {
+    let stor = Arc::new(FileStorage);
+    let archive = stor.read_file(encrypted_archive).unwrap();
+    let req = unpack::Request {
+        reader: archive.try_reader().unwrap(),
+        header_reader: None,
+        raw_key: Protected::new(PASSWORD.to_vec()),
+        output_dir_path: output_dir.to_path_buf(),
+        on_decrypted_header: None,
+        on_archive_info: None,
+        on_zip_file,
+    };
+
+    unpack::execute(stor, req)
+}
+
 #[test]
 fn should_unpack_archive_without_explicit_directory_entries() {
     let test_dir = TestDir::new("unpack-no-dirs");
@@ -111,6 +135,115 @@ fn should_unpack_archive_without_explicit_directory_entries() {
 
     let restored = fs::read_to_string(output_dir.join("nested/inner/file.txt")).unwrap();
     assert_eq!(restored, "nested hello");
+}
+
+#[test]
+fn unpack_rejects_unsafe_entry_without_extracting_safe_sibling() {
+    let test_dir = TestDir::new("unpack-unsafe-sibling");
+    let plain_zip = test_dir.path().join("plain.zip");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+
+    write_zip_with_entries(
+        &plain_zip,
+        &[("../escape.txt", b"escape"), ("safe.txt", b"safe")],
+    );
+    encrypt_archive(&plain_zip, &encrypted_archive);
+
+    let result = unpack_archive(&encrypted_archive, &output_dir, None);
+
+    assert!(
+        matches!(result, Err(unpack::Error::UnsafeOutputPath(_))),
+        "expected unsafe output path error, got {result:?}"
+    );
+    assert!(!output_dir.join("safe.txt").exists());
+    assert!(!test_dir.path().join("escape.txt").exists());
+}
+
+#[test]
+fn unpack_rejects_unsafe_archive_before_overwrite_callback() {
+    let test_dir = TestDir::new("unpack-unsafe-no-prompt");
+    let plain_zip = test_dir.path().join("plain.zip");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+    let callback_count = Arc::new(AtomicUsize::new(0));
+
+    write_zip_with_entries(
+        &plain_zip,
+        &[("../escape.txt", b"escape"), ("safe.txt", b"safe")],
+    );
+    encrypt_archive(&plain_zip, &encrypted_archive);
+
+    let callback_count_for_closure = Arc::clone(&callback_count);
+    let result = unpack_archive(
+        &encrypted_archive,
+        &output_dir,
+        Some(Box::new(move |_| {
+            callback_count_for_closure.fetch_add(1, Ordering::SeqCst);
+            Ok(true)
+        })),
+    );
+
+    assert!(
+        matches!(result, Err(unpack::Error::UnsafeOutputPath(_))),
+        "expected unsafe output path error, got {result:?}"
+    );
+    assert_eq!(callback_count.load(Ordering::SeqCst), 0);
+    assert!(!output_dir.join("safe.txt").exists());
+}
+
+#[test]
+fn unpack_rejects_file_prefix_collision_before_extraction() {
+    let test_dir = TestDir::new("unpack-prefix-collision");
+    let plain_zip = test_dir.path().join("plain.zip");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+
+    write_zip_with_entries(&plain_zip, &[("a", b"file"), ("a/b", b"child")]);
+    encrypt_archive(&plain_zip, &encrypted_archive);
+
+    let result = unpack_archive(&encrypted_archive, &output_dir, None);
+
+    assert!(
+        matches!(result, Err(unpack::Error::DuplicateOutputPath(_))),
+        "expected duplicate output path error, got {result:?}"
+    );
+    assert!(!output_dir.join("a").exists());
+    assert!(!output_dir.join("a/b").exists());
+}
+
+#[test]
+fn unpack_declined_safe_overwrite_is_skipped_after_validation() {
+    let test_dir = TestDir::new("unpack-declined-overwrite");
+    let plain_zip = test_dir.path().join("plain.zip");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+    let existing_file = output_dir.join("existing.txt");
+
+    fs::create_dir_all(&output_dir).unwrap();
+    fs::write(&existing_file, b"original contents").unwrap();
+    write_zip_with_entries(
+        &plain_zip,
+        &[
+            ("existing.txt", b"candidate replacement"),
+            ("new.txt", b"new contents"),
+        ],
+    );
+    encrypt_archive(&plain_zip, &encrypted_archive);
+
+    let receipt = unpack_archive(
+        &encrypted_archive,
+        &output_dir,
+        Some(Box::new({
+            let existing_file = existing_file.clone();
+            move |path| Ok(path != existing_file)
+        })),
+    )
+    .unwrap();
+
+    assert_eq!(fs::read(&existing_file).unwrap(), b"original contents");
+    assert_eq!(fs::read_to_string(output_dir.join("new.txt")).unwrap(), "new contents");
+    assert_eq!(receipt.artifacts.len(), 1);
 }
 
 #[cfg(unix)]
