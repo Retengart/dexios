@@ -40,10 +40,7 @@ impl Error {
     #[must_use]
     pub fn workflow_class(&self) -> WorkflowErrorClass {
         match self {
-            Self::OpenInput
-            | Self::ResetCursorPosition
-            | Self::EncryptFile
-            | Self::WriteHeader => {
+            Self::OpenInput | Self::ResetCursorPosition | Self::EncryptFile | Self::WriteHeader => {
                 WorkflowErrorClass::IoFailure
             }
             Self::HashKey => WorkflowErrorClass::KdfFailure,
@@ -121,9 +118,7 @@ impl EncryptIntent {
             .add_output(output_path, PathRole::Output, output_overwrite)
             .map_err(Error::PathIdentity)?;
         let header_target = header
-            .map(|target| {
-                graph.add_output(target.path, PathRole::DetachedHeader, target.overwrite)
-            })
+            .map(|target| graph.add_output(target.path, PathRole::DetachedHeader, target.overwrite))
             .transpose()
             .map_err(Error::PathIdentity)?;
         graph.validate().map_err(Error::PathIdentity)?;

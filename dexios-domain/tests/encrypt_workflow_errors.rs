@@ -7,7 +7,7 @@ use core::kdf::Kdf;
 use core::protected::Protected;
 use dexios_domain::encrypt;
 use dexios_domain::storage::identity::OverwritePolicy;
-use dexios_domain::storage::transaction::{CommittedArtifact, CommitReceipt, TransactionError};
+use dexios_domain::storage::transaction::{CommitReceipt, CommittedArtifact, TransactionError};
 use dexios_domain::workflow_error::WorkflowErrorClass;
 
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);

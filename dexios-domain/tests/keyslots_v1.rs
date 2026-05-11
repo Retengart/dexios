@@ -29,8 +29,7 @@ fn encrypted_v1_fixture() -> RefCell<Cursor<Vec<u8>>> {
         Kdf::Blake3Balloon,
     )
     .expect("build encrypt intent");
-    encrypt::execute(intent)
-    .expect("encrypt fixture");
+    encrypt::execute(intent).expect("encrypt fixture");
 
     RefCell::new(Cursor::new(fs::read(output_path).unwrap()))
 }
