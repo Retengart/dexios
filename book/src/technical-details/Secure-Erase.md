@@ -30,3 +30,14 @@ Overwrite passes are not a trustworthy abstraction on SSDs and other flash-backe
 ## Temporary Archives
 
 `pack` and `unpack` still use temporary plaintext zip artifacts internally, but those artifacts are handled as ordinary temporary files rather than overwritten repeatedly before deletion.
+
+The boundary is intentionally narrow:
+
+- `pack` writes source data into an ordinary plaintext temporary ZIP, then encrypts it and drops the temporary artifact.
+- `unpack` decrypts the encrypted payload into an ordinary plaintext temporary ZIP, validates archive metadata, stages selected files, commits through storage transactions, and drops the temporary artifact.
+- Failure-path tests cover ordinary best effort drop/delete cleanup and no committed output after selected failures.
+
+These temporary ZIP artifacts are plaintext exposure while they exist. Dexios
+does not claim secure erase for them, does not claim sanitization, does not
+defend against another local process with access to the host temporary storage,
+and does not claim resistance to forensic recovery.
