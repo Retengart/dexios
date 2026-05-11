@@ -6,6 +6,8 @@ use core::primitives::ENCRYPTED_MASTER_KEY_LEN;
 use core::primitives::{MasterKey, WrappingKey};
 use core::protected::Protected;
 
+use crate::workflow_error::WorkflowErrorClass;
+
 pub mod add;
 pub mod change;
 pub mod delete;
@@ -26,6 +28,23 @@ pub enum Error {
     Seek,
     CannotRemoveFinalV1Keyslot,
     CannotAddV1KeyslotWithoutReencrypt,
+}
+
+impl Error {
+    #[must_use]
+    pub fn workflow_class(&self) -> WorkflowErrorClass {
+        match self {
+            Self::HeaderSizeParse | Self::HeaderDeserialize => WorkflowErrorClass::MalformedFormat,
+            Self::Unsupported => WorkflowErrorClass::UnsupportedFormat,
+            Self::UnsupportedKdf(_) | Self::KeyHash => WorkflowErrorClass::KdfFailure,
+            Self::IncorrectKey => WorkflowErrorClass::IncorrectKey,
+            Self::HeaderWrite | Self::Seek => WorkflowErrorClass::IoFailure,
+            Self::TooManyKeyslots
+            | Self::CannotRemoveFinalV1Keyslot
+            | Self::CannotAddV1KeyslotWithoutReencrypt => WorkflowErrorClass::UnsupportedWorkflow,
+            Self::MasterKeyEncrypt | Self::CipherInit => WorkflowErrorClass::Other,
+        }
+    }
 }
 
 impl std::fmt::Display for Error {

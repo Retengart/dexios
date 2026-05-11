@@ -17,6 +17,9 @@ use crate::storage::transaction::{
     CommitReceipt, LinkedOutputTransaction, StagedOutputTransaction, TransactionError,
 };
 use crate::utils::{gen_master_key, gen_salt};
+use crate::workflow_error::{
+    WorkflowErrorClass, classify_identity_error, classify_transaction_error,
+};
 
 #[derive(Debug)]
 pub enum Error {
@@ -29,6 +32,23 @@ pub enum Error {
     InitializeChiphers,
     PathIdentity(IdentityError),
     Transaction(TransactionError),
+}
+
+impl Error {
+    #[must_use]
+    pub fn workflow_class(&self) -> WorkflowErrorClass {
+        match self {
+            Self::ResetCursorPosition | Self::EncryptFile | Self::WriteHeader => {
+                WorkflowErrorClass::IoFailure
+            }
+            Self::HashKey => WorkflowErrorClass::KdfFailure,
+            Self::PathIdentity(error) => classify_identity_error(error),
+            Self::Transaction(error) => classify_transaction_error(error),
+            Self::EncryptMasterKey | Self::InitializeStreams | Self::InitializeChiphers => {
+                WorkflowErrorClass::Other
+            }
+        }
+    }
 }
 
 impl std::fmt::Display for Error {

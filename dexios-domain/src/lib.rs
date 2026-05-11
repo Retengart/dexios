@@ -42,5 +42,6 @@ pub mod key;
 pub mod pack;
 pub mod storage;
 pub mod unpack;
+pub mod workflow_error;
 
 pub mod utils;

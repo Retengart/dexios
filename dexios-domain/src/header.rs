@@ -6,6 +6,8 @@ pub mod strip;
 
 use core::header::common::HeaderReadError;
 
+use crate::workflow_error::WorkflowErrorClass;
+
 #[derive(Debug)]
 pub enum Error {
     UnsupportedRestore,
@@ -18,6 +20,22 @@ pub enum Error {
     Read,
     HeaderSizeParse,
     Rewind,
+}
+
+impl Error {
+    #[must_use]
+    pub fn workflow_class(&self) -> WorkflowErrorClass {
+        match self {
+            Self::InvalidFile | Self::MalformedV1Header(_) | Self::HeaderSizeParse => {
+                WorkflowErrorClass::MalformedFormat
+            }
+            Self::InvalidMagic(_) | Self::UnsupportedFormat(_) | Self::UnsupportedVersion(_) => {
+                WorkflowErrorClass::UnsupportedFormat
+            }
+            Self::UnsupportedRestore => WorkflowErrorClass::UnsupportedWorkflow,
+            Self::Write | Self::Read | Self::Rewind => WorkflowErrorClass::IoFailure,
+        }
+    }
 }
 
 impl std::fmt::Display for Error {

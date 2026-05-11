@@ -3,9 +3,7 @@ use std::path::PathBuf;
 
 use core::header::common::HeaderReadError;
 use dexios_domain::storage::identity::{IdentityError, PathRole};
-use dexios_domain::storage::transaction::{
-    CommitReceipt, CommittedArtifact, TransactionError,
-};
+use dexios_domain::storage::transaction::{CommitReceipt, CommittedArtifact, TransactionError};
 use dexios_domain::workflow_error::WorkflowErrorClass;
 use dexios_domain::{decrypt, encrypt, header, key};
 

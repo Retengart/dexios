@@ -13,6 +13,9 @@ use core::stream::{StreamError, V1PayloadStream};
 use crate::key::decrypt_v1_master_key_with_index;
 use crate::storage::identity::{IdentityError, OverwritePolicy, PathIdentityGraph, PathRole};
 use crate::storage::transaction::{CommitReceipt, StagedOutputTransaction, TransactionError};
+use crate::workflow_error::{
+    WorkflowErrorClass, classify_identity_error, classify_transaction_error,
+};
 
 #[derive(Debug)]
 pub enum Error {
@@ -27,6 +30,24 @@ pub enum Error {
     RewindDataReader,
     PathIdentity(IdentityError),
     Transaction(TransactionError),
+}
+
+impl Error {
+    #[must_use]
+    pub fn workflow_class(&self) -> WorkflowErrorClass {
+        match self {
+            Self::DeserializeHeader => WorkflowErrorClass::MalformedFormat,
+            Self::ReadEncryptedData | Self::WriteData | Self::RewindDataReader => {
+                WorkflowErrorClass::IoFailure
+            }
+            Self::DecryptMasterKey => WorkflowErrorClass::IncorrectKey,
+            Self::UnsupportedKdf(_) => WorkflowErrorClass::KdfFailure,
+            Self::DecryptData => WorkflowErrorClass::AuthenticationFailure,
+            Self::PathIdentity(error) => classify_identity_error(error),
+            Self::Transaction(error) => classify_transaction_error(error),
+            Self::InitializeChiphers | Self::InitializeStreams => WorkflowErrorClass::Other,
+        }
+    }
 }
 
 impl std::fmt::Display for Error {
