@@ -121,12 +121,12 @@ fn assert_no_formatted_error_control_flow(sources: &[Source<'_>]) -> Result<(), 
     collect_violations(sources, formatted_error_control_flow_violations)
 }
 
-fn assert_d05_test_support_escape_hatches(_sources: &[Source<'_>]) -> Result<(), String> {
-    Ok(())
+fn assert_d05_test_support_escape_hatches(sources: &[Source<'_>]) -> Result<(), String> {
+    collect_violations(sources, d05_escape_hatch_violations)
 }
 
-fn assert_d05_fixture_names(_sources: &[Source<'_>]) -> Result<(), String> {
-    Ok(())
+fn assert_d05_fixture_names(sources: &[Source<'_>]) -> Result<(), String> {
+    collect_violations(sources, d05_fixture_name_violations)
 }
 
 fn collect_violations(
@@ -287,6 +287,204 @@ fn formatted_error_control_flow_violations(source: Source<'_>) -> Vec<String> {
     violations
 }
 
+fn d05_escape_hatch_violations(source: Source<'_>) -> Vec<String> {
+    let mut violations = Vec::new();
+    let mut test_context = TestContext::new(source.path);
+
+    for (index, line) in source.text.lines().enumerate() {
+        let trimmed = line.trim_start();
+        test_context.update_before_line(trimmed);
+
+        if !test_context.is_test_only()
+            && declaration_name(trimmed).is_some_and(is_escape_hatch_declaration)
+        {
+            violations.push(violation(
+                source.path,
+                index,
+                "D-05 escape hatch must be test-only or test-support scoped",
+            ));
+        }
+
+        test_context.update_after_line(trimmed);
+    }
+
+    violations
+}
+
+fn d05_fixture_name_violations(source: Source<'_>) -> Vec<String> {
+    let mut violations = Vec::new();
+    let mut test_context = TestContext::new(source.path);
+    let mut pending_test_attribute = false;
+
+    for (index, line) in source.text.lines().enumerate() {
+        let trimmed = line.trim_start();
+        test_context.update_before_line(trimmed);
+
+        if trimmed.starts_with("#[test]") {
+            pending_test_attribute = true;
+            test_context.update_after_line(trimmed);
+            continue;
+        }
+
+        if test_context.is_test_only()
+            && let Some(name) = declaration_name(trimmed)
+        {
+            if pending_test_attribute {
+                pending_test_attribute = false;
+                test_context.update_after_line(trimmed);
+                continue;
+            }
+
+            if is_fixture_or_helper_name(name)
+                && has_ambiguous_invalid_word(name)
+                && !has_explicit_negative_word(name)
+            {
+                violations.push(violation(
+                    source.path,
+                    index,
+                    "D-05 invalid-state helper needs explicit negative wording",
+                ));
+            }
+        }
+
+        if !trimmed.starts_with("#[") && !trimmed.is_empty() {
+            pending_test_attribute = false;
+        }
+
+        test_context.update_after_line(trimmed);
+    }
+
+    violations
+}
+
+struct TestContext {
+    integration_test: bool,
+    cfg_test_pending: bool,
+    cfg_test_depth: usize,
+}
+
+impl TestContext {
+    fn new(path: &str) -> Self {
+        Self {
+            integration_test: path.contains("/tests/"),
+            cfg_test_pending: false,
+            cfg_test_depth: 0,
+        }
+    }
+
+    fn is_test_only(&self) -> bool {
+        self.integration_test || self.cfg_test_depth > 0 || self.cfg_test_pending
+    }
+
+    fn update_before_line(&mut self, trimmed: &str) {
+        if trimmed.starts_with("#[cfg(test)]") {
+            self.cfg_test_pending = true;
+        }
+
+        if self.cfg_test_pending && declares_test_module(trimmed) {
+            self.cfg_test_depth = brace_delta(trimmed).max(1) as usize;
+            self.cfg_test_pending = false;
+        }
+    }
+
+    fn update_after_line(&mut self, trimmed: &str) {
+        if self.cfg_test_depth > 0 {
+            let delta = brace_delta(trimmed);
+            if delta.is_negative() {
+                self.cfg_test_depth = self.cfg_test_depth.saturating_sub(delta.unsigned_abs());
+            } else {
+                self.cfg_test_depth = self.cfg_test_depth.saturating_add(delta as usize);
+            }
+        } else if self.cfg_test_pending && !trimmed.starts_with("#[cfg(test)]") {
+            self.cfg_test_pending = false;
+        }
+    }
+}
+
+fn declares_test_module(trimmed: &str) -> bool {
+    trimmed.starts_with("mod tests")
+        || trimmed.starts_with("pub mod tests")
+        || trimmed.starts_with("pub(crate) mod tests")
+}
+
+fn brace_delta(line: &str) -> isize {
+    let opens = line.chars().filter(|ch| *ch == '{').count() as isize;
+    let closes = line.chars().filter(|ch| *ch == '}').count() as isize;
+    opens - closes
+}
+
+fn declaration_name(trimmed: &str) -> Option<&str> {
+    for prefix in [
+        "pub(crate) fn ",
+        "pub fn ",
+        "fn ",
+        "pub(crate) mod ",
+        "pub mod ",
+        "mod ",
+    ] {
+        if let Some(rest) = trimmed.strip_prefix(prefix) {
+            let name_end = rest
+                .find(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+                .unwrap_or(rest.len());
+            return Some(&rest[..name_end]);
+        }
+    }
+
+    None
+}
+
+fn is_escape_hatch_declaration(name: &str) -> bool {
+    let has_escape_word = ["raw", "unchecked", "bypass"]
+        .into_iter()
+        .any(|word| name.contains(word));
+    let has_request_word = [
+        "request", "intent", "workflow", "builder", "helper", "fixture",
+    ]
+    .into_iter()
+    .any(|word| name.contains(word));
+
+    has_escape_word && has_request_word
+}
+
+fn is_fixture_or_helper_name(name: &str) -> bool {
+    name.contains("fixture")
+        || name.contains("sample")
+        || name.starts_with("write_")
+        || name.starts_with("mark_")
+        || name.starts_with("build_")
+        || name.starts_with("make_")
+        || name.starts_with("append_")
+}
+
+fn has_explicit_negative_word(name: &str) -> bool {
+    [
+        "invalid",
+        "malformed",
+        "negative",
+        "corrupt",
+        "short",
+        "trailing",
+        "unsupported",
+    ]
+    .into_iter()
+    .any(|word| name.contains(word))
+}
+
+fn has_ambiguous_invalid_word(name: &str) -> bool {
+    [
+        "bad",
+        "broken",
+        "wrong",
+        "failing",
+        "unsafe",
+        "unchecked",
+        "bypass",
+        "raw",
+    ]
+    .into_iter()
+    .any(|word| name.contains(word))
+}
+
 fn violation(path: &str, zero_based_line: usize, detail: &str) -> String {
     format!("{path}:{}: {detail}", zero_based_line + 1)
 }
@@ -428,7 +626,7 @@ fn test_support_escape_hatches_are_scoped_and_named_by_d05() {
 #[test]
 fn d05_fixture_helpers_are_valid_by_default_or_explicitly_negative() {
     let bad_fixture_name = Source {
-        path: "synthetic/ambiguous-fixture.rs",
+        path: "dexios-domain/tests/ambiguous_fixture.rs",
         text: "fn broken_header_fixture() {}",
     };
     assert!(
