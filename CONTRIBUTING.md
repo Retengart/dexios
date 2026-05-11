@@ -42,5 +42,15 @@ We have some great templates to get you started - they're offered when you open 
 
 * We use `cargo fmt`, and while it's controversial, it provides a standard code layout - which is ideal for a project such as this.
 
+## Maintainer Verification Gate
+
+For safety-sensitive changes, `docs/safety-contract.md` is the authority. Run
+the focused tests for the changed invariant first, then the broad maintainer
+gate named there.
+
+Breaking changes to file format behavior, CLI behavior, security claims, or
+compatibility boundaries must update `CHANGELOG.md` under `## Unreleased`.
+Local `local-notes/` notes are working context only and must not be committed.
+
 ## License
 By contributing, you agree that your contributions will be licensed under the BSD 2-Clause license.

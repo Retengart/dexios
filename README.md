@@ -57,6 +57,11 @@ cargo build --workspace
 cargo test --workspace --all-features --release --verbose
 ```
 
+Safety-sensitive changes use the Maintainer Verification Gate in
+`docs/safety-contract.md`. That contract is the authority for required focused
+checks, broad workspace checks, dependency/security checks, documentation
+checks, and release-note triggers.
+
 ## Documentation
 
 The mdBook source for the project documentation lives in `book/src/`.
@@ -64,6 +69,7 @@ The mdBook source for the project documentation lives in `book/src/`.
 - generated site output lives in `docs/`
 - crate API docs are published separately on docs.rs
 - the whitepaper-style format reference lives in `spec/dexios-paper.typ`
+- the Maintainer Verification Gate is tracked in `docs/safety-contract.md`
 
 For user-facing and technical docs, see:
 

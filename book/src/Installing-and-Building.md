@@ -44,6 +44,23 @@ cargo build --release
 cargo test --workspace --all-features --release --verbose
 ```
 
+## Maintainer Verification Gate
+
+For safety-sensitive maintenance work, `docs/safety-contract.md` is the
+authoritative gate. Run the focused invariant checks for the area being changed,
+then run the broad gate:
+
+```bash
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features --no-deps
+cargo test --workspace --all-features --release --verbose
+cargo audit
+mdbook build
+```
+
+`mdbook build` writes the generated documentation site to `docs/` because
+`book.toml` sets `build-dir = "docs"`.
+
 The CLI binary is produced at:
 
 ```text

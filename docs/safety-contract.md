@@ -99,13 +99,27 @@ Any future exception requires all of these before acceptance:
 
 ## Verification Gate
 
-Phase plans that depend on these invariants must run the relevant focused tests
-or inspection commands listed by each task, then include these commands:
+This section is the Maintainer Verification Gate for safety-sensitive changes.
+Phase plans and pull requests that depend on the invariants in this contract
+must run the relevant focused tests or inspection commands listed by the
+changed invariant first, then run the broad gate below before the change is
+accepted.
 
 - `cargo fmt --all --check`
 - `cargo clippy --workspace --all-targets --all-features --no-deps`
 - `cargo test --workspace --all-features --release --verbose`
+- `cargo audit`
+- `mdbook build`
 - `rg -n "#!\\[forbid\\(unsafe_code\\)\\]" dexios-core/src/lib.rs dexios-domain/src/lib.rs`
+
+Breaking changes to file format behavior, CLI behavior, security claims, or
+compatibility boundaries must update `CHANGELOG.md` under `## Unreleased`.
+Use the `### Breaking Changes`, `### Security`, `### Verification`, or
+`### Documentation` headings as appropriate for the change.
+
+`local-notes/` is local-only working context. It must remain ignored by git and
+must not be required to understand public release notes, user documentation, or
+maintainer verification steps.
 
 Phase 3 closes with an additional KDF/stream/secret gate:
 
