@@ -40,3 +40,30 @@ If the keyfile path is `-`, Dexios reads the key material from standard input in
 ## Reading from Environment Variables
 
 If `DEXIOS_KEY` is available and no higher-priority key source is selected, Dexios reads it, converts it to bytes, and wraps it in `Protected<Vec<u8>>`.
+
+## V1 Key Workflows
+
+Key workflows operate on V1 headers and keyslots only.
+
+- `key add` remains unsupported for V1 encrypted artifacts in this refactor
+  line. It fails with a typed unsupported-workflow result and does not request a
+  new key or mutate the header.
+- `key verify` is read-only. It reads the V1 header keyslots, attempts to unwrap
+  the master key with the supplied key, and reports success, incorrect key,
+  unsupported KDF, malformed header, unsupported format, or read I/O failure. It
+  does not authenticate or decrypt the payload stream.
+- `key change` first proves that the old key unwraps the current master key. It
+  then builds a replacement header and proves that the new key unwraps the same
+  master key before committing the staged header update.
+- `key del` deletes only the keyslot proven by the supplied old key. It rejects
+  deletion of the final usable V1 keyslot and does not collect a separate
+  remaining-key verification key.
+
+Historical V1 keyslots tagged `[0xDF, 0x02]` are recognized as unsupported
+Argon2id metadata. Key mutation refuses files containing that unsupported tag
+instead of skipping, normalizing, or rewriting the slot. `key verify` reports a
+typed unsupported-KDF result when the unsupported tag prevents verification.
+
+CLI key workflows perform cheap target, format, and KDF validation before
+prompting for secrets where the operation permits it. `key change` asks for the
+new key only after the old key has been verified against the current header.

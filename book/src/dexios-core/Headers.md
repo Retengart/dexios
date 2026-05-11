@@ -61,10 +61,26 @@ Inputs beginning with legacy `[DE,01]` through `[DE,05]` prefixes are rejected a
 
 ## Header Operations
 
-Dexios still supports:
+Dexios supports V1-only header maintenance operations over encrypted artifacts:
 
-- dumping headers
-- stripping headers by zeroing the serialized header region
-- restoring headers when the target file already begins with enough zero bytes
+- `header dump` accepts an embedded encrypted artifact with payload bytes after
+  the V1 header. It writes exactly 416 serialized header bytes to the detached
+  header output.
+- `header strip` accepts an embedded encrypted artifact with a valid V1 header
+  and payload bytes. It transactionally replaces only the first 416 bytes with
+  zeroes and preserves the payload bytes.
+- `header restore` accepts a detached header file only when it is exactly 416
+  bytes and parses as a V1 header. The restore target must be a stripped
+  embedded artifact: it must contain a zeroed 416-byte header prefix and at
+  least one payload byte after that prefix.
 
-Detached-header outputs usually do not reserve enough zero bytes for restoration, so restore remains a specialized operation rather than a normal workflow.
+Header-only files are not embedded encrypted artifacts. Dump and strip reject
+them because there are no payload bytes after the header. Restore rejects short
+detached headers, detached headers with trailing bytes, short restore targets,
+and targets whose first 416 bytes are not all zero before it stages any
+replacement.
+
+Detached-header encryption outputs usually do not reserve a zeroed 416-byte
+prefix in the payload file, so restore remains a recovery operation for
+previously stripped embedded artifacts rather than a normal detached-header
+workflow.
