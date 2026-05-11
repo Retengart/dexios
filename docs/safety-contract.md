@@ -105,6 +105,11 @@ must run the relevant focused tests or inspection commands listed by the
 changed invariant first, then run the broad gate below before the change is
 accepted.
 
+For local verification, use:
+
+- `bash scripts/verify_phase_gate.sh`
+- `bash scripts/verify_repo_hygiene.sh`
+
 - `cargo fmt --all --check`
 - `cargo clippy --workspace --all-targets --all-features --no-deps`
 - `cargo test --workspace --all-features --release --verbose`

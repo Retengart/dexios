@@ -1,25 +1,32 @@
-# A routine check to see if there are any Rust-specific security vulnerabilities 
-# in the repo we should be aware of.
+name: Documentation
 
-name: audit
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  schedule:
-    - cron: "0 0 * * 1" # every Monday
+
 jobs:
-  audit:
+  docs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6.0.2
+
       - name: Install Rust toolchain
         run: rustup toolchain install stable --profile minimal
+
       - name: Select Rust toolchain
         run: rustup default stable
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked --version 0.22.1
-      - name: Run cargo-audit
-        run: cargo audit
+
+      - name: Install mdBook
+        run: cargo install mdbook --locked
+
+      - name: Build documentation
+        run: mdbook build
+
+      - name: Verify repository hygiene
+        run: bash scripts/verify_repo_hygiene.sh
+
+      - name: Verify generated docs are current
+        run: git diff --exit-code -- docs

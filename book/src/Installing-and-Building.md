@@ -51,6 +51,12 @@ authoritative gate. Run the focused invariant checks for the area being changed,
 then run the broad gate:
 
 ```bash
+bash scripts/verify_phase_gate.sh
+```
+
+The script runs:
+
+```bash
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features --no-deps
 cargo test --workspace --all-features --release --verbose

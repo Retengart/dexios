@@ -5,6 +5,10 @@ const INSTALLING_AND_BUILDING: &str = include_str!("../../book/src/Installing-an
 const AUDITING: &str = include_str!("../../book/src/dexios-core/Auditing.md");
 const CHANGELOG: &str = include_str!("../../CHANGELOG.md");
 const GITIGNORE: &str = include_str!("../../.gitignore");
+const VERIFY_PHASE_GATE: &str = include_str!("../../scripts/verify_phase_gate.sh");
+const VERIFY_REPO_HYGIENE: &str = include_str!("../../scripts/verify_repo_hygiene.sh");
+const AUDIT_WORKFLOW: &str = include_str!("../../.github/workflows/audit.yml");
+const DOCS_WORKFLOW: &str = include_str!("../../.github/workflows/docs.yml");
 
 fn assert_contains(source_name: &str, source: &str, needle: &str) {
     assert!(
@@ -56,4 +60,38 @@ fn release_notes_track_breaking_security_verification_and_docs_changes() {
 #[test]
 fn planning_artifacts_remain_local_only() {
     assert_contains(".gitignore", GITIGNORE, "local-notes/");
+}
+
+#[test]
+fn local_scripts_expose_the_full_maintainer_gate() {
+    for required in [
+        "cargo fmt --all --check",
+        "cargo clippy --workspace --all-targets --all-features --no-deps",
+        "cargo test --workspace --all-features --release --verbose",
+        "cargo audit",
+        "bash scripts/verify_repo_hygiene.sh",
+        "mdbook build",
+    ] {
+        assert_contains("scripts/verify_phase_gate.sh", VERIFY_PHASE_GATE, required);
+    }
+
+    for required in ["git ls-files local-notes", "git check-ignore"] {
+        assert_contains("scripts/verify_repo_hygiene.sh", VERIFY_REPO_HYGIENE, required);
+    }
+}
+
+#[test]
+fn ci_workflows_keep_audit_and_docs_fresh() {
+    for required in ["pull_request", "push:", "schedule:", "cargo audit"] {
+        assert_contains(".github/workflows/audit.yml", AUDIT_WORKFLOW, required);
+    }
+
+    for required in [
+        "mdbook build",
+        "git diff --exit-code -- docs",
+        "verify_repo_hygiene.sh",
+        "workflow_dispatch",
+    ] {
+        assert_contains(".github/workflows/docs.yml", DOCS_WORKFLOW, required);
+    }
 }
