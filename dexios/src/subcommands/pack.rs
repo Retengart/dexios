@@ -13,8 +13,8 @@ use crate::global::{
     structs::{CryptoParams, PackParams},
 };
 use crate::info;
-use domain::storage::identity::OverwritePolicy;
 use domain::storage::Storage;
+use domain::storage::identity::OverwritePolicy;
 
 use crate::cli::prompt::overwrite_check;
 

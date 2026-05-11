@@ -20,16 +20,16 @@ use core::primitives::BLOCK_SIZE;
 use core::protected::Protected;
 use zip::write::SimpleFileOptions;
 
+use crate::storage::Storage;
 use crate::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
 };
 use crate::storage::transaction::{CommitReceipt, LinkedOutputTransaction, TransactionError};
-use crate::storage::Storage;
 
 trait TempArtifactLike {
     fn with_reader<T, E>(&self, f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>) -> Result<T, E>;
     fn with_writer<T, E>(&self, f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>)
-        -> Result<T, E>;
+    -> Result<T, E>;
 }
 
 trait ReadSeek: Read + Seek {}
