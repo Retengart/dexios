@@ -335,3 +335,44 @@ fn key_delete_failure_preserves_original_header() {
     assert_eq!(&after[..HEADER_LEN], &original[..HEADER_LEN]);
     assert_eq!(after, original);
 }
+
+#[test]
+fn unpack_delete_input_keeps_input_after_extraction_commit_failure() {
+    let test_dir = TestDir::new("unpack-delete-input-commit-failure");
+    let source_dir = test_dir.path().join("source");
+    let nested = source_dir.join("payload");
+    let encrypted = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+    let conflicting_dir = output_dir
+        .join("source")
+        .join("payload")
+        .join("payload.txt");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(nested.join("payload.txt"), b"payload").unwrap();
+    fs::create_dir_all(&conflicting_dir).unwrap();
+
+    let pack_output = run_cli(
+        test_dir.path(),
+        &["pack", "--force", "source", "archive.enc"],
+    );
+    assert!(
+        pack_output.status.success(),
+        "pack fixture failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&pack_output.stdout),
+        String::from_utf8_lossy(&pack_output.stderr)
+    );
+    assert!(encrypted.exists());
+
+    let unpack_output = run_cli(
+        test_dir.path(),
+        &["unpack", "--force", "--delete-input", "archive.enc", "out"],
+    );
+
+    assert!(
+        !unpack_output.status.success(),
+        "unpack unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&unpack_output.stdout),
+        String::from_utf8_lossy(&unpack_output.stderr)
+    );
+    assert!(encrypted.exists());
+}

@@ -94,6 +94,37 @@ fn encrypt_delete_input_removes_plaintext_after_success() {
 }
 
 #[test]
+fn encrypt_delete_input_waits_for_hash_success() {
+    let test_dir = TestDir::new("delete-input-encrypt-hash");
+    let input = test_dir.path().join("plain.txt");
+    let output = test_dir.path().join("plain.enc");
+    fs::write(&input, b"top secret").unwrap();
+
+    let output_cmd = run_cli(
+        test_dir.path(),
+        &[
+            "encrypt",
+            "-f",
+            "--hash",
+            "--delete-input",
+            input.to_str().unwrap(),
+            output.to_str().unwrap(),
+        ],
+    );
+
+    assert!(
+        output_cmd.status.success(),
+        "encrypt failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output_cmd.stdout),
+        String::from_utf8_lossy(&output_cmd.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output_cmd.stdout);
+    assert!(stdout.contains(output.to_str().unwrap()), "stdout={stdout}");
+    assert!(!input.exists());
+    assert!(output.exists());
+}
+
+#[test]
 fn encrypt_delete_input_keeps_plaintext_on_failure() {
     let test_dir = TestDir::new("delete-input-encrypt-fail");
     let input = test_dir.path().join("plain.txt");
@@ -116,6 +147,50 @@ fn encrypt_delete_input_keeps_plaintext_on_failure() {
         String::from_utf8_lossy(&output_cmd.stderr)
     );
     assert!(input.exists());
+}
+
+#[test]
+fn decrypt_delete_input_waits_for_commit_success() {
+    let test_dir = TestDir::new("delete-input-decrypt-commit-failure");
+    let input = test_dir.path().join("plain.txt");
+    let encrypted = test_dir.path().join("plain.enc");
+    let output = test_dir.path().join("plain.out");
+    fs::write(&input, b"top secret").unwrap();
+
+    let encrypt_cmd = run_cli(
+        test_dir.path(),
+        &[
+            "encrypt",
+            "-f",
+            input.to_str().unwrap(),
+            encrypted.to_str().unwrap(),
+        ],
+    );
+    assert!(encrypt_cmd.status.success());
+    fs::write(&output, b"existing output").unwrap();
+
+    let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
+    let decrypt_cmd = command
+        .current_dir(test_dir.path())
+        .env("DEXIOS_KEY", "wrong-password")
+        .args([
+            "decrypt",
+            "-f",
+            "--delete-input",
+            encrypted.to_str().unwrap(),
+            output.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        !decrypt_cmd.status.success(),
+        "decrypt unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&decrypt_cmd.stdout),
+        String::from_utf8_lossy(&decrypt_cmd.stderr)
+    );
+    assert!(encrypted.exists());
+    assert_eq!(fs::read(&output).unwrap(), b"existing output");
 }
 
 #[test]
@@ -231,4 +306,54 @@ fn pack_delete_source_removes_source_directory_after_success() {
     );
     assert!(!source.exists());
     assert!(encrypted.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn pack_delete_source_reports_partial_cleanup_failure() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let test_dir = TestDir::new("delete-source-pack-partial-cleanup");
+    let ok_source = test_dir.path().join("ok-source");
+    let locked_parent = test_dir.path().join("locked-parent");
+    let locked_source = locked_parent.join("locked-source");
+    let encrypted = test_dir.path().join("archive.enc");
+    fs::create_dir_all(&ok_source).unwrap();
+    fs::create_dir_all(&locked_source).unwrap();
+    fs::write(ok_source.join("ok.txt"), b"ok").unwrap();
+    fs::write(locked_source.join("locked.txt"), b"locked").unwrap();
+    fs::set_permissions(&locked_parent, fs::Permissions::from_mode(0o555)).unwrap();
+
+    let pack_cmd = run_cli(
+        test_dir.path(),
+        &[
+            "pack",
+            "-f",
+            "--delete-source",
+            ok_source.to_str().unwrap(),
+            locked_source.to_str().unwrap(),
+            encrypted.to_str().unwrap(),
+        ],
+    );
+
+    fs::set_permissions(&locked_parent, fs::Permissions::from_mode(0o755)).unwrap();
+
+    assert!(
+        !pack_cmd.status.success(),
+        "pack unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&pack_cmd.stdout),
+        String::from_utf8_lossy(&pack_cmd.stderr)
+    );
+    let combined_output = format!(
+        "{}{}",
+        String::from_utf8_lossy(&pack_cmd.stdout),
+        String::from_utf8_lossy(&pack_cmd.stderr)
+    );
+    assert!(
+        combined_output.contains("cleanup failed after output commit"),
+        "output={combined_output}"
+    );
+    assert!(encrypted.exists());
+    assert!(!ok_source.exists());
+    assert!(locked_source.exists());
 }
