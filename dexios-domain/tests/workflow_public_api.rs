@@ -14,6 +14,10 @@ const CLI_HEADER: &str = include_str!("../../dexios/src/subcommands/header.rs");
 const CLI_KEY: &str = include_str!("../../dexios/src/subcommands/key.rs");
 const CLI_ERRORS: &str = include_str!("../../dexios/src/subcommands/errors.rs");
 
+const DOMAIN_WORKFLOW_ERRORS_TESTS: &str = include_str!("workflow_errors.rs");
+const DOMAIN_HEADER_RESTORE_TESTS: &str = include_str!("header_restore.rs");
+const DOMAIN_KEYSLOTS_TESTS: &str = include_str!("keyslots_v1.rs");
+
 #[derive(Clone, Copy)]
 struct Source<'a> {
     path: &'a str,
@@ -86,6 +90,25 @@ fn cli_adapter_sources() -> Vec<Source<'static>> {
     ]
 }
 
+fn d05_policy_sources() -> Vec<Source<'static>> {
+    let mut sources = domain_workflow_sources();
+    sources.extend([
+        Source {
+            path: "dexios-domain/tests/workflow_errors.rs",
+            text: DOMAIN_WORKFLOW_ERRORS_TESTS,
+        },
+        Source {
+            path: "dexios-domain/tests/header_restore.rs",
+            text: DOMAIN_HEADER_RESTORE_TESTS,
+        },
+        Source {
+            path: "dexios-domain/tests/keyslots_v1.rs",
+            text: DOMAIN_KEYSLOTS_TESTS,
+        },
+    ]);
+    sources
+}
+
 fn assert_no_public_api_bypasses(sources: &[Source<'_>]) -> Result<(), String> {
     collect_violations(sources, public_api_bypass_violations)
 }
@@ -96,6 +119,14 @@ fn assert_no_cli_raw_request_constructors(sources: &[Source<'_>]) -> Result<(), 
 
 fn assert_no_formatted_error_control_flow(sources: &[Source<'_>]) -> Result<(), String> {
     collect_violations(sources, formatted_error_control_flow_violations)
+}
+
+fn assert_d05_test_support_escape_hatches(_sources: &[Source<'_>]) -> Result<(), String> {
+    Ok(())
+}
+
+fn assert_d05_fixture_names(_sources: &[Source<'_>]) -> Result<(), String> {
+    Ok(())
 }
 
 fn collect_violations(
@@ -367,4 +398,56 @@ fn formatted_error_control_flow_rejects_string_inspection() {
     assert_no_formatted_error_control_flow(&domain_workflow_sources())
         .expect("domain workflow sources");
     assert_no_formatted_error_control_flow(&cli_adapter_sources()).expect("CLI adapter sources");
+}
+
+#[test]
+fn test_support_escape_hatches_are_scoped_and_named_by_d05() {
+    let bad_production_sources = [
+        Source {
+            path: "synthetic/unchecked-production-helper.rs",
+            text: "pub fn unchecked_request_builder() {}",
+        },
+        Source {
+            path: "synthetic/bypass-production-module.rs",
+            text: "pub mod bypass_request_builders {}",
+        },
+    ];
+
+    for source in bad_production_sources {
+        assert!(
+            assert_d05_test_support_escape_hatches(&[source]).is_err(),
+            "D-05 gate must reject production-visible escape hatch in {}",
+            source.path
+        );
+    }
+
+    assert_d05_test_support_escape_hatches(&d05_policy_sources())
+        .expect("D-05 source and test-support placement");
+}
+
+#[test]
+fn d05_fixture_helpers_are_valid_by_default_or_explicitly_negative() {
+    let bad_fixture_name = Source {
+        path: "synthetic/ambiguous-fixture.rs",
+        text: "fn broken_header_fixture() {}",
+    };
+    assert!(
+        assert_d05_fixture_names(&[bad_fixture_name]).is_err(),
+        "D-05 fixture gate must reject ambiguous invalid-state fixture names"
+    );
+
+    let allowed_fixture_names = Source {
+        path: "synthetic/allowed-fixtures.rs",
+        text: r#"
+            fn encrypted_v1_fixture() {}
+            fn valid_header_fixture() {}
+            fn invalid_header_fixture() {}
+            fn malformed_v1_fixture() {}
+            fn unsupported_format_fixture() {}
+        "#,
+    };
+    assert_d05_fixture_names(&[allowed_fixture_names])
+        .expect("valid and explicitly negative fixture names");
+
+    assert_d05_fixture_names(&d05_policy_sources()).expect("D-05 fixture/helper names");
 }
