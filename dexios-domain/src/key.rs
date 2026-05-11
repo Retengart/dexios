@@ -195,7 +195,7 @@ pub fn encrypt_master_key(
     key_new: Protected<[u8; 32]>,
     nonce: &KeyslotNonce,
 ) -> Result<[u8; ENCRYPTED_MASTER_KEY_LEN], Error> {
-    let encrypted_master_key = wrap_v1_master_key(WrappingKey::from(key_new), &master_key, nonce)
+    let encrypted_master_key = wrap_v1_master_key(WrappingKey::from(key_new), master_key, nonce)
         .map_err(|_| Error::MasterKeyEncrypt)?;
     Ok(*encrypted_master_key.as_bytes())
 }
