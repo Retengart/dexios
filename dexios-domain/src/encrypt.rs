@@ -13,7 +13,9 @@ use core::primitives::{MasterKey, WrappingKey, gen_keyslot_nonce, gen_payload_no
 use core::protected::Protected;
 use core::stream::V1PayloadStream;
 
-use crate::storage::identity::{IdentityError, OverwritePolicy, PathIdentityGraph, PathRole};
+use crate::storage::identity::{
+    IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
+};
 use crate::storage::transaction::{
     CommitReceipt, LinkedOutputTransaction, StagedOutputTransaction, TransactionError,
 };
@@ -89,9 +91,9 @@ impl DetachedHeaderTarget {
 
 #[derive(Debug)]
 pub struct EncryptIntent {
-    input_path: PathBuf,
-    output_target: crate::storage::identity::ResolvedTarget,
-    header_target: Option<crate::storage::identity::ResolvedTarget>,
+    input_target: ResolvedTarget,
+    output_target: ResolvedTarget,
+    header_target: Option<ResolvedTarget>,
     raw_key: Protected<Vec<u8>>,
     kdf: Kdf,
 }
@@ -111,7 +113,7 @@ impl EncryptIntent {
     {
         let input_path = input_path.as_ref().to_path_buf();
         let mut graph = PathIdentityGraph::new();
-        graph
+        let input_target = graph
             .add_existing(&input_path, PathRole::Input)
             .map_err(Error::PathIdentity)?;
         let output_target = graph
@@ -124,7 +126,7 @@ impl EncryptIntent {
         graph.validate().map_err(Error::PathIdentity)?;
 
         Ok(Self {
-            input_path,
+            input_target,
             output_target,
             header_target,
             raw_key,
@@ -193,13 +195,14 @@ where
 
 pub fn execute(intent: EncryptIntent) -> Result<CommitReceipt, Error> {
     let EncryptIntent {
-        input_path,
+        input_target,
         output_target,
         header_target,
         raw_key,
         kdf,
     } = intent;
-    let reader = RefCell::new(File::open(input_path).map_err(|_| Error::OpenInput)?);
+    let reader =
+        RefCell::new(File::open(input_target.target_path()).map_err(|_| Error::OpenInput)?);
 
     execute_transactional_targets(&reader, output_target, header_target, raw_key, kdf)
 }
@@ -210,8 +213,8 @@ pub fn execute_transactional(intent: EncryptIntent) -> Result<CommitReceipt, Err
 
 fn execute_transactional_targets<R>(
     reader: &RefCell<R>,
-    output_target: crate::storage::identity::ResolvedTarget,
-    header_target: Option<crate::storage::identity::ResolvedTarget>,
+    output_target: ResolvedTarget,
+    header_target: Option<ResolvedTarget>,
     raw_key: Protected<Vec<u8>>,
     kdf: Kdf,
 ) -> Result<CommitReceipt, Error>

@@ -1,16 +1,18 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use core::kdf::Kdf;
 use core::protected::Protected;
-use dexios_domain::encrypt;
 use dexios_domain::storage::identity::OverwritePolicy;
 use dexios_domain::storage::transaction::{CommitReceipt, CommittedArtifact, TransactionError};
 use dexios_domain::workflow_error::WorkflowErrorClass;
+use dexios_domain::{decrypt, encrypt};
 
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
+static CURRENT_DIR_LOCK: Mutex<()> = Mutex::new(());
 
 struct TestDir {
     path: PathBuf,
@@ -40,6 +42,24 @@ impl TestDir {
 impl Drop for TestDir {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+struct CurrentDirGuard {
+    original: PathBuf,
+}
+
+impl CurrentDirGuard {
+    fn change_to(path: &Path) -> Self {
+        let original = std::env::current_dir().unwrap();
+        std::env::set_current_dir(path).unwrap();
+        Self { original }
+    }
+}
+
+impl Drop for CurrentDirGuard {
+    fn drop(&mut self) {
+        let _ = std::env::set_current_dir(&self.original);
     }
 }
 
@@ -95,6 +115,53 @@ fn encrypt_intent_rejects_aliased_output_and_detached_header_targets() {
         !encrypted.exists(),
         "validated intent construction must not create final outputs"
     );
+}
+
+#[test]
+fn encrypt_intent_with_relative_input_opens_validated_target_after_cwd_change() {
+    let _cwd_lock = CURRENT_DIR_LOCK.lock().unwrap();
+    let test_dir = TestDir::new("relative-input-target");
+    let validated_dir = test_dir.path().join("validated");
+    let decoy_dir = test_dir.path().join("decoy");
+    fs::create_dir_all(&validated_dir).unwrap();
+    fs::create_dir_all(&decoy_dir).unwrap();
+
+    fs::write(validated_dir.join("plain.txt"), b"validated plaintext").unwrap();
+    fs::write(
+        decoy_dir.join("plain.txt"),
+        b"decoy plaintext must not be encrypted",
+    )
+    .unwrap();
+
+    let output = test_dir.path().join("cipher.dexios");
+    let decrypted = test_dir.path().join("plain.out");
+    let _cwd_guard = CurrentDirGuard::change_to(&validated_dir);
+
+    let intent = encrypt::EncryptIntent::new(
+        "plain.txt",
+        &output,
+        OverwritePolicy::CreateNew,
+        None,
+        protected_key(),
+        Kdf::Blake3Balloon,
+    )
+    .expect("build encrypt intent from relative input");
+
+    std::env::set_current_dir(&decoy_dir).unwrap();
+    encrypt::execute(intent).expect("encrypt validated input target");
+
+    let decrypt_intent = decrypt::DecryptIntent::new(
+        &output,
+        &decrypted,
+        OverwritePolicy::CreateNew,
+        None::<&Path>,
+        protected_key(),
+        None,
+    )
+    .expect("build decrypt intent");
+    decrypt::execute(decrypt_intent).expect("decrypt encrypted output");
+
+    assert_eq!(fs::read(&decrypted).unwrap(), b"validated plaintext");
 }
 
 #[test]
