@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use super::identity::{PathRole, ResolvedTarget};
 use super::temp::NamedStagedOutput;
+use super::test_support::FailureHooks;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommitReceipt {
@@ -62,9 +63,16 @@ pub struct StagedOutputTransaction {
 
 impl StagedOutputTransaction {
     pub fn new(target: ResolvedTarget) -> Result<Self, TransactionError> {
+        Self::with_failure_hooks(target, FailureHooks::none())
+    }
+
+    pub fn with_failure_hooks(
+        target: ResolvedTarget,
+        hooks: FailureHooks,
+    ) -> Result<Self, TransactionError> {
         let path = target.target_path().to_path_buf();
-        let staged =
-            NamedStagedOutput::new(target).map_err(|_| TransactionError::Write { path })?;
+        let staged = NamedStagedOutput::with_failure_hooks(target, hooks)
+            .map_err(|_| TransactionError::Write { path })?;
         Ok(Self { staged })
     }
 
@@ -94,18 +102,27 @@ impl StagedOutputTransaction {
 
 pub struct LinkedOutputTransaction {
     staged: Vec<NamedStagedOutput>,
+    hooks: FailureHooks,
 }
 
 impl LinkedOutputTransaction {
     #[must_use]
     pub fn new() -> Self {
-        Self { staged: Vec::new() }
+        Self::with_failure_hooks(FailureHooks::none())
+    }
+
+    #[must_use]
+    pub fn with_failure_hooks(hooks: FailureHooks) -> Self {
+        Self {
+            staged: Vec::new(),
+            hooks,
+        }
     }
 
     pub fn stage(&mut self, target: ResolvedTarget) -> Result<usize, TransactionError> {
         let path = target.target_path().to_path_buf();
-        let staged =
-            NamedStagedOutput::new(target).map_err(|_| TransactionError::Write { path })?;
+        let staged = NamedStagedOutput::with_failure_hooks(target, self.hooks)
+            .map_err(|_| TransactionError::Write { path })?;
         self.staged.push(staged);
         Ok(self.staged.len() - 1)
     }

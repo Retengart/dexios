@@ -300,3 +300,82 @@ fn linked_transaction_blocks_cleanup_after_partial_commit() {
         b"existing header"
     );
 }
+
+#[test]
+fn transaction_failure_hook_write_preserves_existing_target() {
+    let test_dir = TestDir::new("failure-hook-write");
+    let target_path = test_dir.path().join("output.dexios");
+    write_existing_target(&target_path);
+
+    let target = resolved_output(&target_path, OverwritePolicy::ReplaceAtCommit);
+    let mut transaction = StagedOutputTransaction::with_failure_hooks(
+        target,
+        FailureHooks::fail_on(FailurePoint::Write),
+    )
+    .unwrap();
+
+    let error = transaction.write_all(CANDIDATE_OUTPUT).unwrap_err();
+
+    assert!(matches!(error, TransactionError::Write { .. }));
+    assert_existing_target_preserved(&target_path);
+}
+
+#[test]
+fn transaction_failure_hook_flush_preserves_existing_target() {
+    let test_dir = TestDir::new("failure-hook-flush");
+    let target_path = test_dir.path().join("output.dexios");
+    write_existing_target(&target_path);
+
+    let target = resolved_output(&target_path, OverwritePolicy::ReplaceAtCommit);
+    let mut transaction = StagedOutputTransaction::with_failure_hooks(
+        target,
+        FailureHooks::fail_on(FailurePoint::Flush),
+    )
+    .unwrap();
+    transaction.write_all(CANDIDATE_OUTPUT).unwrap();
+
+    let error = transaction.commit().unwrap_err();
+
+    assert!(matches!(error, TransactionError::Flush { .. }));
+    assert_existing_target_preserved(&target_path);
+}
+
+#[test]
+fn transaction_failure_hook_sync_preserves_existing_target() {
+    let test_dir = TestDir::new("failure-hook-sync");
+    let target_path = test_dir.path().join("output.dexios");
+    write_existing_target(&target_path);
+
+    let target = resolved_output(&target_path, OverwritePolicy::ReplaceAtCommit);
+    let mut transaction = StagedOutputTransaction::with_failure_hooks(
+        target,
+        FailureHooks::fail_on(FailurePoint::Sync),
+    )
+    .unwrap();
+    transaction.write_all(CANDIDATE_OUTPUT).unwrap();
+
+    let error = transaction.commit().unwrap_err();
+
+    assert!(matches!(error, TransactionError::Sync { .. }));
+    assert_existing_target_preserved(&target_path);
+}
+
+#[test]
+fn transaction_failure_hook_persist_preserves_existing_target() {
+    let test_dir = TestDir::new("failure-hook-persist");
+    let target_path = test_dir.path().join("output.dexios");
+    write_existing_target(&target_path);
+
+    let target = resolved_output(&target_path, OverwritePolicy::ReplaceAtCommit);
+    let mut transaction = StagedOutputTransaction::with_failure_hooks(
+        target,
+        FailureHooks::fail_on(FailurePoint::Persist),
+    )
+    .unwrap();
+    transaction.write_all(CANDIDATE_OUTPUT).unwrap();
+
+    let error = transaction.commit().unwrap_err();
+
+    assert!(matches!(error, TransactionError::Persist { .. }));
+    assert_existing_target_preserved(&target_path);
+}
