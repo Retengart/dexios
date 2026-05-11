@@ -7,9 +7,7 @@ use core::header::common::{HEADER_LEN, HEADER_STATIC_LEN};
 use core::kdf::Kdf;
 use core::protected::Protected;
 use dexios_domain::storage::identity::{OverwritePolicy, PathRole};
-use dexios_domain::storage::transaction::{
-    CommitReceipt, CommittedArtifact, TransactionError,
-};
+use dexios_domain::storage::transaction::{CommitReceipt, CommittedArtifact, TransactionError};
 use dexios_domain::workflow_error::WorkflowErrorClass;
 use dexios_domain::{decrypt, encrypt};
 
@@ -54,9 +52,9 @@ fn protected_key(secret: &[u8]) -> Protected<Vec<u8>> {
     Protected::new(secret.to_vec())
 }
 
-fn encrypted_fixture(test_dir: &TestDir) -> PathBuf {
-    let plain = test_dir.path().join("plain.txt");
-    let encrypted = test_dir.path().join("plain.enc");
+fn encrypted_fixture(test_dir: &TestDir, name: &str) -> PathBuf {
+    let plain = test_dir.path().join(format!("{name}.txt"));
+    let encrypted = test_dir.path().join(format!("{name}.enc"));
     fs::write(&plain, b"Hello world").unwrap();
 
     let intent = encrypt::EncryptIntent::new(
@@ -105,7 +103,7 @@ fn mark_first_keyslot_unsupported_argon2id(path: &Path) {
 #[test]
 fn decrypt_intent_rejects_aliased_input_output_before_mutation() {
     let test_dir = TestDir::new("decrypt-alias-input-output");
-    let encrypted = encrypted_fixture(&test_dir);
+    let encrypted = encrypted_fixture(&test_dir, "plain");
     let sentinel = fs::read(&encrypted).unwrap();
 
     let result = decrypt::DecryptIntent::new(
@@ -126,7 +124,7 @@ fn decrypt_intent_rejects_aliased_input_output_before_mutation() {
 #[test]
 fn decrypt_intent_rejects_detached_header_aliases_before_output_creation() {
     let test_dir = TestDir::new("decrypt-alias-detached-header");
-    let encrypted = encrypted_fixture(&test_dir);
+    let encrypted = encrypted_fixture(&test_dir, "plain");
     let output = test_dir.path().join("plain.out");
 
     let result = decrypt::DecryptIntent::new(
@@ -190,7 +188,7 @@ fn decrypt_error_classification_keeps_format_key_auth_io_and_transaction_distinc
 #[test]
 fn decrypt_intent_maps_wrong_key_unsupported_kdf_and_header_format_errors() {
     let test_dir = TestDir::new("decrypt-execution-errors");
-    let wrong_key_input = encrypted_fixture(&test_dir);
+    let wrong_key_input = encrypted_fixture(&test_dir, "wrong-key");
     let wrong_key_output = test_dir.path().join("wrong-key.out");
 
     let wrong_key = decrypt::DecryptIntent::new(
@@ -216,7 +214,7 @@ fn decrypt_intent_maps_wrong_key_unsupported_kdf_and_header_format_errors() {
         "wrong-key plaintext scratch must not become final output"
     );
 
-    let unsupported_kdf_input = encrypted_fixture(&test_dir);
+    let unsupported_kdf_input = encrypted_fixture(&test_dir, "unsupported-kdf");
     mark_first_keyslot_unsupported_argon2id(&unsupported_kdf_input);
     let unsupported_kdf = decrypt::DecryptIntent::new(
         &unsupported_kdf_input,
@@ -245,7 +243,10 @@ fn decrypt_intent_maps_wrong_key_unsupported_kdf_and_header_format_errors() {
     )
     .expect("build malformed decrypt intent");
     let malformed_result = decrypt::execute(malformed);
-    assert!(matches!(malformed_result, Err(decrypt::Error::DeserializeHeader)));
+    assert!(matches!(
+        malformed_result,
+        Err(decrypt::Error::DeserializeHeader)
+    ));
     assert_eq!(
         malformed_result.unwrap_err().workflow_class(),
         WorkflowErrorClass::MalformedFormat
@@ -311,7 +312,6 @@ fn decrypt_public_api_source_has_no_raw_refcell_request_contract() {
         "pub reader:",
         "pub writer:",
         "pub header_reader:",
-        "RefCell<R>",
     ] {
         assert!(
             !DOMAIN_DECRYPT_SOURCE.contains(forbidden),

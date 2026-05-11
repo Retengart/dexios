@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -9,6 +8,7 @@ use core::kdf::Kdf;
 use core::protected::Protected;
 use dexios_domain::decrypt;
 use dexios_domain::pack::{self, ArchiveSourceEntry};
+use dexios_domain::storage::identity::OverwritePolicy;
 use dexios_domain::storage::{FileStorage, Storage};
 
 const PASSWORD: &[u8; 8] = b"12345678";
@@ -76,18 +76,19 @@ fn pack_writes_relative_archive_paths() {
     let ParsedHeader::V1(payload) = parsed;
     assert_eq!(payload.header().keyslots().len(), 1);
 
-    let archive = stor.read_file(&output_path).unwrap();
-    let decrypted = RefCell::new(Cursor::new(Vec::new()));
-    let decrypt_req = decrypt::Request {
-        header_reader: None,
-        reader: archive.try_reader().unwrap(),
-        writer: &decrypted,
-        raw_key: Protected::new(PASSWORD.to_vec()),
-        on_decrypted_header: None,
-    };
-    decrypt::execute(decrypt_req).unwrap();
+    let decrypted_path = root.path().join("archive.zip");
+    let decrypt_intent = decrypt::DecryptIntent::new(
+        &output_path,
+        &decrypted_path,
+        OverwritePolicy::CreateNew,
+        None::<&Path>,
+        Protected::new(PASSWORD.to_vec()),
+        None,
+    )
+    .unwrap();
+    decrypt::execute(decrypt_intent).unwrap();
 
-    let bytes = decrypted.into_inner().into_inner();
+    let bytes = fs::read(decrypted_path).unwrap();
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
     let mut names = (0..zip.len())
         .map(|i| zip.by_index(i).unwrap().name().to_string())

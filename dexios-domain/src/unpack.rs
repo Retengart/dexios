@@ -143,7 +143,7 @@ where
             .rewind()
             .map_err(|_| Error::Storage(storage::Error::OpenFile(storage::FileMode::Write)))?;
         let writer = RefCell::new(tmp_writer);
-        decrypt::execute(decrypt::Request {
+        decrypt::execute_handles(decrypt::HandleRequest {
             header_reader: req.header_reader,
             reader: req.reader,
             writer: &writer,

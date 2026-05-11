@@ -110,17 +110,22 @@ fn decrypt_fixture(
     raw_key: &[u8],
 ) -> Result<Vec<u8>, decrypt::Error> {
     encrypted.borrow_mut().rewind().expect("rewind encrypted");
-    let output = RefCell::new(Cursor::new(Vec::new()));
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let encrypted_path = temp_dir.path().join("plain.enc");
+    let output_path = temp_dir.path().join("plain.out");
+    fs::write(&encrypted_path, encrypted.borrow().get_ref()).expect("write encrypted fixture");
 
-    decrypt::execute(decrypt::Request {
-        header_reader: None,
-        reader: encrypted,
-        writer: &output,
-        raw_key: Protected::new(raw_key.to_vec()),
-        on_decrypted_header: None,
-    })?;
+    let intent = decrypt::DecryptIntent::new(
+        &encrypted_path,
+        &output_path,
+        dexios_domain::storage::identity::OverwritePolicy::CreateNew,
+        None::<&std::path::Path>,
+        Protected::new(raw_key.to_vec()),
+        None,
+    )?;
+    decrypt::execute(intent)?;
 
-    Ok(output.into_inner().into_inner())
+    Ok(fs::read(output_path).expect("read decrypted fixture"))
 }
 
 #[test]
