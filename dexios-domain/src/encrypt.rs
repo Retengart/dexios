@@ -8,7 +8,7 @@ use core::cipher::wrap_v1_master_key;
 use core::header::common::Salt;
 use core::header::v1::{V1Header, V1Keyslot, V1Keyslots};
 use core::kdf::Kdf;
-use core::primitives::{gen_keyslot_nonce, gen_payload_nonce, MasterKey, WrappingKey};
+use core::primitives::{MasterKey, WrappingKey, gen_keyslot_nonce, gen_payload_nonce};
 use core::protected::Protected;
 use core::stream::V1PayloadStream;
 
@@ -258,7 +258,7 @@ pub mod tests {
     use std::io::Cursor;
 
     use core::header::common::HEADER_LEN;
-    use core::header::{read_header, ParsedHeader};
+    use core::header::{ParsedHeader, read_header};
     use core::kdf::Kdf;
 
     use super::*;

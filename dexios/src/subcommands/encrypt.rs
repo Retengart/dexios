@@ -5,8 +5,8 @@ use anyhow::Result;
 use std::path::Path;
 use std::sync::Arc;
 
-use domain::storage::identity::OverwritePolicy;
 use domain::storage::Storage;
+use domain::storage::identity::OverwritePolicy;
 
 fn should_continue_after_overwrite_checks<F>(output_ok: bool, header_check: F) -> Result<bool>
 where

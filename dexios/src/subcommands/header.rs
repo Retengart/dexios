@@ -9,9 +9,9 @@ use crate::global::states::ForceMode;
 use anyhow::{Context, Result};
 use core::header::common::HeaderReadError;
 use core::header::v1::KeyslotKdf;
-use core::header::{read_header, ParsedHeader};
-use domain::storage::identity::OverwritePolicy;
+use core::header::{ParsedHeader, read_header};
 use domain::storage::Storage;
+use domain::storage::identity::OverwritePolicy;
 use domain::utils::hex_encode;
 
 fn overwrite_policy(path_exists: bool) -> OverwritePolicy {

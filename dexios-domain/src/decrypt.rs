@@ -6,7 +6,7 @@ use std::path::Path;
 
 use core::header::common::HEADER_LEN;
 use core::header::v1::V1Header;
-use core::header::{read_header, ParsedHeader, ParsedV1Payload};
+use core::header::{ParsedHeader, ParsedV1Payload, read_header};
 use core::protected::Protected;
 use core::stream::{StreamError, V1PayloadStream};
 

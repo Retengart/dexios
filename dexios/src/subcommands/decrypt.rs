@@ -8,8 +8,8 @@ use crate::global::structs::CryptoParams;
 
 use anyhow::Result;
 
-use domain::storage::identity::OverwritePolicy;
 use domain::storage::Storage;
+use domain::storage::identity::OverwritePolicy;
 
 fn overwrite_policy(path_exists: bool) -> OverwritePolicy {
     if path_exists {

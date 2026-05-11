@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::io::{Read, Seek, Write};
 use std::path::Path;
 
-use core::header::{read_header, ParsedHeader};
+use core::header::{ParsedHeader, read_header};
 
 use crate::storage::identity::{OverwritePolicy, PathIdentityGraph, PathRole};
 use crate::storage::transaction::{CommitReceipt, StagedOutputTransaction};
