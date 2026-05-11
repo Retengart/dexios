@@ -92,6 +92,18 @@ fn decrypt_archive_entry_names(archive_path: &Path, header_path: Option<&Path>) 
     names
 }
 
+fn create_deep_source_file(root: &Path, depth: usize) -> PathBuf {
+    let source_dir = root.join("source");
+    let mut nested_dir = source_dir.clone();
+    for index in 0..depth {
+        nested_dir.push(format!("dir{index}"));
+    }
+    fs::create_dir_all(&nested_dir).unwrap();
+    let file_path = nested_dir.join("deep.txt");
+    fs::write(&file_path, b"deep").unwrap();
+    file_path
+}
+
 fn assert_alias_rejected(output: &std::process::Output) {
     assert!(
         !output.status.success(),
@@ -464,4 +476,31 @@ fn pack_delete_source_rejects_detached_header_inside_source_and_keeps_source() {
     assert!(source_dir.join("hello.txt").exists());
     assert!(!header_path.exists());
     assert!(!archive_path.exists());
+}
+
+#[test]
+fn pack_delete_source_rejects_archive_limit_failure_and_keeps_source() {
+    let test_dir = TestDir::new("pack-delete-source-archive-limit");
+    let deep_file = create_deep_source_file(test_dir.path(), 65);
+
+    let output = run_pack(
+        test_dir.path(),
+        &["--delete-source"],
+        &["source"],
+        "archive.enc",
+    );
+
+    assert!(
+        !output.status.success(),
+        "pack unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("Archive limit error"),
+        "stderr did not mention archive limit: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read(&deep_file).unwrap(), b"deep");
+    assert!(!test_dir.path().join("archive.enc").exists());
 }

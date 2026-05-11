@@ -20,7 +20,7 @@ use core::primitives::BLOCK_SIZE;
 use core::protected::Protected;
 use zip::write::SimpleFileOptions;
 
-use crate::archive::{ArchiveCompression, ArchivePolicy};
+use crate::archive::{ArchiveCompression, ArchiveLimitError, ArchiveLimits, ArchivePolicy};
 use crate::storage::Storage;
 use crate::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
@@ -64,6 +64,7 @@ pub enum Error {
     PathIdentity(IdentityError),
     Transaction(TransactionError),
     TransactionWriter,
+    ArchiveLimit(ArchiveLimitError),
     ArchiveRootName,
     ReadSource,
 }
@@ -81,6 +82,7 @@ impl std::fmt::Display for Error {
             Error::PathIdentity(inner) => write!(f, "Pack path identity check failed: {inner}"),
             Error::Transaction(inner) => write!(f, "Pack transaction failed: {inner}"),
             Error::TransactionWriter => f.write_str("Unable to release staged pack writers"),
+            Error::ArchiveLimit(inner) => write!(f, "Archive limit error: {inner}"),
             Error::ArchiveRootName => f.write_str("Unable to derive archive root names"),
             Error::ReadSource => f.write_str("Unable to read pack source"),
         }
@@ -366,6 +368,14 @@ fn materialize_archive_entries(
     sources: &[PackSource],
     on_archive_entry: Option<&dyn Fn(&Path)>,
 ) -> Result<Vec<ArchiveSourceEntry<fs::File>>, Error> {
+    materialize_archive_entries_with_limits(sources, on_archive_entry, ArchiveLimits::default())
+}
+
+fn materialize_archive_entries_with_limits(
+    sources: &[PackSource],
+    on_archive_entry: Option<&dyn Fn(&Path)>,
+    limits: ArchiveLimits,
+) -> Result<Vec<ArchiveSourceEntry<fs::File>>, Error> {
     let stor = crate::storage::FileStorage;
     let mut entries = Vec::new();
 
@@ -388,27 +398,48 @@ fn materialize_archive_entries(
                     source_root.archive_root.join(relative)
                 };
 
-                if let Some(on_archive_entry) = on_archive_entry {
-                    on_archive_entry(&archive_path);
-                }
-
-                entries.push(ArchiveSourceEntry {
-                    source,
-                    archive_path,
-                });
+                push_archive_entry(&mut entries, source, archive_path, limits, on_archive_entry)?;
             }
         } else {
-            if let Some(on_archive_entry) = on_archive_entry {
-                on_archive_entry(&source_root.archive_root);
-            }
-            entries.push(ArchiveSourceEntry {
-                source: file,
-                archive_path: source_root.archive_root.clone(),
-            });
+            push_archive_entry(
+                &mut entries,
+                file,
+                source_root.archive_root.clone(),
+                limits,
+                on_archive_entry,
+            )?;
         }
     }
 
     Ok(entries)
+}
+
+fn push_archive_entry<RW>(
+    entries: &mut Vec<ArchiveSourceEntry<RW>>,
+    source: crate::storage::Entry<RW>,
+    archive_path: PathBuf,
+    limits: ArchiveLimits,
+    on_archive_entry: Option<&dyn Fn(&Path)>,
+) -> Result<(), Error>
+where
+    RW: Read + Write + Seek,
+{
+    limits
+        .check_entry_count(entries.len() + 1)
+        .map_err(Error::ArchiveLimit)?;
+    limits
+        .check_normalized_path(&archive_path)
+        .map_err(Error::ArchiveLimit)?;
+
+    if let Some(on_archive_entry) = on_archive_entry {
+        on_archive_entry(&archive_path);
+    }
+
+    entries.push(ArchiveSourceEntry {
+        source,
+        archive_path,
+    });
+    Ok(())
 }
 
 fn validate_generated_targets_against_entries<RW>(
@@ -632,12 +663,78 @@ fn transaction_to_io_error(error: TransactionError) -> io::Error {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use std::io::{Cursor, Read};
+    use std::cell::Cell;
+    use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
+    use std::rc::Rc;
     use std::sync::Arc;
 
-    use crate::archive::ArchivePolicy;
+    use crate::archive::{ArchiveLimitKind, ArchiveLimits, ArchivePolicy};
     use crate::encrypt::tests::PASSWORD;
     use crate::storage::{InMemoryStorage, Storage};
+
+    struct DropTrackingTempArtifact {
+        cursor: RefCell<Cursor<Vec<u8>>>,
+        dropped: Rc<Cell<bool>>,
+    }
+
+    impl DropTrackingTempArtifact {
+        fn new(dropped: Rc<Cell<bool>>) -> Self {
+            Self {
+                cursor: RefCell::new(Cursor::new(Vec::new())),
+                dropped,
+            }
+        }
+    }
+
+    impl Drop for DropTrackingTempArtifact {
+        fn drop(&mut self) {
+            self.dropped.set(true);
+        }
+    }
+
+    impl TempArtifactLike for DropTrackingTempArtifact {
+        fn with_reader<T, E>(
+            &self,
+            f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>,
+        ) -> Result<T, E> {
+            f(&mut *self.cursor.borrow_mut())
+        }
+
+        fn with_writer<T, E>(
+            &self,
+            f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>,
+        ) -> Result<T, E> {
+            f(&mut *self.cursor.borrow_mut())
+        }
+    }
+
+    struct FailingWriteSeek {
+        cursor: Cursor<Vec<u8>>,
+    }
+
+    impl FailingWriteSeek {
+        fn new() -> Self {
+            Self {
+                cursor: Cursor::new(Vec::new()),
+            }
+        }
+    }
+
+    impl Write for FailingWriteSeek {
+        fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+            Err(io::Error::other("injected write failure"))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Seek for FailingWriteSeek {
+        fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+            self.cursor.seek(pos)
+        }
+    }
 
     #[allow(dead_code)]
     pub(crate) const ENCRYPTED_PACKED_BAR_DIR: [u8; 1202] = [
@@ -748,5 +845,127 @@ pub(crate) mod tests {
             }
             _ => unreachable!(),
         }
+    }
+
+    #[test]
+    fn pack_arch_04_d16_temp_cleanup_on_encrypt_failure_drops_plaintext_temp_artifact() {
+        let stor = InMemoryStorage::default();
+        stor.add_hello_txt();
+        let output_writer = RefCell::new(FailingWriteSeek::new());
+        let dropped = Rc::new(Cell::new(false));
+        let dropped_for_factory = Rc::clone(&dropped);
+        let req = HandleRequest {
+            entries: vec![ArchiveSourceEntry {
+                source: stor.read_file("hello.txt").unwrap(),
+                archive_path: PathBuf::from("hello.txt"),
+            }],
+            archive_policy: ArchivePolicy::default(),
+            writer: &output_writer,
+            header_writer: None,
+            raw_key: Protected::new(PASSWORD.to_vec()),
+            kdf: Kdf::Blake3Balloon,
+        };
+
+        let result = execute_with_temp_artifact(req, || {
+            Ok(DropTrackingTempArtifact::new(dropped_for_factory))
+        });
+
+        assert!(result.is_err());
+        assert!(dropped.get(), "plaintext temp artifact should be dropped");
+    }
+
+    fn small_archive_limits(
+        max_entries: usize,
+        max_normalized_path_bytes: usize,
+        max_normalized_path_depth: usize,
+    ) -> ArchiveLimits {
+        ArchiveLimits {
+            max_entries,
+            max_normalized_path_bytes,
+            max_normalized_path_depth,
+        }
+    }
+
+    #[test]
+    fn pack_archive_limits_reject_entry_count_before_zip_writing() {
+        let stor = InMemoryStorage::default();
+        stor.add_hello_txt();
+        let limits = small_archive_limits(1, 4096, 64);
+        let mut entries = Vec::new();
+
+        push_archive_entry(
+            &mut entries,
+            stor.read_file("hello.txt").unwrap(),
+            PathBuf::from("one.txt"),
+            limits,
+            None,
+        )
+        .unwrap();
+        let result = push_archive_entry(
+            &mut entries,
+            stor.read_file("hello.txt").unwrap(),
+            PathBuf::from("two.txt"),
+            limits,
+            None,
+        );
+
+        assert!(matches!(
+            result,
+            Err(Error::ArchiveLimit(ArchiveLimitError {
+                kind: ArchiveLimitKind::EntryCount,
+                limit: 1,
+                actual: 2,
+            }))
+        ));
+    }
+
+    #[test]
+    fn pack_archive_limits_reject_path_bytes_before_zip_writing() {
+        let stor = InMemoryStorage::default();
+        stor.add_hello_txt();
+        let mut entries = Vec::new();
+        let limits = small_archive_limits(10, 4, 64);
+
+        let result = push_archive_entry(
+            &mut entries,
+            stor.read_file("hello.txt").unwrap(),
+            PathBuf::from("long-name.txt"),
+            limits,
+            None,
+        );
+
+        assert!(matches!(
+            result,
+            Err(Error::ArchiveLimit(ArchiveLimitError {
+                kind: ArchiveLimitKind::NormalizedPathBytes,
+                limit: 4,
+                ..
+            }))
+        ));
+    }
+
+    #[test]
+    fn pack_archive_limits_reject_path_depth_before_zip_writing() {
+        let stor = InMemoryStorage::default();
+        stor.add_hello_txt();
+        let mut entries = Vec::new();
+        let limits = small_archive_limits(10, 4096, 1);
+
+        let result = push_archive_entry(
+            &mut entries,
+            stor.read_file("hello.txt").unwrap(),
+            PathBuf::from("nested/file.txt"),
+            limits,
+            None,
+        );
+
+        assert!(matches!(
+            result,
+            Err(Error::ArchiveLimit(ArchiveLimitError {
+                kind: ArchiveLimitKind::NormalizedPathDepth,
+                limit: 1,
+                ..
+            }))
+        ));
     }
 }

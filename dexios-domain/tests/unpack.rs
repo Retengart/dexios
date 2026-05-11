@@ -85,6 +85,14 @@ fn archive_path_with_depth(depth: usize) -> String {
     path.to_string_lossy().into_owned()
 }
 
+fn archive_path_with_wide_components(depth: usize, component_len: usize) -> String {
+    let mut path = PathBuf::new();
+    for index in 0..depth {
+        path.push(format!("{index:02}-{}", "a".repeat(component_len)));
+    }
+    path.to_string_lossy().into_owned()
+}
+
 fn encrypt_archive(input_path: &Path, output_path: &Path) {
     let intent = encrypt::EncryptIntent::new(
         input_path,
@@ -165,6 +173,26 @@ fn unpack_rejects_unsafe_entry_without_extracting_safe_sibling() {
         matches!(result, Err(unpack::Error::UnsafeOutputPath(_))),
         "expected unsafe output path error, got {result:?}"
     );
+    assert!(!output_dir.join("safe.txt").exists());
+    assert!(!test_dir.path().join("escape.txt").exists());
+}
+
+#[test]
+fn unpack_arch_04_d16_temp_cleanup_on_validation_failure_commits_no_outputs() {
+    let test_dir = TestDir::new("unpack-temp-cleanup-validation");
+    let plain_zip = test_dir.path().join("plain.zip");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+
+    write_zip_with_entries(
+        &plain_zip,
+        &[("../escape.txt", b"escape"), ("safe.txt", b"safe")],
+    );
+    encrypt_archive(&plain_zip, &encrypted_archive);
+
+    let result = unpack_archive(&encrypted_archive, &output_dir, None);
+
+    assert!(matches!(result, Err(unpack::Error::UnsafeOutputPath(_))));
     assert!(!output_dir.join("safe.txt").exists());
     assert!(!test_dir.path().join("escape.txt").exists());
 }
@@ -272,10 +300,30 @@ fn unpack_rejects_archive_path_deeper_than_structural_limit() {
     let result = unpack_archive(&encrypted_archive, &output_dir, None);
 
     assert!(
-        result.is_err(),
+        matches!(result, Err(unpack::Error::ArchiveLimit(_))),
         "expected archive depth limit failure, got {result:?}"
     );
     assert!(!output_dir.join("dir0").exists());
+}
+
+#[test]
+fn unpack_rejects_archive_path_longer_than_structural_limit() {
+    let test_dir = TestDir::new("unpack-path-bytes-limit");
+    let plain_zip = test_dir.path().join("plain.zip");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+    let too_long_path = archive_path_with_wide_components(64, 70);
+
+    write_zip_with_entries(&plain_zip, &[(too_long_path.as_str(), b"too long")]);
+    encrypt_archive(&plain_zip, &encrypted_archive);
+
+    let result = unpack_archive(&encrypted_archive, &output_dir, None);
+
+    assert!(
+        matches!(result, Err(unpack::Error::ArchiveLimit(_))),
+        "expected archive path byte limit failure, got {result:?}"
+    );
+    assert!(fs::read_dir(&output_dir).unwrap().next().is_none());
 }
 
 #[cfg(any(unix, windows))]

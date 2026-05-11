@@ -424,8 +424,10 @@ fn map_identity_error(err: IdentityError) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
     use std::fs::File;
-    use std::io::Write;
+    use std::io::{Cursor, Write};
+    use std::rc::Rc;
     use std::sync::Arc;
 
     use core::kdf::Kdf;
@@ -453,6 +455,42 @@ mod tests {
 
         fn path(&self) -> &Path {
             &self.path
+        }
+    }
+
+    struct DropTrackingTempArtifact {
+        cursor: RefCell<Cursor<Vec<u8>>>,
+        dropped: Rc<Cell<bool>>,
+    }
+
+    impl DropTrackingTempArtifact {
+        fn new(dropped: Rc<Cell<bool>>) -> Self {
+            Self {
+                cursor: RefCell::new(Cursor::new(Vec::new())),
+                dropped,
+            }
+        }
+    }
+
+    impl Drop for DropTrackingTempArtifact {
+        fn drop(&mut self) {
+            self.dropped.set(true);
+        }
+    }
+
+    impl TempArtifactLike for DropTrackingTempArtifact {
+        fn with_reader<T, E>(
+            &self,
+            f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>,
+        ) -> Result<T, E> {
+            f(&mut *self.cursor.borrow_mut())
+        }
+
+        fn with_writer<T, E>(
+            &self,
+            f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>,
+        ) -> Result<T, E> {
+            f(&mut *self.cursor.borrow_mut())
         }
     }
 
@@ -505,6 +543,42 @@ mod tests {
 
     fn assert_text(path: &Path, expected: &str) {
         assert_eq!(fs::read_to_string(path).unwrap(), expected);
+    }
+
+    #[test]
+    fn unpack_arch_04_d16_temp_cleanup_on_validation_failure_drops_plaintext_temp_artifact() {
+        let test_dir = TestDir::new("temp-cleanup-validation");
+        let plain_zip = test_dir.path().join("plain.zip");
+        let encrypted_archive = test_dir.path().join("archive.enc");
+        let output_dir = test_dir.path().join("out");
+        let dropped = Rc::new(Cell::new(false));
+        let dropped_for_factory = Rc::clone(&dropped);
+
+        write_zip_with_entries(
+            &plain_zip,
+            &[("../escape.txt", b"escape"), ("safe.txt", b"safe")],
+        );
+        encrypt_zip(&plain_zip, &encrypted_archive, None);
+
+        let stor = Arc::new(FileStorage);
+        let archive = stor.read_file(&encrypted_archive).unwrap();
+        let req = Request {
+            reader: archive.try_reader().unwrap(),
+            header_reader: None,
+            raw_key: Protected::new(PASSWORD.to_vec()),
+            output_dir_path: output_dir.clone(),
+            on_decrypted_header: None,
+            on_archive_info: None,
+            on_zip_file: None,
+        };
+
+        let result = execute_with_temp_artifact(stor, req, || {
+            Ok(DropTrackingTempArtifact::new(dropped_for_factory))
+        });
+
+        assert!(matches!(result, Err(Error::UnsafeOutputPath(_))));
+        assert!(dropped.get(), "plaintext temp artifact should be dropped");
+        assert!(!output_dir.join("safe.txt").exists());
     }
 
     #[test]
