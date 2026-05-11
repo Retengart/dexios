@@ -1,8 +1,4 @@
-use std::{
-    cell::RefCell,
-    fs::{File, OpenOptions},
-    path::Path,
-};
+use std::{fs::File, path::Path};
 
 use crate::cli::prompt::overwrite_check;
 use crate::global::states::ForceMode;
@@ -128,24 +124,13 @@ pub fn dump(input: &str, output: &str, force: ForceMode) -> Result<()> {
 // this does not work for files encrypted *with* a detached header
 // it implements a check to ensure the header is valid before restoring to a file
 pub fn restore(input: &str, output: &str) -> Result<()> {
-    let stor = std::sync::Arc::new(domain::storage::FileStorage);
-
-    let input_file = stor.read_file(input)?;
-
-    let output_file = RefCell::new(
-        OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(output)
-            .with_context(|| format!("Unable to open output file: {output}"))?,
-    );
-
-    let req = domain::header::restore::Request {
-        reader: input_file.try_reader()?,
-        writer: &output_file,
+    let req = domain::header::restore::TransactionalRequest {
+        header_path: Path::new(input),
+        target_path: Path::new(output),
     };
 
-    domain::header::restore::execute(req)?;
+    let _receipt = domain::header::restore::execute_transactional(req)
+        .with_context(|| format!("Unable to restore header into {output}"))?;
 
     Ok(())
 }
@@ -155,19 +140,12 @@ pub fn restore(input: &str, output: &str) -> Result<()> {
 // it can be useful for storing the header separate from the file, to make an attacker's life that little bit harder
 // it implements a check to ensure the header is valid before stripping
 pub fn strip(input: &str) -> Result<()> {
-    let input_file = RefCell::new(
-        OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(input)
-            .with_context(|| format!("Unable to open input file: {input}"))?,
-    );
-
-    let req = domain::header::strip::Request {
-        handle: &input_file,
+    let req = domain::header::strip::TransactionalRequest {
+        target_path: Path::new(input),
     };
 
-    domain::header::strip::execute(req)?;
+    let _receipt = domain::header::strip::execute_transactional(req)
+        .with_context(|| format!("Unable to strip header from {input}"))?;
 
     Ok(())
 }

@@ -189,3 +189,65 @@ fn header_dump_force_replaces_only_after_commit() {
     assert_ne!(dumped, b"existing header");
     assert_eq!(dumped.len(), HEADER_LEN);
 }
+
+#[test]
+fn header_strip_failure_preserves_original_file() {
+    let test_dir = TestDir::new("header-strip-failure-transaction");
+    let invalid_input = test_dir.path().join("plain.txt");
+    let original = b"not a dexios encrypted file";
+    fs::write(&invalid_input, original).unwrap();
+
+    let output = run_cli(test_dir.path(), &["header", "strip", "plain.txt"]);
+
+    assert!(
+        !output.status.success(),
+        "header strip unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read(&invalid_input).unwrap(), original);
+}
+
+#[test]
+fn header_restore_failure_preserves_original_file() {
+    let test_dir = TestDir::new("header-restore-failure-transaction");
+    let plain = test_dir.path().join("plain.txt");
+    let encrypted = test_dir.path().join("plain.enc");
+    fs::write(&plain, b"header restore plaintext").unwrap();
+
+    let encrypt_output = run_cli(
+        test_dir.path(),
+        &["encrypt", "--force", "plain.txt", "plain.enc"],
+    );
+    assert!(
+        encrypt_output.status.success(),
+        "encrypt fixture failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&encrypt_output.stdout),
+        String::from_utf8_lossy(&encrypt_output.stderr)
+    );
+
+    let dump_output = run_cli(
+        test_dir.path(),
+        &["header", "dump", "plain.enc", "plain.hdr"],
+    );
+    assert!(
+        dump_output.status.success(),
+        "header dump fixture failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&dump_output.stdout),
+        String::from_utf8_lossy(&dump_output.stderr)
+    );
+    let original = fs::read(&encrypted).unwrap();
+
+    let output = run_cli(
+        test_dir.path(),
+        &["header", "restore", "plain.hdr", "plain.enc"],
+    );
+
+    assert!(
+        !output.status.success(),
+        "header restore unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read(&encrypted).unwrap(), original);
+}
