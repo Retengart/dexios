@@ -1,15 +1,18 @@
 //! This provides functionality for decryption that adheres to the Dexios format.
 
 use std::cell::RefCell;
-use std::io::{Read, Seek, Write};
+use std::io::{self, Read, Seek, Write};
+use std::path::Path;
 
 use core::header::common::HEADER_LEN;
 use core::header::v1::V1Header;
-use core::header::{ParsedHeader, read_header};
+use core::header::{read_header, ParsedHeader, ParsedV1Payload};
 use core::protected::Protected;
 use core::stream::{StreamError, V1PayloadStream};
 
 use crate::key::decrypt_v1_master_key_with_index;
+use crate::storage::identity::{IdentityError, OverwritePolicy, PathIdentityGraph, PathRole};
+use crate::storage::transaction::{CommitReceipt, StagedOutputTransaction, TransactionError};
 
 #[derive(Debug)]
 pub enum Error {
@@ -22,6 +25,8 @@ pub enum Error {
     DecryptData,
     WriteData,
     RewindDataReader,
+    PathIdentity(IdentityError),
+    Transaction(TransactionError),
 }
 
 impl std::fmt::Display for Error {
@@ -36,6 +41,8 @@ impl std::fmt::Display for Error {
             Error::DecryptData => f.write_str("Unable to decrypt data"),
             Error::WriteData => f.write_str("Unable to write data"),
             Error::RewindDataReader => f.write_str("Unable to rewind the reader"),
+            Error::PathIdentity(error) => write!(f, "{error}"),
+            Error::Transaction(error) => write!(f, "{error}"),
         }
     }
 }
@@ -56,60 +63,144 @@ where
     pub on_decrypted_header: Option<OnDecryptedHeaderFn>,
 }
 
+pub struct OutputTarget<'a> {
+    pub path: &'a Path,
+    pub overwrite: OverwritePolicy,
+}
+
+pub struct TransactionalRequest<'a, R>
+where
+    R: Read + Seek,
+{
+    pub input_path: &'a Path,
+    pub detached_header_path: Option<&'a Path>,
+    pub header_reader: Option<&'a RefCell<R>>,
+    pub reader: &'a RefCell<R>,
+    pub output: OutputTarget<'a>,
+    pub raw_key: Protected<Vec<u8>>,
+    pub on_decrypted_header: Option<OnDecryptedHeaderFn>,
+}
+
 pub fn execute<R, W>(req: Request<'_, R, W>) -> Result<(), Error>
 where
     R: Read + Seek,
     W: Write + Seek,
 {
-    let payload = if let Some(header_reader) = req.header_reader {
+    let payload = read_v1_payload(req.header_reader, req.reader)?;
+
+    if let Some(cb) = req.on_decrypted_header {
+        cb(payload.header());
+    }
+
+    decrypt_payload(
+        &payload,
+        req.reader,
+        &mut *req.writer.borrow_mut(),
+        req.raw_key,
+    )
+}
+
+pub fn execute_transactional<R>(req: TransactionalRequest<'_, R>) -> Result<CommitReceipt, Error>
+where
+    R: Read + Seek,
+{
+    let mut graph = PathIdentityGraph::new();
+    graph
+        .add_existing(req.input_path, PathRole::Input)
+        .map_err(Error::PathIdentity)?;
+    if let Some(header_path) = req.detached_header_path {
+        graph
+            .add_existing(header_path, PathRole::DetachedHeader)
+            .map_err(Error::PathIdentity)?;
+    }
+    let output_target = graph
+        .add_output(req.output.path, PathRole::Output, req.output.overwrite)
+        .map_err(Error::PathIdentity)?;
+    graph.validate().map_err(Error::PathIdentity)?;
+
+    let payload = read_v1_payload(req.header_reader, req.reader)?;
+
+    if let Some(cb) = req.on_decrypted_header {
+        cb(payload.header());
+    }
+
+    let mut transaction =
+        StagedOutputTransaction::new(output_target).map_err(Error::Transaction)?;
+    transaction
+        .with_writer(|writer| {
+            decrypt_payload(&payload, req.reader, writer, req.raw_key)
+                .map_err(|_| io::Error::other("decrypt payload"))
+        })
+        .map_err(map_decrypt_transaction_error)?;
+    transaction.commit().map_err(Error::Transaction)
+}
+
+fn read_v1_payload<R>(
+    header_reader: Option<&RefCell<R>>,
+    reader: &RefCell<R>,
+) -> Result<ParsedV1Payload, Error>
+where
+    R: Read + Seek,
+{
+    if let Some(header_reader) = header_reader {
         let parsed =
             read_header(&mut *header_reader.borrow_mut()).map_err(|_| Error::DeserializeHeader)?;
         let ParsedHeader::V1(payload) = parsed;
         // Try reading an empty header from the content.
         let mut header_bytes = vec![0u8; HEADER_LEN];
 
-        let needs_rewind = match req.reader.borrow_mut().read_exact(&mut header_bytes) {
+        let needs_rewind = match reader.borrow_mut().read_exact(&mut header_bytes) {
             Ok(()) => !header_bytes.into_iter().all(|b| b == 0),
-            Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => true,
+            Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => true,
             Err(_) => return Err(Error::ReadEncryptedData),
         };
 
         if needs_rewind {
             // Return the cursor position to the start if no detached zero header was found.
-            req.reader
+            reader
                 .borrow_mut()
                 .rewind()
                 .map_err(|_| Error::RewindDataReader)?;
         }
 
-        payload
+        Ok(payload)
     } else {
         let parsed =
-            read_header(&mut *req.reader.borrow_mut()).map_err(|_| Error::DeserializeHeader)?;
+            read_header(&mut *reader.borrow_mut()).map_err(|_| Error::DeserializeHeader)?;
         let ParsedHeader::V1(payload) = parsed;
-        payload
-    };
-
-    if let Some(cb) = req.on_decrypted_header {
-        cb(payload.header());
+        Ok(payload)
     }
+}
 
+fn decrypt_payload<R, W>(
+    payload: &ParsedV1Payload,
+    reader: &RefCell<R>,
+    writer: &mut W,
+    raw_key: Protected<Vec<u8>>,
+) -> Result<(), Error>
+where
+    R: Read + Seek,
+    W: Write + Seek,
+{
     let (master_key, _) =
-        decrypt_v1_master_key_with_index(payload.header().keyslots_collection(), req.raw_key)
-            .map_err(|err| match err {
+        decrypt_v1_master_key_with_index(payload.header().keyslots_collection(), raw_key).map_err(
+            |err| match err {
                 crate::key::Error::UnsupportedKdf(tag) => Error::UnsupportedKdf(tag),
                 _ => Error::DecryptMasterKey,
-            })?;
+            },
+        )?;
 
-    V1PayloadStream::decrypt_file(
-        master_key,
-        &payload,
-        &mut *req.reader.borrow_mut(),
-        &mut *req.writer.borrow_mut(),
-    )
-    .map_err(map_stream_error)?;
+    V1PayloadStream::decrypt_file(master_key, payload, &mut *reader.borrow_mut(), &mut *writer)
+        .map_err(map_stream_error)?;
 
     Ok(())
+}
+
+fn map_decrypt_transaction_error(error: TransactionError) -> Error {
+    match error {
+        TransactionError::Write { .. } => Error::DecryptData,
+        error => Error::Transaction(error),
+    }
 }
 
 fn map_stream_error(error: StreamError) -> Error {

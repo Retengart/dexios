@@ -1,13 +1,42 @@
+use std::path::Path;
 use std::process::exit;
 use std::sync::Arc;
 
 use crate::cli::prompt::overwrite_check;
-use crate::global::states::{DeleteInput, HashMode, HeaderLocation, PasswordState};
+use crate::global::states::{DeleteInput, ForceMode, HashMode, HeaderLocation, PasswordState};
 use crate::global::structs::CryptoParams;
 
 use anyhow::Result;
 
+use domain::storage::identity::OverwritePolicy;
 use domain::storage::Storage;
+
+fn overwrite_policy(path_exists: bool) -> OverwritePolicy {
+    if path_exists {
+        OverwritePolicy::ReplaceAtCommit
+    } else {
+        OverwritePolicy::CreateNew
+    }
+}
+
+fn existing_path(path: &str) -> bool {
+    std::fs::metadata(path).is_ok()
+}
+
+fn output_target<'a>(path: &'a str, path_exists: bool) -> domain::decrypt::OutputTarget<'a> {
+    domain::decrypt::OutputTarget {
+        path: Path::new(path),
+        overwrite: overwrite_policy(path_exists),
+    }
+}
+
+fn overwrite_check_if_needed(path: &str, path_exists: bool, force: ForceMode) -> Result<bool> {
+    if path_exists {
+        overwrite_check(path, force)
+    } else {
+        Ok(true)
+    }
+}
 
 // this function is for decrypting a file in stream mode
 // it handles any user-facing interactiveness, opening files, or redirecting to memory mode if
@@ -25,7 +54,8 @@ pub fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> Result<(
         ));
     }
 
-    if !overwrite_check(output, params.force)? {
+    let output_exists = existing_path(output);
+    if !overwrite_check_if_needed(output, output_exists, params.force)? {
         exit(0);
     }
 
@@ -36,28 +66,27 @@ pub fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> Result<(
     };
 
     let raw_key = params.key.get_secret(&PasswordState::Direct)?;
-    let output_file = stor
-        .create_file(output)
-        .or_else(|_| stor.write_file(output))?;
 
     // 2. decrypt file
-    domain::decrypt::execute(domain::decrypt::Request {
+    let detached_header_path = match &params.header_location {
+        HeaderLocation::Embedded => None,
+        HeaderLocation::Detached(path) => Some(Path::new(path.as_str())),
+    };
+    let _receipt = domain::decrypt::execute_transactional(domain::decrypt::TransactionalRequest {
+        input_path: Path::new(input),
+        detached_header_path,
         header_reader: header_file.as_ref().and_then(|h| h.try_reader().ok()),
         reader: input_file.try_reader()?,
-        writer: output_file.try_writer()?,
+        output: output_target(output, output_exists),
         raw_key,
         on_decrypted_header: None,
     })?;
-
-    // 3. flush result
-    stor.flush_file(&output_file)?;
 
     if params.hash_mode == HashMode::CalculateHash {
         super::hashing::hash_stream(&[input.to_string()])?;
     }
 
     if params.delete_input == DeleteInput::Delete {
-        drop(output_file);
         drop(header_file);
         drop(input_file);
         super::delete_path(input)?;

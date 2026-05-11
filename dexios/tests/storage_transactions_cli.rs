@@ -90,3 +90,41 @@ fn encrypt_force_replaces_existing_output_after_success() {
         b"existing encrypted output"
     );
 }
+
+#[test]
+fn decrypt_wrong_key_failure_preserves_existing_output() {
+    let test_dir = TestDir::new("decrypt-wrong-key-transaction");
+    let plain = test_dir.path().join("plain.txt");
+    let encrypted = test_dir.path().join("plain.enc");
+    let output_path = test_dir.path().join("plain.out");
+    fs::write(&plain, b"top secret").unwrap();
+
+    let encrypt_output = run_cli(
+        test_dir.path(),
+        &["encrypt", "--force", "plain.txt", "plain.enc"],
+    );
+    assert!(
+        encrypt_output.status.success(),
+        "encrypt fixture failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&encrypt_output.stdout),
+        String::from_utf8_lossy(&encrypt_output.stderr)
+    );
+    assert!(encrypted.exists());
+
+    fs::write(&output_path, b"existing output").unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
+    let decrypt_output = command
+        .current_dir(test_dir.path())
+        .env("DEXIOS_KEY", "wrong-password")
+        .args(["decrypt", "--force", "plain.enc", "plain.out"])
+        .output()
+        .unwrap();
+
+    assert!(
+        !decrypt_output.status.success(),
+        "decrypt unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&decrypt_output.stdout),
+        String::from_utf8_lossy(&decrypt_output.stderr)
+    );
+    assert_eq!(fs::read(&output_path).unwrap(), b"existing output");
+}

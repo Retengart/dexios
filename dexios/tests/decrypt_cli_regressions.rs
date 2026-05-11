@@ -50,7 +50,6 @@ fn run_cli(current_dir: &Path, key: &str, args: &[&str]) -> std::process::Output
 }
 
 #[test]
-#[ignore = "known bug: Phase 1 baseline; unignore in Phase 4"]
 fn quarantined_known_bug_decrypt_wrong_key_preserves_existing_output() {
     let test_dir = TestDir::new("decrypt-wrong-key-preserves-output");
     let plain = test_dir.path().join("plain.txt");
