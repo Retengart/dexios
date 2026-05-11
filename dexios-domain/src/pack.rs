@@ -9,7 +9,10 @@
 //! at-rest archival use, where the user controls the packed input.
 
 use std::cell::RefCell;
-use std::io::{BufWriter, Read, Seek, Write};
+use std::fs;
+use std::io::{self, BufWriter, Read, Seek, SeekFrom, Write};
+use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use core::kdf::Kdf;
@@ -17,12 +20,16 @@ use core::primitives::BLOCK_SIZE;
 use core::protected::Protected;
 use zip::write::SimpleFileOptions;
 
+use crate::storage::identity::{
+    IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
+};
+use crate::storage::transaction::{CommitReceipt, LinkedOutputTransaction, TransactionError};
 use crate::storage::Storage;
 
 trait TempArtifactLike {
     fn with_reader<T, E>(&self, f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>) -> Result<T, E>;
     fn with_writer<T, E>(&self, f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>)
-    -> Result<T, E>;
+        -> Result<T, E>;
 }
 
 trait ReadSeek: Read + Seek {}
@@ -53,6 +60,9 @@ pub enum Error {
     ReadData,
     WriteData,
     Encrypt(crate::encrypt::Error),
+    PathIdentity(IdentityError),
+    Transaction(TransactionError),
+    TransactionWriter,
 }
 
 impl std::fmt::Display for Error {
@@ -65,22 +75,54 @@ impl std::fmt::Display for Error {
             Error::ReadData => f.write_str("Unable to read data"),
             Error::WriteData => f.write_str("Unable to write data"),
             Error::Encrypt(inner) => write!(f, "Unable to encrypt archive: {inner}"),
+            Error::PathIdentity(inner) => write!(f, "Pack path identity check failed: {inner}"),
+            Error::Transaction(inner) => write!(f, "Pack transaction failed: {inner}"),
+            Error::TransactionWriter => f.write_str("Unable to release staged pack writers"),
         }
     }
 }
 
 impl std::error::Error for Error {}
 
-pub struct Request<'a, RW>
+impl From<IdentityError> for Error {
+    fn from(value: IdentityError) -> Self {
+        Self::PathIdentity(value)
+    }
+}
+
+impl From<TransactionError> for Error {
+    fn from(value: TransactionError) -> Self {
+        Self::Transaction(value)
+    }
+}
+
+pub struct Request<'a, SRW, W>
+where
+    SRW: Read + Write + Seek,
+    W: Write + Seek,
+{
+    pub writer: &'a RefCell<W>,
+    pub entries: Vec<ArchiveSourceEntry<SRW>>,
+    pub compression_method: zip::CompressionMethod,
+    pub header_writer: Option<&'a RefCell<W>>,
+    pub raw_key: Protected<Vec<u8>>,
+    pub kdf: Kdf,
+}
+
+pub struct TransactionalPackRequest<RW>
 where
     RW: Read + Write + Seek,
 {
-    pub writer: &'a RefCell<RW>,
+    pub source_paths: Vec<PathBuf>,
     pub entries: Vec<ArchiveSourceEntry<RW>>,
-    pub compression_method: zip::CompressionMethod,
-    pub header_writer: Option<&'a RefCell<RW>>,
+    pub output_path: PathBuf,
+    pub detached_header_path: Option<PathBuf>,
+    pub output_overwrite_policy: OverwritePolicy,
+    pub detached_header_overwrite_policy: OverwritePolicy,
     pub raw_key: Protected<Vec<u8>>,
     pub kdf: Kdf,
+    pub compression_method: zip::CompressionMethod,
+    pub recursive: bool,
 }
 
 pub struct ArchiveSourceEntry<RW>
@@ -88,12 +130,13 @@ where
     RW: Read + Write + Seek,
 {
     pub source: crate::storage::Entry<RW>,
-    pub archive_path: std::path::PathBuf,
+    pub archive_path: PathBuf,
 }
 
-pub fn execute<RW>(_stor: Arc<impl Storage<RW>>, req: Request<'_, RW>) -> Result<(), Error>
+pub fn execute<SRW, W>(_stor: Arc<impl Storage<SRW>>, req: Request<'_, SRW, W>) -> Result<(), Error>
 where
-    RW: Read + Write + Seek,
+    SRW: Read + Write + Seek,
+    W: Write + Seek,
 {
     execute_with_temp_artifact(req, || {
         crate::storage::FileStorage
@@ -102,9 +145,58 @@ where
     })
 }
 
-fn execute_with_temp_artifact<RW, T, F>(req: Request<'_, RW>, temp_factory: F) -> Result<(), Error>
+pub fn execute_transactional<RW>(req: TransactionalPackRequest<RW>) -> Result<CommitReceipt, Error>
 where
     RW: Read + Write + Seek,
+{
+    let (output_target, detached_header_target) = resolve_pack_targets(&req)?;
+    validate_generated_targets_against_entries(&req)?;
+
+    let mut transaction = LinkedOutputTransaction::new();
+    let output_index = transaction.stage(output_target)?;
+    let detached_header_index = detached_header_target
+        .map(|target| transaction.stage(target))
+        .transpose()?;
+
+    let transaction = Rc::new(RefCell::new(transaction));
+    let output_writer = RefCell::new(LinkedStagedWriter::new(
+        Rc::clone(&transaction),
+        output_index,
+    ));
+    let detached_header_writer = detached_header_index
+        .map(|index| RefCell::new(LinkedStagedWriter::new(Rc::clone(&transaction), index)));
+
+    execute_with_temp_artifact(
+        Request {
+            entries: req.entries,
+            compression_method: req.compression_method,
+            writer: &output_writer,
+            header_writer: detached_header_writer.as_ref(),
+            raw_key: req.raw_key,
+            kdf: req.kdf,
+        },
+        || {
+            crate::storage::FileStorage
+                .create_temp_artifact()
+                .map_err(|_| Error::CreateArchive)
+        },
+    )?;
+
+    drop(output_writer);
+    drop(detached_header_writer);
+    let transaction = Rc::try_unwrap(transaction)
+        .map_err(|_| Error::TransactionWriter)?
+        .into_inner();
+    transaction.commit_all().map_err(Error::Transaction)
+}
+
+fn execute_with_temp_artifact<SRW, W, T, F>(
+    req: Request<'_, SRW, W>,
+    temp_factory: F,
+) -> Result<(), Error>
+where
+    SRW: Read + Write + Seek,
+    W: Write + Seek,
     T: TempArtifactLike,
     F: FnOnce() -> Result<T, Error>,
 {
@@ -147,11 +239,11 @@ where
                 }
             }
 
-            Ok(())
+            Ok::<(), Error>(())
         })?;
 
         zip_writer.finish().map_err(|_| Error::FinishArchive)?;
-        Ok(())
+        Ok::<(), Error>(())
     })?;
 
     // 4. Encrypt zip archive
@@ -171,6 +263,124 @@ where
     drop(tmp_file);
 
     encrypt_res
+}
+
+fn resolve_pack_targets<RW>(
+    req: &TransactionalPackRequest<RW>,
+) -> Result<(ResolvedTarget, Option<ResolvedTarget>), Error>
+where
+    RW: Read + Write + Seek,
+{
+    let mut graph = PathIdentityGraph::new();
+
+    for source_path in &req.source_paths {
+        graph.add_existing(source_path, PathRole::Input)?;
+    }
+
+    let output_target = graph.add_output(
+        &req.output_path,
+        PathRole::GeneratedOutput,
+        req.output_overwrite_policy,
+    )?;
+
+    let detached_header_target = req
+        .detached_header_path
+        .as_ref()
+        .map(|path| {
+            graph.add_output(
+                path,
+                PathRole::GeneratedDetachedHeader,
+                req.detached_header_overwrite_policy,
+            )
+        })
+        .transpose()?;
+
+    graph.validate()?;
+
+    Ok((output_target, detached_header_target))
+}
+
+fn validate_generated_targets_against_entries<RW>(
+    req: &TransactionalPackRequest<RW>,
+) -> Result<(), Error>
+where
+    RW: Read + Write + Seek,
+{
+    let generated_target_exists = fs::symlink_metadata(&req.output_path).is_ok()
+        || req
+            .detached_header_path
+            .as_ref()
+            .is_some_and(|path| fs::symlink_metadata(path).is_ok());
+
+    if !generated_target_exists {
+        return Ok(());
+    }
+
+    for entry in &req.entries {
+        if entry.source.is_dir() {
+            continue;
+        }
+
+        let mut graph = PathIdentityGraph::new();
+        graph.add_existing(entry.source.path(), PathRole::Input)?;
+        graph.add_output(
+            &req.output_path,
+            PathRole::GeneratedOutput,
+            req.output_overwrite_policy,
+        )?;
+        if let Some(path) = &req.detached_header_path {
+            graph.add_output(
+                path,
+                PathRole::GeneratedDetachedHeader,
+                req.detached_header_overwrite_policy,
+            )?;
+        }
+        graph.validate()?;
+    }
+
+    Ok(())
+}
+
+struct LinkedStagedWriter {
+    transaction: Rc<RefCell<LinkedOutputTransaction>>,
+    index: usize,
+}
+
+impl LinkedStagedWriter {
+    fn new(transaction: Rc<RefCell<LinkedOutputTransaction>>, index: usize) -> Self {
+        Self { transaction, index }
+    }
+
+    fn with_staged_file<T>(
+        &mut self,
+        write: impl FnOnce(&mut fs::File) -> io::Result<T>,
+    ) -> io::Result<T> {
+        let mut transaction = self.transaction.borrow_mut();
+        let staged = transaction
+            .staged_output_mut(self.index)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "missing staged pack output"))?;
+        staged.with_writer(write).map_err(transaction_to_io_error)
+    }
+}
+
+impl Write for LinkedStagedWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.with_staged_file(|file| file.write(buf))
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.with_staged_file(fs::File::flush)
+    }
+}
+
+impl Seek for LinkedStagedWriter {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        self.with_staged_file(|file| file.seek(pos))
+    }
+}
+
+fn transaction_to_io_error(error: TransactionError) -> io::Error {
+    io::Error::other(error.to_string())
 }
 
 #[cfg(test)]

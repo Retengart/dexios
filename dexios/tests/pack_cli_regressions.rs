@@ -90,19 +90,63 @@ fn decrypt_archive_entry_names(archive_path: &Path, header_path: Option<&Path>) 
     names
 }
 
+fn assert_alias_rejected(output: &std::process::Output) {
+    assert!(
+        !output.status.success(),
+        "pack unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Path aliases detected"),
+        "stderr did not mention path alias conflict: {stderr}"
+    );
+}
+
+#[cfg(unix)]
+fn symlink_file_or_skip(src: &Path, dst: &Path) -> bool {
+    match std::os::unix::fs::symlink(src, dst) {
+        Ok(()) => true,
+        Err(err) => {
+            eprintln!("skipping pack symlink alias check: symlinks unsupported here: {err}");
+            false
+        }
+    }
+}
+
+#[cfg(windows)]
+fn symlink_file_or_skip(src: &Path, dst: &Path) -> bool {
+    match std::os::windows::fs::symlink_file(src, dst) {
+        Ok(()) => true,
+        Err(err) => {
+            eprintln!("skipping pack symlink alias check: symlinks unsupported here: {err}");
+            false
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn symlink_file_or_skip(_src: &Path, _dst: &Path) -> bool {
+    eprintln!("skipping pack symlink alias check: symlink helper unsupported on this platform");
+    false
+}
+
 #[test]
-fn pack_dot_input_uses_current_directory_name_and_skips_generated_artifacts() {
+fn pack_dot_input_uses_current_directory_name() {
     let test_dir = TestDir::new("pack-dot");
     let source_dir = test_dir.path().join("source");
+    let archive_path = test_dir.path().join("archive.enc");
+    let header_path = test_dir.path().join("header.bin");
     fs::create_dir_all(source_dir.join("nested")).unwrap();
     fs::write(source_dir.join("hello.txt"), b"hello").unwrap();
     fs::write(source_dir.join("nested/world.txt"), b"world").unwrap();
 
     let output = run_pack(
         &source_dir,
-        &["--header", "header.bin"],
+        &["--header", header_path.to_str().unwrap()],
         &["."],
-        "archive.enc",
+        archive_path.to_str().unwrap(),
     );
 
     assert!(
@@ -112,10 +156,7 @@ fn pack_dot_input_uses_current_directory_name_and_skips_generated_artifacts() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let names = decrypt_archive_entry_names(
-        &source_dir.join("archive.enc"),
-        Some(&source_dir.join("header.bin")),
-    );
+    let names = decrypt_archive_entry_names(&archive_path, Some(&header_path));
 
     assert_eq!(
         names,
@@ -126,6 +167,99 @@ fn pack_dot_input_uses_current_directory_name_and_skips_generated_artifacts() {
             "source/nested/world.txt",
         ]
     );
+}
+
+#[test]
+fn pack_rejects_generated_output_inside_source_and_keeps_source() {
+    let test_dir = TestDir::new("pack-generated-output-inside-source");
+    let source_dir = test_dir.path().join("source");
+    fs::create_dir_all(&source_dir).unwrap();
+    fs::write(source_dir.join("hello.txt"), b"hello").unwrap();
+    let output_path = source_dir.join("archive.enc");
+
+    let output = run_pack(
+        test_dir.path(),
+        &[],
+        &["source"],
+        output_path.to_str().unwrap(),
+    );
+
+    assert_alias_rejected(&output);
+    assert_eq!(fs::read(source_dir.join("hello.txt")).unwrap(), b"hello");
+    assert!(!output_path.exists());
+}
+
+#[test]
+fn pack_rejects_generated_detached_header_inside_source_and_keeps_source() {
+    let test_dir = TestDir::new("pack-generated-header-inside-source");
+    let source_dir = test_dir.path().join("source");
+    fs::create_dir_all(&source_dir).unwrap();
+    fs::write(source_dir.join("hello.txt"), b"hello").unwrap();
+    let header_path = source_dir.join("header.bin");
+    let archive_path = test_dir.path().join("archive.enc");
+
+    let output = run_pack(
+        test_dir.path(),
+        &["--header", header_path.to_str().unwrap()],
+        &["source"],
+        archive_path.to_str().unwrap(),
+    );
+
+    assert_alias_rejected(&output);
+    assert_eq!(fs::read(source_dir.join("hello.txt")).unwrap(), b"hello");
+    assert!(!header_path.exists());
+    assert!(!archive_path.exists());
+}
+
+#[test]
+fn pack_rejects_hardlink_generated_output_alias_and_preserves_source() {
+    let test_dir = TestDir::new("pack-hardlink-generated-output");
+    let source_dir = test_dir.path().join("source");
+    let source_file = source_dir.join("hello.txt");
+    let output_path = test_dir.path().join("archive.enc");
+    fs::create_dir_all(&source_dir).unwrap();
+    fs::write(&source_file, b"hello").unwrap();
+
+    if let Err(err) = fs::hard_link(&source_file, &output_path) {
+        eprintln!("skipping pack hardlink alias check: hard links unsupported here: {err}");
+        return;
+    }
+
+    let output = run_pack(
+        test_dir.path(),
+        &[],
+        &["source"],
+        output_path.to_str().unwrap(),
+    );
+
+    assert_alias_rejected(&output);
+    assert_eq!(fs::read(&source_file).unwrap(), b"hello");
+    assert_eq!(fs::read(&output_path).unwrap(), b"hello");
+}
+
+#[test]
+fn pack_rejects_symlink_generated_output_alias_and_preserves_source() {
+    let test_dir = TestDir::new("pack-symlink-generated-output");
+    let source_dir = test_dir.path().join("source");
+    let source_file = source_dir.join("hello.txt");
+    let output_path = test_dir.path().join("archive.enc");
+    fs::create_dir_all(&source_dir).unwrap();
+    fs::write(&source_file, b"hello").unwrap();
+
+    if !symlink_file_or_skip(&source_file, &output_path) {
+        return;
+    }
+
+    let output = run_pack(
+        test_dir.path(),
+        &[],
+        &["source"],
+        output_path.to_str().unwrap(),
+    );
+
+    assert_alias_rejected(&output);
+    assert_eq!(fs::read(&source_file).unwrap(), b"hello");
+    assert_eq!(fs::read(&output_path).unwrap(), b"hello");
 }
 
 #[test]
@@ -198,11 +332,12 @@ fn pack_mixed_nested_roots_do_not_leak_current_directory_name() {
 fn pack_verbose_reports_archived_entries() {
     let test_dir = TestDir::new("pack-verbose");
     let source_dir = test_dir.path().join("source");
+    let archive_path = test_dir.path().join("archive.enc");
     fs::create_dir_all(source_dir.join("nested")).unwrap();
     fs::write(source_dir.join("hello.txt"), b"hello").unwrap();
     fs::write(source_dir.join("nested/world.txt"), b"world").unwrap();
 
-    let output = run_pack(&source_dir, &["-v"], &["."], "archive.enc");
+    let output = run_pack(&source_dir, &["-v"], &["."], archive_path.to_str().unwrap());
 
     assert!(
         output.status.success(),
@@ -221,6 +356,8 @@ fn pack_recursive_flag_matches_default_recursive_behavior() {
     let test_dir = TestDir::new("pack-recursive-alias");
     let default_dir = test_dir.path().join("default/source");
     let recursive_dir = test_dir.path().join("recursive/source");
+    let default_archive = test_dir.path().join("default.enc");
+    let recursive_archive = test_dir.path().join("recursive.enc");
     fs::create_dir_all(default_dir.join("nested/deeper")).unwrap();
     fs::create_dir_all(recursive_dir.join("nested/deeper")).unwrap();
     fs::write(default_dir.join("hello.txt"), b"hello").unwrap();
@@ -228,8 +365,13 @@ fn pack_recursive_flag_matches_default_recursive_behavior() {
     fs::write(recursive_dir.join("hello.txt"), b"hello").unwrap();
     fs::write(recursive_dir.join("nested/deeper/world.txt"), b"world").unwrap();
 
-    let default_output = run_pack(&default_dir, &[], &["."], "default.enc");
-    let recursive_output = run_pack(&recursive_dir, &["-r"], &["."], "recursive.enc");
+    let default_output = run_pack(&default_dir, &[], &["."], default_archive.to_str().unwrap());
+    let recursive_output = run_pack(
+        &recursive_dir,
+        &["-r"],
+        &["."],
+        recursive_archive.to_str().unwrap(),
+    );
 
     assert!(
         default_output.status.success(),
@@ -244,8 +386,8 @@ fn pack_recursive_flag_matches_default_recursive_behavior() {
         String::from_utf8_lossy(&recursive_output.stderr)
     );
 
-    let default_names = decrypt_archive_entry_names(&default_dir.join("default.enc"), None);
-    let recursive_names = decrypt_archive_entry_names(&recursive_dir.join("recursive.enc"), None);
+    let default_names = decrypt_archive_entry_names(&default_archive, None);
+    let recursive_names = decrypt_archive_entry_names(&recursive_archive, None);
 
     assert_eq!(default_names, recursive_names);
     assert!(default_names.contains(&"source/nested/deeper/world.txt".to_string()));
@@ -292,17 +434,7 @@ fn pack_delete_source_rejects_output_inside_source_and_keeps_source() {
         output_path.to_str().unwrap(),
     );
 
-    assert!(
-        !output.status.success(),
-        "pack unexpectedly succeeded: stdout={}\nstderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("delete-source"),
-        "stderr did not mention delete-source conflict: {stderr}"
-    );
+    assert_alias_rejected(&output);
     assert!(source_dir.exists());
     assert!(source_dir.join("hello.txt").exists());
     assert!(!output_path.exists());
@@ -325,17 +457,7 @@ fn pack_delete_source_rejects_detached_header_inside_source_and_keeps_source() {
         archive_path.to_str().unwrap(),
     );
 
-    assert!(
-        !output.status.success(),
-        "pack unexpectedly succeeded: stdout={}\nstderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("delete-source"),
-        "stderr did not mention delete-source conflict: {stderr}"
-    );
+    assert_alias_rejected(&output);
     assert!(source_dir.exists());
     assert!(source_dir.join("hello.txt").exists());
     assert!(!header_path.exists());

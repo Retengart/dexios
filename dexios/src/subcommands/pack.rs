@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -6,12 +5,15 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 
-use crate::global::states::{DeleteSource, HashMode, HeaderLocation, PasswordState, PrintMode};
+use crate::global::states::{
+    DeleteSource, DirectoryMode, HashMode, HeaderLocation, PasswordState, PrintMode,
+};
 use crate::global::{
     states::Compression,
     structs::{CryptoParams, PackParams},
 };
 use crate::info;
+use domain::storage::identity::OverwritePolicy;
 use domain::storage::Storage;
 
 use crate::cli::prompt::overwrite_check;
@@ -171,89 +173,12 @@ fn archive_root_names(inputs: &[String]) -> Result<Vec<PathBuf>> {
     }
 }
 
-fn excluded_pack_paths(req: &Request) -> Result<HashSet<PathBuf>> {
-    let mut paths = HashSet::new();
-    paths.insert(
-        fs::canonicalize(req.output_file)
-            .with_context(|| format!("Unable to resolve output path {}", req.output_file))?,
-    );
-
-    if let HeaderLocation::Detached(path) = &req.crypto_params.header_location {
-        paths.insert(
-            fs::canonicalize(path)
-                .with_context(|| format!("Unable to resolve detached header path {path}"))?,
-        );
-    }
-
-    Ok(paths)
-}
-
-fn canonicalize_with_missing_suffix(path: &Path) -> Result<PathBuf> {
-    let current_dir = std::env::current_dir().context("Unable to read current directory")?;
-    let resolved = if path.is_absolute() {
-        path.to_path_buf()
+fn overwrite_policy_for(path: &Path) -> OverwritePolicy {
+    if fs::symlink_metadata(path).is_ok() {
+        OverwritePolicy::ReplaceAtCommit
     } else {
-        current_dir.join(path)
-    };
-
-    let mut suffix = Vec::<OsString>::new();
-    let mut existing = resolved.as_path();
-
-    while !existing.exists() {
-        let name = existing
-            .file_name()
-            .ok_or_else(|| anyhow::anyhow!("Unable to resolve path {}", path.display()))?;
-        suffix.push(name.to_os_string());
-        existing = existing
-            .parent()
-            .ok_or_else(|| anyhow::anyhow!("Unable to resolve path {}", path.display()))?;
+        OverwritePolicy::CreateNew
     }
-
-    let mut canonical = fs::canonicalize(existing)
-        .with_context(|| format!("Unable to resolve {}", path.display()))?;
-    for component in suffix.iter().rev() {
-        canonical.push(component);
-    }
-
-    Ok(canonical)
-}
-
-fn ensure_delete_source_does_not_target_generated_paths(req: &Request) -> Result<()> {
-    if req.pack_params.delete_source != DeleteSource::Delete {
-        return Ok(());
-    }
-
-    let source_roots = req
-        .input_file
-        .iter()
-        .map(|path| {
-            fs::canonicalize(path).with_context(|| format!("Unable to resolve input path {path}"))
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    let output_path = canonicalize_with_missing_suffix(Path::new(req.output_file))?;
-    if source_roots
-        .iter()
-        .any(|root| output_path.starts_with(root))
-    {
-        return Err(anyhow::anyhow!(
-            "--delete-source cannot be used when the output file is inside a source directory"
-        ));
-    }
-
-    if let HeaderLocation::Detached(path) = &req.crypto_params.header_location {
-        let header_path = canonicalize_with_missing_suffix(Path::new(path))?;
-        if source_roots
-            .iter()
-            .any(|root| header_path.starts_with(root))
-        {
-            return Err(anyhow::anyhow!(
-                "--delete-source cannot be used when the detached header is inside a source directory"
-            ));
-        }
-    }
-
-    Ok(())
 }
 
 // this first indexes the input directory
@@ -276,7 +201,17 @@ pub fn execute(req: &Request) -> Result<()> {
         return Err(anyhow::anyhow!("Input path cannot be a file."));
     }
 
-    ensure_delete_source_does_not_target_generated_paths(req)?;
+    let output_path = PathBuf::from(req.output_file);
+    let output_overwrite_policy = overwrite_policy_for(&output_path);
+    let detached_header_path = match &req.crypto_params.header_location {
+        HeaderLocation::Embedded => None,
+        HeaderLocation::Detached(path) => Some(PathBuf::from(path)),
+    };
+    let detached_header_overwrite_policy = detached_header_path
+        .as_ref()
+        .map_or(OverwritePolicy::CreateNew, |path| {
+            overwrite_policy_for(path)
+        });
 
     let output_ok = overwrite_check(req.output_file, req.crypto_params.force)?;
 
@@ -297,19 +232,8 @@ pub fn execute(req: &Request) -> Result<()> {
         .map(|file_name| stor.read_file(file_name))
         .collect::<Result<Vec<_>, _>>()?;
     let raw_key = req.crypto_params.key.get_secret(&PasswordState::Validate)?;
-    let output_file = stor
-        .create_file(req.output_file)
-        .or_else(|_| stor.write_file(req.output_file))?;
-
-    let header_file = match &req.crypto_params.header_location {
-        HeaderLocation::Embedded => None,
-        HeaderLocation::Detached(path) => {
-            Some(stor.create_file(path).or_else(|_| stor.write_file(path))?)
-        }
-    };
 
     let archive_root_names = archive_root_names(req.input_file)?;
-    let excluded_paths = excluded_pack_paths(req)?;
 
     let mut entries = Vec::new();
     for (file, archive_root_name) in input_files.into_iter().zip(archive_root_names) {
@@ -318,12 +242,6 @@ pub fn execute(req: &Request) -> Result<()> {
         if file.is_dir() {
             let files = stor.read_dir(&file)?;
             for source in files {
-                let canonical_source_path = fs::canonicalize(source.path())
-                    .map_err(|_| domain::storage::Error::DirEntries)?;
-                if excluded_paths.contains(&canonical_source_path) {
-                    continue;
-                }
-
                 let relative = source
                     .path()
                     .strip_prefix(&root_path)
@@ -360,31 +278,25 @@ pub fn execute(req: &Request) -> Result<()> {
     };
 
     // 2. compress and encrypt files
-    domain::pack::execute(
-        stor.clone(),
-        domain::pack::Request {
+    let _commit_receipt =
+        domain::pack::execute_transactional(domain::pack::TransactionalPackRequest {
+            source_paths: req.input_file.iter().map(PathBuf::from).collect(),
             entries,
-            compression_method,
-            writer: output_file.try_writer()?,
-            header_writer: header_file.as_ref().and_then(|f| f.try_writer().ok()),
+            output_path,
+            detached_header_path,
+            output_overwrite_policy,
+            detached_header_overwrite_policy,
             raw_key,
             kdf: req.crypto_params.kdf,
-        },
-    )?;
-
-    // 3. flush result
-    if let Some(header_file) = header_file.as_ref() {
-        stor.flush_file(header_file)?;
-    }
-    stor.flush_file(&output_file)?;
+            compression_method,
+            recursive: req.pack_params.dir_mode == DirectoryMode::Recursive,
+        })?;
 
     if req.crypto_params.hash_mode == HashMode::CalculateHash {
         super::hashing::hash_stream(&[req.output_file.to_string()])?;
     }
 
     if req.pack_params.delete_source == DeleteSource::Delete {
-        drop(output_file);
-        drop(header_file);
         req.input_file
             .iter()
             .try_for_each(|file_name| super::delete_path(file_name))?;
