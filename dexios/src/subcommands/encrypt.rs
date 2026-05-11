@@ -8,6 +8,8 @@ use std::sync::Arc;
 use domain::storage::Storage;
 use domain::storage::identity::OverwritePolicy;
 
+use super::errors::map_encrypt_error;
+
 fn should_continue_after_overwrite_checks<F>(output_ok: bool, header_check: F) -> Result<bool>
 where
     F: FnOnce() -> Result<Option<bool>>,
@@ -101,7 +103,7 @@ pub fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> Result<(
         raw_key,
         kdf: params.kdf,
     };
-    let commit_receipt = domain::encrypt::execute_transactional(req)?;
+    let commit_receipt = domain::encrypt::execute_transactional(req).map_err(map_encrypt_error)?;
 
     let hash_verification = super::hash_after_commit(&[output.to_string()], params.hash_mode)?;
 

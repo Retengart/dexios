@@ -11,6 +11,8 @@ use anyhow::Result;
 use domain::storage::Storage;
 use domain::storage::identity::OverwritePolicy;
 
+use super::errors::map_decrypt_error;
+
 fn overwrite_policy(path_exists: bool) -> OverwritePolicy {
     if path_exists {
         OverwritePolicy::ReplaceAtCommit
@@ -81,7 +83,8 @@ pub fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> Result<(
             output: output_target(output, output_exists),
             raw_key,
             on_decrypted_header: None,
-        })?;
+        })
+        .map_err(map_decrypt_error)?;
 
     let hash_verification = super::hash_after_commit(&[input.to_string()], params.hash_mode)?;
 

@@ -3,12 +3,13 @@ use std::{fs::File, path::Path};
 use crate::cli::prompt::overwrite_check;
 use crate::global::states::ForceMode;
 use anyhow::{Context, Result};
-use core::header::common::HeaderReadError;
 use core::header::v1::KeyslotKdf;
 use core::header::{ParsedHeader, read_header};
 use domain::storage::Storage;
 use domain::storage::identity::OverwritePolicy;
 use domain::utils::hex_encode;
+
+use super::errors::map_header_error;
 
 fn overwrite_policy(path_exists: bool) -> OverwritePolicy {
     if path_exists {
@@ -72,26 +73,7 @@ pub fn details(input: &str) -> Result<()> {
 
             Ok(())
         }
-        Err(HeaderReadError::UnsupportedFormat(_))
-        | Err(HeaderReadError::UnsupportedVersion(_)) => {
-            Err(anyhow::anyhow!("Unsupported Dexios format"))
-        }
-        Err(HeaderReadError::InvalidMagic(magic)) => {
-            Err(anyhow::anyhow!("Invalid Dexios header magic: {magic:02X?}"))
-        }
-        Err(
-            err @ (HeaderReadError::TruncatedHeader
-            | HeaderReadError::InvalidKeyslotCount(_)
-            | HeaderReadError::InvalidKeyslotTag(_)
-            | HeaderReadError::InvalidPayloadNonceLength(_)
-            | HeaderReadError::InvalidKeyslotNonceLength(_)
-            | HeaderReadError::InvalidSaltLength(_)
-            | HeaderReadError::InvalidEncryptedMasterKeyLength(_)
-            | HeaderReadError::NonZeroReservedBytes
-            | HeaderReadError::NonZeroActiveKeyslotPadding(_)
-            | HeaderReadError::NonZeroInactiveKeyslotPadding(_)),
-        ) => Err(anyhow::anyhow!("Malformed Dexios V1 header: {err}")),
-        Err(err @ HeaderReadError::Io(_)) => Err(anyhow::anyhow!("{err}")),
+        Err(error) => Err(map_header_error(domain::header::Error::from(error))),
     }
 }
 
@@ -113,7 +95,7 @@ pub fn dump(input: &str, output: &str, force: ForceMode) -> Result<()> {
         output: output_target(output, output_exists),
     };
 
-    let _receipt = domain::header::dump::execute_transactional(req)?;
+    let _receipt = domain::header::dump::execute_transactional(req).map_err(map_header_error)?;
 
     Ok(())
 }
@@ -130,6 +112,7 @@ pub fn restore(input: &str, output: &str) -> Result<()> {
     };
 
     let _receipt = domain::header::restore::execute_transactional(req)
+        .map_err(map_header_error)
         .with_context(|| format!("Unable to restore header into {output}"))?;
 
     Ok(())
@@ -145,6 +128,7 @@ pub fn strip(input: &str) -> Result<()> {
     };
 
     let _receipt = domain::header::strip::execute_transactional(req)
+        .map_err(map_header_error)
         .with_context(|| format!("Unable to strip header from {input}"))?;
 
     Ok(())

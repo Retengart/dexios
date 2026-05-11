@@ -18,6 +18,7 @@ use domain::storage::transaction::CommitReceipt;
 
 pub mod decrypt;
 pub mod encrypt;
+pub mod errors;
 pub mod hashing;
 pub mod header;
 pub mod key;

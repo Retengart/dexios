@@ -3,22 +3,19 @@ use crate::global::states::Key;
 use crate::global::states::PasswordState;
 use crate::global::structs::KeyManipulationParams;
 use anyhow::{Context, Result};
-use core::header::common::HeaderReadError;
 use core::header::read_header;
 use std::cell::RefCell;
 use std::fs::OpenOptions;
 use std::io::Seek;
 use std::path::Path;
 
+use super::errors::{map_header_error, map_key_error};
 use crate::info;
 
 fn ensure_v1_header<R: std::io::Read>(reader: &mut R) -> Result<()> {
     match read_header(reader) {
         Ok(_) => Ok(()),
-        Err(HeaderReadError::InvalidMagic(_)) | Err(HeaderReadError::UnsupportedVersion(_)) => Err(
-            anyhow::anyhow!("This function currently only supports Dexios V1 headers"),
-        ),
-        Err(err) => Err(anyhow::anyhow!("Malformed Dexios V1 header: {err}")),
+        Err(error) => Err(map_header_error(domain::header::Error::from(error))),
     }
 }
 
@@ -53,7 +50,8 @@ pub fn add(input: &str, key_old: &Key) -> Result<()> {
     domain::key::add::execute(domain::key::add::Request {
         handle: &input_file,
         raw_key_old,
-    })?;
+    })
+    .map_err(map_key_error)?;
 
     Ok(())
 }
@@ -78,7 +76,8 @@ pub fn change(input: &str, params: &KeyManipulationParams) -> Result<()> {
         kdf: params.kdf,
         raw_key_old,
         raw_key_new,
-    })?;
+    })
+    .map_err(map_key_error)?;
 
     Ok(())
 }
@@ -95,7 +94,8 @@ pub fn delete(input: &str, key_old: &Key) -> Result<()> {
     domain::key::delete::execute_transactional(domain::key::delete::TransactionalRequest {
         target_path: Path::new(input),
         raw_key_old,
-    })?;
+    })
+    .map_err(map_key_error)?;
 
     Ok(())
 }
@@ -124,7 +124,8 @@ pub fn verify(input: &str, key: &Key) -> Result<()> {
     domain::key::verify::execute(domain::key::verify::Request {
         handle: &input_file,
         raw_key,
-    })?;
+    })
+    .map_err(map_key_error)?;
 
     Ok(())
 }
