@@ -278,6 +278,86 @@ fn unpack_rejects_archive_path_deeper_than_structural_limit() {
     assert!(!output_dir.join("dir0").exists());
 }
 
+#[cfg(any(unix, windows))]
+#[test]
+fn unpack_revalidates_symlinked_prefix_created_after_validation() {
+    let test_dir = TestDir::new("unpack-toctou-symlink");
+    let plain_zip = test_dir.path().join("plain.zip");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let outside_dir = test_dir.path().join("outside");
+    let output_dir = test_dir.path().join("out");
+
+    fs::create_dir_all(&outside_dir).unwrap();
+    write_zip_with_entries(&plain_zip, &[("payload/secret.txt", b"top secret")]);
+    encrypt_archive(&plain_zip, &encrypted_archive);
+
+    let result = unpack_archive(
+        &encrypted_archive,
+        &output_dir,
+        Some(Box::new({
+            let output_dir = output_dir.clone();
+            let outside_dir = outside_dir.clone();
+            move |path| {
+                if path.ends_with("payload/secret.txt") {
+                    symlink_dir(&outside_dir, &output_dir.join("payload"));
+                }
+                Ok(true)
+            }
+        })),
+    );
+
+    assert!(
+        matches!(result, Err(unpack::Error::UnsafeOutputPath(_))),
+        "expected unsafe output path error, got {result:?}"
+    );
+    assert!(!outside_dir.join("secret.txt").exists());
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn unpack_revalidation_failure_preserves_existing_outputs() {
+    let test_dir = TestDir::new("unpack-toctou-preserve");
+    let plain_zip = test_dir.path().join("plain.zip");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let outside_dir = test_dir.path().join("outside");
+    let output_dir = test_dir.path().join("out");
+    let existing_file = output_dir.join("existing.txt");
+
+    fs::create_dir_all(&outside_dir).unwrap();
+    fs::create_dir_all(&output_dir).unwrap();
+    fs::write(&existing_file, b"original contents").unwrap();
+    write_zip_with_entries(
+        &plain_zip,
+        &[
+            ("existing.txt", b"candidate replacement"),
+            ("payload/secret.txt", b"top secret"),
+        ],
+    );
+    encrypt_archive(&plain_zip, &encrypted_archive);
+
+    let result = unpack_archive(
+        &encrypted_archive,
+        &output_dir,
+        Some(Box::new({
+            let output_dir = output_dir.clone();
+            let outside_dir = outside_dir.clone();
+            move |path| {
+                if path.ends_with("payload/secret.txt") {
+                    symlink_dir(&outside_dir, &output_dir.join("payload"));
+                }
+                Ok(true)
+            }
+        })),
+    );
+
+    assert!(
+        matches!(result, Err(unpack::Error::UnsafeOutputPath(_))),
+        "expected unsafe output path error, got {result:?}"
+    );
+    assert_eq!(fs::read(&existing_file).unwrap(), b"original contents");
+    assert!(!outside_dir.join("secret.txt").exists());
+}
+
 #[cfg(unix)]
 fn symlink_dir(src: &Path, dst: &Path) {
     std::os::unix::fs::symlink(src, dst).unwrap();
