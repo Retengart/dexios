@@ -250,7 +250,7 @@ where
     let encrypt_res = tmp_file.with_reader(|tmp_reader| {
         tmp_reader.rewind().map_err(|_| Error::FinishArchive)?;
         let reader = RefCell::new(tmp_reader);
-        crate::encrypt::execute(crate::encrypt::Request {
+        crate::encrypt::execute_handles(crate::encrypt::HandleRequest {
             reader: &reader,
             writer: req.writer,
             header_writer: req.header_writer,

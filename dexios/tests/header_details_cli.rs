@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -8,8 +7,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use core::header::common::{HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN, MAGIC};
 use core::header::{ParsedHeader, read_header};
-use core::kdf::Kdf;
-use core::protected::Protected;
 use domain::encrypt;
 
 const PASSWORD: &str = "12345678";
@@ -53,19 +50,16 @@ fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
 }
 
 fn encrypt_fixture(input_path: &Path, output_path: &Path) {
-    let input = RefCell::new(File::open(input_path).unwrap());
-    let output = RefCell::new(File::create(output_path).unwrap());
-
-    encrypt::execute(encrypt::Request {
-        reader: &input,
-        writer: &output,
-        header_writer: None,
-        raw_key: Protected::new(PASSWORD.as_bytes().to_vec()),
-        kdf: Kdf::Blake3Balloon,
-    })
+    let intent = encrypt::EncryptIntent::new(
+        input_path,
+        output_path,
+        domain::storage::identity::OverwritePolicy::CreateNew,
+        None,
+        core::protected::Protected::new(PASSWORD.as_bytes().to_vec()),
+        core::kdf::Kdf::Blake3Balloon,
+    )
     .unwrap();
-
-    output.borrow_mut().flush().unwrap();
+    encrypt::execute(intent).unwrap();
 }
 
 fn write_legacy_header_fixture(output_path: &Path) {

@@ -253,7 +253,7 @@ mod tests {
         let input_cur = RefCell::new(Cursor::new(b"Hello world".to_vec()));
         let encrypted_cur = RefCell::new(Cursor::new(Vec::new()));
 
-        encrypt::execute(encrypt::Request {
+        encrypt::execute_handles(encrypt::HandleRequest {
             reader: &input_cur,
             writer: &encrypted_cur,
             header_writer: None,
@@ -292,7 +292,7 @@ mod tests {
         let encrypted_cur = RefCell::new(Cursor::new(Vec::new()));
         let header_cur = RefCell::new(Cursor::new(Vec::new()));
 
-        encrypt::execute(encrypt::Request {
+        encrypt::execute_handles(encrypt::HandleRequest {
             reader: &input_cur,
             writer: &encrypted_cur,
             header_writer: Some(&header_cur),
@@ -332,7 +332,7 @@ mod tests {
         let encrypted_cur = RefCell::new(Cursor::new(Vec::new()));
         let header_cur = RefCell::new(Cursor::new(Vec::new()));
 
-        encrypt::execute(encrypt::Request {
+        encrypt::execute_handles(encrypt::HandleRequest {
             reader: &input_cur,
             writer: &encrypted_cur,
             header_writer: Some(&header_cur),

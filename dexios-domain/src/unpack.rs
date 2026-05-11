@@ -406,7 +406,7 @@ mod tests {
         let output = RefCell::new(File::create(output_path).unwrap());
         let header = header_path.map(|path| RefCell::new(File::create(path).unwrap()));
 
-        encrypt::execute(encrypt::Request {
+        encrypt::execute_handles(encrypt::HandleRequest {
             reader: &input,
             writer: &output,
             header_writer: header.as_ref(),

@@ -15,20 +15,24 @@ const DOMAIN_KEY_ADD_SOURCE: &str = include_str!("../src/key/add.rs");
 const DOMAIN_KEY_CHANGE_SOURCE: &str = include_str!("../src/key/change.rs");
 
 fn encrypted_v1_fixture() -> RefCell<Cursor<Vec<u8>>> {
-    let input = RefCell::new(Cursor::new(b"Hello world".to_vec()));
-    let output = RefCell::new(Cursor::new(Vec::new()));
+    let dir = tempfile::tempdir().unwrap();
+    let input_path = dir.path().join("plain.txt");
+    let output_path = dir.path().join("plain.enc");
+    fs::write(&input_path, b"Hello world").unwrap();
 
-    encrypt::execute(encrypt::Request {
-        reader: &input,
-        writer: &output,
-        header_writer: None,
-        raw_key: Protected::new(b"old-pass".to_vec()),
-        kdf: Kdf::Blake3Balloon,
-    })
+    let intent = encrypt::EncryptIntent::new(
+        &input_path,
+        &output_path,
+        dexios_domain::storage::identity::OverwritePolicy::CreateNew,
+        None,
+        Protected::new(b"old-pass".to_vec()),
+        Kdf::Blake3Balloon,
+    )
+    .expect("build encrypt intent");
+    encrypt::execute(intent)
     .expect("encrypt fixture");
 
-    output.borrow_mut().rewind().expect("rewind fixture");
-    output
+    RefCell::new(Cursor::new(fs::read(output_path).unwrap()))
 }
 
 fn mark_keyslot_unsupported_argon2id(encrypted: &RefCell<Cursor<Vec<u8>>>, index: usize) {

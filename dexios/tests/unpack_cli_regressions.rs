@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -84,19 +83,16 @@ fn write_zip_with_entries(path: &Path, entries: &[(&str, &[u8])]) {
 }
 
 fn encrypt_archive(input_path: &Path, output_path: &Path) {
-    let input = RefCell::new(File::open(input_path).unwrap());
-    let output = RefCell::new(File::create(output_path).unwrap());
-
-    encrypt::execute(encrypt::Request {
-        reader: &input,
-        writer: &output,
-        header_writer: None,
-        raw_key: Protected::new(PASSWORD.as_bytes().to_vec()),
-        kdf: Kdf::Blake3Balloon,
-    })
+    let intent = encrypt::EncryptIntent::new(
+        input_path,
+        output_path,
+        domain::storage::identity::OverwritePolicy::CreateNew,
+        None,
+        Protected::new(PASSWORD.as_bytes().to_vec()),
+        Kdf::Blake3Balloon,
+    )
     .unwrap();
-
-    output.borrow_mut().flush().unwrap();
+    encrypt::execute(intent).unwrap();
 }
 
 #[cfg(unix)]

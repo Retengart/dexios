@@ -1,8 +1,9 @@
 //! This provides functionality for V1 encryption that adheres to the Dexios format.
 
 use std::cell::RefCell;
+use std::fs::File;
 use std::io::{self, Read, Seek, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use core::cipher::wrap_v1_master_key;
 use core::header::common::Salt;
@@ -23,6 +24,7 @@ use crate::workflow_error::{
 
 #[derive(Debug)]
 pub enum Error {
+    OpenInput,
     ResetCursorPosition,
     HashKey,
     EncryptMasterKey,
@@ -38,7 +40,10 @@ impl Error {
     #[must_use]
     pub fn workflow_class(&self) -> WorkflowErrorClass {
         match self {
-            Self::ResetCursorPosition | Self::EncryptFile | Self::WriteHeader => {
+            Self::OpenInput
+            | Self::ResetCursorPosition
+            | Self::EncryptFile
+            | Self::WriteHeader => {
                 WorkflowErrorClass::IoFailure
             }
             Self::HashKey => WorkflowErrorClass::KdfFailure,
@@ -54,6 +59,7 @@ impl Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Error::OpenInput => f.write_str("Cannot open input file"),
             Error::ResetCursorPosition => f.write_str("Unable to reset cursor position"),
             Error::HashKey => f.write_str("Cannot hash raw key"),
             Error::EncryptMasterKey => f.write_str("Cannot encrypt master key"),
@@ -69,46 +75,90 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-pub struct Request<'a, R, W>
+#[derive(Debug)]
+pub struct DetachedHeaderTarget {
+    path: PathBuf,
+    overwrite: OverwritePolicy,
+}
+
+impl DetachedHeaderTarget {
+    pub fn new<P: AsRef<Path>>(path: P, overwrite: OverwritePolicy) -> Self {
+        Self {
+            path: path.as_ref().to_path_buf(),
+            overwrite,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct EncryptIntent {
+    input_path: PathBuf,
+    output_target: crate::storage::identity::ResolvedTarget,
+    header_target: Option<crate::storage::identity::ResolvedTarget>,
+    raw_key: Protected<Vec<u8>>,
+    kdf: Kdf,
+}
+
+impl EncryptIntent {
+    pub fn new<P, O>(
+        input_path: P,
+        output_path: O,
+        output_overwrite: OverwritePolicy,
+        header: Option<DetachedHeaderTarget>,
+        raw_key: Protected<Vec<u8>>,
+        kdf: Kdf,
+    ) -> Result<Self, Error>
+    where
+        P: AsRef<Path>,
+        O: AsRef<Path>,
+    {
+        let input_path = input_path.as_ref().to_path_buf();
+        let mut graph = PathIdentityGraph::new();
+        graph
+            .add_existing(&input_path, PathRole::Input)
+            .map_err(Error::PathIdentity)?;
+        let output_target = graph
+            .add_output(output_path, PathRole::Output, output_overwrite)
+            .map_err(Error::PathIdentity)?;
+        let header_target = header
+            .map(|target| {
+                graph.add_output(target.path, PathRole::DetachedHeader, target.overwrite)
+            })
+            .transpose()
+            .map_err(Error::PathIdentity)?;
+        graph.validate().map_err(Error::PathIdentity)?;
+
+        Ok(Self {
+            input_path,
+            output_target,
+            header_target,
+            raw_key,
+            kdf,
+        })
+    }
+}
+
+// Private crate adapter for legacy in-memory callers. Public encrypt workflows
+// must use `EncryptIntent` so path identity and transaction checks cannot be
+// bypassed by caller-owned final writers.
+pub(crate) struct HandleRequest<'a, R, W>
 where
     R: Read + Seek,
     W: Write + Seek,
 {
-    pub reader: &'a RefCell<R>,
-    pub writer: &'a RefCell<W>,
-    pub header_writer: Option<&'a RefCell<W>>,
-    pub raw_key: Protected<Vec<u8>>,
-    pub kdf: Kdf,
+    pub(crate) reader: &'a RefCell<R>,
+    pub(crate) writer: &'a RefCell<W>,
+    pub(crate) header_writer: Option<&'a RefCell<W>>,
+    pub(crate) raw_key: Protected<Vec<u8>>,
+    pub(crate) kdf: Kdf,
 }
 
-pub struct OutputTarget<'a> {
-    pub path: &'a Path,
-    pub overwrite: OverwritePolicy,
-}
-
-pub struct HeaderTarget<'a> {
-    pub path: &'a Path,
-    pub overwrite: OverwritePolicy,
-}
-
-pub struct TransactionalRequest<'a, R>
-where
-    R: Read + Seek,
-{
-    pub input_path: &'a Path,
-    pub reader: &'a RefCell<R>,
-    pub output: OutputTarget<'a>,
-    pub header: Option<HeaderTarget<'a>>,
-    pub raw_key: Protected<Vec<u8>>,
-    pub kdf: Kdf,
-}
-
-pub fn execute<R, W>(req: Request<'_, R, W>) -> Result<(), Error>
+pub(crate) fn execute_handles<R, W>(req: HandleRequest<'_, R, W>) -> Result<(), Error>
 where
     R: Read + Seek,
     W: Write + Seek,
 {
-    let Request {
+    let HandleRequest {
         reader,
         writer,
         header_writer,
@@ -146,25 +196,34 @@ where
     encrypt_payload(reader, &mut *writer.borrow_mut(), master_key, &header)
 }
 
-pub fn execute_transactional<R>(req: TransactionalRequest<'_, R>) -> Result<CommitReceipt, Error>
+pub fn execute(intent: EncryptIntent) -> Result<CommitReceipt, Error> {
+    let EncryptIntent {
+        input_path,
+        output_target,
+        header_target,
+        raw_key,
+        kdf,
+    } = intent;
+    let reader = RefCell::new(File::open(input_path).map_err(|_| Error::OpenInput)?);
+
+    execute_transactional_targets(&reader, output_target, header_target, raw_key, kdf)
+}
+
+pub fn execute_transactional(intent: EncryptIntent) -> Result<CommitReceipt, Error> {
+    execute(intent)
+}
+
+fn execute_transactional_targets<R>(
+    reader: &RefCell<R>,
+    output_target: crate::storage::identity::ResolvedTarget,
+    header_target: Option<crate::storage::identity::ResolvedTarget>,
+    raw_key: Protected<Vec<u8>>,
+    kdf: Kdf,
+) -> Result<CommitReceipt, Error>
 where
     R: Read + Seek,
 {
-    let mut graph = PathIdentityGraph::new();
-    graph
-        .add_existing(req.input_path, PathRole::Input)
-        .map_err(Error::PathIdentity)?;
-    let output_target = graph
-        .add_output(req.output.path, PathRole::Output, req.output.overwrite)
-        .map_err(Error::PathIdentity)?;
-    let header_target = req
-        .header
-        .map(|target| graph.add_output(target.path, PathRole::DetachedHeader, target.overwrite))
-        .transpose()
-        .map_err(Error::PathIdentity)?;
-    graph.validate().map_err(Error::PathIdentity)?;
-
-    let (header, master_key) = build_v1_encryption_state(req.raw_key, req.kdf)?;
+    let (header, master_key) = build_v1_encryption_state(raw_key, kdf)?;
     let header_bytes = header.serialize().map_err(|_| Error::WriteHeader)?;
 
     if let Some(header_target) = header_target {
@@ -186,7 +245,7 @@ where
             .staged_output_mut(output_index)
             .ok_or(Error::EncryptFile)?
             .with_writer(|writer| {
-                encrypt_payload(req.reader, writer, master_key, &header)
+                encrypt_payload(reader, writer, master_key, &header)
                     .map_err(|_| io::Error::other("encrypt payload"))
             })
             .map_err(map_encrypt_transaction_error)?;
@@ -200,7 +259,7 @@ where
             .map_err(map_header_transaction_error)?;
         transaction
             .with_writer(|writer| {
-                encrypt_payload(req.reader, writer, master_key, &header)
+                encrypt_payload(reader, writer, master_key, &header)
                     .map_err(|_| io::Error::other("encrypt payload"))
             })
             .map_err(map_encrypt_transaction_error)?;
@@ -275,7 +334,7 @@ fn map_encrypt_transaction_error(error: TransactionError) -> Error {
 
 #[cfg(test)]
 pub mod tests {
-    use std::io::Cursor;
+    use std::io::{Cursor, SeekFrom, Write};
 
     use core::header::common::HEADER_LEN;
     use core::header::{ParsedHeader, read_header};
@@ -285,12 +344,40 @@ pub mod tests {
 
     pub const PASSWORD: &[u8; 8] = b"12345678";
 
+    #[derive(Default)]
+    struct ShortWriteCursor {
+        inner: Cursor<Vec<u8>>,
+    }
+
+    impl ShortWriteCursor {
+        fn len(&self) -> usize {
+            self.inner.get_ref().len()
+        }
+    }
+
+    impl Write for ShortWriteCursor {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            let n = buf.len().min(1);
+            self.inner.write(&buf[..n])
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.inner.flush()
+        }
+    }
+
+    impl Seek for ShortWriteCursor {
+        fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+            self.inner.seek(pos)
+        }
+    }
+
     #[test]
     fn should_encrypt_content_with_v1_header() {
         let input_cur = RefCell::new(Cursor::new(b"Hello world".to_vec()));
         let output_cur = RefCell::new(Cursor::new(Vec::new()));
 
-        execute(Request {
+        execute_handles(HandleRequest {
             reader: &input_cur,
             writer: &output_cur,
             header_writer: None,
@@ -317,7 +404,7 @@ pub mod tests {
         let output_cur = RefCell::new(Cursor::new(Vec::new()));
         let output_header_cur = RefCell::new(Cursor::new(Vec::new()));
 
-        execute(Request {
+        execute_handles(HandleRequest {
             reader: &input_cur,
             writer: &output_cur,
             header_writer: Some(&output_header_cur),
@@ -335,5 +422,24 @@ pub mod tests {
         assert_eq!(header.keyslots().len(), 1);
         assert_eq!(output_header.len(), HEADER_LEN);
         assert_eq!(output_content.len(), b"Hello world".len() + 16);
+    }
+
+    #[test]
+    fn encrypt_must_write_the_full_embedded_header() {
+        let input = RefCell::new(Cursor::new(b"Hello world".to_vec()));
+        let output = RefCell::new(ShortWriteCursor::default());
+
+        execute_handles(HandleRequest {
+            reader: &input,
+            writer: &output,
+            header_writer: None,
+            raw_key: Protected::new(PASSWORD.to_vec()),
+            kdf: Kdf::Blake3Balloon,
+        })
+        .expect("encrypt");
+
+        let expected_len = HEADER_LEN + b"Hello world".len() + 16;
+
+        assert_eq!(output.borrow().len(), expected_len);
     }
 }

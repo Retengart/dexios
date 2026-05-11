@@ -2,8 +2,6 @@
 mod common;
 use common::*;
 use core::header::{ParsedHeader, read_header};
-use core::kdf::Kdf;
-use core::protected::Protected;
 use dexios_domain::encrypt;
 use dexios_domain::storage::*;
 use std::fs;
@@ -140,18 +138,16 @@ fn storage_backed_encrypt_writes_a_v1_header() {
     fs::remove_file("hello_16.enc").ok();
     save_text_file(&stor, "hello_16.txt", "hello world").unwrap();
 
-    let input = stor.read_file("hello_16.txt").unwrap();
-    let output = stor.create_file("hello_16.enc").unwrap();
-
-    encrypt::execute(encrypt::Request {
-        reader: input.try_reader().unwrap(),
-        writer: output.try_writer().unwrap(),
-        header_writer: None,
-        raw_key: Protected::new(b"test-password".to_vec()),
-        kdf: Kdf::Blake3Balloon,
-    })
+    let intent = encrypt::EncryptIntent::new(
+        "hello_16.txt",
+        "hello_16.enc",
+        dexios_domain::storage::identity::OverwritePolicy::CreateNew,
+        None,
+        core::protected::Protected::new(b"test-password".to_vec()),
+        core::kdf::Kdf::Blake3Balloon,
+    )
     .unwrap();
-    stor.flush_file(&output).unwrap();
+    encrypt::execute(intent).unwrap();
 
     let encrypted = stor.read_file("hello_16.enc").unwrap();
     let parsed = read_header(&mut *encrypted.try_reader().unwrap().borrow_mut()).unwrap();
