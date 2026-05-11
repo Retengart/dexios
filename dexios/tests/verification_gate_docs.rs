@@ -1,4 +1,4 @@
-const SAFETY_CONTRACT: &str = include_str!("../../docs/safety-contract.md");
+const SAFETY_CONTRACT: &str = include_str!("../../book/src/Safety-Contract.md");
 const CONTRIBUTING: &str = include_str!("../../CONTRIBUTING.md");
 const README: &str = include_str!("../../README.md");
 const INSTALLING_AND_BUILDING: &str = include_str!("../../book/src/Installing-and-Building.md");
@@ -31,7 +31,7 @@ fn tracked_docs_define_the_minimum_maintainer_gate() {
         "CHANGELOG.md",
         "local-notes/",
     ] {
-        assert_contains("docs/safety-contract.md", SAFETY_CONTRACT, required);
+        assert_contains("book/src/Safety-Contract.md", SAFETY_CONTRACT, required);
     }
 
     for (source_name, source) in [
@@ -79,7 +79,11 @@ fn local_scripts_expose_the_full_maintainer_gate() {
     }
 
     for required in ["git ls-files local-notes", "git check-ignore"] {
-        assert_contains("scripts/verify_repo_hygiene.sh", VERIFY_REPO_HYGIENE, required);
+        assert_contains(
+            "scripts/verify_repo_hygiene.sh",
+            VERIFY_REPO_HYGIENE,
+            required,
+        );
     }
 }
 
@@ -132,6 +136,42 @@ fn measurement_policy_is_source_gated() {
     }
 
     for required in ["VERI-05", "measure_performance_gate.sh", "not applicable"] {
-        assert_contains("docs/safety-contract.md", SAFETY_CONTRACT, required);
+        assert_contains("book/src/Safety-Contract.md", SAFETY_CONTRACT, required);
     }
+}
+
+#[test]
+fn phase7_decision_groups_are_source_gated() {
+    // D-01 through D-05: minimum gate authority lives in the safety contract.
+    for required in ["VERI-04", "Maintainer Verification Gate"] {
+        assert_contains("book/src/Safety-Contract.md", SAFETY_CONTRACT, required);
+    }
+
+    // D-06 through D-10: local scripts and CI keep audit/docs checks fresh.
+    assert_contains(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "cargo audit",
+    );
+    assert_contains(".github/workflows/docs.yml", DOCS_WORKFLOW, "mdbook build");
+
+    // D-11 through D-15: resource-sensitive defaults require measured evidence.
+    assert_contains("book/src/Safety-Contract.md", SAFETY_CONTRACT, "VERI-05");
+    assert_contains(
+        "scripts/measure_performance_gate.sh",
+        MEASURE_PERFORMANCE_GATE,
+        "target/phase7-measurements",
+    );
+
+    // D-16 through D-20: breaking safety changes require release notes.
+    assert_contains("book/src/Safety-Contract.md", SAFETY_CONTRACT, "VERI-06");
+    assert_contains("CHANGELOG.md", CHANGELOG, "## Unreleased");
+
+    // D-21 through D-23: planning context stays local and outside CI inputs.
+    assert_contains(".gitignore", GITIGNORE, "local-notes/");
+    assert_contains(
+        "scripts/verify_repo_hygiene.sh",
+        VERIFY_REPO_HYGIENE,
+        "local-notes/",
+    );
 }

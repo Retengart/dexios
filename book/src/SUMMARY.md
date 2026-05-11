@@ -6,6 +6,7 @@
 - [Checksums](./Checksums.md)
 - [Environment Variables](./Environment-Variables.md)
 - [Usage Examples](./Usage-Examples.md)
+- [Safety Contract](./Safety-Contract.md)
 - [Technical Details](technical-details/README.md)
   - [Keys](technical-details/Keys.md)
   - [Delete Semantics](technical-details/Secure-Erase.md)

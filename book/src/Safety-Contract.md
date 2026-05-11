@@ -38,7 +38,7 @@ assigned to a later phase.
 | STOR-002 | Path identity | Input/output/header path aliases are rejected by domain-owned identity checks before final output handles open. | current | Current source and real filesystem tests | `dexios-domain/src/storage/identity.rs`; `dexios-domain/tests/path_identity.rs`; `dexios/tests/encrypt_cli_regressions.rs::encrypt_rejects_same_file_alias_before_opening_output`; `dexios/tests/pack_cli_regressions.rs`; `dexios/tests/unpack_cli_regressions.rs`; `dexios/tests/storage_transactions_cli.rs` | SAFE-01, STOR-03, STOR-06, VERI-01 | Phase 4 |
 | ARCH-001 | Archive boundaries | Temporary ZIP artifacts are plaintext exposure, archive structure is bounded by `ArchiveLimits`, and pack/unpack must not be described as secure erase. | current | Current source, real filesystem tests, and editable docs | `dexios-domain/src/archive.rs`; `dexios-domain/src/pack.rs`; `dexios-domain/src/unpack.rs`; `dexios-domain/tests/pack_paths.rs`; `dexios-domain/tests/unpack.rs`; `dexios/tests/pack_cli_regressions.rs`; `dexios/tests/unpack_cli_regressions.rs`; `book/src/technical-details/Directory-Packing.md`; `book/src/technical-details/Secure-Erase.md` | SAFE-01, ARCH-04, ARCH-05, VERI-03 | Phase 6 |
 | ERR-001 | Error handling | Parse, authentication, path, IO, unsupported workflow, unsafe path, and commit failures remain distinguishable enough for rollback and user data preservation in encrypt, decrypt, header, and key workflows. | current | Current source and tests | `dexios-domain/src/workflow_error.rs`; `dexios-domain/tests/workflow_errors.rs`; `dexios-domain/tests/workflow_public_api.rs`; `dexios/src/subcommands/errors.rs`; `dexios/tests/workflow_error_cli.rs`; source gates in Phase 05 Plan 08 | SAFE-01, ERR-01, ERR-02, ERR-03, ERR-04 | Phase 5 |
-| DOC-001 | Documentation | Source-of-truth precedence is recorded by topic. | current | This contract | `docs/safety-contract.md` Source-of-Truth Matrix | SAFE-04 | Phase 1 |
+| DOC-001 | Documentation | Source-of-truth precedence is recorded by topic. | current | This contract | `book/src/Safety-Contract.md` Source-of-Truth Matrix | SAFE-04 | Phase 1 |
 
 ## Source-of-Truth Matrix
 
@@ -92,7 +92,7 @@ level. That makes the crate-root lint the compiler-backed baseline for SAFE-03.
 
 Any future exception requires all of these before acceptance:
 
-1. a dedicated invariant row in `docs/safety-contract.md`;
+1. a dedicated invariant row in `book/src/Safety-Contract.md`;
 2. a proof comment explaining why safe Rust cannot express the boundary;
 3. an owning test boundary in the crate that uses the exception;
 4. explicit maintainer review in the phase summary.
@@ -110,6 +110,8 @@ For local verification, use:
 - `bash scripts/verify_phase_gate.sh`
 - `bash scripts/verify_repo_hygiene.sh`
 
+VERI-04 broad-gate rule: the minimum maintainer gate includes:
+
 - `cargo fmt --all --check`
 - `cargo clippy --workspace --all-targets --all-features --no-deps`
 - `cargo test --workspace --all-features --release --verbose`
@@ -117,10 +119,11 @@ For local verification, use:
 - `mdbook build`
 - `rg -n "#!\\[forbid\\(unsafe_code\\)\\]" dexios-core/src/lib.rs dexios-domain/src/lib.rs`
 
-Breaking changes to file format behavior, CLI behavior, security claims, or
-compatibility boundaries must update `CHANGELOG.md` under `## Unreleased`.
-Use the `### Breaking Changes`, `### Security`, `### Verification`, or
-`### Documentation` headings as appropriate for the change.
+VERI-06 release-note rule: breaking changes to file format behavior, CLI
+behavior, security claims, or compatibility boundaries must update
+`CHANGELOG.md` under `## Unreleased`. Use the `### Breaking Changes`,
+`### Security`, `### Verification`, or `### Documentation` headings as
+appropriate for the change.
 
 `local-notes/` is local-only working context. It must remain ignored by git and
 must not be required to understand public release notes, user documentation, or

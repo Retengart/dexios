@@ -21,7 +21,7 @@ If you are auditing end-to-end file workflows rather than only the primitives, a
 
 The repository currently relies heavily on Rust's type system, explicit error handling, compatibility tests, and CI checks, but that is not a substitute for a dedicated independent audit.
 
-The Maintainer Verification Gate in `docs/safety-contract.md` is the practical
+The Maintainer Verification Gate in `book/src/Safety-Contract.md` is the practical
 pre-merge gate for safety-sensitive changes. It requires focused invariant
 checks, broad workspace checks, dependency/security checks, and documentation
 checks, but it is still not a substitute for a dedicated independent audit.

@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-a1a458d6.js";
+            window.path_to_searchindex_js = "../searchindex-f4765586.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-73b73724.js"></script>
+        <script src="../toc-532d5d21.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -177,6 +177,29 @@
                         <h2 id="performance-notes"><a class="header" href="#performance-notes">Performance Notes</a></h2>
 <p>Please note that performance is heavily dependent on your hardware - mostly disk speed. Dexios has had a <em>lot</em> of performance optimisations applied throughout the versions, but we’re getting to the point where the main factor is disk speed.</p>
 <p>We will continue to optimise Dexios where possible.</p>
+<h2 id="measured-check-policy"><a class="header" href="#measured-check-policy">Measured-Check Policy</a></h2>
+<p>Default changes to KDF cost, stream throughput behavior, pack/unpack memory
+behavior, archive structural limits, or temp-space assumptions require a
+measured-check run before the change is accepted.</p>
+<p>Use the Phase 7 harness from the repository root:</p>
+<pre><code class="language-bash">scripts/measure_performance_gate.sh --scenario &lt;name&gt;
+</code></pre>
+<p>Available scenarios are:</p>
+<ul>
+<li><code>kdf</code> for KDF cost regression evidence</li>
+<li><code>stream</code> for representative encrypt/decrypt stream throughput evidence</li>
+<li><code>pack-unpack</code> for representative pack/unpack memory and elapsed-time evidence</li>
+<li><code>temp-space</code> for temporary workspace size evidence</li>
+<li><code>all</code> for the full measured-check set</li>
+</ul>
+<p>Record the command, fixture shape, platform, and summary result in release
+notes or the phase summary. If a category is not applicable, record the reason
+instead of silently omitting it.</p>
+<p>The harness writes raw logs under <code>target/phase7-measurements/</code>. Do not commit
+those logs as evergreen benchmark claims.</p>
+<p>Structural archive limits are not proof that the host has enough free memory or
+disk space. Temporary ZIP artifacts used by pack/unpack remain ordinary
+plaintext temporary files while they exist.</p>
 
                     </main>
 

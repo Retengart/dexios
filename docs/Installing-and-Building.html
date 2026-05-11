@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-a1a458d6.js";
+            window.path_to_searchindex_js = "searchindex-f4765586.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-73b73724.js"></script>
+        <script src="toc-532d5d21.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -198,6 +198,21 @@
 cargo build --release
 cargo test --workspace --all-features --release --verbose
 </code></pre>
+<h2 id="maintainer-verification-gate"><a class="header" href="#maintainer-verification-gate">Maintainer Verification Gate</a></h2>
+<p>For safety-sensitive maintenance work, <code>book/src/Safety-Contract.md</code> is the
+authoritative gate. Run the focused invariant checks for the area being changed,
+then run the broad gate:</p>
+<pre><code class="language-bash">bash scripts/verify_phase_gate.sh
+</code></pre>
+<p>The script runs:</p>
+<pre><code class="language-bash">cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features --no-deps
+cargo test --workspace --all-features --release --verbose
+cargo audit
+mdbook build
+</code></pre>
+<p><code>mdbook build</code> writes the generated documentation site to <code>docs/</code> because
+<code>book.toml</code> sets <code>build-dir = "docs"</code>.</p>
 <p>The CLI binary is produced at:</p>
 <pre><code class="language-text">target/release/dexios
 </code></pre>

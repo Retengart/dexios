@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-a1a458d6.js";
+            window.path_to_searchindex_js = "../searchindex-f4765586.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-73b73724.js"></script>
+        <script src="../toc-532d5d21.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -182,18 +182,37 @@
 <li>a separate wrapping nonce for the encrypted master key inside each keyslot</li>
 </ul>
 <h2 id="stream-encryption"><a class="header" href="#stream-encryption">Stream Encryption</a></h2>
-<p>Dexios reads and writes payloads in <strong>1 MiB</strong> blocks.</p>
+<p>Dexios reads and writes payloads in <strong>1 MiB</strong> blocks through the typed
+<code>V1PayloadStream</code> boundary. Normal callers pass a typed master key plus either a
+V1 header for encryption or a parsed V1 payload bundle for decryption.</p>
 <p>Stored payload nonces are shorter than their full AEAD counterparts because LE31 appends a 31-bit little-endian counter and a last-block flag internally:</p>
 <ul>
 <li>payload nonce: 20 bytes</li>
 <li>keyslot nonce: 24 bytes</li>
 </ul>
 <p>For new V1 files, the payload nonce is stored in the static header region. Each wrapped master key uses its own 24-byte nonce inside a keyslot.</p>
-<h2 id="stream-edge-case"><a class="header" href="#stream-edge-case">Stream Edge Case</a></h2>
+<h2 id="header-derived-aad"><a class="header" href="#header-derived-aad">Header-Derived AAD</a></h2>
+<p>Normal V1 stream APIs do not accept arbitrary caller-provided AAD. Encryption
+derives AAD from the V1 header, and decryption uses the parsed V1 payload bundle
+that binds the header to its matching AAD.</p>
+<p>The deterministic regression matrix in <code>dexios-core/tests/stream_v1.rs</code> covers
+wrong keys, mismatched header-derived AAD, wrong payload nonce, truncated
+ciphertext, reordered chunks, tampered middle chunks, tampered final chunks, and
+missing final blocks.</p>
+<h2 id="final-block-semantics"><a class="header" href="#final-block-semantics">Final Block Semantics</a></h2>
 <p>If the plaintext length is exactly divisible by the 1 MiB block size, Dexios still emits a final authenticated last block. This avoids end-of-stream ambiguity.</p>
+<p>For exact-block plaintext, that final block is an authenticated empty marker.
+Decryption requires the marker; ciphertext without the final block fails instead
+of returning committed plaintext success.</p>
 <h2 id="header-and-payload-authentication"><a class="header" href="#header-and-payload-authentication">Header and Payload Authentication</a></h2>
 <p>Payload authentication is provided by the AEAD itself.</p>
 <p>Header authentication is provided through V1 AAD: the first 32 bytes of the header are authenticated with every encrypted block.</p>
+<h2 id="decryption-output-state"><a class="header" href="#decryption-output-state">Decryption Output State</a></h2>
+<p><code>V1PayloadStream::decrypt_file</code> writes plaintext to its writer as uncommitted
+scratch. Callers must treat the plaintext as accepted only after the function
+returns <code>Ok(())</code>, which means the final block authenticated successfully. This
+core contract does not implement storage transactions; final output commit
+semantics belong to the storage workflow layer.</p>
 <h2 id="legacy-notes"><a class="header" href="#legacy-notes">Legacy Notes</a></h2>
 <p>Older compatibility paths still exist internally, but the normal public surface no longer exposes alternate cipher selection or memory-mode encryption for new output.</p>
 

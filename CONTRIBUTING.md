@@ -44,7 +44,7 @@ We have some great templates to get you started - they're offered when you open 
 
 ## Maintainer Verification Gate
 
-For safety-sensitive changes, `docs/safety-contract.md` is the authority. Run
+For safety-sensitive changes, `book/src/Safety-Contract.md` is the authority. Run
 the focused tests for the changed invariant first, then the broad maintainer
 gate named there.
 

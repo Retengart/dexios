@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-a1a458d6.js";
+            window.path_to_searchindex_js = "../searchindex-f4765586.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-73b73724.js"></script>
+        <script src="../toc-532d5d21.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -194,6 +194,10 @@
 <li><code>dexios-domain/src/storage.rs</code></li>
 </ul>
 <p>The repository currently relies heavily on Rust’s type system, explicit error handling, compatibility tests, and CI checks, but that is not a substitute for a dedicated independent audit.</p>
+<p>The Maintainer Verification Gate in <code>book/src/Safety-Contract.md</code> is the practical
+pre-merge gate for safety-sensitive changes. It requires focused invariant
+checks, broad workspace checks, dependency/security checks, and documentation
+checks, but it is still not a substitute for a dedicated independent audit.</p>
 
                     </main>
 

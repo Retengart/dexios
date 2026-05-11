@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-a1a458d6.js";
+            window.path_to_searchindex_js = "../searchindex-f4765586.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-73b73724.js"></script>
+        <script src="../toc-532d5d21.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -175,8 +175,8 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h2 id="headers"><a class="header" href="#headers">Headers</a></h2>
-<p>The normal writable Dexios format is <strong>V1</strong>.</p>
-<p><code>dexios-core</code> still contains explicit legacy parsing helpers, but new encryption, new key management, and the normal CLI surface are centered on V1.</p>
+<p>The supported Dexios format is <strong>V1 only</strong>.</p>
+<p>Legacy Dexios formats are intentionally unsupported after the Phase 2 refactor.</p>
 <h2 id="v1-layout"><a class="header" href="#v1-layout">V1 Layout</a></h2>
 <p>The V1 header is <strong>416 bytes</strong> long.</p>
 <p>Its first <strong>32 bytes</strong> are the static header region and also the payload AAD:</p>
@@ -202,9 +202,13 @@
 <h2 id="kdf-identifiers"><a class="header" href="#kdf-identifiers">KDF Identifiers</a></h2>
 <p>The current V1 format recognizes:</p>
 <ul>
-<li><code>[0xDF, 0x01]</code> = <code>Blake3Balloon</code></li>
-<li><code>[0xDF, 0x02]</code> = <code>Argon2id</code></li>
+<li><code>[0xDF, 0x01]</code> = <code>Blake3Balloon</code>, the only normal KDF tag emitted for new V1 keyslots</li>
+<li><code>[0xDF, 0x02]</code> = <code>Argon2id</code>, an unsupported historical tag recognized for explicit diagnostics</li>
 </ul>
+<p>New V1 writes do not expose alternate KDF selection or user-configurable KDF
+parameters. The unsupported historical Argon2id tag can be parsed from an old
+header, but workflow code reports it as unsupported instead of deriving a key
+from it.</p>
 <h2 id="key-manipulation"><a class="header" href="#key-manipulation">Key Manipulation</a></h2>
 <p><code>key add</code>, <code>key change</code>, <code>key del</code>, and <code>key verify</code> now operate on V1 headers.</p>
 <p>Important behavior:</p>
@@ -213,17 +217,32 @@
 <li>matching is determined by successfully decrypting the wrapped master key</li>
 <li><code>change</code> and <code>del</code> affect the first matching keyslot</li>
 </ul>
-<h2 id="legacy-notes"><a class="header" href="#legacy-notes">Legacy Notes</a></h2>
-<p>Legacy header parsing still exists as an explicit compatibility path. It is mainly relevant for inspection and migration-adjacent code, not for the normal product surface.</p>
-<p><code>header details</code> is V1-first and only falls back to legacy parsing when the input is not a V1 header.</p>
+<h2 id="legacy-removal"><a class="header" href="#legacy-removal">Legacy Removal</a></h2>
+<p>Legacy Dexios headers are intentionally unsupported in this refactor line.</p>
+<p>Inputs beginning with legacy <code>[DE,01]</code> through <code>[DE,05]</code> prefixes are rejected as unsupported format.</p>
 <h2 id="header-operations"><a class="header" href="#header-operations">Header Operations</a></h2>
-<p>Dexios still supports:</p>
+<p>Dexios supports V1-only header maintenance operations over encrypted artifacts:</p>
 <ul>
-<li>dumping headers</li>
-<li>stripping headers by zeroing the serialized header region</li>
-<li>restoring headers when the target file already begins with enough zero bytes</li>
+<li><code>header dump</code> accepts an embedded encrypted artifact with payload bytes after
+the V1 header. It writes exactly 416 serialized header bytes to the detached
+header output.</li>
+<li><code>header strip</code> accepts an embedded encrypted artifact with a valid V1 header
+and payload bytes. It transactionally replaces only the first 416 bytes with
+zeroes and preserves the payload bytes.</li>
+<li><code>header restore</code> accepts a detached header file only when it is exactly 416
+bytes and parses as a V1 header. The restore target must be a stripped
+embedded artifact: it must contain a zeroed 416-byte header prefix and at
+least one payload byte after that prefix.</li>
 </ul>
-<p>Detached-header outputs usually do not reserve enough zero bytes for restoration, so restore remains a specialized operation rather than a normal workflow.</p>
+<p>Header-only files are not embedded encrypted artifacts. Dump and strip reject
+them because there are no payload bytes after the header. Restore rejects short
+detached headers, detached headers with trailing bytes, short restore targets,
+and targets whose first 416 bytes are not all zero before it stages any
+replacement.</p>
+<p>Detached-header encryption outputs usually do not reserve a zeroed 416-byte
+prefix in the payload file, so restore remains a recovery operation for
+previously stripped embedded artifacts rather than a normal detached-header
+workflow.</p>
 
                     </main>
 

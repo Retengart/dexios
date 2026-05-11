@@ -46,7 +46,7 @@ cargo test --workspace --all-features --release --verbose
 
 ## Maintainer Verification Gate
 
-For safety-sensitive maintenance work, `docs/safety-contract.md` is the
+For safety-sensitive maintenance work, `book/src/Safety-Contract.md` is the
 authoritative gate. Run the focused invariant checks for the area being changed,
 then run the broad gate:
 

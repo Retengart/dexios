@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-a1a458d6.js";
+            window.path_to_searchindex_js = "../searchindex-f4765586.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-73b73724.js"></script>
+        <script src="../toc-532d5d21.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -179,6 +179,7 @@
 <p>The CLI rejects empty key material.</p>
 <h2 id="autogenerating-a-key"><a class="header" href="#autogenerating-a-key">Autogenerating a Key</a></h2>
 <p><code>--auto</code> uses Dexios’ bundled wordlist to generate a passphrase. The current implementation generates <code>n</code> random words joined with <code>-</code>, with <code>7</code> words used by default.</p>
+<p>The generated passphrase is intentionally shown to the user because it is the only copy the user receives. This disclosure can be captured by terminal scrollback or logs. Dexios treats this output as deliberate disclosure, not as an accidental leak, and still keeps the returned key bytes inside <code>Protected&lt;Vec&lt;u8&gt;&gt;</code>.</p>
 <p>Examples:</p>
 <pre><code class="language-text">orchard-linen-buckle-river-amber-signal-willow
 </code></pre>
@@ -190,12 +191,37 @@
 <li>encryption asks twice and compares the entries</li>
 <li>decryption asks once</li>
 </ul>
-<p>The resulting string is consumed into bytes and wrapped in <code>Protected&lt;Vec&lt;u8&gt;&gt;</code>.</p>
+<p>Prompt strings are wrapped in <code>zeroize::Zeroizing&lt;String&gt;</code> as soon as they are read. This applies to direct prompts, confirmation prompts, mismatch retries, empty-input retries, and prompt-error paths.</p>
+<p>On success, the accepted prompt string is copied into <code>Protected&lt;Vec&lt;u8&gt;&gt;</code>. The prompt temporaries remain <code>Zeroizing&lt;String&gt;</code> values and are cleared when dropped.</p>
 <h2 id="reading-from-a-keyfile"><a class="header" href="#reading-from-a-keyfile">Reading from a Keyfile</a></h2>
 <p>Dexios reads the keyfile bytes as-is and wraps them in <code>Protected&lt;Vec&lt;u8&gt;&gt;</code>.</p>
 <p>If the keyfile path is <code>-</code>, Dexios reads the key material from standard input instead of a filesystem path.</p>
 <h2 id="reading-from-environment-variables"><a class="header" href="#reading-from-environment-variables">Reading from Environment Variables</a></h2>
 <p>If <code>DEXIOS_KEY</code> is available and no higher-priority key source is selected, Dexios reads it, converts it to bytes, and wraps it in <code>Protected&lt;Vec&lt;u8&gt;&gt;</code>.</p>
+<h2 id="v1-key-workflows"><a class="header" href="#v1-key-workflows">V1 Key Workflows</a></h2>
+<p>Key workflows operate on V1 headers and keyslots only.</p>
+<ul>
+<li><code>key add</code> remains unsupported for V1 encrypted artifacts in this refactor
+line. It fails with a typed unsupported-workflow result and does not request a
+new key or mutate the header.</li>
+<li><code>key verify</code> is read-only. It reads the V1 header keyslots, attempts to unwrap
+the master key with the supplied key, and reports success, incorrect key,
+unsupported KDF, malformed header, unsupported format, or read I/O failure. It
+does not authenticate or decrypt the payload stream.</li>
+<li><code>key change</code> first proves that the old key unwraps the current master key. It
+then builds a replacement header and proves that the new key unwraps the same
+master key before committing the staged header update.</li>
+<li><code>key del</code> deletes only the keyslot proven by the supplied old key. It rejects
+deletion of the final usable V1 keyslot and does not collect a separate
+remaining-key verification key.</li>
+</ul>
+<p>Historical V1 keyslots tagged <code>[0xDF, 0x02]</code> are recognized as unsupported
+Argon2id metadata. Key mutation refuses files containing that unsupported tag
+instead of skipping, normalizing, or rewriting the slot. <code>key verify</code> reports a
+typed unsupported-KDF result when the unsupported tag prevents verification.</p>
+<p>CLI key workflows perform cheap target, format, and KDF validation before
+prompting for secrets where the operation permits it. <code>key change</code> asks for the
+new key only after the old key has been verified against the current header.</p>
 
                     </main>
 

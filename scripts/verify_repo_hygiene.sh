@@ -21,7 +21,7 @@ grep -F 'build-dir = "docs"' book.toml >/dev/null \
 [[ -f CHANGELOG.md ]] || fail "CHANGELOG.md is missing"
 
 if rg -n -i '(^|[^a-z])(see|read|requires?|depends on) +`?\local-notes/' \
-    README.md CONTRIBUTING.md CHANGELOG.md docs/safety-contract.md book/src >/dev/null; then
+    README.md CONTRIBUTING.md CHANGELOG.md book/src >/dev/null; then
     fail "tracked public docs must not require local-notes/ as public documentation"
 fi
 

@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-a1a458d6.js";
+            window.path_to_searchindex_js = "../searchindex-f4765586.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-73b73724.js"></script>
+        <script src="../toc-532d5d21.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -193,28 +193,65 @@
 <li>validates the input directories</li>
 <li>derives unique archive root names for the provided inputs</li>
 <li>excludes the output file and detached header path from being re-packed</li>
-<li>creates a temporary zip artifact</li>
+<li>materializes the directory and file entry list in memory</li>
+<li>checks the shared <code>ArchiveLimits</code> structural policy</li>
+<li>creates an ordinary plaintext temporary zip artifact</li>
 <li>writes directory and file entries into the archive</li>
 <li>encrypts the temporary archive using the same V1 stream encryption path used for normal files</li>
+<li>commits the final encrypted output and detached header through staged storage transaction semantics</li>
 <li>drops the temporary archive</li>
 </ol>
+<p>The temporary zip artifact contains plaintext source data while it exists. It is
+an ordinary temporary file used as workflow scratch space. Dexios relies on
+normal drop/delete cleanup for that artifact and does not treat it as secure
+erase, sanitization, local temp-storage isolation, or forensic recovery
+resistance.</p>
+<p>The archive is always written with the Dexios-owned archive policy. Current pack
+output uses Zstd compression for offline at-rest archival use. The public
+archive contract intentionally stays small: archive path plus file/directory
+distinction. Dexios does not currently guarantee preservation of permissions,
+timestamps, ZIP extra fields, symlinks, extended attributes, or other filesystem
+metadata as stable compatibility behavior.</p>
+<h2 id="structural-limits"><a class="header" href="#structural-limits">Structural Limits</a></h2>
+<p>Pack and unpack share the same <code>ArchiveLimits</code> defaults:</p>
+<ul>
+<li>maximum archive entries: <code>100000</code></li>
+<li>maximum normalized archive path bytes: <code>4096</code></li>
+<li>maximum normalized archive path depth: <code>64</code></li>
+</ul>
+<p>Pack checks these limits while materializing source entries and before ZIP
+writing begins. Unpack checks entry count before metadata scanning, and checks
+each normalized archive path before prompts, staging, or writes.</p>
+<p>These are structural limits, not storage-capacity guarantees. Large directory
+trees and archives still require enough memory, temp storage, and final output
+space for the materialized entry lists, plaintext temporary ZIP, encrypted
+output, and extracted files. Dexios does not perform a robust OS capacity proof
+before starting the workflow.</p>
+<p>The current model is bounded by indexing: pack materializes entries before
+writing, and unpack pre-scans ZIP metadata, collision sets, and selected targets
+before transaction commit. It is not a streaming archive redesign.</p>
 <p>Files are currently copied into the zip archive in streaming chunks. The code does not attempt to preserve full original filesystem metadata as a stable compatibility guarantee.</p>
 <h2 id="unpacking"><a class="header" href="#unpacking">Unpacking</a></h2>
 <p>The current unpack flow is stricter than the historical docs:</p>
 <ol>
 <li>decrypt the packed file into a temporary zip artifact</li>
 <li>normalize every archive path before writing anything to disk</li>
-<li>reject traversal attempts and duplicate output paths after normalization</li>
+<li>enforce the shared <code>ArchiveLimits</code> entry count, path byte, and path depth policy</li>
+<li>reject traversal attempts, unsafe ZIP names, duplicate normalized paths, and prefix collisions</li>
 <li>reject unsafe symlink-based output escapes through the storage layer</li>
-<li>create directories and files under the requested output root</li>
+<li>run overwrite prompts only after the structural validation pass succeeds</li>
+<li>revalidate selected file targets near staging</li>
+<li>stage selected extracted files under the requested output root</li>
+<li>commit the extracted files through storage transaction semantics</li>
 <li>clean up the temporary archive</li>
 </ol>
 <p>If the CLI is not run with <code>--force</code>, unpack may prompt before overwriting existing files.</p>
 <h2 id="security-notes"><a class="header" href="#security-notes">Security Notes</a></h2>
 <ul>
 <li>Packing hides original directory layout inside the encrypted payload, but the outer ciphertext still leaks overall file size.</li>
-<li>Unpack should still be treated as a risky operation on untrusted input, even though the current implementation has explicit path-safety checks.</li>
+<li>Unpack should still be treated as a risky operation on untrusted input, even though the current implementation has explicit path identity and path-safety checks.</li>
 <li>The temporary decrypted archive is plaintext while it exists.</li>
+<li>Byte and storage needs are real operating assumptions. The structural limits bound archive metadata shape; they do not prove that the host has enough free memory or disk space.</li>
 </ul>
 
                     </main>

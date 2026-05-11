@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-a1a458d6.js";
+            window.path_to_searchindex_js = "searchindex-f4765586.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-73b73724.js"></script>
+        <script src="toc-532d5d21.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -185,10 +185,17 @@
 <li><code>dexios-domain</code>: the higher-level workflows used by the CLI</li>
 <li><code>dexios-gui</code>: an experimental GUI crate</li>
 </ul>
-<p>For normal encryption, Dexios now writes V1 headers and uses one suite: <code>XChaCha20-Poly1305</code> with LE31 stream encryption. The default password hashing algorithm for new files is <code>BLAKE3-Balloon</code>; <code>argon2id</code> can be selected with <code>--argon</code>.</p>
+<p>For normal encryption, Dexios writes V1 headers and uses one suite:
+<code>XChaCha20-Poly1305</code> with LE31 stream encryption. The normal KDF for new V1
+writes is BLAKE3-Balloon only. Historical unsupported Argon2id keyslot tags remain
+recognized as unsupported historical metadata so old headers can fail with a
+specific diagnosis.</p>
 <h2 id="security-notices"><a class="header" href="#security-notices">Security Notices</a></h2>
-<p>The RustCrypto <code>aes-gcm</code> and <code>chacha20poly1305</code> implementations used by Dexios are based on audited upstream crates. Dexios itself does not claim a full-project external audit.</p>
+<p>The RustCrypto <code>chacha20poly1305</code> implementation used by Dexios is based on audited upstream crates. Dexios itself does not claim a full-project external audit.</p>
 <p>Dexios uses authenticated encryption and authenticates header data through AEAD AAD. Integrity of encrypted payloads does not depend on the optional checksum output.</p>
+<p>For V1 payloads, the stream layer uses typed header-derived AAD. Decryption may
+write plaintext bytes before it has seen the final block; those bytes are
+uncommitted scratch until final authentication succeeds.</p>
 <p>The current product surface does not offer secure-erase behavior. Instead, selected workflows can delete their source inputs after successful completion.</p>
 <h2 id="the-defaults"><a class="header" href="#the-defaults">The Defaults</a></h2>
 <p>Running:</p>
@@ -197,9 +204,10 @@
 <p>uses the following defaults:</p>
 <ul>
 <li><code>XChaCha20-Poly1305</code></li>
-<li><code>BLAKE3-Balloon</code> password hashing</li>
+<li><code>BLAKE3-Balloon</code> password hashing with frozen Phase 3 parameters</li>
 <li>V1 headers</li>
 <li>stream encryption with 1 MiB blocks</li>
+<li>an authenticated final block, including an empty final marker for exact-block plaintext</li>
 <li>protected in-memory handling of secret material</li>
 <li>an embedded header unless <code>--header</code> is specified</li>
 </ul>
