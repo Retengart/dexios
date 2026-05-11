@@ -4,13 +4,15 @@
 //! This is known as "unpacking" within Dexios.
 
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::io::{Read, Seek, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
+use crate::archive::{ArchiveLimitError, ArchiveLimits};
 use crate::decrypt;
 use crate::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
@@ -52,6 +54,7 @@ pub enum Error {
     ResetCursorPosition,
     UnsafeOutputPath(PathBuf),
     DuplicateOutputPath(PathBuf),
+    ArchiveLimit(ArchiveLimitError),
     Storage(storage::Error),
     PathIdentity(IdentityError),
     Transaction(TransactionError),
@@ -76,6 +79,7 @@ impl std::fmt::Display for Error {
                     path.display()
                 )
             }
+            Error::ArchiveLimit(inner) => write!(f, "Archive limit error: {inner}"),
             Error::Storage(inner) => write!(f, "Storage error: {inner}"),
             Error::PathIdentity(inner) => write!(f, "Path identity error: {inner}"),
             Error::Transaction(inner) => write!(f, "Transaction error: {inner}"),
@@ -112,6 +116,54 @@ struct ExtractionEntity {
 enum ExtractionKind {
     Directory,
     File(ResolvedTarget),
+}
+
+struct ScannedEntry {
+    full_path: PathBuf,
+    archive_index: usize,
+    kind: ExtractionKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ArchiveEntryKind {
+    Directory,
+    File,
+}
+
+#[derive(Default)]
+struct ArchivePathTree {
+    root: ArchivePathNode,
+}
+
+#[derive(Default)]
+struct ArchivePathNode {
+    kind: Option<ArchiveEntryKind>,
+    children: BTreeMap<OsString, ArchivePathNode>,
+}
+
+impl ArchivePathTree {
+    fn insert(&mut self, path: &Path, kind: ArchiveEntryKind) -> Result<(), Error> {
+        let mut node = &mut self.root;
+
+        for component in path.components() {
+            let Component::Normal(part) = component else {
+                return Err(Error::UnsafeOutputPath(path.to_path_buf()));
+            };
+
+            if matches!(node.kind, Some(ArchiveEntryKind::File)) {
+                return Err(Error::DuplicateOutputPath(path.to_path_buf()));
+            }
+
+            node = node.children.entry(part.to_os_string()).or_default();
+        }
+
+        if node.kind.is_some() || (kind == ArchiveEntryKind::File && !node.children.is_empty()) {
+            return Err(Error::DuplicateOutputPath(path.to_path_buf()));
+        }
+
+        node.kind = Some(kind);
+        Ok(())
+    }
 }
 
 pub fn execute(
@@ -187,35 +239,38 @@ fn prepare_extraction_entities<R: Read + Seek>(
     let output_dir = stor
         .prepare_unpack_root(output_dir_path)
         .map_err(map_storage_path_error)?;
+    let limits = ArchiveLimits::default();
+    limits
+        .check_entry_count(archive.len())
+        .map_err(Error::ArchiveLimit)?;
     let mut identity_graph = PathIdentityGraph::new();
     identity_graph
         .add_unpack_root(&output_dir)
         .map_err(map_identity_error)?;
 
-    let mut entities = Vec::new();
-    let mut seen_paths = HashSet::new();
+    let mut scanned_entries = Vec::new();
+    let mut archive_paths = ArchivePathTree::default();
     for i in 0..archive.len() {
         let zip_file = archive.by_index(i).map_err(|_| Error::OpenArchive)?;
         let Some(path) = zip_file.enclosed_name() else {
-            continue;
+            return Err(Error::UnsafeOutputPath(PathBuf::from(zip_file.name())));
         };
         let path = normalize_archive_path(&path)?;
-        if !seen_paths.insert(path.clone()) {
-            return Err(Error::DuplicateOutputPath(path));
-        }
+        limits
+            .check_normalized_path(&path)
+            .map_err(Error::ArchiveLimit)?;
+        let archive_entry_kind = if zip_file.is_dir() {
+            ArchiveEntryKind::Directory
+        } else {
+            ArchiveEntryKind::File
+        };
+        archive_paths.insert(&path, archive_entry_kind)?;
 
         let full_path = stor
             .resolve_unpack_path(&output_dir, &path)
             .map_err(map_storage_path_error)?;
 
-        if let Some(on_zip_file) = on_zip_file {
-            let should_unpack = on_zip_file(full_path.clone()).map_err(Error::OnZipFile)?;
-            if !should_unpack {
-                continue;
-            }
-        }
-
-        let kind = if zip_file.is_dir() {
+        let kind = if archive_entry_kind == ArchiveEntryKind::Directory {
             ExtractionKind::Directory
         } else {
             let overwrite_policy = overwrite_policy_for_extracted_file(&full_path)?;
@@ -225,10 +280,26 @@ fn prepare_extraction_entities<R: Read + Seek>(
             ExtractionKind::File(target)
         };
 
-        entities.push(ExtractionEntity {
+        scanned_entries.push(ScannedEntry {
             full_path,
             archive_index: i,
             kind,
+        });
+    }
+
+    let mut entities = Vec::new();
+    for entry in scanned_entries {
+        if let Some(on_zip_file) = on_zip_file {
+            let should_unpack = on_zip_file(entry.full_path.clone()).map_err(Error::OnZipFile)?;
+            if !should_unpack {
+                continue;
+            }
+        }
+
+        entities.push(ExtractionEntity {
+            full_path: entry.full_path,
+            archive_index: entry.archive_index,
+            kind: entry.kind,
         });
     }
 

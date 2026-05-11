@@ -251,7 +251,10 @@ fn unpack_declined_safe_overwrite_is_skipped_after_validation() {
     .unwrap();
 
     assert_eq!(fs::read(&existing_file).unwrap(), b"original contents");
-    assert_eq!(fs::read_to_string(output_dir.join("new.txt")).unwrap(), "new contents");
+    assert_eq!(
+        fs::read_to_string(output_dir.join("new.txt")).unwrap(),
+        "new contents"
+    );
     assert_eq!(receipt.artifacts.len(), 1);
 }
 
