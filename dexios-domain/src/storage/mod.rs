@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 mod entry;
 mod fs;
+pub mod identity;
 #[cfg(test)]
 mod memory;
 mod temp;

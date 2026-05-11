@@ -30,3 +30,4 @@ blake3.workspace = true
 walkdir.workspace = true
 zip.workspace = true
 tempfile = "3"
+same-file = "1.0.6"

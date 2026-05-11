@@ -334,6 +334,7 @@ dependencies = [
  "blake3",
  "dexios-core",
  "rand",
+ "same-file",
  "tempfile",
  "walkdir",
  "zip",
