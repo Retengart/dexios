@@ -76,6 +76,15 @@ fn write_zip_with_entries(path: &Path, entries: &[(&str, &[u8])]) {
     zip_writer.finish().unwrap();
 }
 
+fn archive_path_with_depth(depth: usize) -> String {
+    let mut path = PathBuf::new();
+    for index in 0..depth {
+        path.push(format!("dir{index}"));
+    }
+    path.push("file.txt");
+    path.to_string_lossy().into_owned()
+}
+
 fn encrypt_archive(input_path: &Path, output_path: &Path) {
     let intent = encrypt::EncryptIntent::new(
         input_path,
@@ -244,6 +253,26 @@ fn unpack_declined_safe_overwrite_is_skipped_after_validation() {
     assert_eq!(fs::read(&existing_file).unwrap(), b"original contents");
     assert_eq!(fs::read_to_string(output_dir.join("new.txt")).unwrap(), "new contents");
     assert_eq!(receipt.artifacts.len(), 1);
+}
+
+#[test]
+fn unpack_rejects_archive_path_deeper_than_structural_limit() {
+    let test_dir = TestDir::new("unpack-depth-limit");
+    let plain_zip = test_dir.path().join("plain.zip");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+    let too_deep_path = archive_path_with_depth(65);
+
+    write_zip_with_entries(&plain_zip, &[(too_deep_path.as_str(), b"too deep")]);
+    encrypt_archive(&plain_zip, &encrypted_archive);
+
+    let result = unpack_archive(&encrypted_archive, &output_dir, None);
+
+    assert!(
+        result.is_err(),
+        "expected archive depth limit failure, got {result:?}"
+    );
+    assert!(!output_dir.join("dir0").exists());
 }
 
 #[cfg(unix)]
