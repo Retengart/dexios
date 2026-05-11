@@ -159,3 +159,29 @@ fn key_change_errors_classify_mutation_failures_without_display_strings() {
         WorkflowErrorClass::KdfFailure
     );
 }
+
+#[test]
+fn key_delete_errors_classify_mutation_failures_without_display_strings() {
+    let unsafe_path = key::Error::PathIdentity(IdentityError::UnsafePath(path("..")));
+    assert_eq!(unsafe_path.workflow_class(), WorkflowErrorClass::UnsafePath);
+
+    let transaction_commit = key::Error::Transaction(TransactionError::Persist {
+        path: path("target"),
+    });
+    assert_eq!(
+        transaction_commit.workflow_class(),
+        WorkflowErrorClass::TransactionCommitFailure
+    );
+
+    let final_slot = key::Error::CannotRemoveFinalV1Keyslot;
+    assert_eq!(
+        final_slot.workflow_class(),
+        WorkflowErrorClass::UnsupportedWorkflow
+    );
+
+    let wrong_old_key = key::Error::IncorrectKey;
+    assert_eq!(
+        wrong_old_key.workflow_class(),
+        WorkflowErrorClass::IncorrectKey
+    );
+}

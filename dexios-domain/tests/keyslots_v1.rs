@@ -14,6 +14,7 @@ const DOMAIN_KEY_SOURCE: &str = include_str!("../src/key.rs");
 const DOMAIN_ENCRYPT_SOURCE: &str = include_str!("../src/encrypt.rs");
 const DOMAIN_KEY_ADD_SOURCE: &str = include_str!("../src/key/add.rs");
 const DOMAIN_KEY_CHANGE_SOURCE: &str = include_str!("../src/key/change.rs");
+const DOMAIN_KEY_DELETE_SOURCE: &str = include_str!("../src/key/delete.rs");
 
 fn encrypted_v1_fixture() -> RefCell<Cursor<Vec<u8>>> {
     let dir = tempfile::tempdir().unwrap();
@@ -53,6 +54,18 @@ fn encrypted_v1_file(name: &str) -> (tempfile::TempDir, PathBuf) {
     encrypt::execute(intent).expect("encrypt fixture");
 
     (dir, output_path)
+}
+
+fn two_keyslot_v1_file(name: &str, second_key: &[u8]) -> (tempfile::TempDir, PathBuf) {
+    let (dir, encrypted_path) = encrypted_v1_file(name);
+    let encrypted = RefCell::new(Cursor::new(
+        fs::read(&encrypted_path).expect("read encrypted fixture"),
+    ));
+    append_synthetic_second_keyslot(&encrypted, b"old-pass", second_key);
+    fs::write(&encrypted_path, encrypted.into_inner().into_inner())
+        .expect("write two-keyslot fixture");
+
+    (dir, encrypted_path)
 }
 
 fn mark_keyslot_unsupported_argon2id(encrypted: &RefCell<Cursor<Vec<u8>>>, index: usize) {
@@ -639,16 +652,11 @@ fn key_change_source_does_not_expose_public_raw_request_state() {
 
 #[test]
 fn key_delete_failure_preserves_original_header() {
-    let encrypted = encrypted_v1_fixture();
-    let temp_dir = tempfile::tempdir().expect("temp dir");
-    let encrypted_path = temp_dir.path().join("plain.enc");
-    fs::write(&encrypted_path, encrypted.borrow().get_ref()).expect("write encrypted fixture");
+    let (_dir, encrypted_path) = encrypted_v1_file("delete-final-preserved");
     let original = fs::read(&encrypted_path).expect("read original fixture");
 
-    let result = key::delete::execute_transactional(key::delete::TransactionalRequest {
-        target_path: &encrypted_path,
-        raw_key_old: Protected::new(b"old-pass".to_vec()),
-    });
+    let intent = key::delete::DeleteIntent::new(&encrypted_path).expect("prepare delete intent");
+    let result = key::delete::execute(intent, Protected::new(b"old-pass".to_vec()));
 
     assert!(matches!(
         result,
@@ -657,6 +665,110 @@ fn key_delete_failure_preserves_original_header() {
     let after = fs::read(&encrypted_path).expect("read preserved fixture");
     assert_eq!(&after[..HEADER_LEN], &original[..HEADER_LEN]);
     assert_eq!(after, original);
+}
+
+#[test]
+fn key_delete_removes_only_old_key_proven_slot_and_preserves_payload() {
+    let (_dir, encrypted_path) = two_keyslot_v1_file("delete-proven-slot", b"new-pass");
+    let original = fs::read(&encrypted_path).expect("read original fixture");
+    let original_header = read_v1_header_from_path(&encrypted_path);
+    let original_keyslots = original_header.keyslots_collection().clone();
+    let (_master_key, proven_index) = key::decrypt_v1_master_key_with_index(
+        &original_keyslots,
+        Protected::new(b"old-pass".to_vec()),
+    )
+    .expect("old key must prove a slot before delete");
+
+    let intent = key::delete::DeleteIntent::new(&encrypted_path).expect("prepare delete intent");
+    key::delete::execute(intent, Protected::new(b"old-pass".to_vec()))
+        .expect("delete old-key-proven slot");
+
+    let changed = fs::read(&encrypted_path).expect("read changed fixture");
+    assert_eq!(
+        &changed[HEADER_LEN..],
+        &original[HEADER_LEN..],
+        "key delete must preserve payload bytes exactly"
+    );
+    assert!(matches!(
+        verify_file(&encrypted_path, b"old-pass"),
+        Err(key::Error::IncorrectKey)
+    ));
+    verify_file(&encrypted_path, b"new-pass").expect("remaining key should verify");
+    let plaintext = decrypt_file(&encrypted_path, b"new-pass").expect("decrypt with remaining key");
+    assert_eq!(plaintext, b"Hello world");
+
+    let changed_header = read_v1_header_from_path(&encrypted_path);
+    assert_eq!(
+        changed_header.payload_nonce(),
+        original_header.payload_nonce(),
+        "key delete must preserve payload nonce"
+    );
+    let serialized = changed_header
+        .serialize()
+        .expect("serialize changed header");
+    assert_eq!(serialized.len(), HEADER_LEN);
+    let reparsed =
+        V1Header::deserialize(&mut Cursor::new(serialized)).expect("reparse changed header");
+    assert_eq!(reparsed.keyslots().len(), 1);
+    assert_eq!(
+        proven_index.get(),
+        0,
+        "test fixture must prove old key selected the removed slot"
+    );
+}
+
+#[test]
+fn key_delete_wrong_old_key_preserves_original_bytes() {
+    let (_dir, encrypted_path) = two_keyslot_v1_file("delete-wrong-key", b"new-pass");
+    let original = fs::read(&encrypted_path).expect("read original fixture");
+
+    let intent = key::delete::DeleteIntent::new(&encrypted_path).expect("prepare delete intent");
+    let result = key::delete::execute(intent, Protected::new(b"wrong-pass".to_vec()));
+
+    assert!(matches!(result, Err(key::Error::IncorrectKey)));
+    assert_eq!(
+        fs::read(&encrypted_path).expect("read after wrong-key delete"),
+        original,
+        "wrong old key must not mutate header or payload bytes"
+    );
+}
+
+#[test]
+fn key_delete_unsupported_kdf_preflight_preserves_original_bytes() {
+    let (_dir, encrypted_path) = encrypted_v1_file("delete-unsupported-kdf");
+    mark_keyslot_unsupported_argon2id_file(&encrypted_path, 0);
+    let original = fs::read(&encrypted_path).expect("read unsupported KDF fixture");
+
+    let result = key::delete::DeleteIntent::new(&encrypted_path);
+
+    assert!(matches!(
+        result,
+        Err(key::Error::UnsupportedKdf([0xDF, 0x02]))
+    ));
+    assert_eq!(
+        fs::read(&encrypted_path).expect("read after unsupported delete"),
+        original,
+        "unsupported KDF preflight must not mutate header or payload bytes"
+    );
+}
+
+#[test]
+fn key_delete_source_does_not_expose_public_raw_request_state_or_remaining_key_prompt() {
+    let forbidden = [
+        "pub struct Request",
+        "pub handle:",
+        "RefCell",
+        "pub raw_key_old",
+        "remaining_key",
+        "remaining verification",
+    ];
+
+    for pattern in forbidden {
+        assert!(
+            !DOMAIN_KEY_DELETE_SOURCE.contains(pattern),
+            "`dexios-domain/src/key/delete.rs` must not expose `{pattern}` in public delete contracts"
+        );
+    }
 }
 
 #[test]
@@ -684,10 +796,8 @@ fn can_change_and_reject_final_delete_v1_keyslots() {
 
     verify_file(&encrypted_path, b"new-pass").expect("verify changed key");
 
-    let delete = key::delete::execute_transactional(key::delete::TransactionalRequest {
-        target_path: &encrypted_path,
-        raw_key_old: Protected::new(b"new-pass".to_vec()),
-    });
+    let intent = key::delete::DeleteIntent::new(&encrypted_path).expect("prepare delete intent");
+    let delete = key::delete::execute(intent, Protected::new(b"new-pass".to_vec()));
     assert!(matches!(
         delete,
         Err(key::Error::CannotRemoveFinalV1Keyslot)
