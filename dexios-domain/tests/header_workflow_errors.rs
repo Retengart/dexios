@@ -104,10 +104,16 @@ fn header_operation_error_classes_are_typed_not_display_derived() {
         unsupported.workflow_class(),
         WorkflowErrorClass::UnsupportedFormat
     );
-    assert_eq!(malformed.workflow_class(), WorkflowErrorClass::MalformedFormat);
+    assert_eq!(
+        malformed.workflow_class(),
+        WorkflowErrorClass::MalformedFormat
+    );
     assert_eq!(unsafe_path.workflow_class(), WorkflowErrorClass::UnsafePath);
     assert_eq!(identity_io.workflow_class(), WorkflowErrorClass::IoFailure);
-    assert_eq!(transaction_io.workflow_class(), WorkflowErrorClass::IoFailure);
+    assert_eq!(
+        transaction_io.workflow_class(),
+        WorkflowErrorClass::IoFailure
+    );
     assert_eq!(
         transaction_commit.workflow_class(),
         WorkflowErrorClass::TransactionCommitFailure
@@ -116,7 +122,10 @@ fn header_operation_error_classes_are_typed_not_display_derived() {
         partial_commit.workflow_class(),
         WorkflowErrorClass::TransactionCommitFailure
     );
-    assert_eq!(header::Error::ReadIo.workflow_class(), WorkflowErrorClass::IoFailure);
+    assert_eq!(
+        header::Error::ReadIo.workflow_class(),
+        WorkflowErrorClass::IoFailure
+    );
     assert_eq!(
         header::Error::WriteIo.workflow_class(),
         WorkflowErrorClass::IoFailure
