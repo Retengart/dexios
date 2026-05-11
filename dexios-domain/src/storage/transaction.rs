@@ -91,3 +91,57 @@ impl StagedOutputTransaction {
         })
     }
 }
+
+pub struct LinkedOutputTransaction {
+    staged: Vec<NamedStagedOutput>,
+}
+
+impl LinkedOutputTransaction {
+    #[must_use]
+    pub fn new() -> Self {
+        Self { staged: Vec::new() }
+    }
+
+    pub fn stage(&mut self, target: ResolvedTarget) -> Result<usize, TransactionError> {
+        let path = target.target_path().to_path_buf();
+        let staged =
+            NamedStagedOutput::new(target).map_err(|_| TransactionError::Write { path })?;
+        self.staged.push(staged);
+        Ok(self.staged.len() - 1)
+    }
+
+    pub fn staged_output_mut(&mut self, index: usize) -> Option<&mut NamedStagedOutput> {
+        self.staged.get_mut(index)
+    }
+
+    pub fn commit_all(mut self) -> Result<CommitReceipt, TransactionError> {
+        for staged in &mut self.staged {
+            staged.prepare_for_persist()?;
+        }
+
+        let mut receipt = CommitReceipt {
+            artifacts: Vec::with_capacity(self.staged.len()),
+        };
+        for staged in self.staged {
+            let failed = CommittedArtifact {
+                role: staged.target().role(),
+                path: staged.target().target_path().to_path_buf(),
+            };
+            match staged.persist_prepared() {
+                Ok(artifact) => receipt.artifacts.push(artifact),
+                Err(TransactionError::Persist { .. }) if !receipt.artifacts.is_empty() => {
+                    return Err(TransactionError::PartialCommit { receipt, failed });
+                }
+                Err(error) => return Err(error),
+            }
+        }
+
+        Ok(receipt)
+    }
+}
+
+impl Default for LinkedOutputTransaction {
+    fn default() -> Self {
+        Self::new()
+    }
+}

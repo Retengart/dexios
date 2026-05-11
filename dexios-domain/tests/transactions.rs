@@ -6,7 +6,9 @@ use dexios_domain::storage::identity::{
     OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
 };
 use dexios_domain::storage::test_support::{FailureHooks, FailurePoint};
-use dexios_domain::storage::transaction::{StagedOutputTransaction, TransactionError};
+use dexios_domain::storage::transaction::{
+    LinkedOutputTransaction, StagedOutputTransaction, TransactionError,
+};
 
 const EXISTING_OUTPUT: &[u8] = b"existing output";
 const CANDIDATE_OUTPUT: &[u8] = b"candidate output";
@@ -75,10 +77,16 @@ fn failure_hooks_select_transaction_failure_points() {
 }
 
 fn resolved_output(path: &Path, overwrite_policy: OverwritePolicy) -> ResolvedTarget {
+    resolved_artifact(path, PathRole::Output, overwrite_policy)
+}
+
+fn resolved_artifact(
+    path: &Path,
+    role: PathRole,
+    overwrite_policy: OverwritePolicy,
+) -> ResolvedTarget {
     let mut graph = PathIdentityGraph::new();
-    graph
-        .add_output(path, PathRole::Output, overwrite_policy)
-        .unwrap()
+    graph.add_output(path, role, overwrite_policy).unwrap()
 }
 
 fn write_existing_target(path: &Path) {
@@ -193,4 +201,102 @@ fn staged_output_create_new_uses_no_clobber_persist() {
 
     assert!(matches!(error, TransactionError::Persist { .. }));
     assert_existing_target_preserved(&target_path);
+}
+
+#[test]
+fn linked_transaction_commits_output_and_header_together() {
+    let test_dir = TestDir::new("linked-transaction-commit");
+    let output_path = test_dir.path().join("output.dexios");
+    let header_path = test_dir.path().join("output.dexios.hdr");
+
+    let mut transaction = LinkedOutputTransaction::new();
+    let output = transaction
+        .stage(resolved_artifact(
+            &output_path,
+            PathRole::Output,
+            OverwritePolicy::CreateNew,
+        ))
+        .unwrap();
+    let header = transaction
+        .stage(resolved_artifact(
+            &header_path,
+            PathRole::DetachedHeader,
+            OverwritePolicy::CreateNew,
+        ))
+        .unwrap();
+    transaction
+        .staged_output_mut(output)
+        .unwrap()
+        .write_all(b"ciphertext")
+        .unwrap();
+    transaction
+        .staged_output_mut(header)
+        .unwrap()
+        .write_all(b"detached header")
+        .unwrap();
+
+    let receipt = transaction.commit_all().unwrap();
+
+    assert_eq!(fs::read(&output_path).unwrap(), b"ciphertext");
+    assert_eq!(fs::read(&header_path).unwrap(), b"detached header");
+    assert_eq!(receipt.artifacts.len(), 2);
+    assert_eq!(receipt.artifacts[0].role, PathRole::Output);
+    assert_eq!(receipt.artifacts[0].path, output_path);
+    assert_eq!(receipt.artifacts[1].role, PathRole::DetachedHeader);
+    assert_eq!(receipt.artifacts[1].path, header_path);
+}
+
+#[test]
+fn linked_transaction_blocks_cleanup_after_partial_commit() {
+    let test_dir = TestDir::new("linked-transaction-partial");
+    let output_path = test_dir.path().join("output.dexios");
+    let header_path = test_dir.path().join("output.dexios.hdr");
+    fs::write(&header_path, b"existing header").unwrap();
+
+    let mut transaction = LinkedOutputTransaction::new();
+    let output = transaction
+        .stage(resolved_artifact(
+            &output_path,
+            PathRole::Output,
+            OverwritePolicy::CreateNew,
+        ))
+        .unwrap();
+    let header = transaction
+        .stage(resolved_artifact(
+            &header_path,
+            PathRole::DetachedHeader,
+            OverwritePolicy::CreateNew,
+        ))
+        .unwrap();
+    transaction
+        .staged_output_mut(output)
+        .unwrap()
+        .write_all(b"ciphertext")
+        .unwrap();
+    transaction
+        .staged_output_mut(header)
+        .unwrap()
+        .write_all(b"new header")
+        .unwrap();
+
+    let error = transaction.commit_all().unwrap_err();
+
+    match error {
+        TransactionError::PartialCommit { receipt, failed } => {
+            assert_eq!(receipt.artifacts.len(), 1);
+            assert_eq!(receipt.artifacts[0].role, PathRole::Output);
+            assert_eq!(receipt.artifacts[0].path, output_path);
+            assert_eq!(failed.role, PathRole::DetachedHeader);
+            assert_eq!(failed.path, header_path);
+        }
+        other => panic!("expected partial commit error, got {other:?}"),
+    }
+    assert_eq!(
+        fs::read(test_dir.path().join("output.dexios")).unwrap(),
+        b"ciphertext"
+    );
+    assert_eq!(
+        fs::read(test_dir.path().join("output.dexios.hdr")).unwrap(),
+        b"existing header"
+    );
 }
