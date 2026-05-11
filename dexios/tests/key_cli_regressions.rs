@@ -10,6 +10,7 @@ use core::protected::Protected;
 use domain::encrypt;
 
 const PASSWORD: &str = "old-pass";
+const KEY_SUBCOMMAND_SOURCE: &str = include_str!("../src/subcommands/key.rs");
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 
 struct TestDir {
@@ -95,6 +96,12 @@ fn encrypt_fixture(dir: &Path, name: &str) -> PathBuf {
     encrypt::execute(intent).expect("encrypt fixture");
 
     output_path
+}
+
+fn write_keyfile(dir: &Path, name: &str, key: &str) -> PathBuf {
+    let path = dir.join(name);
+    fs::write(&path, key.as_bytes()).unwrap();
+    path
 }
 
 fn mark_keyslot_unsupported_argon2id(path: &Path, index: usize) {
@@ -237,5 +244,244 @@ fn key_verify_maps_success_and_incorrect_key_after_read_only_preparation() {
         stderr(&wrong).contains("Incorrect key"),
         "incorrect key did not use typed key mapping: {}",
         stderr(&wrong)
+    );
+}
+
+#[test]
+fn key_change_rejects_preflight_errors_before_prompting_for_secrets() {
+    let test_dir = TestDir::new("change-preflight-errors");
+
+    let malformed = test_dir.path().join("malformed.enc");
+    write_malformed_v1_fixture(&malformed);
+    let malformed_output = run_cli(
+        test_dir.path(),
+        &["key", "change", malformed.to_str().unwrap()],
+        None,
+    );
+    assert!(!malformed_output.status.success());
+    assert!(
+        stderr(&malformed_output).contains("Malformed Dexios V1 header"),
+        "malformed change did not use typed mapping: {}",
+        stderr(&malformed_output)
+    );
+    assert_no_prompt(&malformed_output);
+
+    let missing = test_dir.path().join("missing.enc");
+    let missing_output = run_cli(
+        test_dir.path(),
+        &["key", "change", missing.to_str().unwrap()],
+        None,
+    );
+    assert!(!missing_output.status.success());
+    assert!(
+        stderr(&missing_output).contains("I/O failure while reading key workflow target"),
+        "missing change target did not use typed key mapping: {}",
+        stderr(&missing_output)
+    );
+    assert_no_prompt(&missing_output);
+
+    let unsupported_kdf = encrypt_fixture(test_dir.path(), "change-unsupported-kdf");
+    mark_keyslot_unsupported_argon2id(&unsupported_kdf, 0);
+    let unsupported_output = run_cli(
+        test_dir.path(),
+        &["key", "change", unsupported_kdf.to_str().unwrap()],
+        None,
+    );
+    assert!(!unsupported_output.status.success());
+    assert!(
+        stderr(&unsupported_output).contains("Unsupported keyslot KDF tag: [DF, 02]"),
+        "unsupported KDF change did not use typed mapping: {}",
+        stderr(&unsupported_output)
+    );
+    assert_no_prompt(&unsupported_output);
+}
+
+#[test]
+fn key_change_wrong_old_key_does_not_read_new_key_source() {
+    let test_dir = TestDir::new("change-wrong-old");
+    let encrypted = encrypt_fixture(test_dir.path(), "plain");
+    let original = fs::read(&encrypted).unwrap();
+    let old_keyfile = write_keyfile(test_dir.path(), "wrong-old.key", "wrong-pass");
+    let missing_new_keyfile = test_dir.path().join("missing-new.key");
+
+    let output = run_cli(
+        test_dir.path(),
+        &[
+            "key",
+            "change",
+            "--keyfile-old",
+            old_keyfile.to_str().unwrap(),
+            "--keyfile-new",
+            missing_new_keyfile.to_str().unwrap(),
+            encrypted.to_str().unwrap(),
+        ],
+        None,
+    );
+
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("Incorrect key"),
+        "wrong old key did not use typed key mapping: {}",
+        stderr(&output)
+    );
+    assert!(
+        !stderr(&output).contains("Unable to read file"),
+        "new key source was read before old-key verification: {}",
+        stderr(&output)
+    );
+    assert_eq!(fs::read(&encrypted).unwrap(), original);
+    assert_no_prompt(&output);
+}
+
+#[test]
+fn key_change_reads_new_key_after_old_key_verification_succeeds() {
+    let test_dir = TestDir::new("change-valid");
+    let encrypted = encrypt_fixture(test_dir.path(), "plain");
+    let old_keyfile = write_keyfile(test_dir.path(), "old.key", PASSWORD);
+    let new_keyfile = write_keyfile(test_dir.path(), "new.key", "new-pass");
+
+    let output = run_cli(
+        test_dir.path(),
+        &[
+            "key",
+            "change",
+            "--keyfile-old",
+            old_keyfile.to_str().unwrap(),
+            "--keyfile-new",
+            new_keyfile.to_str().unwrap(),
+            encrypted.to_str().unwrap(),
+        ],
+        None,
+    );
+
+    assert!(
+        output.status.success(),
+        "key change failed with correct old/new keyfiles: stdout={}\nstderr={}",
+        stdout(&output),
+        stderr(&output)
+    );
+
+    let new_verify = run_cli(
+        test_dir.path(),
+        &["key", "verify", encrypted.to_str().unwrap()],
+        Some("new-pass"),
+    );
+    assert!(
+        new_verify.status.success(),
+        "changed file did not verify with new key: stdout={}\nstderr={}",
+        stdout(&new_verify),
+        stderr(&new_verify)
+    );
+
+    let old_verify = run_cli(
+        test_dir.path(),
+        &["key", "verify", encrypted.to_str().unwrap()],
+        Some(PASSWORD),
+    );
+    assert!(!old_verify.status.success());
+    assert!(stderr(&old_verify).contains("Incorrect key"));
+}
+
+#[test]
+fn key_delete_maps_failures_without_remaining_key_collection() {
+    let test_dir = TestDir::new("delete-failures");
+
+    let malformed = test_dir.path().join("malformed.enc");
+    write_malformed_v1_fixture(&malformed);
+    let malformed_output = run_cli(
+        test_dir.path(),
+        &["key", "del", malformed.to_str().unwrap()],
+        None,
+    );
+    assert!(!malformed_output.status.success());
+    assert!(stderr(&malformed_output).contains("Malformed Dexios V1 header"));
+    assert_no_prompt(&malformed_output);
+
+    let missing = test_dir.path().join("missing.enc");
+    let missing_output = run_cli(
+        test_dir.path(),
+        &["key", "del", missing.to_str().unwrap()],
+        None,
+    );
+    assert!(!missing_output.status.success());
+    assert!(
+        stderr(&missing_output).contains("I/O failure while reading key workflow target"),
+        "missing delete target did not use typed key mapping: {}",
+        stderr(&missing_output)
+    );
+    assert_no_prompt(&missing_output);
+
+    let unsupported_kdf = encrypt_fixture(test_dir.path(), "delete-unsupported-kdf");
+    mark_keyslot_unsupported_argon2id(&unsupported_kdf, 0);
+    let unsupported_output = run_cli(
+        test_dir.path(),
+        &["key", "del", unsupported_kdf.to_str().unwrap()],
+        None,
+    );
+    assert!(!unsupported_output.status.success());
+    assert!(stderr(&unsupported_output).contains("Unsupported keyslot KDF tag: [DF, 02]"));
+    assert_no_prompt(&unsupported_output);
+
+    let encrypted = encrypt_fixture(test_dir.path(), "delete-final");
+    let old_keyfile = write_keyfile(test_dir.path(), "old.key", PASSWORD);
+    let final_slot_output = run_cli(
+        test_dir.path(),
+        &[
+            "key",
+            "del",
+            "--keyfile",
+            old_keyfile.to_str().unwrap(),
+            encrypted.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert!(!final_slot_output.status.success());
+    assert!(stderr(&final_slot_output).contains("Cannot remove the final V1 keyslot"));
+    assert!(
+        !stderr(&final_slot_output).contains("remaining"),
+        "delete must not ask for a remaining verification key: {}",
+        stderr(&final_slot_output)
+    );
+
+    let wrong_keyfile = write_keyfile(test_dir.path(), "wrong.key", "wrong-pass");
+    let wrong_output = run_cli(
+        test_dir.path(),
+        &[
+            "key",
+            "del",
+            "--keyfile",
+            wrong_keyfile.to_str().unwrap(),
+            encrypted.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert!(!wrong_output.status.success());
+    assert!(stderr(&wrong_output).contains("Incorrect key"));
+}
+
+#[test]
+fn key_mutation_cli_source_orders_secrets_through_domain_intents() {
+    let old_key_secret = KEY_SUBCOMMAND_SOURCE
+        .find("params.key_old.get_secret")
+        .expect("change should still read the old key");
+    let old_key_proof = KEY_SUBCOMMAND_SOURCE
+        .find("verify_old_key")
+        .expect("change should verify the old key before reading the new key");
+    let new_key_secret = KEY_SUBCOMMAND_SOURCE
+        .find("params.key_new.get_secret")
+        .expect("change should still read the new key after old proof");
+
+    assert!(
+        old_key_secret < old_key_proof && old_key_proof < new_key_secret,
+        "key change must read old key, verify it in domain, then read the new key"
+    );
+    assert!(
+        !KEY_SUBCOMMAND_SOURCE.contains("execute_transactional"),
+        "CLI key mutation adapters must not call removed raw transactional request paths"
+    );
+    assert!(
+        !KEY_SUBCOMMAND_SOURCE.contains("remaining verification")
+            && !KEY_SUBCOMMAND_SOURCE.contains("remaining_key"),
+        "CLI key delete must not collect a remaining verification key"
     );
 }
