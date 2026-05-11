@@ -86,16 +86,178 @@ fn cli_adapter_sources() -> Vec<Source<'static>> {
     ]
 }
 
-fn assert_no_public_api_bypasses(_sources: &[Source<'_>]) -> Result<(), String> {
-    Ok(())
+fn assert_no_public_api_bypasses(sources: &[Source<'_>]) -> Result<(), String> {
+    collect_violations(sources, public_api_bypass_violations)
 }
 
-fn assert_no_cli_raw_request_constructors(_sources: &[Source<'_>]) -> Result<(), String> {
-    Ok(())
+fn assert_no_cli_raw_request_constructors(sources: &[Source<'_>]) -> Result<(), String> {
+    collect_violations(sources, cli_raw_request_constructor_violations)
 }
 
-fn assert_no_formatted_error_control_flow(_sources: &[Source<'_>]) -> Result<(), String> {
-    Ok(())
+fn assert_no_formatted_error_control_flow(sources: &[Source<'_>]) -> Result<(), String> {
+    collect_violations(sources, formatted_error_control_flow_violations)
+}
+
+fn collect_violations(
+    sources: &[Source<'_>],
+    scan: fn(Source<'_>) -> Vec<String>,
+) -> Result<(), String> {
+    let violations: Vec<_> = sources.iter().copied().flat_map(scan).collect();
+
+    if violations.is_empty() {
+        Ok(())
+    } else {
+        Err(violations.join("\n"))
+    }
+}
+
+fn public_api_bypass_violations(source: Source<'_>) -> Vec<String> {
+    let mut violations = Vec::new();
+    let lines: Vec<_> = source.text.lines().collect();
+
+    for (index, line) in lines.iter().enumerate() {
+        let trimmed = line.trim_start();
+
+        for pattern in [
+            "pub struct Request",
+            "pub(crate) struct Request",
+            "pub struct TransactionalRequest",
+            "pub(crate) struct TransactionalRequest",
+        ] {
+            if trimmed.starts_with(pattern) {
+                violations.push(violation(source.path, index, pattern));
+            }
+        }
+
+        if starts_public_execute_signature(trimmed) {
+            let signature = signature_window(&lines, index);
+            if mentions_raw_request_type(&signature) {
+                violations.push(violation(
+                    source.path,
+                    index,
+                    "public execute signature accepts raw Request",
+                ));
+            }
+        }
+
+        if trimmed.starts_with("pub ") && trimmed.contains("RefCell") {
+            violations.push(violation(
+                source.path,
+                index,
+                "public workflow contract exposes RefCell",
+            ));
+        }
+    }
+
+    violations
+}
+
+fn starts_public_execute_signature(trimmed: &str) -> bool {
+    [
+        "pub fn execute(",
+        "pub(crate) fn execute(",
+        "pub fn execute_transactional(",
+        "pub(crate) fn execute_transactional(",
+    ]
+    .into_iter()
+    .any(|prefix| trimmed.starts_with(prefix))
+}
+
+fn signature_window(lines: &[&str], start: usize) -> String {
+    lines
+        .iter()
+        .skip(start)
+        .take(6)
+        .copied()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn mentions_raw_request_type(signature: &str) -> bool {
+    signature.contains(" Request")
+        || signature.contains("(Request")
+        || signature.contains("::Request")
+        || signature.contains(" TransactionalRequest")
+        || signature.contains("(TransactionalRequest")
+        || signature.contains("::TransactionalRequest")
+}
+
+fn cli_raw_request_constructor_violations(source: Source<'_>) -> Vec<String> {
+    let mut violations = Vec::new();
+    let workflow_modules = [
+        "domain::encrypt",
+        "domain::decrypt",
+        "domain::header::dump",
+        "domain::header::strip",
+        "domain::header::restore",
+        "domain::key::add",
+        "domain::key::change",
+        "domain::key::delete",
+        "domain::key::verify",
+    ];
+
+    for (index, line) in source.text.lines().enumerate() {
+        let compact = line.split_whitespace().collect::<String>();
+
+        for module in workflow_modules {
+            for request_type in ["Request", "TransactionalRequest"] {
+                if compact.contains(&format!("{module}::{request_type}"))
+                    || compact.contains(&format!("{module}::{{{request_type}"))
+                    || compact.contains(&format!("{module}::{{Request,TransactionalRequest}}"))
+                {
+                    violations.push(violation(
+                        source.path,
+                        index,
+                        "CLI constructs raw workflow request",
+                    ));
+                }
+            }
+        }
+
+        for grouped in [
+            "domain::header::{dump,strip,restore}::{Request,TransactionalRequest}",
+            "domain::key::{add,change,delete,verify}::{Request,TransactionalRequest}",
+        ] {
+            if compact.contains(grouped) {
+                violations.push(violation(
+                    source.path,
+                    index,
+                    "CLI imports grouped raw workflow requests",
+                ));
+            }
+        }
+    }
+
+    violations
+}
+
+fn formatted_error_control_flow_violations(source: Source<'_>) -> Vec<String> {
+    let mut violations = Vec::new();
+
+    for (index, line) in source.text.lines().enumerate() {
+        let compact = line.split_whitespace().collect::<String>();
+        let inspects_formatted_error = compact.contains(".to_string().contains(")
+            || (compact.contains("format!(") && compact.contains(").contains("))
+            || compact.contains(".contains(error.to_string")
+            || compact.contains(".contains(err.to_string")
+            || compact.contains(".contains(&error.to_string")
+            || compact.contains(".contains(&err.to_string")
+            || compact.contains(".contains(format!(");
+
+        if inspects_formatted_error {
+            violations.push(violation(
+                source.path,
+                index,
+                "workflow control flow inspects formatted error text",
+            ));
+        }
+    }
+
+    violations
+}
+
+fn violation(path: &str, zero_based_line: usize, detail: &str) -> String {
+    format!("{path}:{}: {detail}", zero_based_line + 1)
 }
 
 #[test]
