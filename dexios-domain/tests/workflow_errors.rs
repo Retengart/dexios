@@ -122,3 +122,40 @@ fn domain_errors_classify_format_kdf_authentication_and_key_failures() {
         WorkflowErrorClass::UnsupportedWorkflow
     );
 }
+
+#[test]
+fn key_change_errors_classify_mutation_failures_without_display_strings() {
+    let unsafe_path = key::Error::PathIdentity(IdentityError::UnsafePath(path("..")));
+    assert_eq!(unsafe_path.workflow_class(), WorkflowErrorClass::UnsafePath);
+
+    let identity_io = key::Error::PathIdentity(IdentityError::Io(io::ErrorKind::PermissionDenied));
+    assert_eq!(identity_io.workflow_class(), WorkflowErrorClass::IoFailure);
+
+    let transaction_write = key::Error::Transaction(TransactionError::Write {
+        path: path("target"),
+    });
+    assert_eq!(
+        transaction_write.workflow_class(),
+        WorkflowErrorClass::IoFailure
+    );
+
+    let transaction_commit = key::Error::Transaction(TransactionError::Persist {
+        path: path("target"),
+    });
+    assert_eq!(
+        transaction_commit.workflow_class(),
+        WorkflowErrorClass::TransactionCommitFailure
+    );
+
+    let wrong_old_key = key::Error::IncorrectKey;
+    assert_eq!(
+        wrong_old_key.workflow_class(),
+        WorkflowErrorClass::IncorrectKey
+    );
+
+    let unsupported_kdf = key::Error::UnsupportedKdf([0xDF, 0x02]);
+    assert_eq!(
+        unsupported_kdf.workflow_class(),
+        WorkflowErrorClass::KdfFailure
+    );
+}

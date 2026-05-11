@@ -1,13 +1,13 @@
 use core::header::common::{HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN, Salt};
-use core::header::v1::{KeyslotKdf, V1Header, V1Keyslot};
+use core::header::v1::{KeyslotKdf, V1Header, V1Keyslot, V1Keyslots};
 use core::header::{HeaderReadError, ParsedHeader, read_header};
 use core::kdf::Kdf;
 use core::primitives::{WrappingKey, gen_keyslot_nonce, gen_salt};
 use core::protected::Protected;
 use dexios_domain::{decrypt, encrypt, key};
 use std::cell::RefCell;
-use std::fs;
-use std::io::{Cursor, Seek};
+use std::fs::{self, File};
+use std::io::{Cursor, Seek, Write};
 use std::path::{Path, PathBuf};
 
 const DOMAIN_KEY_SOURCE: &str = include_str!("../src/key.rs");
@@ -79,6 +79,13 @@ fn write_malformed_v1_fixture(path: &Path) {
     bytes[4..6].copy_from_slice(&[0x00, 0x01]);
     bytes[7] = 1;
     fs::write(path, bytes).expect("write malformed V1 fixture");
+}
+
+fn read_v1_header_from_path(path: &Path) -> V1Header {
+    let mut file = File::open(path).expect("open encrypted fixture");
+    let parsed = read_header(&mut file).expect("read V1 header");
+    let ParsedHeader::V1(payload) = parsed;
+    payload.header().clone()
 }
 
 fn keyslot_kdfs(encrypted: &RefCell<Cursor<Vec<u8>>>) -> Vec<KeyslotKdf> {
@@ -288,6 +295,23 @@ fn decrypt_fixture(
     Ok(fs::read(output_path).expect("read decrypted fixture"))
 }
 
+fn decrypt_file(path: &Path, raw_key: &[u8]) -> Result<Vec<u8>, decrypt::Error> {
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let output_path = temp_dir.path().join("plain.out");
+
+    let intent = decrypt::DecryptIntent::new(
+        path,
+        &output_path,
+        dexios_domain::storage::identity::OverwritePolicy::CreateNew,
+        None::<&std::path::Path>,
+        Protected::new(raw_key.to_vec()),
+        None,
+    )?;
+    decrypt::execute(intent)?;
+
+    Ok(fs::read(output_path).expect("read decrypted fixture"))
+}
+
 fn verify_fixture(encrypted: &RefCell<Cursor<Vec<u8>>>, raw_key: &[u8]) -> Result<(), key::Error> {
     encrypted.borrow_mut().rewind().expect("rewind encrypted");
     let temp_dir = tempfile::tempdir().expect("temp dir");
@@ -295,6 +319,11 @@ fn verify_fixture(encrypted: &RefCell<Cursor<Vec<u8>>>, raw_key: &[u8]) -> Resul
     fs::write(&encrypted_path, encrypted.borrow().get_ref()).expect("write encrypted fixture");
 
     let intent = key::verify::VerifyIntent::new(&encrypted_path)?;
+    key::verify::execute(intent, Protected::new(raw_key.to_vec()))
+}
+
+fn verify_file(path: &Path, raw_key: &[u8]) -> Result<(), key::Error> {
+    let intent = key::verify::VerifyIntent::new(path)?;
     key::verify::execute(intent, Protected::new(raw_key.to_vec()))
 }
 
@@ -496,17 +525,114 @@ fn key_change_failure_preserves_original_header() {
     fs::write(&encrypted_path, encrypted.borrow().get_ref()).expect("write encrypted fixture");
     let original = fs::read(&encrypted_path).expect("read original fixture");
 
-    let result = key::change::execute_transactional(key::change::TransactionalRequest {
-        target_path: &encrypted_path,
-        raw_key_old: Protected::new(b"wrong-pass".to_vec()),
-        raw_key_new: Protected::new(b"new-pass".to_vec()),
-        kdf: Kdf::Blake3Balloon,
-    });
+    let intent = key::change::ChangeIntent::new(&encrypted_path).expect("prepare change intent");
+    let result = intent.verify_old_key(Protected::new(b"wrong-pass".to_vec()));
 
     assert!(matches!(result, Err(key::Error::IncorrectKey)));
     let after = fs::read(&encrypted_path).expect("read preserved fixture");
     assert_eq!(&after[..HEADER_LEN], &original[..HEADER_LEN]);
     assert_eq!(after, original);
+}
+
+#[test]
+fn key_change_commits_replacement_header_that_only_new_key_can_use() {
+    let (_dir, encrypted_path) = encrypted_v1_file("change-new-key");
+    let original = fs::read(&encrypted_path).expect("read original fixture");
+    let original_header = read_v1_header_from_path(&encrypted_path);
+    let original_keyslots = original_header.keyslots_collection().clone();
+    let (old_master_key, old_index) = key::decrypt_v1_master_key_with_index(
+        &original_keyslots,
+        Protected::new(b"old-pass".to_vec()),
+    )
+    .expect("old key must unwrap original master key");
+
+    let intent = key::change::ChangeIntent::new(&encrypted_path).expect("prepare change intent");
+    let proven = intent
+        .verify_old_key(Protected::new(b"old-pass".to_vec()))
+        .expect("old key proof");
+    key::change::execute(
+        proven,
+        Protected::new(b"new-pass".to_vec()),
+        Kdf::Blake3Balloon,
+    )
+    .expect("commit key change");
+
+    let changed = fs::read(&encrypted_path).expect("read changed fixture");
+    assert_eq!(
+        &changed[HEADER_LEN..],
+        &original[HEADER_LEN..],
+        "key change must replace only header bytes and preserve payload bytes"
+    );
+    verify_file(&encrypted_path, b"new-pass").expect("new key should verify");
+    assert!(matches!(
+        verify_file(&encrypted_path, b"old-pass"),
+        Err(key::Error::IncorrectKey)
+    ));
+    let plaintext = decrypt_file(&encrypted_path, b"new-pass").expect("decrypt with new key");
+    assert_eq!(plaintext, b"Hello world");
+
+    let changed_header = read_v1_header_from_path(&encrypted_path);
+    assert_eq!(
+        changed_header.payload_nonce(),
+        original_header.payload_nonce(),
+        "key change must preserve payload nonce"
+    );
+    let serialized = changed_header.serialize().expect("serialize changed header");
+    assert_eq!(serialized.len(), HEADER_LEN);
+    let reparsed =
+        V1Header::deserialize(&mut Cursor::new(serialized)).expect("reparse changed header");
+    let changed_keyslots: V1Keyslots = reparsed.keyslots_collection().clone();
+    let (new_master_key, new_index) = key::decrypt_v1_master_key_with_index(
+        &changed_keyslots,
+        Protected::new(b"new-pass".to_vec()),
+    )
+    .expect("new key must unwrap replacement master key");
+    assert_eq!(
+        new_index.get(),
+        old_index.get(),
+        "key change must replace the old-key-proven slot"
+    );
+    assert!(
+        old_master_key.same_secret_as(&new_master_key),
+        "replacement keyslot must unwrap the same master key proven by the old key"
+    );
+}
+
+#[test]
+fn key_change_unsupported_kdf_preflight_preserves_original_bytes() {
+    let (_dir, encrypted_path) = encrypted_v1_file("change-unsupported-kdf");
+    mark_keyslot_unsupported_argon2id_file(&encrypted_path, 0);
+    let original = fs::read(&encrypted_path).expect("read unsupported KDF fixture");
+
+    let result = key::change::ChangeIntent::new(&encrypted_path);
+
+    assert!(matches!(
+        result,
+        Err(key::Error::UnsupportedKdf([0xDF, 0x02]))
+    ));
+    assert_eq!(
+        fs::read(&encrypted_path).expect("read after unsupported change"),
+        original,
+        "unsupported KDF preflight must not mutate header or payload bytes"
+    );
+}
+
+#[test]
+fn key_change_source_does_not_expose_public_raw_request_state() {
+    let forbidden = [
+        "pub struct Request",
+        "pub handle:",
+        "RefCell",
+        "pub raw_key_old",
+        "pub raw_key_new",
+    ];
+
+    for pattern in forbidden {
+        assert!(
+            !DOMAIN_KEY_CHANGE_SOURCE.contains(pattern),
+            "`dexios-domain/src/key/change.rs` must not expose `{pattern}` in public change contracts"
+        );
+    }
 }
 
 #[test]
