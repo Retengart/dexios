@@ -1,9 +1,11 @@
 use crate::cli::prompt::overwrite_check;
-use crate::global::states::{DeleteInput, HashMode, HeaderLocation, PasswordState};
+use crate::global::states::{DeleteInput, ForceMode, HashMode, HeaderLocation, PasswordState};
 use crate::global::structs::CryptoParams;
 use anyhow::Result;
+use std::path::Path;
 use std::sync::Arc;
 
+use domain::storage::identity::OverwritePolicy;
 use domain::storage::Storage;
 
 fn should_continue_after_overwrite_checks<F>(output_ok: bool, header_check: F) -> Result<bool>
@@ -15,6 +17,40 @@ where
     }
 
     Ok(header_check()?.unwrap_or(true))
+}
+
+fn overwrite_policy(path_exists: bool) -> OverwritePolicy {
+    if path_exists {
+        OverwritePolicy::ReplaceAtCommit
+    } else {
+        OverwritePolicy::CreateNew
+    }
+}
+
+fn existing_path(path: &str) -> bool {
+    std::fs::metadata(path).is_ok()
+}
+
+fn output_target<'a>(path: &'a str, path_exists: bool) -> domain::encrypt::OutputTarget<'a> {
+    domain::encrypt::OutputTarget {
+        path: Path::new(path),
+        overwrite: overwrite_policy(path_exists),
+    }
+}
+
+fn header_target<'a>(path: &'a str, path_exists: bool) -> domain::encrypt::HeaderTarget<'a> {
+    domain::encrypt::HeaderTarget {
+        path: Path::new(path),
+        overwrite: overwrite_policy(path_exists),
+    }
+}
+
+fn overwrite_check_if_needed(path: &str, path_exists: bool, force: ForceMode) -> Result<bool> {
+    if path_exists {
+        overwrite_check(path, force)
+    } else {
+        Ok(true)
+    }
 }
 
 // this function is for encrypting a file in stream mode
@@ -31,51 +67,47 @@ pub fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> Result<(
         ));
     }
 
-    let output_ok = overwrite_check(output, params.force)?;
+    let output_exists = existing_path(output);
+    let header_exists = match &params.header_location {
+        HeaderLocation::Embedded => None,
+        HeaderLocation::Detached(path) => Some(existing_path(path)),
+    };
+
+    let output_ok = overwrite_check_if_needed(output, output_exists, params.force)?;
 
     if !should_continue_after_overwrite_checks(output_ok, || match &params.header_location {
         HeaderLocation::Embedded => Ok(None),
-        HeaderLocation::Detached(path) => overwrite_check(path, params.force).map(Some),
+        HeaderLocation::Detached(path) => {
+            overwrite_check_if_needed(path, header_exists.unwrap_or(false), params.force).map(Some)
+        }
     })? {
         return Ok(());
     }
 
     let input_file = stor.read_file(input)?;
     let raw_key = params.key.get_secret(&PasswordState::Validate)?;
-    let output_file = stor
-        .create_file(output)
-        .or_else(|_| stor.write_file(output))?;
 
-    let header_file = match &params.header_location {
+    let header = match &params.header_location {
         HeaderLocation::Embedded => None,
-        HeaderLocation::Detached(path) => {
-            Some(stor.create_file(path).or_else(|_| stor.write_file(path))?)
-        }
+        HeaderLocation::Detached(path) => Some(header_target(path, header_exists.unwrap_or(false))),
     };
 
     // 2. encrypt file
-    let req = domain::encrypt::Request {
+    let req = domain::encrypt::TransactionalRequest {
+        input_path: Path::new(input),
         reader: input_file.try_reader()?,
-        writer: output_file.try_writer()?,
-        header_writer: header_file.as_ref().and_then(|f| f.try_writer().ok()),
+        output: output_target(output, output_exists),
+        header,
         raw_key,
         kdf: params.kdf,
     };
-    domain::encrypt::execute(req)?;
-
-    // 3. flush result
-    if let Some(header_file) = header_file.as_ref() {
-        stor.flush_file(header_file)?;
-    }
-    stor.flush_file(&output_file)?;
+    let _receipt = domain::encrypt::execute_transactional(req)?;
 
     if params.hash_mode == HashMode::CalculateHash {
         super::hashing::hash_stream(&[output.to_string()])?;
     }
 
     if params.delete_input == DeleteInput::Delete {
-        drop(header_file);
-        drop(output_file);
         drop(input_file);
         super::delete_path(input)?;
     }

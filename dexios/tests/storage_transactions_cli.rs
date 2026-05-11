@@ -64,3 +64,29 @@ fn storage_transaction_cli_harness_runs_in_disposable_real_fs_dir() {
     );
     assert!(fixture.exists());
 }
+
+#[test]
+fn encrypt_force_replaces_existing_output_after_success() {
+    let test_dir = TestDir::new("encrypt-force-transaction");
+    let plain = test_dir.path().join("plain.txt");
+    let output_path = test_dir.path().join("plain.enc");
+    fs::write(&plain, b"transactional plaintext").unwrap();
+    fs::write(&output_path, b"existing encrypted output").unwrap();
+
+    let output = run_cli(
+        test_dir.path(),
+        &["encrypt", "--force", "plain.txt", "plain.enc"],
+    );
+
+    assert!(
+        output.status.success(),
+        "encrypt failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read(&plain).unwrap(), b"transactional plaintext");
+    assert_ne!(
+        fs::read(&output_path).unwrap(),
+        b"existing encrypted output"
+    );
+}
