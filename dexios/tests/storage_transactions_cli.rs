@@ -4,6 +4,8 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use core::header::common::HEADER_LEN;
+
 const PASSWORD: &str = "12345678";
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 
@@ -127,4 +129,63 @@ fn decrypt_wrong_key_failure_preserves_existing_output() {
         String::from_utf8_lossy(&decrypt_output.stderr)
     );
     assert_eq!(fs::read(&output_path).unwrap(), b"existing output");
+}
+
+#[test]
+fn header_dump_failure_preserves_existing_output() {
+    let test_dir = TestDir::new("header-dump-failure-transaction");
+    let invalid_input = test_dir.path().join("plain.txt");
+    let dumped_header = test_dir.path().join("plain.hdr");
+    fs::write(&invalid_input, b"not a dexios file").unwrap();
+    fs::write(&dumped_header, b"existing header").unwrap();
+
+    let output = run_cli(
+        test_dir.path(),
+        &["header", "dump", "--force", "plain.txt", "plain.hdr"],
+    );
+
+    assert!(
+        !output.status.success(),
+        "header dump unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read(&dumped_header).unwrap(), b"existing header");
+}
+
+#[test]
+fn header_dump_force_replaces_only_after_commit() {
+    let test_dir = TestDir::new("header-dump-force-transaction");
+    let plain = test_dir.path().join("plain.txt");
+    let encrypted = test_dir.path().join("plain.enc");
+    let dumped_header = test_dir.path().join("plain.hdr");
+    fs::write(&plain, b"header dump plaintext").unwrap();
+    fs::write(&dumped_header, b"existing header").unwrap();
+
+    let encrypt_output = run_cli(
+        test_dir.path(),
+        &["encrypt", "--force", "plain.txt", "plain.enc"],
+    );
+    assert!(
+        encrypt_output.status.success(),
+        "encrypt fixture failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&encrypt_output.stdout),
+        String::from_utf8_lossy(&encrypt_output.stderr)
+    );
+    assert!(encrypted.exists());
+
+    let output = run_cli(
+        test_dir.path(),
+        &["header", "dump", "--force", "plain.enc", "plain.hdr"],
+    );
+
+    assert!(
+        output.status.success(),
+        "header dump failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let dumped = fs::read(&dumped_header).unwrap();
+    assert_ne!(dumped, b"existing header");
+    assert_eq!(dumped.len(), HEADER_LEN);
 }

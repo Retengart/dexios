@@ -1,6 +1,7 @@
 use std::{
     cell::RefCell,
     fs::{File, OpenOptions},
+    path::Path,
 };
 
 use crate::cli::prompt::overwrite_check;
@@ -8,9 +9,37 @@ use crate::global::states::ForceMode;
 use anyhow::{Context, Result};
 use core::header::common::HeaderReadError;
 use core::header::v1::KeyslotKdf;
-use core::header::{ParsedHeader, read_header};
+use core::header::{read_header, ParsedHeader};
+use domain::storage::identity::OverwritePolicy;
 use domain::storage::Storage;
 use domain::utils::hex_encode;
+
+fn overwrite_policy(path_exists: bool) -> OverwritePolicy {
+    if path_exists {
+        OverwritePolicy::ReplaceAtCommit
+    } else {
+        OverwritePolicy::CreateNew
+    }
+}
+
+fn existing_path(path: &str) -> bool {
+    std::fs::metadata(path).is_ok()
+}
+
+fn output_target<'a>(path: &'a str, path_exists: bool) -> domain::header::dump::OutputTarget<'a> {
+    domain::header::dump::OutputTarget {
+        path: Path::new(path),
+        overwrite: overwrite_policy(path_exists),
+    }
+}
+
+fn overwrite_check_if_needed(path: &str, path_exists: bool, force: ForceMode) -> Result<bool> {
+    if path_exists {
+        overwrite_check(path, force)
+    } else {
+        Ok(true)
+    }
+}
 
 pub fn details(input: &str) -> Result<()> {
     let mut input_file =
@@ -77,22 +106,18 @@ pub fn dump(input: &str, output: &str, force: ForceMode) -> Result<()> {
     let stor = std::sync::Arc::new(domain::storage::FileStorage);
     let input_file = stor.read_file(input)?;
 
-    if !overwrite_check(output, force)? {
+    let output_exists = existing_path(output);
+    if !overwrite_check_if_needed(output, output_exists, force)? {
         std::process::exit(0);
     }
 
-    let output_file = stor
-        .create_file(output)
-        .or_else(|_| stor.write_file(output))?;
-
-    let req = domain::header::dump::Request {
+    let req = domain::header::dump::TransactionalRequest {
+        input_path: Path::new(input),
         reader: input_file.try_reader()?,
-        writer: output_file.try_writer()?,
+        output: output_target(output, output_exists),
     };
 
-    domain::header::dump::execute(req)?;
-
-    stor.flush_file(&output_file)?;
+    let _receipt = domain::header::dump::execute_transactional(req)?;
 
     Ok(())
 }
