@@ -85,10 +85,11 @@ the manifest for reviewable byte fixtures and generated workflow fixtures.
 
 ## No-Unjustified-Unsafe Policy
 
-`dexios-core/src/lib.rs` and `dexios-domain/src/lib.rs` must keep
-`#![forbid(unsafe_code)]`. The Rust Reference describes `forbid` as identical
-to `deny`, with the additional effect that later code cannot change the lint
-level. That makes the crate-root lint the compiler-backed baseline for SAFE-03.
+`dexios/src/main.rs`, `dexios-core/src/lib.rs`, and
+`dexios-domain/src/lib.rs` must keep `#![forbid(unsafe_code)]`. The Rust
+Reference describes `forbid` as identical to `deny`, with the additional
+effect that later code cannot change the lint level. That makes the crate-root
+lint the compiler-backed baseline for SAFE-03.
 
 Any future exception requires all of these before acceptance:
 
@@ -111,6 +112,7 @@ For local verification, use:
 
 VERI-04 broad-gate rule: the minimum maintainer gate includes:
 
+- no-unsafe crate-root checks for `dexios/src/main.rs`, `dexios-core/src/lib.rs`, and `dexios-domain/src/lib.rs`
 - `cargo fmt --all --check`
 - `cargo clippy --workspace --all-targets --all-features --no-deps`
 - `cargo test --workspace --all-features --release --verbose`

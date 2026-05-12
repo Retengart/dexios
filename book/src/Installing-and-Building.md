@@ -54,7 +54,11 @@ then run the broad gate:
 bash scripts/verify_phase_gate.sh
 ```
 
-The script runs:
+Before running the Cargo and mdBook command set, the script verifies the
+no-unsafe crate-root check for `dexios/src/main.rs`, `dexios-core/src/lib.rs`,
+and `dexios-domain/src/lib.rs`.
+
+The command set is:
 
 ```bash
 cargo fmt --all --check

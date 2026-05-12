@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-39b3e328.js";
+            window.path_to_searchindex_js = "searchindex-c87ef55f.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-532d5d21.js"></script>
@@ -204,7 +204,10 @@ authoritative gate. Run the focused invariant checks for the area being changed,
 then run the broad gate:</p>
 <pre><code class="language-bash">bash scripts/verify_phase_gate.sh
 </code></pre>
-<p>The script runs:</p>
+<p>Before running the Cargo and mdBook command set, the script verifies the
+no-unsafe crate-root check for <code>dexios/src/main.rs</code>, <code>dexios-core/src/lib.rs</code>,
+and <code>dexios-domain/src/lib.rs</code>.</p>
+<p>The command set is:</p>
 <pre><code class="language-bash">cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features --no-deps
 cargo test --workspace --all-features --release --verbose

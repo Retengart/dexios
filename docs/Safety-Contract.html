@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-39b3e328.js";
+            window.path_to_searchindex_js = "searchindex-c87ef55f.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-532d5d21.js"></script>
@@ -272,10 +272,11 @@ the manifest for reviewable byte fixtures and generated workflow fixtures.</p>
 </table>
 </div>
 <h2 id="no-unjustified-unsafe-policy"><a class="header" href="#no-unjustified-unsafe-policy">No-Unjustified-Unsafe Policy</a></h2>
-<p><code>dexios-core/src/lib.rs</code> and <code>dexios-domain/src/lib.rs</code> must keep
-<code>#![forbid(unsafe_code)]</code>. The Rust Reference describes <code>forbid</code> as identical
-to <code>deny</code>, with the additional effect that later code cannot change the lint
-level. That makes the crate-root lint the compiler-backed baseline for SAFE-03.</p>
+<p><code>dexios/src/main.rs</code>, <code>dexios-core/src/lib.rs</code>, and
+<code>dexios-domain/src/lib.rs</code> must keep <code>#![forbid(unsafe_code)]</code>. The Rust
+Reference describes <code>forbid</code> as identical to <code>deny</code>, with the additional
+effect that later code cannot change the lint level. That makes the crate-root
+lint the compiler-backed baseline for SAFE-03.</p>
 <p>Any future exception requires all of these before acceptance:</p>
 <ol>
 <li>a dedicated invariant row in <code>book/src/Safety-Contract.md</code>;</li>
@@ -295,6 +296,7 @@ accepted.</p>
 </ul>
 <p>VERI-04 broad-gate rule: the minimum maintainer gate includes:</p>
 <ul>
+<li>no-unsafe crate-root checks for <code>dexios/src/main.rs</code>, <code>dexios-core/src/lib.rs</code>, and <code>dexios-domain/src/lib.rs</code></li>
 <li><code>cargo fmt --all --check</code></li>
 <li><code>cargo clippy --workspace --all-targets --all-features --no-deps</code></li>
 <li><code>cargo test --workspace --all-features --release --verbose</code></li>

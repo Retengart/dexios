@@ -14,6 +14,9 @@ const VERIFY_PHASE_GATE: &str = include_str!("../../scripts/verify_phase_gate.sh
 const VERIFY_CLI_SURFACE: &str = include_str!("../../scripts/verify_cli_surface.sh");
 const VERIFY_REPO_HYGIENE: &str = include_str!("../../scripts/verify_repo_hygiene.sh");
 const MEASURE_PERFORMANCE_GATE: &str = include_str!("../../scripts/measure_performance_gate.sh");
+const DEXIOS_MAIN_RS: &str = include_str!("../src/main.rs");
+const DEXIOS_CORE_LIB_RS: &str = include_str!("../../dexios-core/src/lib.rs");
+const DEXIOS_DOMAIN_LIB_RS: &str = include_str!("../../dexios-domain/src/lib.rs");
 const AUDIT_WORKFLOW: &str = include_str!("../../.github/workflows/audit.yml");
 const DOCS_WORKFLOW: &str = include_str!("../../.github/workflows/docs.yml");
 const DEXIOS_TESTS_WORKFLOW: &str = include_str!("../../.github/workflows/dexios-tests.yml");
@@ -75,6 +78,10 @@ fn tracked_docs_define_the_minimum_maintainer_gate() {
         "cargo install cargo-audit --locked --version 0.22.1",
         "cargo install cargo-deny --locked --version 0.19.6",
         "cargo install mdbook --locked",
+        "no-unsafe crate-root",
+        "dexios/src/main.rs",
+        "dexios-core/src/lib.rs",
+        "dexios-domain/src/lib.rs",
         "does not auto-install tools",
         "scripts/measure_performance_gate.sh",
         "not part of the default",
@@ -136,6 +143,12 @@ fn local_scripts_expose_the_full_maintainer_gate() {
         "require_tool cargo-audit \"cargo install cargo-audit --locked --version 0.22.1\"",
         "require_tool cargo-deny \"cargo install cargo-deny --locked --version 0.19.6\"",
         "require_tool mdbook \"cargo install mdbook --locked\"",
+        "verify_no_unsafe_crate_roots",
+        "grep -Fxq '#![forbid(unsafe_code)]'",
+        "dexios/src/main.rs",
+        "dexios-core/src/lib.rs",
+        "dexios-domain/src/lib.rs",
+        "run verify_no_unsafe_crate_roots",
     ] {
         assert_contains("scripts/verify_phase_gate.sh", VERIFY_PHASE_GATE, required);
     }
@@ -156,6 +169,17 @@ fn local_scripts_expose_the_full_maintainer_gate() {
             VERIFY_REPO_HYGIENE,
             required,
         );
+    }
+}
+
+#[test]
+fn crate_roots_keep_the_no_unsafe_compiler_baseline() {
+    for (source_name, source) in [
+        ("dexios/src/main.rs", DEXIOS_MAIN_RS),
+        ("dexios-core/src/lib.rs", DEXIOS_CORE_LIB_RS),
+        ("dexios-domain/src/lib.rs", DEXIOS_DOMAIN_LIB_RS),
+    ] {
+        assert_contains(source_name, source, "#![forbid(unsafe_code)]");
     }
 }
 
