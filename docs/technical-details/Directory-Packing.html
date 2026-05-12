@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-f4765586.js";
+            window.path_to_searchindex_js = "../searchindex-1787ea7b.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-532d5d21.js"></script>
@@ -184,9 +184,8 @@
 <pre><code class="language-bash">dexios pack photos/ videos/ archive.enc
 </code></pre>
 <p><code>--recursive</code> is retained for compatibility, but recursive traversal is already the default behavior.</p>
-<p>Compression is optional:</p>
-<pre><code class="language-bash">dexios pack --zstd photos/ archive.enc
-</code></pre>
+<p>Compression is not user-configurable. Pack uses the default Dexios archive
+compression policy.</p>
 <h2 id="archive-creation"><a class="header" href="#archive-creation">Archive Creation</a></h2>
 <p>The current implementation:</p>
 <ol>
