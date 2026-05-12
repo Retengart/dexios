@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-1787ea7b.js";
+            window.path_to_searchindex_js = "searchindex-39b3e328.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-532d5d21.js"></script>
@@ -292,17 +292,27 @@ accepted.</p>
 <p>For local verification, use:</p>
 <ul>
 <li><code>bash scripts/verify_phase_gate.sh</code></li>
-<li><code>bash scripts/verify_repo_hygiene.sh</code></li>
 </ul>
 <p>VERI-04 broad-gate rule: the minimum maintainer gate includes:</p>
 <ul>
 <li><code>cargo fmt --all --check</code></li>
 <li><code>cargo clippy --workspace --all-targets --all-features --no-deps</code></li>
 <li><code>cargo test --workspace --all-features --release --verbose</code></li>
-<li><code>cargo audit</code></li>
+<li><code>cargo audit --deny warnings</code></li>
+<li><code>cargo deny check</code></li>
+<li><code>cargo build -p dexios --profile release-lto</code></li>
+<li><code>bash scripts/verify_cli_surface.sh</code></li>
 <li><code>mdbook build</code></li>
-<li><code>rg -n "#!\\[forbid\\(unsafe_code\\)\\]" dexios-core/src/lib.rs dexios-domain/src/lib.rs</code></li>
+<li><code>git diff --exit-code -- docs</code></li>
+<li><code>bash scripts/verify_repo_hygiene.sh</code></li>
+<li><code>git diff --check</code></li>
 </ul>
+<p>The gate fails before long-running checks if required tools are missing. Local
+setup remains explicit: install <code>cargo-audit</code> with
+<code>cargo install cargo-audit --locked --version 0.22.1</code>, install <code>cargo-deny</code>
+with <code>cargo install cargo-deny --locked --version 0.19.6</code>, and install
+<code>mdbook</code> with <code>cargo install mdbook --locked</code>. The gate prints these install
+hints but does not auto-install tools.</p>
 <p>VERI-06 release-note rule: breaking changes to file format behavior, CLI
 behavior, security claims, or compatibility boundaries must update
 <code>CHANGELOG.md</code> under <code>## Unreleased</code>. Use the <code>### Breaking Changes</code>,
@@ -315,7 +325,10 @@ maintainer verification steps.</p>
 pack/unpack memory behavior, archive structural limits, or temp-space
 assumptions must run <code>scripts/measure_performance_gate.sh --scenario &lt;name&gt;</code>
 and record the command, fixture shape, platform, and summary result. If a
-category is not applicable, record the not applicable reason explicitly.</p>
+category is not applicable, record the not applicable reason explicitly.
+<code>scripts/measure_performance_gate.sh</code> remains a focused release gate for KDF,
+stream, archive, and temp-space changes; it is not part of the default
+<code>scripts/verify_phase_gate.sh</code> maintainer gate.</p>
 <p>Phase 3 closes with an additional KDF/stream/secret gate:</p>
 <ul>
 <li>stale normal Argon2id wording is rejected, while explicit historical unsupported Argon2id wording is allowed;</li>

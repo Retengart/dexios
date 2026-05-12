@@ -108,16 +108,27 @@ accepted.
 For local verification, use:
 
 - `bash scripts/verify_phase_gate.sh`
-- `bash scripts/verify_repo_hygiene.sh`
 
 VERI-04 broad-gate rule: the minimum maintainer gate includes:
 
 - `cargo fmt --all --check`
 - `cargo clippy --workspace --all-targets --all-features --no-deps`
 - `cargo test --workspace --all-features --release --verbose`
-- `cargo audit`
+- `cargo audit --deny warnings`
+- `cargo deny check`
+- `cargo build -p dexios --profile release-lto`
+- `bash scripts/verify_cli_surface.sh`
 - `mdbook build`
-- `rg -n "#!\\[forbid\\(unsafe_code\\)\\]" dexios-core/src/lib.rs dexios-domain/src/lib.rs`
+- `git diff --exit-code -- docs`
+- `bash scripts/verify_repo_hygiene.sh`
+- `git diff --check`
+
+The gate fails before long-running checks if required tools are missing. Local
+setup remains explicit: install `cargo-audit` with
+`cargo install cargo-audit --locked --version 0.22.1`, install `cargo-deny`
+with `cargo install cargo-deny --locked --version 0.19.6`, and install
+`mdbook` with `cargo install mdbook --locked`. The gate prints these install
+hints but does not auto-install tools.
 
 VERI-06 release-note rule: breaking changes to file format behavior, CLI
 behavior, security claims, or compatibility boundaries must update
@@ -134,6 +145,9 @@ pack/unpack memory behavior, archive structural limits, or temp-space
 assumptions must run `scripts/measure_performance_gate.sh --scenario <name>`
 and record the command, fixture shape, platform, and summary result. If a
 category is not applicable, record the not applicable reason explicitly.
+`scripts/measure_performance_gate.sh` remains a focused release gate for KDF,
+stream, archive, and temp-space changes; it is not part of the default
+`scripts/verify_phase_gate.sh` maintainer gate.
 
 Phase 3 closes with an additional KDF/stream/secret gate:
 
