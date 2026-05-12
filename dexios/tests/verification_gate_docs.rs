@@ -9,13 +9,30 @@ const INSTALLING_AND_BUILDING: &str = include_str!("../../book/src/Installing-an
 const AUDITING: &str = include_str!("../../book/src/dexios-core/Auditing.md");
 const CHANGELOG: &str = include_str!("../../CHANGELOG.md");
 const GITIGNORE: &str = include_str!("../../.gitignore");
+const DENY_TOML: &str = include_str!("../../deny.toml");
 const VERIFY_PHASE_GATE: &str = include_str!("../../scripts/verify_phase_gate.sh");
+const VERIFY_CLI_SURFACE: &str = include_str!("../../scripts/verify_cli_surface.sh");
 const VERIFY_REPO_HYGIENE: &str = include_str!("../../scripts/verify_repo_hygiene.sh");
 const MEASURE_PERFORMANCE_GATE: &str = include_str!("../../scripts/measure_performance_gate.sh");
 const AUDIT_WORKFLOW: &str = include_str!("../../.github/workflows/audit.yml");
 const DOCS_WORKFLOW: &str = include_str!("../../.github/workflows/docs.yml");
+const DEXIOS_TESTS_WORKFLOW: &str = include_str!("../../.github/workflows/dexios-tests.yml");
 const PERFORMANCE_NOTES: &str =
     include_str!("../../book/src/technical-details/Performance-Notes.md");
+
+const REPAIRED_GATE_COMMANDS: &[&str] = &[
+    "cargo fmt --all --check",
+    "cargo clippy --workspace --all-targets --all-features --no-deps",
+    "cargo test --workspace --all-features --release --verbose",
+    "cargo audit --deny warnings",
+    "cargo deny check",
+    "cargo build -p dexios --profile release-lto",
+    "bash scripts/verify_cli_surface.sh",
+    "mdbook build",
+    "git diff --exit-code -- docs",
+    "bash scripts/verify_repo_hygiene.sh",
+    "git diff --check",
+];
 
 fn assert_contains(source_name: &str, source: &str, needle: &str) {
     assert!(
@@ -31,14 +48,36 @@ fn assert_not_contains(source_name: &str, source: &str, needle: &str) {
     );
 }
 
+fn assert_all_contains(source_name: &str, source: &str, needles: &[&str]) {
+    for needle in needles {
+        assert_contains(source_name, source, needle);
+    }
+}
+
+fn is_non_comment_line(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    !trimmed.is_empty() && !trimmed.starts_with('#')
+}
+
 #[test]
 fn tracked_docs_define_the_minimum_maintainer_gate() {
+    for (source_name, source) in [
+        ("book/src/Safety-Contract.md", SAFETY_CONTRACT),
+        (
+            "book/src/Installing-and-Building.md",
+            INSTALLING_AND_BUILDING,
+        ),
+    ] {
+        assert_all_contains(source_name, source, REPAIRED_GATE_COMMANDS);
+    }
+
     for required in [
-        "cargo fmt --all --check",
-        "cargo clippy --workspace --all-targets --all-features --no-deps",
-        "cargo test --workspace --all-features --release --verbose",
-        "cargo audit",
-        "mdbook build",
+        "cargo install cargo-audit --locked --version 0.22.1",
+        "cargo install cargo-deny --locked --version 0.19.6",
+        "cargo install mdbook --locked",
+        "does not auto-install tools",
+        "scripts/measure_performance_gate.sh",
+        "not part of the default",
         "CHANGELOG.md",
         "local-notes/",
     ] {
@@ -66,6 +105,15 @@ fn release_notes_track_breaking_security_verification_and_docs_changes() {
         "### Security",
         "### Verification",
         "### Documentation",
+        "RUSTSEC-2026-0097",
+        "blake3 = \"=1.8.3\"",
+        "traits-preview",
+        "deny.toml",
+        "cargo audit --deny warnings",
+        "cargo deny check",
+        "release-lto CLI smoke",
+        "removed `--aes`, `--argon`",
+        "top-level `erase`",
     ] {
         assert_contains("CHANGELOG.md", CHANGELOG, required);
     }
@@ -78,15 +126,28 @@ fn planning_artifacts_remain_local_only() {
 
 #[test]
 fn local_scripts_expose_the_full_maintainer_gate() {
+    assert_all_contains(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        REPAIRED_GATE_COMMANDS,
+    );
+
     for required in [
-        "cargo fmt --all --check",
-        "cargo clippy --workspace --all-targets --all-features --no-deps",
-        "cargo test --workspace --all-features --release --verbose",
-        "cargo audit",
-        "bash scripts/verify_repo_hygiene.sh",
-        "mdbook build",
+        "require_tool cargo-audit \"cargo install cargo-audit --locked --version 0.22.1\"",
+        "require_tool cargo-deny \"cargo install cargo-deny --locked --version 0.19.6\"",
+        "require_tool mdbook \"cargo install mdbook --locked\"",
     ] {
         assert_contains("scripts/verify_phase_gate.sh", VERIFY_PHASE_GATE, required);
+    }
+
+    for (line_number, line) in VERIFY_PHASE_GATE.lines().enumerate() {
+        if is_non_comment_line(line) {
+            assert!(
+                !line.contains("measure_performance_gate.sh"),
+                "scripts/verify_phase_gate.sh:{} must not call the focused performance gate by default",
+                line_number + 1
+            );
+        }
     }
 
     for required in ["git ls-files local-notes", "git check-ignore"] {
@@ -99,8 +160,33 @@ fn local_scripts_expose_the_full_maintainer_gate() {
 }
 
 #[test]
+fn cargo_deny_policy_is_source_gated() {
+    for required in [
+        "[advisories]",
+        "unsound = \"all\"",
+        "[bans]",
+        "multiple-versions = \"deny\"",
+        "wildcards = \"deny\"",
+        "[sources]",
+        "unknown-registry = \"deny\"",
+        "unknown-git = \"deny\"",
+        "allow-registry = [\"https://github.com/rust-lang/crates.io-index\"]",
+        "[licenses]",
+        "confidence-threshold = 0.93",
+    ] {
+        assert_contains("deny.toml", DENY_TOML, required);
+    }
+}
+
+#[test]
 fn ci_workflows_keep_audit_and_docs_fresh() {
-    for required in ["pull_request", "push:", "schedule:", "cargo audit"] {
+    for required in [
+        "pull_request",
+        "push:",
+        "schedule:",
+        "cargo audit --deny warnings",
+        "cargo deny check",
+    ] {
         assert_contains(".github/workflows/audit.yml", AUDIT_WORKFLOW, required);
     }
 
@@ -111,6 +197,57 @@ fn ci_workflows_keep_audit_and_docs_fresh() {
         "workflow_dispatch",
     ] {
         assert_contains(".github/workflows/docs.yml", DOCS_WORKFLOW, required);
+    }
+}
+
+#[test]
+fn repaired_cli_surface_is_rejection_only_for_removed_behavior() {
+    for (line_number, line) in VERIFY_CLI_SURFACE.lines().enumerate() {
+        if !is_non_comment_line(line) {
+            continue;
+        }
+
+        let has_removed_flag = line.contains("--aes")
+            || line.contains("--argon")
+            || line.contains("--zstd")
+            || line.contains("--erase");
+        let has_removed_subcommand = line.contains("\"$BIN\" erase");
+        let has_removed_key_add = line.contains("key add") && line.contains(" -n");
+
+        if has_removed_flag || has_removed_subcommand || has_removed_key_add {
+            assert!(
+                line.contains("expect_rejected"),
+                "scripts/verify_cli_surface.sh:{} removed CLI token must stay in an expect_rejected context: {}",
+                line_number + 1,
+                line
+            );
+        }
+    }
+}
+
+#[test]
+fn dexios_tests_workflow_does_not_reintroduce_removed_positive_cli_surface() {
+    for forbidden in ["--aes", "--argon", "--zstd", "--erase"] {
+        assert_not_contains(
+            ".github/workflows/dexios-tests.yml",
+            DEXIOS_TESTS_WORKFLOW,
+            forbidden,
+        );
+    }
+
+    for (line_number, line) in DEXIOS_TESTS_WORKFLOW.lines().enumerate() {
+        assert!(
+            !(line.contains("\"$DEXIOS_BIN\" erase") || line.contains("dexios erase")),
+            ".github/workflows/dexios-tests.yml:{} must not positively invoke top-level erase: {}",
+            line_number + 1,
+            line
+        );
+        assert!(
+            !(line.contains("key add") && line.contains(" -n")),
+            ".github/workflows/dexios-tests.yml:{} must not positively invoke removed key add -n behavior: {}",
+            line_number + 1,
+            line
+        );
     }
 }
 
@@ -180,7 +317,17 @@ fn phase7_decision_groups_are_source_gated() {
     assert_contains(
         "scripts/verify_phase_gate.sh",
         VERIFY_PHASE_GATE,
-        "cargo audit",
+        "cargo audit --deny warnings",
+    );
+    assert_contains(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "cargo deny check",
+    );
+    assert_contains(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "bash scripts/verify_cli_surface.sh",
     );
     assert_contains(".github/workflows/docs.yml", DOCS_WORKFLOW, "mdbook build");
 
