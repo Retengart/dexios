@@ -30,6 +30,11 @@ require_tool mdbook "cargo install mdbook --locked"
 run cargo fmt --all --check
 run cargo clippy --workspace --all-targets --all-features --no-deps
 run cargo test --workspace --all-features --release --verbose
-run cargo audit
-run bash scripts/verify_repo_hygiene.sh
+run cargo audit --deny warnings
+run cargo deny check
+run cargo build -p dexios --profile release-lto
+run bash scripts/verify_cli_surface.sh
 run mdbook build
+run git diff --exit-code -- docs
+run bash scripts/verify_repo_hygiene.sh
+run git diff --check
