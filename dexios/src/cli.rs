@@ -468,16 +468,20 @@ pub fn get_matches() -> clap::ArgMatches {
 
 #[cfg(test)]
 mod tests {
-    fn assert_argon_is_rejected<const N: usize>(args: [&str; N]) {
+    fn assert_unknown_argument_is_rejected<const N: usize>(args: [&str; N], rejected: &str) {
         let error = super::build_cli()
             .try_get_matches_from(args)
-            .expect_err("--argon should not be a supported normal KDF selector");
+            .expect_err("removed CLI argument should be rejected");
 
         assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
         assert!(
-            error.to_string().contains("--argon"),
-            "error should name the removed flag: {error}"
+            error.to_string().contains(rejected),
+            "error should name the rejected argument {rejected}: {error}"
         );
+    }
+
+    fn assert_argon_is_rejected<const N: usize>(args: [&str; N]) {
+        assert_unknown_argument_is_rejected(args, "--argon");
     }
 
     #[test]
@@ -533,6 +537,67 @@ mod tests {
     }
 
     #[test]
+    fn removed_aes_flag_is_rejected_for_encrypt() {
+        assert_unknown_argument_is_rejected(
+            ["dexios", "encrypt", "--aes", "in.bin", "out.enc"],
+            "--aes",
+        );
+    }
+
+    #[test]
+    fn removed_aes_flag_is_rejected_for_pack() {
+        assert_unknown_argument_is_rejected(
+            ["dexios", "pack", "--aes", "dir-a", "archive.dex"],
+            "--aes",
+        );
+    }
+
+    #[test]
+    fn removed_erase_flag_is_rejected_for_encrypt() {
+        assert_unknown_argument_is_rejected(
+            ["dexios", "encrypt", "--erase", "in.bin", "out.enc"],
+            "--erase",
+        );
+    }
+
+    #[test]
+    fn removed_erase_flag_is_rejected_for_decrypt() {
+        assert_unknown_argument_is_rejected(
+            ["dexios", "decrypt", "--erase", "in.enc", "out.bin"],
+            "--erase",
+        );
+    }
+
+    #[test]
+    fn removed_erase_flag_is_rejected_for_pack() {
+        assert_unknown_argument_is_rejected(
+            ["dexios", "pack", "--erase", "dir-a", "archive.dex"],
+            "--erase",
+        );
+    }
+
+    #[test]
+    fn removed_erase_flag_is_rejected_for_unpack() {
+        assert_unknown_argument_is_rejected(
+            ["dexios", "unpack", "--erase", "archive.dex", "out"],
+            "--erase",
+        );
+    }
+
+    #[test]
+    fn removed_top_level_erase_subcommand_is_rejected() {
+        let error = super::build_cli()
+            .try_get_matches_from(["dexios", "erase", "file.txt"])
+            .expect_err("top-level erase workflow should stay removed");
+
+        assert_eq!(error.kind(), clap::error::ErrorKind::InvalidSubcommand);
+        assert!(
+            error.to_string().contains("erase"),
+            "error should name the removed subcommand: {error}"
+        );
+    }
+
+    #[test]
     fn hash_command_accepts_multiple_inputs() {
         let matches = super::build_cli()
             .try_get_matches_from(["dexios", "hash", "one.bin", "two.bin"])
@@ -569,6 +634,33 @@ mod tests {
     }
 
     #[test]
+    fn current_delete_after_success_flags_parse() {
+        let encrypt = super::build_cli()
+            .try_get_matches_from(["dexios", "encrypt", "--delete-input", "in.bin", "out.enc"])
+            .expect("encrypt --delete-input should parse");
+        let (_, encrypt) = encrypt.subcommand().expect("encrypt subcommand");
+        assert!(encrypt.get_flag("delete-input"));
+
+        let decrypt = super::build_cli()
+            .try_get_matches_from(["dexios", "decrypt", "--delete-input", "in.enc", "out.bin"])
+            .expect("decrypt --delete-input should parse");
+        let (_, decrypt) = decrypt.subcommand().expect("decrypt subcommand");
+        assert!(decrypt.get_flag("delete-input"));
+
+        let pack = super::build_cli()
+            .try_get_matches_from(["dexios", "pack", "--delete-source", "dir-a", "archive.dex"])
+            .expect("pack --delete-source should parse");
+        let (_, pack) = pack.subcommand().expect("pack subcommand");
+        assert!(pack.get_flag("delete-source"));
+
+        let unpack = super::build_cli()
+            .try_get_matches_from(["dexios", "unpack", "--delete-input", "archive.dex", "out"])
+            .expect("unpack --delete-input should parse");
+        let (_, unpack) = unpack.subcommand().expect("unpack subcommand");
+        assert!(unpack.get_flag("delete-input"));
+    }
+
+    #[test]
     fn removed_zstd_flag_is_rejected_for_pack() {
         let error = super::build_cli()
             .try_get_matches_from(["dexios", "pack", "--zstd", "dir-a", "archive.dex"])
@@ -602,25 +694,23 @@ mod tests {
 
     #[test]
     fn key_add_command_rejects_new_key_sources_while_unsupported() {
-        assert!(
-            super::build_cli()
-                .try_get_matches_from([
-                    "dexios",
-                    "key",
-                    "add",
-                    "-k",
-                    "old.key",
-                    "-n",
-                    "new.key",
-                    "cipher.enc",
-                ])
-                .is_err()
+        assert_unknown_argument_is_rejected(
+            [
+                "dexios",
+                "key",
+                "add",
+                "-k",
+                "old.key",
+                "-n",
+                "new.key",
+                "cipher.enc",
+            ],
+            "-n",
         );
 
-        assert!(
-            super::build_cli()
-                .try_get_matches_from(["dexios", "key", "add", "--auto=7", "cipher.enc"])
-                .is_err()
+        assert_unknown_argument_is_rejected(
+            ["dexios", "key", "add", "--auto=7", "cipher.enc"],
+            "--auto",
         );
     }
 
