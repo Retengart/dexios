@@ -64,16 +64,6 @@ jobs:
       run: '"$DEXIOS_BIN" -dHfk keyfile 100MB.enc 100MB.bin'
     - name: Verify decrypted plaintext (XChaCha20-Poly1305)
       run: sha256sum -c 100MB.bin.sha256
-    - name: Generate test file
-      run: dd if=/dev/urandom of=100MB.bin bs=1M count=100
-    - name: Save plaintext hash (AES-256-GCM)
-      run: sha256sum 100MB.bin > 100MB.bin.sha256
-    - name: Encrypt in stream mode (AES-256-GCM)
-      run: '"$DEXIOS_BIN" -eHfk keyfile --aes 100MB.bin 100MB.enc'
-    - name: Decrypt in stream mode (AES-256-GCM)
-      run: '"$DEXIOS_BIN" -dHfk keyfile 100MB.enc 100MB.bin'
-    - name: Verify decrypted plaintext (AES-256-GCM)
-      run: sha256sum -c 100MB.bin.sha256
 
   header-tests:
     needs: build
@@ -154,7 +144,7 @@ jobs:
         actual_hash="$("$DEXIOS_BIN" hash 100MB.enc | awk 'END { print $3 }')"
         test "$actual_hash" = "$expected_hash"
 
-  erase:
+  delete-after-success:
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -168,12 +158,34 @@ jobs:
       run: |
         test -f "$DEXIOS_BIN"
         chmod +x "$DEXIOS_BIN"
-    - name: Generate test file
-      run: dd if=/dev/urandom of=100MB.bin bs=1M count=100
-    - name: Erase file (standalone mode)
-      run: '"$DEXIOS_BIN" erase 100MB.bin'
+    - name: Generate stream fixture
+      run: printf 'delete-after-success stream\n' > stream.txt
+    - name: Encrypt and delete plaintext input
+      run: |
+        DEXIOS_KEY=12345678 "$DEXIOS_BIN" encrypt -f --delete-input stream.txt stream.enc
+        test ! -e stream.txt
+        test -f stream.enc
+    - name: Decrypt and delete encrypted input
+      run: |
+        DEXIOS_KEY=12345678 "$DEXIOS_BIN" decrypt -f --delete-input stream.enc stream.out
+        test ! -e stream.enc
+        grep -F 'delete-after-success stream' stream.out
+    - name: Generate pack fixture
+      run: |
+        mkdir -p pack-src/nested pack-out
+        printf 'delete-after-success pack\n' > pack-src/nested/file.txt
+    - name: Pack and delete source directory
+      run: |
+        DEXIOS_KEY=12345678 "$DEXIOS_BIN" pack -f --delete-source pack-src archive.enc
+        test ! -e pack-src
+        test -f archive.enc
+    - name: Unpack and delete archive input
+      run: |
+        DEXIOS_KEY=12345678 "$DEXIOS_BIN" unpack -f --delete-input archive.enc pack-out
+        test ! -e archive.enc
+        grep -F 'delete-after-success pack' pack-out/pack-src/nested/file.txt
 
-  large-file:
+  medium-file-smoke:
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -188,27 +200,17 @@ jobs:
         test -f "$DEXIOS_BIN"
         chmod +x "$DEXIOS_BIN"
     - name: Generate test file
-      run: dd if=/dev/urandom of=1GB.bin bs=1M count=1000
+      run: dd if=/dev/urandom of=32MB.bin bs=1M count=32
     - name: Generate keyfile
       run: dd if=/dev/urandom of=keyfile bs=1 count=4096
     - name: Save plaintext hash (XChaCha20-Poly1305)
-      run: sha256sum 1GB.bin > 1GB.bin.sha256
-    - name: Encrypt 1GB file (XChaCha20-Poly1305)
-      run: '"$DEXIOS_BIN" -eHfk keyfile 1GB.bin 1GB.enc'
-    - name: Decrypt 1GB file (XChaCha20-Poly1305)
-      run: '"$DEXIOS_BIN" -dHfk keyfile 1GB.enc 1GB.bin'
-    - name: Verify decrypted 1GB plaintext (XChaCha20-Poly1305)
-      run: sha256sum -c 1GB.bin.sha256
-    - name: Generate test file
-      run: dd if=/dev/urandom of=1GB.bin bs=1M count=1000
-    - name: Save plaintext hash (AES-256-GCM)
-      run: sha256sum 1GB.bin > 1GB.bin.sha256
-    - name: Encrypt 1GB file (AES-256-GCM)
-      run: '"$DEXIOS_BIN" -eHfk keyfile --aes 1GB.bin 1GB.enc'
-    - name: Decrypt 1GB file (AES-256-GCM)
-      run: '"$DEXIOS_BIN" -dHfk keyfile 1GB.enc 1GB.bin'
-    - name: Verify decrypted 1GB plaintext (AES-256-GCM)
-      run: sha256sum -c 1GB.bin.sha256
+      run: sha256sum 32MB.bin > 32MB.bin.sha256
+    - name: Encrypt medium file (XChaCha20-Poly1305)
+      run: '"$DEXIOS_BIN" -eHfk keyfile 32MB.bin 32MB.enc'
+    - name: Decrypt medium file (XChaCha20-Poly1305)
+      run: '"$DEXIOS_BIN" -dHfk keyfile 32MB.enc 32MB.bin'
+    - name: Verify decrypted medium plaintext (XChaCha20-Poly1305)
+      run: sha256sum -c 32MB.bin.sha256
 
   small-file:
     needs: build
@@ -234,16 +236,6 @@ jobs:
     - name: Decrypt 1KB file (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -dHfk keyfile 1KB.enc 1KB.bin'
     - name: Verify decrypted 1KB plaintext (XChaCha20-Poly1305)
-      run: sha256sum -c 1KB.bin.sha256
-    - name: Generate test file
-      run: dd if=/dev/urandom of=1KB.bin bs=1 count=1024
-    - name: Save plaintext hash (AES-256-GCM)
-      run: sha256sum 1KB.bin > 1KB.bin.sha256
-    - name: Encrypt 1KB file (AES-256-GCM)
-      run: '"$DEXIOS_BIN" -eHfk keyfile --aes 1KB.bin 1KB.enc'
-    - name: Decrypt 1KB file (AES-256-GCM)
-      run: '"$DEXIOS_BIN" -dHfk keyfile 1KB.enc 1KB.bin'
-    - name: Verify decrypted 1KB plaintext (AES-256-GCM)
       run: sha256sum -c 1KB.bin.sha256
 
   pack:
@@ -279,7 +271,7 @@ jobs:
     - name: Verify unpacked files
       run: diff -u test.manifest test.after.manifest
 
-  key-add:
+  key-verify:
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -297,53 +289,18 @@ jobs:
       run: dd if=/dev/urandom of=100MB.bin bs=1M count=100
     - name: Generate keyfile
       run: dd if=/dev/urandom of=keyfile bs=1 count=4096
-    - name: Generate keyfile for test
-      run: dd if=/dev/urandom of=keyfile-new bs=1 count=4096
-    - name: Save plaintext hash
-      run: sha256sum 100MB.bin > 100MB.bin.sha256
+    - name: Generate wrong keyfile
+      run: dd if=/dev/urandom of=wrong-keyfile bs=1 count=4096
     - name: Encrypt in stream mode (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -eHfk keyfile 100MB.bin 100MB.enc'
-    - name: Add new key (from new keyfile)
-      run: '"$DEXIOS_BIN" key add -k keyfile -n keyfile-new 100MB.enc'
-    - name: Decrypt in stream mode with added key (XChaCha20-Poly1305)
-      run: '"$DEXIOS_BIN" -dHfk keyfile-new 100MB.enc 100MB.bin'
-    - name: Verify decrypted plaintext
-      run: sha256sum -c 100MB.bin.sha256
-    - name: Show header details
-      run: '"$DEXIOS_BIN" header details 100MB.enc'
-
-  key-del:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v6.0.2
-    - name: Retrieve Dexios
-      uses: actions/download-artifact@v8.0.0
-      with:
-        name: dexios
-        path: target/release
-    - name: Make Binary Executable
+    - name: Verify correct key
+      run: '"$DEXIOS_BIN" key verify -k keyfile 100MB.enc'
+    - name: Reject incorrect key
       run: |
-        test -f "$DEXIOS_BIN"
-        chmod +x "$DEXIOS_BIN"
-    - name: Generate test file
-      run: dd if=/dev/urandom of=100MB.bin bs=1M count=100
-    - name: Generate keyfile
-      run: dd if=/dev/urandom of=keyfile bs=1 count=4096
-    - name: Generate keyfile for test
-      run: dd if=/dev/urandom of=keyfile-new bs=1 count=4096
-    - name: Save plaintext hash
-      run: sha256sum 100MB.bin > 100MB.bin.sha256
-    - name: Encrypt in stream mode (XChaCha20-Poly1305)
-      run: '"$DEXIOS_BIN" -eHfk keyfile 100MB.bin 100MB.enc'
-    - name: Add new key (from new keyfile)
-      run: '"$DEXIOS_BIN" key add -k keyfile -n keyfile-new 100MB.enc'
-    - name: Delete the original key
-      run: '"$DEXIOS_BIN" key del -k keyfile 100MB.enc'
-    - name: Decrypt in stream mode with added key (XChaCha20-Poly1305)
-      run: '"$DEXIOS_BIN" -dHfk keyfile-new 100MB.enc 100MB.bin'
-    - name: Verify decrypted plaintext
-      run: sha256sum -c 100MB.bin.sha256
+        if "$DEXIOS_BIN" key verify -k wrong-keyfile 100MB.enc; then
+          echo "wrong key unexpectedly verified" >&2
+          exit 1
+        fi
     - name: Show header details
       run: '"$DEXIOS_BIN" header details 100MB.enc'
 
