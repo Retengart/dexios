@@ -24,6 +24,7 @@ run() {
 }
 
 require_tool cargo-audit "cargo install cargo-audit --locked --version 0.22.1"
+require_tool cargo-deny "cargo install cargo-deny --locked --version 0.19.6"
 require_tool mdbook "cargo install mdbook --locked"
 
 run cargo fmt --all --check
