@@ -16,11 +16,13 @@ homepage = "https://github.com/brxken128/dexios"
 
 [workspace.dependencies]
 anyhow = "1.0.102"
-blake3 = "1.8.3"
-rand = "0.10.0"
-clap = { version = "4.5.60", features = ["cargo"] }
-rpassword = "7.4.0"
-zip = { version = "8.2.0", default-features = false, features = ["zstd"] }
+# Keep blake3 pinned for Phase 8: 1.8.4+ changes the traits-preview
+# digest line and breaks the stable balloon-hash 0.4.0 KDF integration.
+blake3 = "=1.8.3"
+rand = "0.10.1"
+clap = { version = "4.6.1", features = ["cargo"] }
+rpassword = "7.5.2"
+zip = { version = "8.6.0", default-features = false, features = ["zstd"] }
 chacha20poly1305 = "0.10.1"
 aead = { version = "0.5.2", features = ["stream"] }
 zeroize = "1.8.2"
