@@ -21,5 +21,9 @@ jobs:
         run: rustup default stable
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked --version 0.22.1
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked --version 0.19.6
       - name: Run cargo-audit
-        run: cargo audit
+        run: cargo audit --deny warnings
+      - name: Run cargo-deny
+        run: cargo deny check
