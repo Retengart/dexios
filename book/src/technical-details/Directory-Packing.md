@@ -18,11 +18,8 @@ dexios pack photos/ videos/ archive.enc
 
 `--recursive` is retained for compatibility, but recursive traversal is already the default behavior.
 
-Compression is optional:
-
-```bash
-dexios pack --zstd photos/ archive.enc
-```
+Compression is not user-configurable. Pack uses the default Dexios archive
+compression policy.
 
 ## Archive Creation
 

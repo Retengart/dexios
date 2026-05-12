@@ -1,6 +1,10 @@
 const SAFETY_CONTRACT: &str = include_str!("../../book/src/Safety-Contract.md");
 const CONTRIBUTING: &str = include_str!("../../CONTRIBUTING.md");
 const README: &str = include_str!("../../README.md");
+const CLI_README: &str = include_str!("../../dexios/README.md");
+const USAGE_EXAMPLES: &str = include_str!("../../book/src/Usage-Examples.md");
+const DIRECTORY_PACKING: &str =
+    include_str!("../../book/src/technical-details/Directory-Packing.md");
 const INSTALLING_AND_BUILDING: &str = include_str!("../../book/src/Installing-and-Building.md");
 const AUDITING: &str = include_str!("../../book/src/dexios-core/Auditing.md");
 const CHANGELOG: &str = include_str!("../../CHANGELOG.md");
@@ -17,6 +21,13 @@ fn assert_contains(source_name: &str, source: &str, needle: &str) {
     assert!(
         source.contains(needle),
         "{source_name} must contain {needle:?}"
+    );
+}
+
+fn assert_not_contains(source_name: &str, source: &str, needle: &str) {
+    assert!(
+        !source.contains(needle),
+        "{source_name} must not contain {needle:?}"
     );
 }
 
@@ -137,6 +148,24 @@ fn measurement_policy_is_source_gated() {
 
     for required in ["VERI-05", "measure_performance_gate.sh", "not applicable"] {
         assert_contains("book/src/Safety-Contract.md", SAFETY_CONTRACT, required);
+    }
+}
+
+#[test]
+fn archive_docs_do_not_reintroduce_removed_compression_selector() {
+    for (source_name, source) in [
+        ("README.md", README),
+        ("dexios/README.md", CLI_README),
+        ("book/src/Usage-Examples.md", USAGE_EXAMPLES),
+        (
+            "book/src/technical-details/Directory-Packing.md",
+            DIRECTORY_PACKING,
+        ),
+    ] {
+        assert_not_contains(source_name, source, "--zstd");
+        assert_not_contains(source_name, source, "Compression is optional");
+        assert_contains(source_name, source, "default Dexios archive");
+        assert_contains(source_name, source, "compression policy");
     }
 }
 
