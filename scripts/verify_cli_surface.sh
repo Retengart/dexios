@@ -85,31 +85,64 @@ run_case() {
     fi
 }
 
-case_encrypt_decrypt_env_hash_erase() {
+safe_case_name() {
+    printf '%s' "$1" | tr -c 'A-Za-z0-9_.-' '_'
+}
+
+expect_rejected() {
+    local name=$1
+    shift
+    local safe_name
+    local stdout
+    local stderr
+
+    safe_name="$(safe_case_name "$name")"
+    stdout="$ROOT/rejected-$safe_name.stdout"
+    stderr="$ROOT/rejected-$safe_name.stderr"
+
+    if "$@" > "$stdout" 2> "$stderr"; then
+        echo "$name unexpectedly succeeded" >&2
+        return 1
+    fi
+
+    if grep -Eq 'unexpected argument|unrecognized subcommand|error:' "$stderr"; then
+        return 0
+    fi
+
+    echo "$name did not produce a parser-style rejection" >&2
+    cat "$stderr" >&2
+    return 1
+}
+
+case_removed_token_source_gate() {
+    awk 'BEGIN { bad = 0 } /^[[:space:]]*#/ { next } /--aes|--argon|--zstd|--erase|"\$BIN"[[:space:]]+erase|key add -k .* -n/ { if ($0 !~ /expect_rejected/) { print; bad = 1 } } END { exit bad }' "$0"
+}
+
+case_encrypt_decrypt_env_hash_delete_input() {
     local dir="$ROOT/enc"
     mkdir -p "$dir"
     printf 'alpha\nbeta\n' > "$dir/plain.txt"
 
-    DEXIOS_KEY=12345678 "$BIN" encrypt -f --hash --erase "$dir/plain.txt" "$dir/plain.enc" > "$dir/encrypt.stdout" || return 1
-    not_exists "$dir/plain.txt" "encrypt --erase should remove plaintext input" || return 1
+    DEXIOS_KEY=12345678 "$BIN" encrypt -f --hash --delete-input "$dir/plain.txt" "$dir/plain.enc" > "$dir/encrypt.stdout" || return 1
+    not_exists "$dir/plain.txt" "encrypt should remove plaintext input after success" || return 1
     exists "$dir/plain.enc" "encrypt should create cipher file" || return 1
     contains_file "$dir/encrypt.stdout" "$dir/plain.enc:" "encrypt --hash should print output hash" || return 1
 
-    DEXIOS_KEY=12345678 "$BIN" decrypt -f --hash --erase "$dir/plain.enc" "$dir/plain.out" > "$dir/decrypt.stdout" || return 1
-    not_exists "$dir/plain.enc" "decrypt --erase should remove encrypted input" || return 1
+    DEXIOS_KEY=12345678 "$BIN" decrypt -f --hash --delete-input "$dir/plain.enc" "$dir/plain.out" > "$dir/decrypt.stdout" || return 1
+    not_exists "$dir/plain.enc" "decrypt should remove encrypted input after success" || return 1
     exists "$dir/plain.out" "decrypt should create plaintext output" || return 1
     contains_file "$dir/decrypt.stdout" "$dir/plain.enc:" "decrypt --hash should print input hash" || return 1
     contains_file "$dir/plain.out" "alpha" "decrypted output should contain original content" || return 1
     contains_file "$dir/plain.out" "beta" "decrypted output should contain second line" || return 1
 }
 
-case_encrypt_decrypt_keyfile_detached_aes_argon() {
+case_encrypt_decrypt_keyfile_detached_defaults() {
     local dir="$ROOT/keyfile"
     mkdir -p "$dir"
     printf 'super-secret\n' > "$dir/plain.txt"
     printf 'key-material-1' > "$dir/key.bin"
 
-    "$BIN" encrypt -f -k "$dir/key.bin" --header "$dir/plain.hdr" --aes --argon "$dir/plain.txt" "$dir/plain.enc" || return 1
+    "$BIN" encrypt -f -k "$dir/key.bin" --header "$dir/plain.hdr" "$dir/plain.txt" "$dir/plain.enc" || return 1
     exists "$dir/plain.enc" "encrypt keyfile detached header should create cipher" || return 1
     exists "$dir/plain.hdr" "encrypt keyfile detached header should create header" || return 1
 
@@ -124,7 +157,7 @@ case_encrypt_auto_generated_passphrase() {
     printf 'generated passphrase path\n' > "$dir/plain.txt"
 
     "$BIN" encrypt -f --auto=4 "$dir/plain.txt" "$dir/plain.enc" > "$dir/auto.stdout" || return 1
-    auto_key="$(sed -n 's/^\[-\] Your generated passphrase is: //p' "$dir/auto.stdout" | tail -n 1)"
+    auto_key="$(sed -n 's/^\[-\] Your generated passphrase is intentionally shown here and may be captured by terminal scrollback or logs: //p' "$dir/auto.stdout" | tail -n 1)"
     [[ -n "$auto_key" ]] || {
         echo "encrypt --auto should print generated passphrase" >&2
         return 1
@@ -139,14 +172,6 @@ case_hash_subcommand() {
     "$BIN" hash "$ROOT/auto/plain.txt" "$ROOT/keyfile/plain.enc" > "$out" || return 1
     contains_file "$out" "$ROOT/auto/plain.txt:" "hash should print plaintext hash line" || return 1
     contains_file "$out" "$ROOT/keyfile/plain.enc:" "hash should print encrypted hash line" || return 1
-}
-
-case_erase_subcommand() {
-    local dir="$ROOT/erase"
-    mkdir -p "$dir"
-    printf 'erase me' > "$dir/file.txt"
-    "$BIN" erase -f --passes=2 "$dir/file.txt" || return 1
-    not_exists "$dir/file.txt" "erase should remove file" || return 1
 }
 
 case_header_subcommands() {
@@ -186,16 +211,6 @@ case_key_subcommands() {
 
     "$BIN" encrypt -f -k "$dir/old.key" "$dir/plain.txt" "$dir/multi.enc" || return 1
     "$BIN" key verify -k "$dir/old.key" "$dir/multi.enc" || return 1
-    "$BIN" key add -k "$dir/old.key" -n "$dir/new.key" "$dir/multi.enc" || return 1
-    "$BIN" key verify -k "$dir/new.key" "$dir/multi.enc" || return 1
-    "$BIN" key del -k "$dir/new.key" "$dir/multi.enc" || return 1
-
-    if "$BIN" key verify -k "$dir/new.key" "$dir/multi.enc" >/dev/null 2>&1; then
-        echo "deleted key should no longer verify" >&2
-        return 1
-    fi
-
-    "$BIN" key verify -k "$dir/old.key" "$dir/multi.enc" || return 1
 
     "$BIN" encrypt -f -k "$dir/old.key" "$dir/plain.txt" "$dir/change.enc" || return 1
     "$BIN" key change -k "$dir/old.key" -n "$dir/changed.key" "$dir/change.enc" || return 1
@@ -219,10 +234,10 @@ case_pack_unpack_complex_success_path() {
 
     (
         cd "$dir" &&
-        "$BIN" pack -f -k pack.key --header pack.hdr --aes --argon --zstd --hash --erase src pack.enc > pack.stdout
+        "$BIN" pack -f -k pack.key --header pack.hdr --hash --delete-source src pack.enc > pack.stdout
     ) || return 1
 
-    not_exists "$dir/src" "pack --erase should remove source directory tree" || return 1
+    not_exists "$dir/src" "pack should remove source directory tree after success" || return 1
     exists "$dir/pack.enc" "pack should produce encrypted archive" || return 1
     exists "$dir/pack.hdr" "pack detached header should exist" || return 1
     contains_file "$dir/pack.stdout" "pack.enc:" "pack --hash should print output hash" || return 1
@@ -238,19 +253,19 @@ case_pack_unpack_complex_success_path() {
     contains_file "$dir/unpack.stdout" "pack.enc:" "unpack --hash should print archive hash" || return 1
 }
 
-case_unpack_erase_removes_archive() {
-    local dir="$ROOT/unpackerase"
+case_unpack_delete_input_removes_archive() {
+    local dir="$ROOT/unpack-delete-input"
     mkdir -p "$dir/src" "$dir/out"
-    printf 'erase-archive\n' > "$dir/src/file.txt"
+    printf 'delete-input archive\n' > "$dir/src/file.txt"
 
     (
         cd "$dir" &&
         DEXIOS_KEY=12345678 "$BIN" pack -f src archive.enc > /dev/null &&
-        DEXIOS_KEY=12345678 "$BIN" unpack -f --erase archive.enc out > /dev/null
+        DEXIOS_KEY=12345678 "$BIN" unpack -f --delete-input archive.enc out > /dev/null
     ) || return 1
 
-    not_exists "$dir/archive.enc" "unpack --erase should remove archive input" || return 1
-    exists "$dir/out/src/file.txt" "unpack --erase should still restore files" || return 1
+    not_exists "$dir/archive.enc" "unpack should remove archive input after success" || return 1
+    exists "$dir/out/src/file.txt" "unpack should still restore files" || return 1
 }
 
 case_pack_recursive_flag_compatibility_alias() {
@@ -288,20 +303,41 @@ case_pack_verbose_emits_output() {
     fi
 }
 
+case_removed_cli_surface_rejected() {
+    local dir="$ROOT/rejected"
+    mkdir -p "$dir"
+    printf 'reject\n' > "$dir/plain.txt"
+    printf 'old-key-material' > "$dir/old.key"
+    printf 'new-key-material' > "$dir/new.key"
+
+    expect_rejected "encrypt removed aes flag" "$BIN" encrypt --aes "$dir/plain.txt" "$dir/plain.enc" || return 1
+    expect_rejected "pack removed aes flag" "$BIN" pack --aes "$dir" "$dir/archive.enc" || return 1
+    expect_rejected "encrypt removed argon flag" "$BIN" encrypt --argon "$dir/plain.txt" "$dir/plain.enc" || return 1
+    expect_rejected "pack removed argon flag" "$BIN" pack --argon "$dir" "$dir/archive.enc" || return 1
+    expect_rejected "pack removed zstd flag" "$BIN" pack --zstd "$dir" "$dir/archive.enc" || return 1
+    expect_rejected "encrypt removed erase flag" "$BIN" encrypt --erase "$dir/plain.txt" "$dir/plain.enc" || return 1
+    expect_rejected "decrypt removed erase flag" "$BIN" decrypt --erase "$dir/plain.enc" "$dir/plain.out" || return 1
+    expect_rejected "pack removed erase flag" "$BIN" pack --erase "$dir" "$dir/archive.enc" || return 1
+    expect_rejected "unpack removed erase flag" "$BIN" unpack --erase "$dir/archive.enc" "$dir/out" || return 1
+    expect_rejected "removed top level erase subcommand" "$BIN" erase "$dir/plain.txt" || return 1
+    expect_rejected "key add removed new key source" "$BIN" key add -k "$dir/old.key" -n "$dir/new.key" "$dir/plain.enc" || return 1
+}
+
 echo "Using binary: $BIN"
 echo "Working root: $ROOT"
 
-run_case "encrypt/decrypt env+hash+erase" case_encrypt_decrypt_env_hash_erase
-run_case "encrypt/decrypt keyfile+detached+aes+argon" case_encrypt_decrypt_keyfile_detached_aes_argon
+run_case "source gate rejects stale positive CLI tokens" case_removed_token_source_gate
+run_case "encrypt/decrypt env+hash+delete-input" case_encrypt_decrypt_env_hash_delete_input
+run_case "encrypt/decrypt keyfile+detached defaults" case_encrypt_decrypt_keyfile_detached_defaults
 run_case "encrypt --auto" case_encrypt_auto_generated_passphrase
 run_case "hash subcommand" case_hash_subcommand
-run_case "erase subcommand" case_erase_subcommand
 run_case "header subcommands" case_header_subcommands
 run_case "key subcommands" case_key_subcommands
 run_case "pack/unpack complex success path" case_pack_unpack_complex_success_path
-run_case "unpack --erase" case_unpack_erase_removes_archive
+run_case "unpack delete-input" case_unpack_delete_input_removes_archive
 run_case "pack --recursive compatibility alias" case_pack_recursive_flag_compatibility_alias
 run_case "pack --verbose emits output" case_pack_verbose_emits_output
+run_case "removed CLI surface rejected" case_removed_cli_surface_rejected
 
 echo
 if [[ "$FAILURES" -eq 0 ]]; then
