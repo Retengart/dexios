@@ -27,6 +27,7 @@ fn partial_commit_error() -> TransactionError {
             role: PathRole::DetachedHeader,
             path: path("failed.header"),
         },
+        source: None,
     }
 }
 
@@ -101,6 +102,7 @@ fn domain_errors_preserve_source_chains_for_workflow_wrappers() {
     assert_encrypt_source(
         encrypt::Error::Transaction(TransactionError::Write {
             path: path("encrypted.out"),
+            source: None,
         }),
         WorkflowErrorClass::IoFailure,
         "encrypt transaction wrapper",
@@ -114,6 +116,7 @@ fn domain_errors_preserve_source_chains_for_workflow_wrappers() {
     assert_decrypt_source(
         decrypt::Error::Transaction(TransactionError::Persist {
             path: path("decrypted.out"),
+            source: None,
         }),
         WorkflowErrorClass::TransactionCommitFailure,
         "decrypt transaction wrapper",
@@ -127,6 +130,7 @@ fn domain_errors_preserve_source_chains_for_workflow_wrappers() {
     assert_pack_source(
         pack::Error::Transaction(TransactionError::Flush {
             path: path("packed.out"),
+            source: None,
         }),
         WorkflowErrorClass::IoFailure,
         "pack transaction wrapper",
@@ -148,6 +152,7 @@ fn unpack_errors_preserve_source_chains_for_workflow_wrappers() {
     assert_unpack_source(
         unpack::Error::Transaction(TransactionError::Sync {
             path: path("unpacked.out"),
+            source: None,
         }),
         WorkflowErrorClass::IoFailure,
         "unpack transaction wrapper",
@@ -191,6 +196,7 @@ fn transaction_errors_preserve_io_sources() {
         (
             TransactionError::Write {
                 path: path("write.out"),
+                source: Some(io::Error::from(io::ErrorKind::BrokenPipe)),
             },
             WorkflowErrorClass::IoFailure,
             "TransactionError::Write",
@@ -198,6 +204,7 @@ fn transaction_errors_preserve_io_sources() {
         (
             TransactionError::Flush {
                 path: path("flush.out"),
+                source: Some(io::Error::from(io::ErrorKind::PermissionDenied)),
             },
             WorkflowErrorClass::IoFailure,
             "TransactionError::Flush",
@@ -205,6 +212,7 @@ fn transaction_errors_preserve_io_sources() {
         (
             TransactionError::Sync {
                 path: path("sync.out"),
+                source: Some(io::Error::from(io::ErrorKind::Interrupted)),
             },
             WorkflowErrorClass::IoFailure,
             "TransactionError::Sync",
@@ -212,6 +220,7 @@ fn transaction_errors_preserve_io_sources() {
         (
             TransactionError::Persist {
                 path: path("persist.out"),
+                source: Some(io::Error::from(io::ErrorKind::AlreadyExists)),
             },
             WorkflowErrorClass::TransactionCommitFailure,
             "TransactionError::Persist",
@@ -253,11 +262,13 @@ fn domain_errors_classify_path_identity_without_display_strings() {
 fn domain_errors_classify_transaction_failures_without_display_strings() {
     let write = encrypt::Error::Transaction(TransactionError::Write {
         path: path("target"),
+        source: None,
     });
     assert_eq!(write.workflow_class(), WorkflowErrorClass::IoFailure);
 
     let persist = decrypt::Error::Transaction(TransactionError::Persist {
         path: path("target"),
+        source: None,
     });
     assert_eq!(
         persist.workflow_class(),
@@ -317,6 +328,7 @@ fn key_change_errors_classify_mutation_failures_without_display_strings() {
 
     let transaction_write = key::Error::Transaction(TransactionError::Write {
         path: path("target"),
+        source: None,
     });
     assert_eq!(
         transaction_write.workflow_class(),
@@ -325,6 +337,7 @@ fn key_change_errors_classify_mutation_failures_without_display_strings() {
 
     let transaction_commit = key::Error::Transaction(TransactionError::Persist {
         path: path("target"),
+        source: None,
     });
     assert_eq!(
         transaction_commit.workflow_class(),
@@ -351,6 +364,7 @@ fn key_delete_errors_classify_mutation_failures_without_display_strings() {
 
     let transaction_commit = key::Error::Transaction(TransactionError::Persist {
         path: path("target"),
+        source: None,
     });
     assert_eq!(
         transaction_commit.workflow_class(),
