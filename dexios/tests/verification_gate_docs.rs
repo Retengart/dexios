@@ -21,6 +21,7 @@ const DEXIOS_DOMAIN_CARGO_TOML: &str = include_str!("../../dexios-domain/Cargo.t
 const GITIGNORE: &str = include_str!("../../.gitignore");
 const DENY_TOML: &str = include_str!("../../deny.toml");
 const VERIFY_PHASE_GATE: &str = include_str!("../../scripts/verify_phase_gate.sh");
+const VERIFY_ASSURANCE_REPLAY: &str = include_str!("../../scripts/verify_assurance_replay.sh");
 const VERIFY_CLI_SURFACE: &str = include_str!("../../scripts/verify_cli_surface.sh");
 const VERIFY_REPO_HYGIENE: &str = include_str!("../../scripts/verify_repo_hygiene.sh");
 const MEASURE_PERFORMANCE_GATE: &str = include_str!("../../scripts/measure_performance_gate.sh");
@@ -63,6 +64,31 @@ const REPAIRED_GATE_COMMANDS: &[&str] = &[
     "git diff --check",
 ];
 
+const ASSURANCE_REPLAY_COMMANDS: &[&str] = &[
+    "cargo test --locked --offline -p dexios-core --test v1_header --release",
+    "cargo test --locked --offline -p dexios-core --test stream_v1 --release",
+    "cargo test --locked --offline -p dexios-domain --test keyslots_v1 --release",
+    "cargo test --locked --offline -p dexios-domain --test decrypt_workflow_errors --release",
+    "cargo test --locked --offline -p dexios-domain --test unpack --release",
+    "cargo test --locked --offline -p dexios --test decrypt_cli_regressions --release",
+    "cargo test --locked --offline -p dexios --test unpack_cli_regressions --release",
+];
+
+const ASSURANCE_REPLAY_FORBIDDEN_NON_COMMENT_TOKENS: &[&str] = &[
+    "cargo install",
+    "rustup",
+    "curl",
+    "wget",
+    "npx",
+    "cargo fuzz",
+    "miri",
+    "kani",
+    "tarpaulin",
+    "grcov",
+];
+
+const EXPLORATORY_TOOL_TOKENS: &[&str] = &["cargo fuzz", "miri", "kani", "tarpaulin", "grcov"];
+
 fn assert_contains(source_name: &str, source: &str, needle: &str) {
     assert!(
         source.contains(needle),
@@ -80,6 +106,23 @@ fn assert_not_contains(source_name: &str, source: &str, needle: &str) {
 fn assert_all_contains(source_name: &str, source: &str, needles: &[&str]) {
     for needle in needles {
         assert_contains(source_name, source, needle);
+    }
+}
+
+fn assert_non_comment_lines_exclude(source_name: &str, source: &str, forbidden: &[&str]) {
+    for (line_number, line) in source.lines().enumerate() {
+        if !is_non_comment_line(line) {
+            continue;
+        }
+
+        for needle in forbidden {
+            assert!(
+                !line.contains(needle),
+                "{source_name}:{} must not contain {needle:?} in default gate code: {}",
+                line_number + 1,
+                line
+            );
+        }
     }
 }
 
@@ -220,6 +263,43 @@ fn local_scripts_expose_the_full_maintainer_gate() {
             VERIFY_REPO_HYGIENE,
             required,
         );
+    }
+}
+
+#[test]
+fn assurance_replay_script_is_bounded_offline_and_crate_owned() {
+    assert_contains(
+        "scripts/verify_assurance_replay.sh",
+        VERIFY_ASSURANCE_REPLAY,
+        "CARGO_NET_OFFLINE=true",
+    );
+    assert_all_contains(
+        "scripts/verify_assurance_replay.sh",
+        VERIFY_ASSURANCE_REPLAY,
+        ASSURANCE_REPLAY_COMMANDS,
+    );
+    assert_not_contains(
+        "scripts/verify_assurance_replay.sh",
+        VERIFY_ASSURANCE_REPLAY,
+        "local-notes",
+    );
+    assert_non_comment_lines_exclude(
+        "scripts/verify_assurance_replay.sh",
+        VERIFY_ASSURANCE_REPLAY,
+        ASSURANCE_REPLAY_FORBIDDEN_NON_COMMENT_TOKENS,
+    );
+}
+
+#[test]
+fn exploratory_assurance_tools_stay_out_of_default_gates() {
+    for (source_name, source) in [
+        (
+            "scripts/verify_assurance_replay.sh",
+            VERIFY_ASSURANCE_REPLAY,
+        ),
+        ("scripts/verify_phase_gate.sh", VERIFY_PHASE_GATE),
+    ] {
+        assert_non_comment_lines_exclude(source_name, source, EXPLORATORY_TOOL_TOKENS);
     }
 }
 
