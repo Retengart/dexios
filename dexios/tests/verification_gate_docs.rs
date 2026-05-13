@@ -201,32 +201,90 @@ fn assert_rust_production_source_excludes(source_name: &str, source: &str, forbi
     }
 }
 
-fn assert_normalized_section_occurs_before(
+fn assert_no_direct_final_create_builders(source_name: &str, source: &str) {
+    let normalized = normalized_rust_production_source(source);
+
+    for builder in ["OpenOptions::new()", "File::options()"] {
+        let mut search_from = 0;
+        while let Some(relative_start) = normalized[search_from..].find(builder) {
+            let start = search_from + relative_start;
+            let end = normalized[start..]
+                .find(';')
+                .map(|relative_end| start + relative_end)
+                .unwrap_or(normalized.len());
+            let statement = &normalized[start..end];
+            for forbidden in [".create(true)", ".create_new(true)"] {
+                assert!(
+                    !statement.contains(forbidden),
+                    "{source_name} must not build direct final output files with {builder}{forbidden}"
+                );
+            }
+            search_from = start + builder.len();
+        }
+    }
+}
+
+fn normalized_token(token: &str) -> String {
+    token
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect()
+}
+
+fn normalized_token_positions(normalized: &str, token: &str) -> Vec<usize> {
+    let token = normalized_token(token);
+    let mut positions = Vec::new();
+    let mut search_from = 0;
+
+    while let Some(relative_index) = normalized[search_from..].find(&token) {
+        let index = search_from + relative_index;
+        positions.push(index);
+        search_from = index + token.len();
+    }
+
+    positions
+}
+
+fn normalized_section_order_indices(
     source_name: &str,
     normalized: &str,
-    earlier: &str,
-    later: &str,
+    expected_order: &[&str],
+) -> Vec<usize> {
+    let mut search_from = 0;
+    let mut indices = Vec::with_capacity(expected_order.len());
+
+    for token in expected_order {
+        let compact_token = normalized_token(token);
+        let relative_index = normalized[search_from..]
+            .find(&compact_token)
+            .unwrap_or_else(|| panic!("{source_name} must contain production token {token:?}"));
+        let index = search_from + relative_index;
+        indices.push(index);
+        search_from = index + compact_token.len();
+    }
+
+    indices
+}
+
+fn assert_normalized_section_order(source_name: &str, normalized: &str, expected_order: &[&str]) {
+    normalized_section_order_indices(source_name, normalized, expected_order);
+}
+
+fn assert_no_normalized_tokens_before(
+    source_name: &str,
+    normalized: &str,
+    forbidden_tokens: &[&str],
+    boundary_index: usize,
+    boundary_name: &str,
 ) {
-    let earlier_index = normalized
-        .find(
-            &earlier
-                .chars()
-                .filter(|character| !character.is_whitespace())
-                .collect::<String>(),
-        )
-        .unwrap_or_else(|| panic!("{source_name} must contain production token {earlier:?}"));
-    let later_index = normalized
-        .find(
-            &later
-                .chars()
-                .filter(|character| !character.is_whitespace())
-                .collect::<String>(),
-        )
-        .unwrap_or_else(|| panic!("{source_name} must contain production token {later:?}"));
-    assert!(
-        earlier_index < later_index,
-        "{source_name} must place production token {earlier:?} before {later:?}"
-    );
+    for token in forbidden_tokens {
+        for index in normalized_token_positions(normalized, token) {
+            assert!(
+                index >= boundary_index,
+                "{source_name} must not contain production token {token:?} before {boundary_name}"
+            );
+        }
+    }
 }
 
 fn assert_corpus_contains(corpus_name: &str, sources: &[(&str, &str)], needle: &str) {
@@ -462,6 +520,60 @@ mod tests {
 
     assert!(normalized.contains("OpenOptions::new().create(true)"));
     assert!(!normalized.contains("File::create"));
+    assert!(
+        std::panic::catch_unwind(|| {
+            assert_no_direct_final_create_builders("synthetic.rs", source);
+        })
+        .is_err()
+    );
+
+    let reordered_open_options_source = r#"
+fn production_write(path: &std::path::Path) {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .unwrap();
+}
+"#;
+    assert!(
+        std::panic::catch_unwind(|| {
+            assert_no_direct_final_create_builders("synthetic.rs", reordered_open_options_source);
+        })
+        .is_err()
+    );
+
+    let file_options_source = r#"
+fn production_write(path: &std::path::Path) {
+    std::fs::File::options()
+        .append(true)
+        .create(true)
+        .open(path)
+        .unwrap();
+}
+"#;
+    assert!(
+        std::panic::catch_unwind(|| {
+            assert_no_direct_final_create_builders("synthetic.rs", file_options_source);
+        })
+        .is_err()
+    );
+
+    let file_options_create_new_source = r#"
+fn production_write(path: &std::path::Path) {
+    std::fs::File::options()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .unwrap();
+}
+"#;
+    assert!(
+        std::panic::catch_unwind(|| {
+            assert_no_direct_final_create_builders("synthetic.rs", file_options_create_new_source);
+        })
+        .is_err()
+    );
 }
 
 #[test]
@@ -502,6 +614,7 @@ fn archive_streaming_feasibility_rejects_direct_zip_extract() {
                 "OpenOptions::new().create_new(true)",
             ],
         );
+        assert_no_direct_final_create_builders(source_name, source);
     }
 
     for required in [
@@ -523,17 +636,14 @@ fn archive_streaming_feasibility_rejects_direct_zip_extract() {
         "fn stage_and_commit_extraction",
         "fn stage_extracted_file",
     );
-    assert_normalized_section_occurs_before(
+    assert_normalized_section_order(
         "dexios-domain/src/unpack.rs::stage_and_commit_extraction",
         &commit_section,
-        "LinkedOutputTransaction::new",
-        "stage_extracted_file",
-    );
-    assert_normalized_section_occurs_before(
-        "dexios-domain/src/unpack.rs::stage_and_commit_extraction",
-        &commit_section,
-        "stage_extracted_file",
-        "commit_all",
+        &[
+            "LinkedOutputTransaction::new",
+            "stage_extracted_file",
+            "commit_all",
+        ],
     );
 
     let stage_section = normalized_rust_production_section(
@@ -542,18 +652,26 @@ fn archive_streaming_feasibility_rejects_direct_zip_extract() {
         "fn stage_extracted_file",
         "fn overwrite_policy_for_extracted_file",
     );
-    for (earlier, later) in [
-        ("revalidate_unpack_target", ".stage("),
-        (".stage(", "staged_output_mut"),
-        ("staged_output_mut", ".with_writer("),
-    ] {
-        assert_normalized_section_occurs_before(
-            "dexios-domain/src/unpack.rs::stage_extracted_file",
-            &stage_section,
-            earlier,
-            later,
-        );
-    }
+    let stage_order = [
+        "revalidate_unpack_target",
+        "create_dir_all",
+        "revalidate_unpack_target",
+        ".stage(",
+        "staged_output_mut",
+        ".with_writer(",
+    ];
+    let stage_order_indices = normalized_section_order_indices(
+        "dexios-domain/src/unpack.rs::stage_extracted_file",
+        &stage_section,
+        &stage_order,
+    );
+    assert_no_normalized_tokens_before(
+        "dexios-domain/src/unpack.rs::stage_extracted_file",
+        &stage_section,
+        &[".stage(", "staged_output_mut", ".with_writer("],
+        stage_order_indices[2],
+        "the second target revalidation",
+    );
 
     for required in [
         "NamedStagedOutput::with_hooks",
