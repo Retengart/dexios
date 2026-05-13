@@ -10,7 +10,7 @@ pub struct FileStorage;
 
 impl FileStorage {
     pub fn create_temp_artifact(&self) -> Result<TempArtifact, Error> {
-        let file = tempfile::tempfile().map_err(|_| Error::CreateFile)?;
+        let file = tempfile::tempfile().map_err(Error::CreateFileWithSource)?;
 
         Ok(TempArtifact::new(file))
     }
@@ -39,7 +39,7 @@ impl FileStorage {
                 Err(Error::UnsafePath(full_path))
             }
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
-            Err(_) => Err(Error::FileAccess),
+            Err(err) => Err(Error::FileAccessWithSource(err)),
         }
     }
 }
@@ -60,7 +60,7 @@ fn reject_mutated_root(root: &Path) -> Result<(), Error> {
 
 impl Storage<std_fs::File> for FileStorage {
     fn create_dir_all<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
-        std_fs::create_dir_all(&path).map_err(|_| Error::CreateDir)
+        std_fs::create_dir_all(&path).map_err(Error::CreateDirWithSource)
     }
 
     fn create_file<P: AsRef<Path>>(&self, path: P) -> Result<Entry<std_fs::File>, Error> {
@@ -70,7 +70,7 @@ impl Storage<std_fs::File> for FileStorage {
             .read(true)
             .write(true)
             .open(&path)
-            .map_err(|_| Error::CreateFile)?;
+            .map_err(Error::CreateFileWithSource)?;
         Ok(Entry::File(FileData {
             path,
             stream: RefCell::new(file),
@@ -82,7 +82,10 @@ impl Storage<std_fs::File> for FileStorage {
         if path.is_dir() {
             Ok(Entry::Dir(path))
         } else {
-            let file = std_fs::File::open(&path).map_err(|_| Error::OpenFile(FileMode::Read))?;
+            let file = std_fs::File::open(&path).map_err(|source| Error::OpenFileWithSource {
+                mode: FileMode::Read,
+                source,
+            })?;
             Ok(Entry::File(FileData {
                 path,
                 stream: RefCell::new(file),
@@ -97,7 +100,10 @@ impl Storage<std_fs::File> for FileStorage {
             .read(true)
             .truncate(true)
             .open(&path)
-            .map_err(|_| Error::OpenFile(FileMode::Write))?;
+            .map_err(|source| Error::OpenFileWithSource {
+                mode: FileMode::Write,
+                source,
+            })?;
 
         Ok(Entry::File(FileData {
             path,
@@ -111,7 +117,10 @@ impl Storage<std_fs::File> for FileStorage {
             .write(true)
             .read(true)
             .open(&path)
-            .map_err(|_| Error::OpenFile(FileMode::Write))?;
+            .map_err(|source| Error::OpenFileWithSource {
+                mode: FileMode::Write,
+                source,
+            })?;
 
         Ok(Entry::File(FileData {
             path,
@@ -123,7 +132,7 @@ impl Storage<std_fs::File> for FileStorage {
         file.try_writer()?
             .borrow_mut()
             .flush()
-            .map_err(|_| Error::FlushFile)
+            .map_err(Error::FlushFileWithSource)
     }
 
     fn file_len(&self, file: &Entry<std_fs::File>) -> Result<usize, Error> {
@@ -131,18 +140,18 @@ impl Storage<std_fs::File> for FileStorage {
             Entry::File(FileData { stream, .. }) => stream.borrow(),
             Entry::Dir(_) => return Err(Error::FileAccess),
         };
-        let file_meta = std_fs::File::metadata(&fs_file).map_err(|_| Error::FileLen)?;
+        let file_meta = std_fs::File::metadata(&fs_file).map_err(Error::FileLenWithSource)?;
         file_meta.len().try_into().map_err(|_| Error::FileLen)
     }
 
     fn remove_file(&self, file: Entry<std_fs::File>) -> Result<(), Error> {
         if let Entry::File(FileData { stream, .. }) = &file {
             let mut stream = stream.borrow_mut();
-            stream.set_len(0).map_err(|_| Error::RemoveFile)?;
-            stream.flush().map_err(|_| Error::FlushFile)?;
+            stream.set_len(0).map_err(Error::RemoveFileWithSource)?;
+            stream.flush().map_err(Error::FlushFileWithSource)?;
         }
 
-        std_fs::remove_file(file.path()).map_err(|_| Error::RemoveFile)
+        std_fs::remove_file(file.path()).map_err(Error::RemoveFileWithSource)
     }
 
     fn remove_dir_all(&self, file: Entry<std_fs::File>) -> Result<(), Error> {
@@ -150,7 +159,7 @@ impl Storage<std_fs::File> for FileStorage {
             return Err(Error::RemoveDir);
         }
 
-        std_fs::remove_dir_all(file.path()).map_err(|_| Error::RemoveDir)
+        std_fs::remove_dir_all(file.path()).map_err(Error::RemoveDirWithSource)
     }
 
     fn read_dir(&self, file: &Entry<std_fs::File>) -> Result<Vec<Entry<std_fs::File>>, Error> {
@@ -162,7 +171,10 @@ impl Storage<std_fs::File> for FileStorage {
             .into_iter()
             .map(|res| {
                 res.map(|e| e.path().to_owned())
-                    .map_err(|_| Error::DirEntries)
+                    .map_err(|error| match error.into_io_error() {
+                        Some(source) => Error::DirEntriesWithSource(source),
+                        None => Error::DirEntries,
+                    })
             })
             .map(|path| path.and_then(|path| self.read_file(path)))
             .collect()
@@ -173,7 +185,7 @@ impl Storage<std_fs::File> for FileStorage {
         let mut current = if output_dir.is_absolute() {
             PathBuf::new()
         } else {
-            std::env::current_dir().map_err(|_| Error::FileAccess)?
+            std::env::current_dir().map_err(Error::FileAccessWithSource)?
         };
 
         for component in output_dir.components() {
@@ -192,9 +204,9 @@ impl Storage<std_fs::File> for FileStorage {
                         Ok(meta) if meta.is_dir() => {}
                         Ok(_) => return Err(Error::UnsafePath(current)),
                         Err(err) if err.kind() == io::ErrorKind::NotFound => {
-                            std_fs::create_dir(&current).map_err(|_| Error::CreateDir)?;
+                            std_fs::create_dir(&current).map_err(Error::CreateDirWithSource)?;
                         }
-                        Err(_) => return Err(Error::FileAccess),
+                        Err(err) => return Err(Error::FileAccessWithSource(err)),
                     }
                 }
             }
@@ -229,7 +241,7 @@ impl Storage<std_fs::File> for FileStorage {
                 }
                 Ok(_) => {}
                 Err(err) if err.kind() == io::ErrorKind::NotFound => {}
-                Err(_) => return Err(Error::FileAccess),
+                Err(err) => return Err(Error::FileAccessWithSource(err)),
             }
         }
 

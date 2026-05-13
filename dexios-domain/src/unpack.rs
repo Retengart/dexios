@@ -293,7 +293,12 @@ where
     tmp_file.with_writer(|tmp_writer| {
         tmp_writer
             .rewind()
-            .map_err(|_| Error::Storage(storage::Error::OpenFile(storage::FileMode::Write)))?;
+            .map_err(|source| {
+                Error::Storage(storage::Error::OpenFileWithSource {
+                    mode: storage::FileMode::Write,
+                    source,
+                })
+            })?;
         let writer = RefCell::new(tmp_writer);
         decrypt::execute_handles(decrypt::HandleRequest {
             header_reader: req.header_reader,
@@ -523,15 +528,25 @@ fn classify_storage_error(error: &storage::Error) -> WorkflowErrorClass {
     match error {
         storage::Error::UnsafePath(_) => WorkflowErrorClass::UnsafePath,
         storage::Error::CreateDir
+        | storage::Error::CreateDirWithSource(_)
         | storage::Error::CreateFile
+        | storage::Error::CreateFileWithSource(_)
         | storage::Error::OpenFile(_)
+        | storage::Error::OpenFileWithSource { .. }
         | storage::Error::RemoveFile
+        | storage::Error::RemoveFileWithSource(_)
         | storage::Error::RemoveDir
+        | storage::Error::RemoveDirWithSource(_)
         | storage::Error::DirEntries
+        | storage::Error::DirEntriesWithSource(_)
         | storage::Error::FlushFile
+        | storage::Error::FlushFileWithSource(_)
         | storage::Error::SyncFile
+        | storage::Error::SyncFileWithSource(_)
         | storage::Error::FileAccess
-        | storage::Error::FileLen => WorkflowErrorClass::IoFailure,
+        | storage::Error::FileAccessWithSource(_)
+        | storage::Error::FileLen
+        | storage::Error::FileLenWithSource(_) => WorkflowErrorClass::IoFailure,
     }
 }
 

@@ -40,7 +40,7 @@ fn should_throw_an_error_if_file_already_exist() {
     let create_result = stor.create_file("hello_2.txt");
 
     match create_result {
-        Err(Error::CreateFile) => {}
+        Err(error) => assert_io_source_kind(&error, ErrorKind::AlreadyExists),
         _ => unreachable!(),
     }
 }
@@ -51,9 +51,7 @@ fn should_not_open_file_to_read() {
     let read_result = stor.read_file("hello_3.txt");
 
     match read_result {
-        Err(error @ Error::OpenFile(FileMode::Read)) => {
-            assert_io_source_kind(&error, ErrorKind::NotFound);
-        }
+        Err(error) => assert_io_source_kind(&error, ErrorKind::NotFound),
         _ => unreachable!(),
     }
 }
@@ -64,7 +62,7 @@ fn should_not_open_file_to_write() {
     let write_result = stor.write_file("hello_4.txt");
 
     match write_result {
-        Err(Error::OpenFile(FileMode::Write)) => {}
+        Err(error) => assert_io_source_kind(&error, ErrorKind::NotFound),
         _ => unreachable!(),
     }
 }

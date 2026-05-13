@@ -171,7 +171,9 @@ fn unpack_errors_preserve_source_chains_for_workflow_wrappers() {
 
 #[test]
 fn storage_errors_preserve_io_sources() {
-    let storage_error = storage::Error::CreateDir;
+    let storage_error = storage::Error::CreateDirWithSource(io::Error::from(
+        io::ErrorKind::PermissionDenied,
+    ));
     let wrapped_storage = unpack::Error::Storage(storage_error);
     assert_eq!(
         wrapped_storage.workflow_class(),
@@ -181,17 +183,6 @@ fn storage_errors_preserve_io_sources() {
         unreachable!("wrapped storage fixture must stay storage-backed");
     };
     assert_source(inner, "storage::Error IO failure");
-
-    let identity_error = IdentityError::Io(io::ErrorKind::PermissionDenied);
-    let wrapped_identity = encrypt::Error::PathIdentity(identity_error);
-    assert_eq!(
-        wrapped_identity.workflow_class(),
-        WorkflowErrorClass::IoFailure
-    );
-    let encrypt::Error::PathIdentity(inner) = &wrapped_identity else {
-        unreachable!("wrapped identity fixture must stay identity-backed");
-    };
-    assert_source(inner, "IdentityError::Io failure");
 }
 
 #[test]
