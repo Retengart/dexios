@@ -140,6 +140,48 @@ fn assert_non_comment_lines_exclude(source_name: &str, source: &str, forbidden: 
     }
 }
 
+fn assert_rust_production_lines_exclude(source_name: &str, source: &str, forbidden: &[&str]) {
+    let mut next_module_is_test_only = false;
+    let mut in_trailing_test_module = false;
+
+    for (line_number, line) in source.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("#[cfg(test)]") {
+            next_module_is_test_only = true;
+            continue;
+        }
+        if next_module_is_test_only && trimmed.starts_with("mod tests") {
+            in_trailing_test_module = true;
+            continue;
+        }
+        if in_trailing_test_module {
+            continue;
+        }
+        if trimmed.is_empty() || trimmed.starts_with("//") {
+            continue;
+        }
+
+        let compact_line = line
+            .chars()
+            .filter(|character| !character.is_whitespace())
+            .collect::<String>();
+        for needle in forbidden {
+            let compact_needle = needle
+                .chars()
+                .filter(|character| !character.is_whitespace())
+                .collect::<String>();
+            assert!(
+                !compact_line.contains(&compact_needle),
+                "{source_name}:{} must not contain {needle:?} in production Rust code: {}",
+                line_number + 1,
+                line
+            );
+        }
+
+        next_module_is_test_only = false;
+    }
+}
+
 fn assert_corpus_contains(corpus_name: &str, sources: &[(&str, &str)], needle: &str) {
     assert!(
         sources.iter().any(|(_, source)| source.contains(needle)),
@@ -367,20 +409,63 @@ fn archive_streaming_feasibility_rejects_direct_zip_extract() {
         );
     }
 
-    for (line_number, line) in ARCHIVE_STREAMING_FEASIBILITY.lines().enumerate() {
-        let trimmed = line.trim_start();
-        if trimmed.is_empty() || trimmed.starts_with("//") {
-            continue;
-        }
+    for (source_name, source) in [
+        (
+            "dexios-domain/tests/archive_streaming_feasibility.rs",
+            ARCHIVE_STREAMING_FEASIBILITY,
+        ),
+        ("dexios-domain/src/unpack.rs", DEXIOS_DOMAIN_UNPACK_RS),
+        (
+            "dexios-domain/src/storage/transaction.rs",
+            DEXIOS_DOMAIN_TRANSACTION_RS,
+        ),
+        ("dexios-domain/src/storage/temp.rs", DEXIOS_DOMAIN_TEMP_RS),
+    ] {
+        assert_rust_production_lines_exclude(
+            source_name,
+            source,
+            &[
+                ".extract(",
+                "File::create",
+                "std::fs::write",
+                "OpenOptions::new().create(true)",
+                "OpenOptions::new().create_new(true)",
+            ],
+        );
+    }
 
-        for forbidden in [".extract(", "File::create", "std::fs::write"] {
-            assert!(
-                !line.contains(forbidden),
-                "dexios-domain/tests/archive_streaming_feasibility.rs:{} must not contain {forbidden:?}: {}",
-                line_number + 1,
-                line
-            );
-        }
+    for required in [
+        "LinkedOutputTransaction::new",
+        ".stage(",
+        ".with_writer(",
+        "commit_all",
+        "revalidate_unpack_target",
+    ] {
+        assert_contains(
+            "dexios-domain/src/unpack.rs",
+            DEXIOS_DOMAIN_UNPACK_RS,
+            required,
+        );
+    }
+
+    for required in [
+        "NamedStagedOutput::with_hooks",
+        "staged_output_mut",
+        "prepare_for_persist",
+        "persist_replace_at_commit",
+        "persist_noclobber",
+    ] {
+        assert_corpus_contains(
+            "archive staging source",
+            &[
+                (
+                    "dexios-domain/src/storage/transaction.rs",
+                    DEXIOS_DOMAIN_TRANSACTION_RS,
+                ),
+                ("dexios-domain/src/storage/temp.rs", DEXIOS_DOMAIN_TEMP_RS),
+            ],
+            required,
+        );
     }
 }
 

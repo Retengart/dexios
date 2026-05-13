@@ -204,7 +204,7 @@ impl ProofVisitor {
     }
 
     fn finalize_after_auth(&mut self) -> ProofResult<()> {
-        if !self.central_names.is_empty() && self.central_names != self.local_names {
+        if self.central_names != self.local_names {
             return Err(ProofError::MetadataMismatch {
                 local: self.local_names.clone(),
                 central: self.central_names.clone(),
@@ -217,6 +217,10 @@ impl ProofVisitor {
 
     fn override_metadata_names_for_test(&mut self, central_names: Vec<PathBuf>) {
         self.central_names = central_names;
+    }
+
+    fn local_names_for_test(&self) -> Vec<PathBuf> {
+        self.local_names.clone()
     }
 
     fn fail<T>(&mut self, error: ProofError) -> ZipResult<T> {
@@ -422,6 +426,7 @@ fn zip_streaming_proof_stages_without_committing_before_finalize() {
         b"body"
     );
     assert!(proof.committed_outputs().is_empty());
+    proof.override_metadata_names_for_test(proof.local_names_for_test());
     proof.finalize_after_auth().unwrap();
     assert_eq!(
         proof
@@ -492,6 +497,7 @@ fn zip_streaming_proof_keeps_selected_outputs_staged_until_finalize() {
     );
     assert!(!proof.staged_outputs().contains_key(Path::new("skip.txt")));
     assert!(proof.committed_outputs().is_empty());
+    proof.override_metadata_names_for_test(proof.local_names_for_test());
     proof.finalize_after_auth().unwrap();
     assert_eq!(proof.committed_outputs().len(), 1);
     assert_eq!(
@@ -507,6 +513,18 @@ fn zip_streaming_proof_keeps_selected_outputs_staged_until_finalize() {
 fn zip_streaming_proof_rejects_finalize_when_metadata_is_missing_or_mismatched() {
     let zip_bytes = make_zip(&[("file.txt", Some(b"body"))]);
     let mut proof = visit_zip_with_proof(&zip_bytes, |_| true).unwrap();
+
+    proof.override_metadata_names_for_test(Vec::new());
+    let err = proof.finalize_after_auth().unwrap_err();
+
+    assert!(matches!(
+        err,
+        ProofError::MetadataMismatch {
+            local,
+            central,
+        } if local == vec![PathBuf::from("file.txt")] && central.is_empty()
+    ));
+    assert!(proof.committed_outputs().is_empty());
 
     proof.override_metadata_names_for_test(vec![PathBuf::from("different.txt")]);
     let err = proof.finalize_after_auth().unwrap_err();
