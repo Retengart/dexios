@@ -87,7 +87,15 @@ impl std::fmt::Display for Error {
     }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::PathIdentity(error) => Some(error),
+            Self::Transaction(error) => Some(error),
+            _ => None,
+        }
+    }
+}
 
 pub type OnDecryptedHeaderFn = Box<dyn FnOnce(&V1Header)>;
 

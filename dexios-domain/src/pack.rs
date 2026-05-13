@@ -92,7 +92,17 @@ impl std::fmt::Display for Error {
     }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Encrypt(error) => Some(error),
+            Self::PathIdentity(error) => Some(error),
+            Self::Transaction(error) => Some(error),
+            Self::ArchiveLimit(error) => Some(error),
+            _ => None,
+        }
+    }
+}
 
 impl Error {
     #[must_use]
