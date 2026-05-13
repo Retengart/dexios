@@ -251,9 +251,7 @@ fn decrypt_corrupted_stream_variants_never_commit_final_output() {
     )
     .expect("build truncated-stream decrypt intent");
 
-    let error = decrypt::execute(intent)
-        .err()
-        .expect("truncated stream decrypt must fail");
+    let error = decrypt::execute(intent).expect_err("truncated stream decrypt must fail");
     assert_eq!(
         error.workflow_class(),
         WorkflowErrorClass::AuthenticationFailure,
