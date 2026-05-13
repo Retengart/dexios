@@ -4,10 +4,14 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use core::header::common::HEADER_LEN;
+use core::primitives::BLOCK_SIZE;
+
 const CORRECT_PASSWORD: &str = "correct-password";
 const WRONG_PASSWORD: &str = "wrong-password";
 const DECRYPT_SOURCE: &str = include_str!("../src/subcommands/decrypt.rs");
 const ERRORS_SOURCE: &str = include_str!("../src/subcommands/errors.rs");
+const STREAM_TAG_LEN: usize = 16;
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 
 struct TestDir {
@@ -53,6 +57,137 @@ fn run_cli(current_dir: &Path, key: &str, args: &[&str]) -> std::process::Output
 
 fn stderr(output: &std::process::Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+fn multichunk_plaintext() -> Vec<u8> {
+    (0..(BLOCK_SIZE * 3 + 37))
+        .map(|index| (index % 251) as u8)
+        .collect()
+}
+
+fn corrupt_final_chunk(bytes: &mut [u8]) {
+    let final_offset = HEADER_LEN + (3 * (BLOCK_SIZE + STREAM_TAG_LEN));
+    bytes[final_offset] ^= 0x40;
+}
+
+fn truncate_one_byte(bytes: &mut Vec<u8>) {
+    bytes.pop().expect("encrypted fixture has payload bytes");
+}
+
+fn reorder_normal_chunks(bytes: &mut [u8]) {
+    let payload = &mut bytes[HEADER_LEN..];
+    let normal_chunk_len = BLOCK_SIZE + STREAM_TAG_LEN;
+    let (first, remaining) = payload.split_at_mut(normal_chunk_len);
+    let second = &mut remaining[..normal_chunk_len];
+    first.swap_with_slice(second);
+}
+
+#[test]
+fn decrypt_cli_corrupted_stream_variants_preserve_existing_output() {
+    let test_dir = TestDir::new("decrypt-cli-corrupted-stream");
+    let sentinel = b"existing output must survive corrupted CLI decrypt";
+
+    for (label, corrupt) in [
+        ("final-tamper", corrupt_final_chunk as fn(&mut [u8])),
+        (
+            "reordered-normal-chunks",
+            reorder_normal_chunks as fn(&mut [u8]),
+        ),
+    ] {
+        let plain = format!("{label}.txt");
+        let encrypted = format!("{label}.enc");
+        let output_path = test_dir.path().join(format!("{label}.out"));
+        fs::write(test_dir.path().join(&plain), multichunk_plaintext()).unwrap();
+
+        let encrypt_output = run_cli(
+            test_dir.path(),
+            CORRECT_PASSWORD,
+            &["encrypt", "--force", plain.as_str(), encrypted.as_str()],
+        );
+        assert!(
+            encrypt_output.status.success(),
+            "{label}: encrypt fixture failed: stdout={}\nstderr={}",
+            String::from_utf8_lossy(&encrypt_output.stdout),
+            String::from_utf8_lossy(&encrypt_output.stderr)
+        );
+
+        let encrypted_path = test_dir.path().join(&encrypted);
+        let mut encrypted_bytes = fs::read(&encrypted_path).unwrap();
+        corrupt(&mut encrypted_bytes);
+        fs::write(&encrypted_path, encrypted_bytes).unwrap();
+        fs::write(&output_path, sentinel).unwrap();
+
+        let decrypt_output = run_cli(
+            test_dir.path(),
+            CORRECT_PASSWORD,
+            &[
+                "decrypt",
+                "--force",
+                encrypted.as_str(),
+                output_path.file_name().unwrap().to_str().unwrap(),
+            ],
+        );
+
+        assert!(
+            !decrypt_output.status.success(),
+            "{label}: corrupted decrypt unexpectedly succeeded: stdout={}\nstderr={}",
+            String::from_utf8_lossy(&decrypt_output.stdout),
+            String::from_utf8_lossy(&decrypt_output.stderr)
+        );
+        let stderr = stderr(&decrypt_output);
+        assert!(
+            stderr.contains("Authentication failed")
+                || stderr.contains("Malformed Dexios encrypted data"),
+            "{label}: stderr should stay terse and typed: {stderr}"
+        );
+        assert_eq!(
+            fs::read(&output_path).unwrap(),
+            sentinel.as_slice(),
+            "{label}: CLI decrypt must preserve an existing final output"
+        );
+    }
+
+    let plain = "one-byte-truncation.txt";
+    let encrypted = "one-byte-truncation.enc";
+    let output = "one-byte-truncation.out";
+    fs::write(test_dir.path().join(plain), multichunk_plaintext()).unwrap();
+    let encrypt_output = run_cli(
+        test_dir.path(),
+        CORRECT_PASSWORD,
+        &["encrypt", "--force", plain, encrypted],
+    );
+    assert!(
+        encrypt_output.status.success(),
+        "truncation encrypt fixture failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&encrypt_output.stdout),
+        String::from_utf8_lossy(&encrypt_output.stderr)
+    );
+    let encrypted_path = test_dir.path().join(encrypted);
+    let mut encrypted_bytes = fs::read(&encrypted_path).unwrap();
+    truncate_one_byte(&mut encrypted_bytes);
+    fs::write(&encrypted_path, encrypted_bytes).unwrap();
+    let output_path = test_dir.path().join(output);
+    fs::write(&output_path, sentinel).unwrap();
+
+    let decrypt_output = run_cli(
+        test_dir.path(),
+        CORRECT_PASSWORD,
+        &["decrypt", "--force", encrypted, output],
+    );
+
+    assert!(
+        !decrypt_output.status.success(),
+        "truncated decrypt unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&decrypt_output.stdout),
+        String::from_utf8_lossy(&decrypt_output.stderr)
+    );
+    let stderr = stderr(&decrypt_output);
+    assert!(
+        stderr.contains("Authentication failed")
+            || stderr.contains("Malformed Dexios encrypted data"),
+        "truncated stream stderr should stay terse and typed: {stderr}"
+    );
+    assert_eq!(fs::read(output_path).unwrap(), sentinel.as_slice());
 }
 
 #[test]

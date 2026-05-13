@@ -5,12 +5,15 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use core::header::common::HEADER_LEN;
 use core::kdf::Kdf;
+use core::primitives::BLOCK_SIZE;
 use core::protected::Protected;
 use domain::encrypt;
 use zip::write::SimpleFileOptions;
 
 const PASSWORD: &str = "12345678";
+const STREAM_TAG_LEN: usize = 16;
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 
 struct TestDir {
@@ -95,6 +98,19 @@ fn encrypt_archive(input_path: &Path, output_path: &Path) {
     encrypt::execute(intent).unwrap();
 }
 
+fn tamper_final_stream_chunk(path: &Path) {
+    let mut bytes = fs::read(path).unwrap();
+    let final_offset = HEADER_LEN + (bytes[HEADER_LEN..].len().saturating_sub(STREAM_TAG_LEN));
+    bytes[final_offset] ^= 0x40;
+    fs::write(path, bytes).unwrap();
+}
+
+fn truncate_stream(path: &Path) {
+    let mut bytes = fs::read(path).unwrap();
+    bytes.pop().expect("encrypted archive has payload bytes");
+    fs::write(path, bytes).unwrap();
+}
+
 #[cfg(unix)]
 fn symlink_dir(src: &Path, dst: &Path) {
     std::os::unix::fs::symlink(src, dst).unwrap();
@@ -103,6 +119,43 @@ fn symlink_dir(src: &Path, dst: &Path) {
 #[cfg(windows)]
 fn symlink_dir(src: &Path, dst: &Path) {
     std::os::windows::fs::symlink_dir(src, dst).unwrap();
+}
+
+#[test]
+fn unpack_cli_corrupted_archive_never_extracts_outputs() {
+    let test_dir = TestDir::new("unpack-cli-corrupted-stream");
+
+    for (label, corrupt) in [
+        ("final-tamper", tamper_final_stream_chunk as fn(&Path)),
+        ("one-byte-truncation", truncate_stream as fn(&Path)),
+    ] {
+        let plain_zip = test_dir.path().join(format!("{label}.zip"));
+        let encrypted_archive = test_dir.path().join(format!("{label}.enc"));
+        let output_dir = test_dir.path().join(format!("{label}-out"));
+        let payload = vec![0xA5; BLOCK_SIZE + 37];
+
+        write_zip_with_entries(&plain_zip, &[("safe.txt", payload.as_slice())]);
+        encrypt_archive(&plain_zip, &encrypted_archive);
+        corrupt(&encrypted_archive);
+
+        let output = run_unpack(&encrypted_archive, &output_dir);
+
+        assert!(
+            !output.status.success(),
+            "{label}: corrupted CLI unpack unexpectedly succeeded: stdout={}\nstderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("Authentication failed") || stderr.contains("Malformed archive data"),
+            "{label}: stderr should stay terse and typed: {stderr}"
+        );
+        assert!(
+            !output_dir.join("safe.txt").exists(),
+            "{label}: corrupted archive must not extract safe entries"
+        );
+    }
 }
 
 #[cfg(any(unix, windows))]
