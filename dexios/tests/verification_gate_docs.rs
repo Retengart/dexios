@@ -140,11 +140,12 @@ fn assert_non_comment_lines_exclude(source_name: &str, source: &str, forbidden: 
     }
 }
 
-fn assert_rust_production_lines_exclude(source_name: &str, source: &str, forbidden: &[&str]) {
+fn normalized_rust_production_source(source: &str) -> String {
     let mut next_module_is_test_only = false;
     let mut in_trailing_test_module = false;
+    let mut normalized = String::new();
 
-    for (line_number, line) in source.lines().enumerate() {
+    for line in source.lines() {
         let trimmed = line.trim_start();
         if trimmed.starts_with("#[cfg(test)]") {
             next_module_is_test_only = true;
@@ -161,25 +162,71 @@ fn assert_rust_production_lines_exclude(source_name: &str, source: &str, forbidd
             continue;
         }
 
-        let compact_line = line
-            .chars()
-            .filter(|character| !character.is_whitespace())
-            .collect::<String>();
-        for needle in forbidden {
-            let compact_needle = needle
-                .chars()
-                .filter(|character| !character.is_whitespace())
-                .collect::<String>();
-            assert!(
-                !compact_line.contains(&compact_needle),
-                "{source_name}:{} must not contain {needle:?} in production Rust code: {}",
-                line_number + 1,
-                line
-            );
-        }
+        normalized.extend(line.chars().filter(|character| !character.is_whitespace()));
 
         next_module_is_test_only = false;
     }
+
+    normalized
+}
+
+fn normalized_rust_production_section(
+    source_name: &str,
+    source: &str,
+    start: &str,
+    end: &str,
+) -> String {
+    let start_index = source
+        .find(start)
+        .unwrap_or_else(|| panic!("{source_name} must contain section start {start:?}"));
+    let end_index = source[start_index..]
+        .find(end)
+        .map(|index| start_index + index)
+        .unwrap_or_else(|| panic!("{source_name} must contain section end {end:?}"));
+    normalized_rust_production_source(&source[start_index..end_index])
+}
+
+fn assert_rust_production_source_excludes(source_name: &str, source: &str, forbidden: &[&str]) {
+    let normalized = normalized_rust_production_source(source);
+
+    for needle in forbidden {
+        let compact_needle = needle
+            .chars()
+            .filter(|character| !character.is_whitespace())
+            .collect::<String>();
+        assert!(
+            !normalized.contains(&compact_needle),
+            "{source_name} must not contain {needle:?} in production Rust code"
+        );
+    }
+}
+
+fn assert_normalized_section_occurs_before(
+    source_name: &str,
+    normalized: &str,
+    earlier: &str,
+    later: &str,
+) {
+    let earlier_index = normalized
+        .find(
+            &earlier
+                .chars()
+                .filter(|character| !character.is_whitespace())
+                .collect::<String>(),
+        )
+        .unwrap_or_else(|| panic!("{source_name} must contain production token {earlier:?}"));
+    let later_index = normalized
+        .find(
+            &later
+                .chars()
+                .filter(|character| !character.is_whitespace())
+                .collect::<String>(),
+        )
+        .unwrap_or_else(|| panic!("{source_name} must contain production token {later:?}"));
+    assert!(
+        earlier_index < later_index,
+        "{source_name} must place production token {earlier:?} before {later:?}"
+    );
 }
 
 fn assert_corpus_contains(corpus_name: &str, sources: &[(&str, &str)], needle: &str) {
@@ -395,6 +442,29 @@ fn planning_artifacts_remain_local_only() {
 }
 
 #[test]
+fn rust_production_source_gate_catches_multiline_dangerous_calls() {
+    let source = r#"
+fn production_write(path: &std::path::Path) {
+    std::fs::OpenOptions::new()
+        .create(true)
+        .open(path)
+        .unwrap();
+}
+
+#[cfg(test)]
+mod tests {
+    fn fixture(path: &std::path::Path) {
+        std::fs::File::create(path).unwrap();
+    }
+}
+"#;
+    let normalized = normalized_rust_production_source(source);
+
+    assert!(normalized.contains("OpenOptions::new().create(true)"));
+    assert!(!normalized.contains("File::create"));
+}
+
+#[test]
 fn archive_streaming_feasibility_rejects_direct_zip_extract() {
     for required in [
         "ZipStreamReader",
@@ -421,7 +491,7 @@ fn archive_streaming_feasibility_rejects_direct_zip_extract() {
         ),
         ("dexios-domain/src/storage/temp.rs", DEXIOS_DOMAIN_TEMP_RS),
     ] {
-        assert_rust_production_lines_exclude(
+        assert_rust_production_source_excludes(
             source_name,
             source,
             &[
@@ -445,6 +515,43 @@ fn archive_streaming_feasibility_rejects_direct_zip_extract() {
             "dexios-domain/src/unpack.rs",
             DEXIOS_DOMAIN_UNPACK_RS,
             required,
+        );
+    }
+    let commit_section = normalized_rust_production_section(
+        "dexios-domain/src/unpack.rs",
+        DEXIOS_DOMAIN_UNPACK_RS,
+        "fn stage_and_commit_extraction",
+        "fn stage_extracted_file",
+    );
+    assert_normalized_section_occurs_before(
+        "dexios-domain/src/unpack.rs::stage_and_commit_extraction",
+        &commit_section,
+        "LinkedOutputTransaction::new",
+        "stage_extracted_file",
+    );
+    assert_normalized_section_occurs_before(
+        "dexios-domain/src/unpack.rs::stage_and_commit_extraction",
+        &commit_section,
+        "stage_extracted_file",
+        "commit_all",
+    );
+
+    let stage_section = normalized_rust_production_section(
+        "dexios-domain/src/unpack.rs",
+        DEXIOS_DOMAIN_UNPACK_RS,
+        "fn stage_extracted_file",
+        "fn overwrite_policy_for_extracted_file",
+    );
+    for (earlier, later) in [
+        ("revalidate_unpack_target", ".stage("),
+        (".stage(", "staged_output_mut"),
+        ("staged_output_mut", ".with_writer("),
+    ] {
+        assert_normalized_section_occurs_before(
+            "dexios-domain/src/unpack.rs::stage_extracted_file",
+            &stage_section,
+            earlier,
+            later,
         );
     }
 
