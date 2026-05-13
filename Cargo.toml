@@ -26,7 +26,7 @@ zip = { version = "8.6.0", default-features = false, features = ["zstd"] }
 chacha20poly1305 = "0.10.1"
 aead = { version = "0.5.2", features = ["stream"] }
 zeroize = "1.8.2"
-balloon-hash = "0.4.0"
+balloon-hash = { version = "0.4.0", features = ["zeroize"] }
 indicatif = "0.18.4"
 walkdir = "2.5.0"
 

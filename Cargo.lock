@@ -89,6 +89,7 @@ dependencies = [
  "crypto-bigint",
  "digest",
  "password-hash",
+ "zeroize",
 ]
 
 [[package]]

@@ -139,6 +139,48 @@ fn blake3_balloon_vector_metadata_matches_frozen_contract() {
 }
 
 #[test]
+fn workspace_manifest_source_gates_kdf_dependency_policy() {
+    let workspace_manifest: toml::Value =
+        toml::from_str(include_str!("../../Cargo.toml")).expect("valid workspace manifest");
+    let workspace_deps = workspace_manifest["workspace"]["dependencies"]
+        .as_table()
+        .expect("workspace dependencies table");
+
+    let balloon_hash = workspace_deps
+        .get("balloon-hash")
+        .and_then(toml::Value::as_table)
+        .expect("balloon-hash uses explicit workspace dependency table");
+    assert_eq!(
+        balloon_hash.get("version").and_then(toml::Value::as_str),
+        Some("0.4.0")
+    );
+    let balloon_features = balloon_hash
+        .get("features")
+        .and_then(toml::Value::as_array)
+        .expect("balloon-hash feature policy is explicit")
+        .iter()
+        .map(|feature| feature.as_str().expect("feature is a string"))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(balloon_features, BTreeSet::from(["zeroize"]));
+
+    assert_eq!(
+        workspace_deps.get("blake3").and_then(toml::Value::as_str),
+        Some("=1.8.3")
+    );
+
+    let core_manifest: toml::Value =
+        toml::from_str(include_str!("../Cargo.toml")).expect("valid core manifest");
+    let core_deps = core_manifest["dependencies"]
+        .as_table()
+        .expect("core dependencies table");
+    assert_eq!(
+        core_deps["balloon-hash"]["workspace"].as_bool(),
+        Some(true),
+        "dexios-core must inherit the workspace balloon-hash feature policy"
+    );
+}
+
+#[test]
 fn balloon_matches_stable_known_vector() {
     assert_vector(Kdf::Blake3Balloon, "balloon", "stable");
 }
