@@ -77,16 +77,22 @@ Files are currently copied into the zip archive in streaming chunks. The code do
 
 The current unpack flow is stricter than the historical docs:
 
-1. decrypt the packed file into a temporary zip artifact
-2. normalize every archive path before writing anything to disk
-3. enforce the shared `ArchiveLimits` entry count, path byte, and path depth policy
-4. reject traversal attempts, unsafe ZIP names, duplicate normalized paths, and prefix collisions
-5. reject unsafe symlink-based output escapes through the storage layer
-6. run overwrite prompts only after the structural validation pass succeeds
-7. revalidate selected file targets near staging
-8. stage selected extracted files under the requested output root
-9. commit the extracted files through storage transaction semantics
-10. clean up the temporary archive
+The public Rust API constructs unpack work through checked `UnpackIntent` state
+rather than raw request fields. The CLI still owns prompting and selected input
+paths; the domain layer keeps archive validation, path identity checks, staging,
+and transaction commit behavior.
+
+1. construct checked unpack intent from opened input/header entries and the requested output root
+2. decrypt the packed file into a temporary zip artifact
+3. normalize every archive path before writing anything to disk
+4. enforce the shared `ArchiveLimits` entry count, path byte, and path depth policy
+5. reject traversal attempts, unsafe ZIP names, duplicate normalized paths, and prefix collisions
+6. reject unsafe symlink-based output escapes through the storage layer
+7. run overwrite prompts only after the structural validation pass succeeds
+8. revalidate selected file targets near staging
+9. stage selected extracted files under the requested output root
+10. commit the extracted files through storage transaction semantics
+11. clean up the temporary archive
 
 If the CLI is not run with `--force`, unpack may prompt before overwriting existing files.
 
@@ -95,4 +101,5 @@ If the CLI is not run with `--force`, unpack may prompt before overwriting exist
 - Packing hides original directory layout inside the encrypted payload, but the outer ciphertext still leaks overall file size.
 - Unpack should still be treated as a risky operation on untrusted input, even though the current implementation has explicit path identity and path-safety checks.
 - The temporary decrypted archive is plaintext while it exists.
+- Checked unpack construction makes the public API harder to bypass; it does not reduce plaintext temporary ZIP exposure or add a capacity proof.
 - Byte and storage needs are real operating assumptions. The structural limits bound archive metadata shape; they do not prove that the host has enough free memory or disk space.
