@@ -25,6 +25,12 @@ const VERIFY_ASSURANCE_REPLAY: &str = include_str!("../../scripts/verify_assuran
 const VERIFY_CLI_SURFACE: &str = include_str!("../../scripts/verify_cli_surface.sh");
 const VERIFY_REPO_HYGIENE: &str = include_str!("../../scripts/verify_repo_hygiene.sh");
 const MEASURE_PERFORMANCE_GATE: &str = include_str!("../../scripts/measure_performance_gate.sh");
+const DEXIOS_CORE_STREAM_V1_TESTS: &str = include_str!("../../dexios-core/tests/stream_v1.rs");
+const DEXIOS_DOMAIN_DECRYPT_WORKFLOW_ERROR_TESTS: &str =
+    include_str!("../../dexios-domain/tests/decrypt_workflow_errors.rs");
+const DEXIOS_DOMAIN_UNPACK_TESTS: &str = include_str!("../../dexios-domain/tests/unpack.rs");
+const DEXIOS_DECRYPT_CLI_REGRESSION_TESTS: &str = include_str!("decrypt_cli_regressions.rs");
+const DEXIOS_UNPACK_CLI_REGRESSION_TESTS: &str = include_str!("unpack_cli_regressions.rs");
 const DEXIOS_MAIN_RS: &str = include_str!("../src/main.rs");
 const DEXIOS_CLI_RS: &str = include_str!("../src/cli.rs");
 const DEXIOS_STATES_RS: &str = include_str!("../src/global/states.rs");
@@ -288,6 +294,41 @@ fn assurance_replay_script_is_bounded_offline_and_crate_owned() {
         VERIFY_ASSURANCE_REPLAY,
         ASSURANCE_REPLAY_FORBIDDEN_NON_COMMENT_TOKENS,
     );
+
+    for (source_name, source, symbols) in [
+        (
+            "dexios-core/tests/stream_v1.rs",
+            DEXIOS_CORE_STREAM_V1_TESTS,
+            &[
+                "stream_payload_boundary_matrix_roundtrips_with_file_api",
+                "stream_file_api_handles_short_output_writes_at_boundaries",
+                "decrypt_rejects_duplicated_chunk",
+                "decrypt_rejects_each_truncated_stream_chunk",
+            ][..],
+        ),
+        (
+            "dexios-domain/tests/decrypt_workflow_errors.rs",
+            DEXIOS_DOMAIN_DECRYPT_WORKFLOW_ERROR_TESTS,
+            &["decrypt_corrupted_stream_variants_never_commit_final_output"][..],
+        ),
+        (
+            "dexios-domain/tests/unpack.rs",
+            DEXIOS_DOMAIN_UNPACK_TESTS,
+            &["unpack_corrupted_stream_never_extracts_outputs"][..],
+        ),
+        (
+            "dexios/tests/decrypt_cli_regressions.rs",
+            DEXIOS_DECRYPT_CLI_REGRESSION_TESTS,
+            &["decrypt_cli_corrupted_stream_variants_preserve_existing_output"][..],
+        ),
+        (
+            "dexios/tests/unpack_cli_regressions.rs",
+            DEXIOS_UNPACK_CLI_REGRESSION_TESTS,
+            &["unpack_cli_corrupted_archive_never_extracts_outputs"][..],
+        ),
+    ] {
+        assert_all_contains(source_name, source, symbols);
+    }
 }
 
 #[test]
