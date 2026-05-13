@@ -31,6 +31,11 @@ const DEXIOS_DOMAIN_DECRYPT_WORKFLOW_ERROR_TESTS: &str =
 const DEXIOS_DOMAIN_UNPACK_TESTS: &str = include_str!("../../dexios-domain/tests/unpack.rs");
 const DEXIOS_DECRYPT_CLI_REGRESSION_TESTS: &str = include_str!("decrypt_cli_regressions.rs");
 const DEXIOS_UNPACK_CLI_REGRESSION_TESTS: &str = include_str!("unpack_cli_regressions.rs");
+const DEXIOS_CORE_FIXTURE_MANIFEST: &str =
+    include_str!("../../dexios-core/tests/testdata/fixture_manifest.toml");
+const DEXIOS_DOMAIN_FIXTURE_MANIFEST: &str =
+    include_str!("../../dexios-domain/tests/fixture_manifest.toml");
+const DEXIOS_CLI_FIXTURE_MANIFEST: &str = include_str!("fixture_manifest.toml");
 const DEXIOS_MAIN_RS: &str = include_str!("../src/main.rs");
 const DEXIOS_CLI_RS: &str = include_str!("../src/cli.rs");
 const DEXIOS_STATES_RS: &str = include_str!("../src/global/states.rs");
@@ -93,7 +98,8 @@ const ASSURANCE_REPLAY_FORBIDDEN_NON_COMMENT_TOKENS: &[&str] = &[
     "grcov",
 ];
 
-const EXPLORATORY_TOOL_TOKENS: &[&str] = &["cargo fuzz", "miri", "kani", "tarpaulin", "grcov"];
+const EXPLORATORY_TOOL_TOKENS: &[&str] =
+    &["cargo fuzz", "miri", "kani", "tarpaulin", "grcov", "stress"];
 
 fn assert_contains(source_name: &str, source: &str, needle: &str) {
     assert!(
@@ -155,6 +161,31 @@ fn assert_occurs_before(source_name: &str, source: &str, earlier: &str, later: &
         earlier_index < later_index,
         "{source_name} must place {earlier:?} before {later:?}"
     );
+}
+
+fn assert_non_comment_line_count(source_name: &str, source: &str, needle: &str, expected: usize) {
+    let count = source
+        .lines()
+        .filter(|line| is_non_comment_line(line) && line.trim() == needle)
+        .count();
+    assert_eq!(
+        count, expected,
+        "{source_name} must contain exactly {expected} non-comment line(s) matching {needle:?}"
+    );
+}
+
+fn assert_manifest_row_contains(source_name: &str, source: &str, row_id: &str, required: &[&str]) {
+    let id_line = format!("id = \"{row_id}\"");
+    let start = source
+        .find(&id_line)
+        .unwrap_or_else(|| panic!("{source_name} must contain manifest row {row_id:?}"));
+    let row = &source[start..];
+    let end = row.find("\n[[fixture]]").unwrap_or(row.len());
+    let row = &row[..end];
+
+    for needle in required {
+        assert_contains(source_name, row, needle);
+    }
 }
 
 fn is_non_comment_line(line: &str) -> bool {
@@ -273,6 +304,28 @@ fn local_scripts_expose_the_full_maintainer_gate() {
 }
 
 #[test]
+fn assurance_replay_runs_once_after_workspace_tests_before_audit() {
+    assert_non_comment_line_count(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "run bash scripts/verify_assurance_replay.sh",
+        1,
+    );
+    assert_occurs_before(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "run cargo test --workspace --all-features --release --verbose",
+        "run bash scripts/verify_assurance_replay.sh",
+    );
+    assert_occurs_before(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "run bash scripts/verify_assurance_replay.sh",
+        "run cargo audit --deny warnings",
+    );
+}
+
+#[test]
 fn assurance_replay_script_is_bounded_offline_and_crate_owned() {
     assert_contains(
         "scripts/verify_assurance_replay.sh",
@@ -328,6 +381,66 @@ fn assurance_replay_script_is_bounded_offline_and_crate_owned() {
         ),
     ] {
         assert_all_contains(source_name, source, symbols);
+    }
+}
+
+#[test]
+fn phase01_assurance_manifests_link_requirements() {
+    for (source_name, source, rows) in [
+        (
+            "dexios-core/tests/testdata/fixture_manifest.toml",
+            DEXIOS_CORE_FIXTURE_MANIFEST,
+            &[
+                ("phase01-stream-payload-boundary-matrix", "STRM-01"),
+                ("phase01-stream-duplicated-chunk", "STRM-02"),
+                ("phase01-header-malformed-evidence", "ASSR-02"),
+                ("phase01-keyslot-corruption-evidence", "ASSR-02"),
+                ("phase01-core-generated-stream-cases-promoted", "ASSR-03"),
+            ][..],
+        ),
+        (
+            "dexios-domain/tests/fixture_manifest.toml",
+            DEXIOS_DOMAIN_FIXTURE_MANIFEST,
+            &[
+                ("phase01-domain-corrupted-stream", "STRM-02"),
+                ("phase01-domain-corrupted-archive-stream", "STRM-02"),
+                ("phase01-domain-keyslot-corruption", "ASSR-02"),
+                ("phase01-domain-archive-path", "ASSR-02"),
+                ("phase01-domain-generated-corruption-promoted", "ASSR-03"),
+            ][..],
+        ),
+        (
+            "dexios/tests/fixture_manifest.toml",
+            DEXIOS_CLI_FIXTURE_MANIFEST,
+            &[
+                ("phase01-cli-corrupted-stream", "STRM-02"),
+                ("phase01-cli-corrupted-archive-stream", "STRM-02"),
+                ("phase01-cli-archive-path-symlink-component", "ASSR-02"),
+                (
+                    "phase01-cli-archive-path-duplicate-normalized-targets",
+                    "ASSR-02",
+                ),
+                ("phase01-cli-generated-corruption-promoted", "ASSR-03"),
+            ][..],
+        ),
+    ] {
+        for (row_id, requirement) in rows {
+            assert_manifest_row_contains(
+                source_name,
+                source,
+                row_id,
+                &[
+                    "group = \"phase01-",
+                    "path = \"",
+                    "purpose = \"",
+                    "invariant = \"D-",
+                    &format!("requirement = \"{requirement}\""),
+                    "source = \"",
+                    "expected = \"",
+                    "owner_phase = \"Phase 1\"",
+                ],
+            );
+        }
     }
 }
 
