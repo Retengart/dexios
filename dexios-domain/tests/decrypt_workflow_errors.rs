@@ -7,7 +7,9 @@ use core::header::common::{HEADER_LEN, HEADER_STATIC_LEN};
 use core::kdf::Kdf;
 use core::protected::Protected;
 use dexios_domain::storage::identity::{OverwritePolicy, PathRole};
-use dexios_domain::storage::transaction::{CommitReceipt, CommittedArtifact, TransactionError};
+use dexios_domain::storage::transaction::{
+    CommittedArtifact, PartialCommitReceipt, TransactionError,
+};
 use dexios_domain::workflow_error::WorkflowErrorClass;
 use dexios_domain::{decrypt, encrypt};
 
@@ -148,7 +150,7 @@ fn decrypt_intent_rejects_detached_header_aliases_before_output_creation() {
 #[test]
 fn decrypt_error_classification_keeps_format_key_auth_io_and_transaction_distinct() {
     let transaction_commit = decrypt::Error::Transaction(TransactionError::PartialCommit {
-        receipt: CommitReceipt { artifacts: vec![] },
+        receipt: PartialCommitReceipt { artifacts: vec![] },
         failed: CommittedArtifact {
             role: PathRole::Output,
             path: PathBuf::from("plain.out"),

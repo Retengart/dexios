@@ -7,7 +7,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use core::kdf::Kdf;
 use core::protected::Protected;
 use dexios_domain::storage::identity::OverwritePolicy;
-use dexios_domain::storage::transaction::{CommitReceipt, CommittedArtifact, TransactionError};
+use dexios_domain::storage::transaction::{
+    CommittedArtifact, PartialCommitReceipt, TransactionError,
+};
 use dexios_domain::workflow_error::WorkflowErrorClass;
 use dexios_domain::{decrypt, encrypt};
 
@@ -167,7 +169,7 @@ fn encrypt_intent_with_relative_input_opens_validated_target_after_cwd_change() 
 #[test]
 fn encrypt_error_classification_keeps_actionable_failure_classes() {
     let transaction_commit = encrypt::Error::Transaction(TransactionError::PartialCommit {
-        receipt: CommitReceipt { artifacts: vec![] },
+        receipt: PartialCommitReceipt { artifacts: vec![] },
         failed: CommittedArtifact {
             role: dexios_domain::storage::identity::PathRole::Output,
             path: PathBuf::from("ciphertext.dexios"),

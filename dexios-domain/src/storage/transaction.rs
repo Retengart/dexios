@@ -10,6 +10,28 @@ pub struct CommitReceipt {
     pub artifacts: Vec<CommittedArtifact>,
 }
 
+pub trait CleanupAuthorizedReceipt {
+    fn committed_artifacts(&self) -> &[CommittedArtifact];
+}
+
+impl CleanupAuthorizedReceipt for CommitReceipt {
+    fn committed_artifacts(&self) -> &[CommittedArtifact] {
+        &self.artifacts
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PartialCommitReceipt {
+    pub artifacts: Vec<CommittedArtifact>,
+}
+
+impl PartialCommitReceipt {
+    #[must_use]
+    pub fn committed_artifacts(&self) -> &[CommittedArtifact] {
+        &self.artifacts
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommittedArtifact {
     pub role: PathRole,
@@ -35,7 +57,7 @@ pub enum TransactionError {
         source: Option<io::Error>,
     },
     PartialCommit {
-        receipt: CommitReceipt,
+        receipt: PartialCommitReceipt,
         failed: CommittedArtifact,
         source: Option<io::Error>,
     },
@@ -222,7 +244,9 @@ impl LinkedOutputTransaction {
                 Ok(artifact) => receipt.artifacts.push(artifact),
                 Err(TransactionError::Persist { source, .. }) if !receipt.artifacts.is_empty() => {
                     return Err(TransactionError::PartialCommit {
-                        receipt,
+                        receipt: PartialCommitReceipt {
+                            artifacts: receipt.artifacts,
+                        },
                         failed,
                         source,
                     });

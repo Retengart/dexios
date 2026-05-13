@@ -7,7 +7,9 @@ use core::header::common::HeaderReadError;
 use dexios_domain::archive::{ArchiveLimitError, ArchiveLimitKind};
 use dexios_domain::storage;
 use dexios_domain::storage::identity::{IdentityError, PathRole};
-use dexios_domain::storage::transaction::{CommitReceipt, CommittedArtifact, TransactionError};
+use dexios_domain::storage::transaction::{
+    CommittedArtifact, PartialCommitReceipt, TransactionError,
+};
 use dexios_domain::workflow_error::WorkflowErrorClass;
 use dexios_domain::{decrypt, encrypt, header, key, pack, unpack};
 
@@ -17,7 +19,7 @@ fn path(name: &str) -> PathBuf {
 
 fn partial_commit_error() -> TransactionError {
     TransactionError::PartialCommit {
-        receipt: CommitReceipt {
+        receipt: PartialCommitReceipt {
             artifacts: vec![CommittedArtifact {
                 role: PathRole::Output,
                 path: path("written.out"),
@@ -27,7 +29,7 @@ fn partial_commit_error() -> TransactionError {
             role: PathRole::DetachedHeader,
             path: path("failed.header"),
         },
-        source: None,
+        source: Some(io::Error::from(io::ErrorKind::AlreadyExists)),
     }
 }
 
@@ -279,6 +281,18 @@ fn domain_errors_classify_transactions_without_display_strings() {
         partial.workflow_class(),
         WorkflowErrorClass::TransactionCommitFailure
     );
+    let encrypt::Error::Transaction(TransactionError::PartialCommit {
+        receipt, failed, ..
+    }) = &partial
+    else {
+        unreachable!("partial commit fixture must stay transaction-backed");
+    };
+    assert_eq!(receipt.artifacts.len(), 1);
+    assert_eq!(receipt.artifacts[0].role, PathRole::Output);
+    assert_eq!(receipt.artifacts[0].path, path("written.out"));
+    assert_eq!(failed.role, PathRole::DetachedHeader);
+    assert_eq!(failed.path, path("failed.header"));
+    assert_source(&partial, "partial commit transaction wrapper");
 }
 
 #[test]

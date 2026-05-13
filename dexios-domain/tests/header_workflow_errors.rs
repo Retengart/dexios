@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use core::header::common::HeaderReadError;
 use dexios_domain::header;
 use dexios_domain::storage::identity::{IdentityError, PathRole};
-use dexios_domain::storage::transaction::{CommitReceipt, CommittedArtifact, TransactionError};
+use dexios_domain::storage::transaction::{
+    CommittedArtifact, PartialCommitReceipt, TransactionError,
+};
 use dexios_domain::workflow_error::WorkflowErrorClass;
 
 fn path(name: &str) -> PathBuf {
@@ -75,7 +77,7 @@ fn header_operation_error_classes_are_typed_not_display_derived() {
     });
     let transaction_commit = header::Error::Transaction(transaction_commit_error());
     let partial_commit = header::Error::Transaction(TransactionError::PartialCommit {
-        receipt: CommitReceipt { artifacts: vec![] },
+        receipt: PartialCommitReceipt { artifacts: vec![] },
         failed: CommittedArtifact {
             role: PathRole::MutationTarget,
             path: path("target.dexios"),

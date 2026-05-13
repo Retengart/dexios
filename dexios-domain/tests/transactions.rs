@@ -4,14 +4,14 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use dexios_domain::storage::NamedStagedOutput;
-use dexios_domain::storage::cleanup::{HashVerification, PostCommitSuccess};
 use dexios_domain::storage::identity::{
     OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
 };
 #[cfg(feature = "test-support")]
 use dexios_domain::storage::test_support::{FailureHooks, FailurePoint};
 use dexios_domain::storage::transaction::{
-    LinkedOutputTransaction, StagedOutputTransaction, TransactionError,
+    CleanupAuthorizedReceipt, CommitReceipt, CommittedArtifact, LinkedOutputTransaction,
+    PartialCommitReceipt, StagedOutputTransaction, TransactionError,
 };
 
 const EXISTING_OUTPUT: &[u8] = b"existing output";
@@ -124,6 +124,10 @@ fn write_existing_linked_targets(output_path: &Path, header_path: &Path) {
 fn assert_existing_linked_targets_preserved(output_path: &Path, header_path: &Path) {
     assert_eq!(fs::read(output_path).unwrap(), b"existing linked output");
     assert_eq!(fs::read(header_path).unwrap(), b"existing linked header");
+}
+
+fn cleanup_authorized_artifacts(receipt: &impl CleanupAuthorizedReceipt) -> &[CommittedArtifact] {
+    receipt.committed_artifacts()
 }
 
 #[cfg(feature = "test-support")]
@@ -330,6 +334,24 @@ fn linked_transaction_commits_output_and_header_together() {
 }
 
 #[test]
+fn complete_commit_receipt_is_cleanup_authorized_public_evidence() {
+    let test_dir = TestDir::new("complete-receipt-cleanup-proof");
+    let output_path = test_dir.path().join("output.dexios");
+    let receipt = CommitReceipt {
+        artifacts: vec![CommittedArtifact {
+            role: PathRole::Output,
+            path: output_path.clone(),
+        }],
+    };
+
+    let artifacts = cleanup_authorized_artifacts(&receipt);
+
+    assert_eq!(artifacts.len(), 1);
+    assert_eq!(artifacts[0].role, PathRole::Output);
+    assert_eq!(artifacts[0].path, output_path);
+}
+
+#[test]
 #[cfg(feature = "test-support")]
 fn linked_transaction_pre_commit_failure_write_preserves_all_existing_targets() {
     let test_dir = TestDir::new("linked-transaction-write-failure");
@@ -445,16 +467,12 @@ fn linked_transaction_blocks_cleanup_after_partial_commit() {
         TransactionError::PartialCommit {
             receipt, failed, ..
         } => {
+            let _: &PartialCommitReceipt = receipt;
             assert_eq!(receipt.artifacts.len(), 1);
             assert_eq!(receipt.artifacts[0].role, PathRole::Output);
             assert_eq!(receipt.artifacts[0].path, output_path);
             assert_eq!(failed.role, PathRole::DetachedHeader);
             assert_eq!(failed.path, header_path);
-            assert!(
-                PostCommitSuccess::from_commit_and_hash(receipt, HashVerification::Succeeded)
-                    .is_err(),
-                "partial commit evidence must not be enough to authorize delete-after-success cleanup"
-            );
         }
         other => panic!("expected partial commit error, got {other:?}"),
     }
