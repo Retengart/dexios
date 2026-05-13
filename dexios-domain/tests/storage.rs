@@ -4,9 +4,20 @@ use common::*;
 use core::header::{ParsedHeader, read_header};
 use dexios_domain::encrypt;
 use dexios_domain::storage::*;
+use std::error::Error as _;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::path::PathBuf;
+
+fn assert_io_source_kind(error: &Error, expected: ErrorKind) {
+    let source = error
+        .source()
+        .expect("storage error must preserve an io::Error source");
+    let source = source
+        .downcast_ref::<std::io::Error>()
+        .expect("storage error source must be std::io::Error");
+    assert_eq!(source.kind(), expected);
+}
 
 #[test]
 fn should_create_a_new_file() {
@@ -40,7 +51,9 @@ fn should_not_open_file_to_read() {
     let read_result = stor.read_file("hello_3.txt");
 
     match read_result {
-        Err(Error::OpenFile(FileMode::Read)) => {}
+        Err(error @ Error::OpenFile(FileMode::Read)) => {
+            assert_io_source_kind(&error, ErrorKind::NotFound);
+        }
         _ => unreachable!(),
     }
 }
