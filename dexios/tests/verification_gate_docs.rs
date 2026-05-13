@@ -174,6 +174,30 @@ fn assert_non_comment_line_count(source_name: &str, source: &str, needle: &str, 
     );
 }
 
+fn non_comment_line_index(source_name: &str, source: &str, needle: &str) -> usize {
+    source
+        .lines()
+        .enumerate()
+        .find_map(|(index, line)| {
+            (is_non_comment_line(line) && line.trim() == needle).then_some(index)
+        })
+        .unwrap_or_else(|| panic!("{source_name} must contain executable line {needle:?}"))
+}
+
+fn assert_non_comment_line_occurs_before(
+    source_name: &str,
+    source: &str,
+    earlier: &str,
+    later: &str,
+) {
+    let earlier_index = non_comment_line_index(source_name, source, earlier);
+    let later_index = non_comment_line_index(source_name, source, later);
+    assert!(
+        earlier_index < later_index,
+        "{source_name} must execute {earlier:?} before {later:?}"
+    );
+}
+
 fn parsed_fixture_rows(source_name: &str, source: &str) -> Vec<toml::Value> {
     let manifest: toml::Value =
         toml::from_str(source).unwrap_or_else(|error| panic!("{source_name} must parse: {error}"));
@@ -407,7 +431,7 @@ fn assurance_replay_script_is_bounded_offline_and_crate_owned() {
     for pair in ASSURANCE_REPLAY_COMMANDS.windows(2) {
         let earlier = format!("run {}", pair[0]);
         let later = format!("run {}", pair[1]);
-        assert_occurs_before(
+        assert_non_comment_line_occurs_before(
             "scripts/verify_assurance_replay.sh",
             VERIFY_ASSURANCE_REPLAY,
             &earlier,
