@@ -173,6 +173,8 @@ where
 {
     reader: &'a RefCell<R>,
     header_reader: Option<&'a RefCell<R>>,
+    input_path: PathBuf,
+    detached_header_path: Option<PathBuf>,
     raw_key: Protected<Vec<u8>>,
     output_dir_path: PathBuf,
     on_decrypted_header: Option<decrypt::OnDecryptedHeaderFn>,
@@ -252,6 +254,10 @@ pub fn execute(intent: UnpackIntent) -> Result<CommitReceipt, Error> {
         on_zip_file,
     } = intent;
 
+    let input_path = input.path().to_path_buf();
+    let detached_header_path = detached_header
+        .as_ref()
+        .map(|header| header.path().to_path_buf());
     let reader = input.try_reader().map_err(Error::Storage)?;
     let header_reader = detached_header
         .as_ref()
@@ -261,6 +267,8 @@ pub fn execute(intent: UnpackIntent) -> Result<CommitReceipt, Error> {
     let req = HandleRequest {
         reader,
         header_reader,
+        input_path,
+        detached_header_path,
         raw_key,
         output_dir_path,
         on_decrypted_header,
@@ -319,6 +327,8 @@ where
             &stor,
             &mut archive,
             &req.output_dir_path,
+            &req.input_path,
+            req.detached_header_path.as_deref(),
             req.on_zip_file.as_ref(),
         )?;
         if let Some(on_archive_info) = req.on_archive_info {
@@ -337,6 +347,8 @@ fn prepare_extraction_entities<R: Read + Seek>(
     stor: &storage::FileStorage,
     archive: &mut zip::ZipArchive<R>,
     output_dir_path: &Path,
+    input_path: &Path,
+    detached_header_path: Option<&Path>,
     on_zip_file: Option<&OnZipFileFn>,
 ) -> Result<(PathBuf, Vec<ExtractionEntity>), Error> {
     let output_dir = stor
@@ -347,6 +359,14 @@ fn prepare_extraction_entities<R: Read + Seek>(
         .check_entry_count(archive.len())
         .map_err(Error::ArchiveLimit)?;
     let mut identity_graph = PathIdentityGraph::new();
+    identity_graph
+        .add_existing(input_path, PathRole::Input)
+        .map_err(map_identity_error)?;
+    if let Some(detached_header_path) = detached_header_path {
+        identity_graph
+            .add_existing(detached_header_path, PathRole::DetachedHeader)
+            .map_err(map_identity_error)?;
+    }
     identity_graph
         .add_unpack_root(&output_dir)
         .map_err(map_identity_error)?;
@@ -693,6 +713,8 @@ mod tests {
         let req = HandleRequest {
             reader: archive.try_reader().unwrap(),
             header_reader: None,
+            input_path: encrypted_archive,
+            detached_header_path: None,
             raw_key: Protected::new(PASSWORD.to_vec()),
             output_dir_path: output_dir.clone(),
             on_decrypted_header: None,

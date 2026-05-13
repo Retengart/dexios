@@ -254,6 +254,32 @@ fn unpack_cli_delete_input_removes_archive_after_success() {
 }
 
 #[test]
+fn unpack_cli_delete_input_rejects_archive_entry_that_aliases_input() {
+    let test_dir = TestDir::new("unpack-cli-delete-input-alias");
+    let plain_zip = test_dir.path().join("plain.zip");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+
+    write_zip_with_entries(&plain_zip, &[("archive.enc", b"plaintext replacement")]);
+    encrypt_archive(&plain_zip, &encrypted_archive);
+    let original_archive = fs::read(&encrypted_archive).unwrap();
+
+    let output = run_unpack_with_args(&encrypted_archive, test_dir.path(), &["--delete-input"]);
+
+    assert!(
+        !output.status.success(),
+        "unpack unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("Unsafe archive path"),
+        "stderr did not mention unsafe archive path: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read(&encrypted_archive).unwrap(), original_archive);
+}
+
+#[test]
 fn unpack_delete_input_waits_for_extraction_commit_receipt() {
     let test_dir = TestDir::new("unpack-cli-delete-waits");
     let plain_zip = test_dir.path().join("plain.zip");

@@ -9,6 +9,7 @@ use std::sync::{
 use core::kdf::Kdf;
 use core::protected::Protected;
 use dexios_domain::encrypt;
+use dexios_domain::storage::identity::IdentityError;
 use dexios_domain::storage::{FileStorage, Storage};
 use dexios_domain::unpack;
 use zip::write::SimpleFileOptions;
@@ -126,6 +127,27 @@ fn unpack_archive(
     unpack::execute(intent)
 }
 
+fn unpack_archive_with_detached_header(
+    encrypted_archive: &Path,
+    detached_header: &Path,
+    output_dir: &Path,
+) -> Result<dexios_domain::storage::transaction::CommitReceipt, unpack::Error> {
+    let stor = Arc::new(FileStorage);
+    let archive = stor.read_file(encrypted_archive).unwrap();
+    let header = stor.read_file(detached_header).unwrap();
+    let intent = unpack::UnpackIntent::new(
+        archive,
+        Some(header),
+        output_dir,
+        Protected::new(PASSWORD.to_vec()),
+        None,
+        None,
+        None,
+    )?;
+
+    unpack::execute(intent)
+}
+
 #[test]
 fn should_unpack_archive_without_explicit_directory_entries() {
     let test_dir = TestDir::new("unpack-no-dirs");
@@ -140,6 +162,83 @@ fn should_unpack_archive_without_explicit_directory_entries() {
 
     let restored = fs::read_to_string(output_dir.join("nested/inner/file.txt")).unwrap();
     assert_eq!(restored, "nested hello");
+}
+
+#[test]
+fn unpack_rejects_entry_that_aliases_encrypted_input_archive() {
+    let test_dir = TestDir::new("unpack-input-alias");
+    let plain_zip = test_dir.path().join("plain.zip");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+
+    write_zip_with_entries(
+        &plain_zip,
+        &[
+            ("archive.enc", b"plaintext replacement"),
+            ("safe.txt", b"safe"),
+        ],
+    );
+    encrypt_archive(&plain_zip, &encrypted_archive);
+    let original_archive = fs::read(&encrypted_archive).unwrap();
+
+    let result = unpack_archive(&encrypted_archive, test_dir.path(), None);
+
+    assert!(
+        matches!(
+            result,
+            Err(unpack::Error::PathIdentity(
+                IdentityError::AliasedPath { .. }
+            ))
+        ),
+        "expected input archive alias rejection, got {result:?}"
+    );
+    assert_eq!(fs::read(&encrypted_archive).unwrap(), original_archive);
+    assert!(!test_dir.path().join("safe.txt").exists());
+}
+
+#[test]
+fn unpack_rejects_entry_that_aliases_detached_header() {
+    let test_dir = TestDir::new("unpack-header-alias");
+    let plain_zip = test_dir.path().join("plain.zip");
+    let encrypted_archive = test_dir.path().join("archive-detached.enc");
+    let detached_header = test_dir.path().join("archive.hdr");
+
+    write_zip_with_entries(
+        &plain_zip,
+        &[
+            ("archive.hdr", b"detached header replacement"),
+            ("safe.txt", b"safe"),
+        ],
+    );
+
+    let detached_intent = encrypt::EncryptIntent::new(
+        &plain_zip,
+        &encrypted_archive,
+        dexios_domain::storage::identity::OverwritePolicy::CreateNew,
+        Some(encrypt::DetachedHeaderTarget::new(
+            &detached_header,
+            dexios_domain::storage::identity::OverwritePolicy::CreateNew,
+        )),
+        Protected::new(PASSWORD.to_vec()),
+        Kdf::Blake3Balloon,
+    )
+    .unwrap();
+    encrypt::execute(detached_intent).unwrap();
+    let original_header = fs::read(&detached_header).unwrap();
+
+    let result =
+        unpack_archive_with_detached_header(&encrypted_archive, &detached_header, test_dir.path());
+
+    assert!(
+        matches!(
+            result,
+            Err(unpack::Error::PathIdentity(
+                IdentityError::AliasedPath { .. }
+            ))
+        ),
+        "expected detached header alias rejection, got {result:?}"
+    );
+    assert_eq!(fs::read(&detached_header).unwrap(), original_header);
+    assert!(!test_dir.path().join("safe.txt").exists());
 }
 
 #[test]
