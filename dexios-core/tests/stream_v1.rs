@@ -59,6 +59,24 @@ fn plaintext_spanning_normal_chunks() -> Vec<u8> {
         .collect()
 }
 
+fn payload_boundary_cases() -> Vec<(&'static str, Vec<u8>)> {
+    [
+        ("empty", 0),
+        ("one-byte", 1),
+        ("block-minus-one", BLOCK_SIZE - 1),
+        ("exact-block", BLOCK_SIZE),
+        ("block-plus-one", BLOCK_SIZE + 1),
+        ("exact-two-blocks", BLOCK_SIZE * 2),
+        ("multi-block-plus-tail", BLOCK_SIZE * 3 + 37),
+    ]
+    .into_iter()
+    .map(|(label, len)| {
+        let payload = (0..len).map(|index| (index % 251) as u8).collect();
+        (label, payload)
+    })
+    .collect()
+}
+
 fn exact_two_block_plaintext() -> Vec<u8> {
     vec![0x42; BLOCK_SIZE * 2]
 }
@@ -127,6 +145,29 @@ impl<R: Read> Read for ShortRead<R> {
     }
 }
 
+struct ShortWrite<W> {
+    inner: W,
+    max_chunk: usize,
+}
+
+impl<W> ShortWrite<W> {
+    fn new(inner: W, max_chunk: usize) -> Self {
+        assert!(max_chunk > 0, "short-write chunk size must be nonzero");
+        Self { inner, max_chunk }
+    }
+}
+
+impl<W: Write> Write for ShortWrite<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let limit = buf.len().min(self.max_chunk);
+        self.inner.write(&buf[..limit])
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 #[test]
 fn v1_stream_roundtrips_with_header_derived_aad() {
     let header = support::sample_v1_header();
@@ -155,6 +196,37 @@ fn v1_stream_roundtrips_with_header_derived_aad() {
 }
 
 #[test]
+fn stream_payload_boundary_matrix_roundtrips_with_file_api() {
+    for (label, plaintext) in payload_boundary_cases() {
+        let header = support::sample_v1_header();
+        let payload = support::parsed_payload_for(&header);
+
+        let mut encrypted = Vec::new();
+        V1PayloadStream::encrypt_file(
+            support::master_key(),
+            &header,
+            &mut Cursor::new(plaintext.as_slice()),
+            &mut encrypted,
+        )
+        .unwrap_or_else(|error| panic!("{label}: encrypt v1 stream failed: {error}"));
+
+        let mut decrypted = Vec::new();
+        V1PayloadStream::decrypt_file(
+            support::master_key(),
+            &payload,
+            &mut Cursor::new(encrypted),
+            &mut decrypted,
+        )
+        .unwrap_or_else(|error| panic!("{label}: decrypt v1 stream failed: {error}"));
+
+        assert_eq!(
+            decrypted, plaintext,
+            "{label}: file API roundtrip must preserve boundary payload"
+        );
+    }
+}
+
+#[test]
 fn encrypt_file_fills_plaintext_block_before_finalizing_on_short_reads() {
     let header = support::sample_v1_header();
     let payload = support::parsed_payload_for(&header);
@@ -175,6 +247,49 @@ fn encrypt_file_fills_plaintext_block_before_finalizing_on_short_reads() {
     .expect("decrypt v1 stream");
 
     assert_eq!(decrypted, plaintext);
+}
+
+#[test]
+fn stream_file_api_handles_short_output_writes_at_boundaries() {
+    for (label, plaintext) in payload_boundary_cases() {
+        let header = support::sample_v1_header();
+        let payload = support::parsed_payload_for(&header);
+
+        let mut encrypted = Vec::new();
+        let mut plaintext_reader = ShortRead::new(Cursor::new(plaintext.as_slice()), 257);
+        {
+            let mut encrypted_writer = ShortWrite::new(&mut encrypted, 7);
+            V1PayloadStream::encrypt_file(
+                support::master_key(),
+                &header,
+                &mut plaintext_reader,
+                &mut encrypted_writer,
+            )
+            .unwrap_or_else(|error| {
+                panic!("{label}: encrypt with short output writes failed: {error}")
+            });
+        }
+
+        let mut decrypted = Vec::new();
+        let mut encrypted_reader = ShortRead::new(Cursor::new(encrypted.as_slice()), 11);
+        {
+            let mut decrypted_writer = ShortWrite::new(&mut decrypted, 5);
+            V1PayloadStream::decrypt_file(
+                support::master_key(),
+                &payload,
+                &mut encrypted_reader,
+                &mut decrypted_writer,
+            )
+            .unwrap_or_else(|error| {
+                panic!("{label}: decrypt with short output writes failed: {error}")
+            });
+        }
+
+        assert_eq!(
+            decrypted, plaintext,
+            "{label}: short output writes must preserve boundary payload"
+        );
+    }
 }
 
 #[test]
