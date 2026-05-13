@@ -1,6 +1,16 @@
 use clap::{Arg, ArgAction, Command};
+use core::key::PassphraseWordCount;
 
 pub mod prompt;
+
+fn validate_autogenerate_words(words: &str) -> Result<String, String> {
+    let parsed = words
+        .parse::<u16>()
+        .map_err(|_| "generated passphrase word count must be a positive integer".to_owned())?;
+    PassphraseWordCount::try_new(parsed)
+        .map_err(|_| "generated passphrase word count must be a positive integer".to_owned())?;
+    Ok(words.to_owned())
+}
 
 // this defines all of the clap subcommands and arguments
 // it's long, and clunky, but i feel that's just the nature of the clap builder api
@@ -51,6 +61,7 @@ pub fn build_cli() -> Command {
                 .value_name("# of words")
                 .num_args(0..=1)
                 .default_missing_value("7")
+                .value_parser(validate_autogenerate_words)
                 .action(ArgAction::Set)
                 .require_equals(true)
                 .help("Autogenerate a passphrase (default is 7 words)")
@@ -180,6 +191,7 @@ pub fn build_cli() -> Command {
                     .value_name("# of words")
                     .num_args(0..=1)
                     .default_missing_value("7")
+                    .value_parser(validate_autogenerate_words)
                     .action(ArgAction::Set)
                     .require_equals(true)
                     .help("Autogenerate a passphrase (default is 7 words)")
@@ -303,6 +315,7 @@ pub fn build_cli() -> Command {
                                 .value_name("# of words")
                                 .num_args(0..=1)
                                 .default_missing_value("7")
+                                .value_parser(validate_autogenerate_words)
                                 .action(ArgAction::Set)
                                 .require_equals(true)
                                 .help("Autogenerate a passphrase (default is 7 words)")
@@ -484,6 +497,26 @@ mod tests {
         assert_unknown_argument_is_rejected(args, "--argon");
     }
 
+    fn assert_invalid_auto_value_is_rejected<const N: usize>(args: [&str; N]) {
+        let error = super::build_cli()
+            .try_get_matches_from(args)
+            .expect_err("invalid generated-passphrase count should be rejected");
+
+        assert_eq!(error.kind(), clap::error::ErrorKind::ValueValidation);
+        assert!(
+            error
+                .to_string()
+                .contains("generated passphrase word count"),
+            "error should name the generated passphrase count: {error}"
+        );
+        assert!(
+            !error
+                .to_string()
+                .contains("Your generated passphrase is intentionally shown here"),
+            "parser error must not disclose a generated passphrase: {error}"
+        );
+    }
+
     #[test]
     fn cli_definition_passes_clap_debug_assertions() {
         super::build_cli().debug_assert();
@@ -524,6 +557,26 @@ mod tests {
             sub.get_one::<String>("autogenerate").map(String::as_str),
             Some("7")
         );
+    }
+
+    #[test]
+    fn encrypt_auto_without_value_defaults_to_seven_words() {
+        let matches = super::build_cli()
+            .try_get_matches_from(["dexios", "encrypt", "--auto", "in.bin", "out.enc"])
+            .expect("CLI should parse");
+        let (_, sub) = matches.subcommand().expect("subcommand");
+
+        assert_eq!(
+            sub.get_one::<String>("autogenerate").map(String::as_str),
+            Some("7")
+        );
+    }
+
+    #[test]
+    fn encrypt_auto_rejects_invalid_explicit_values() {
+        for auto in ["--auto=0", "--auto=-1", "--auto=abc"] {
+            assert_invalid_auto_value_is_rejected(["dexios", "encrypt", auto, "in.bin", "out.enc"]);
+        }
     }
 
     #[test]
@@ -631,6 +684,26 @@ mod tests {
             sub.get_one::<String>("output").map(String::as_str),
             Some("archive.dex")
         );
+    }
+
+    #[test]
+    fn pack_auto_without_value_defaults_to_seven_words() {
+        let matches = super::build_cli()
+            .try_get_matches_from(["dexios", "pack", "--auto", "dir-a", "archive.dex"])
+            .expect("CLI should parse");
+        let (_, sub) = matches.subcommand().expect("subcommand");
+
+        assert_eq!(
+            sub.get_one::<String>("autogenerate").map(String::as_str),
+            Some("7")
+        );
+    }
+
+    #[test]
+    fn pack_auto_rejects_invalid_explicit_values() {
+        for auto in ["--auto=0", "--auto=-1", "--auto=abc"] {
+            assert_invalid_auto_value_is_rejected(["dexios", "pack", auto, "dir-a", "archive.dex"]);
+        }
     }
 
     #[test]
@@ -744,6 +817,27 @@ mod tests {
             change.get_one::<String>("input").map(String::as_str),
             Some("cipher.enc")
         );
+    }
+
+    #[test]
+    fn key_change_auto_without_value_defaults_to_seven_words() {
+        let matches = super::build_cli()
+            .try_get_matches_from(["dexios", "key", "change", "--auto", "cipher.enc"])
+            .expect("CLI should parse");
+        let (_, sub) = matches.subcommand().expect("subcommand");
+        let change = sub.subcommand_matches("change").expect("key change");
+
+        assert_eq!(
+            change.get_one::<String>("autogenerate").map(String::as_str),
+            Some("7")
+        );
+    }
+
+    #[test]
+    fn key_change_auto_rejects_invalid_explicit_values() {
+        for auto in ["--auto=0", "--auto=-1", "--auto=abc"] {
+            assert_invalid_auto_value_is_rejected(["dexios", "key", "change", auto, "cipher.enc"]);
+        }
     }
 
     #[test]

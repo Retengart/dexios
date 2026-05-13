@@ -185,6 +185,7 @@ pub fn key_manipulation_params(sub_matches: &ArgMatches) -> Result<KeyManipulati
 mod tests {
     use super::*;
     use crate::cli::build_cli;
+    use core::key::PassphraseWordCount;
 
     #[test]
     fn decrypt_key_init_falls_back_to_user_without_autogenerate_arg() {
@@ -269,6 +270,6 @@ mod tests {
         )
         .expect("key selection");
 
-        assert_eq!(key, Key::Generate(7));
+        assert_eq!(key, Key::Generate(PassphraseWordCount::try_new(7).unwrap()));
     }
 }

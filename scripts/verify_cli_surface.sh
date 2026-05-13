@@ -167,6 +167,33 @@ case_encrypt_auto_generated_passphrase() {
     file_eq "$dir/plain.txt" "$dir/plain.out" "auto-generated passphrase decrypt should round-trip" || return 1
 }
 
+case_encrypt_auto_invalid_values_do_not_disclose() {
+    local dir="$ROOT/auto-invalid"
+    local disclosure_prefix="Your generated passphrase is intentionally shown here"
+    mkdir -p "$dir"
+    printf 'invalid generated passphrase path\n' > "$dir/plain.txt"
+
+    for auto in "--auto=0" "--auto=-1" "--auto=abc"; do
+        local safe_auto
+        local stdout
+        local stderr
+
+        safe_auto="$(safe_case_name "$auto")"
+        stdout="$dir/$safe_auto.stdout"
+        stderr="$dir/$safe_auto.stderr"
+
+        if "$BIN" encrypt -f "$auto" "$dir/plain.txt" "$dir/$safe_auto.enc" > "$stdout" 2> "$stderr"; then
+            echo "encrypt $auto unexpectedly succeeded" >&2
+            return 1
+        fi
+
+        if grep -F "$disclosure_prefix" "$stdout" "$stderr" >/dev/null; then
+            echo "encrypt $auto disclosed a generated passphrase" >&2
+            return 1
+        fi
+    done
+}
+
 case_hash_subcommand() {
     local out="$ROOT/hash.stdout"
     "$BIN" hash "$ROOT/auto/plain.txt" "$ROOT/keyfile/plain.enc" > "$out" || return 1
@@ -330,6 +357,7 @@ run_case "source gate rejects stale positive CLI tokens" case_removed_token_sour
 run_case "encrypt/decrypt env+hash+delete-input" case_encrypt_decrypt_env_hash_delete_input
 run_case "encrypt/decrypt keyfile+detached defaults" case_encrypt_decrypt_keyfile_detached_defaults
 run_case "encrypt --auto" case_encrypt_auto_generated_passphrase
+run_case "invalid encrypt --auto does not disclose" case_encrypt_auto_invalid_values_do_not_disclose
 run_case "hash subcommand" case_hash_subcommand
 run_case "header subcommands" case_header_subcommands
 run_case "key subcommands" case_key_subcommands

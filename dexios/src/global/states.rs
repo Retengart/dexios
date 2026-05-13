@@ -8,7 +8,7 @@ use core::protected::Protected;
 
 use crate::cli::prompt::get_password;
 use crate::warn;
-use core::key::generate_passphrase;
+use core::key::{PassphraseWordCount, generate_passphrase};
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum DirectoryMode {
@@ -55,7 +55,7 @@ pub enum ForceMode {
 pub enum Key {
     Keyfile(String),
     Env,
-    Generate(i32),
+    Generate(PassphraseWordCount),
     User,
 }
 
@@ -79,7 +79,10 @@ fn generated_passphrase_disclosure(passphrase: &str) -> String {
     )
 }
 
-fn generated_passphrase_secret<F>(total_words: &i32, mut disclose: F) -> Protected<Vec<u8>>
+fn generated_passphrase_secret<F>(
+    total_words: PassphraseWordCount,
+    mut disclose: F,
+) -> Protected<Vec<u8>>
 where
     F: FnMut(&str),
 {
@@ -93,6 +96,14 @@ where
     key
 }
 
+fn parse_generated_passphrase_word_count(words: &str) -> Result<PassphraseWordCount> {
+    let parsed = words
+        .parse::<u16>()
+        .with_context(|| format!("Invalid generated passphrase word count '{words}'"))?;
+    PassphraseWordCount::try_new(parsed)
+        .with_context(|| format!("Invalid generated passphrase word count '{words}'"))
+}
+
 impl Key {
     pub(crate) fn resolve_key_source(
         keyfile: Option<&str>,
@@ -103,13 +114,7 @@ impl Key {
         let key = if let (Some(path), true) = (keyfile, params.keyfile) {
             Key::Keyfile(path.to_owned())
         } else if let (Some(words), true) = (autogenerate, params.autogenerate) {
-            let result = words.parse::<i32>();
-            if let Ok(value) = result {
-                Key::Generate(value)
-            } else {
-                warn!("No amount of words specified - using the default.");
-                Key::Generate(7)
-            }
+            Key::Generate(parse_generated_passphrase_word_count(words)?)
         } else if env_available && params.env {
             Key::Env
         } else if params.user {
@@ -152,7 +157,7 @@ impl Key {
                     .into_bytes(),
             ),
             Key::User => get_password(pass_state)?,
-            Key::Generate(i) => generated_passphrase_secret(i, |message| warn!("{message}")),
+            Key::Generate(i) => generated_passphrase_secret(*i, |message| warn!("{message}")),
         };
 
         if secret.with_exposed(|secret| secret.is_empty()) {
@@ -209,6 +214,7 @@ impl KeyParams {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::key::PassphraseWordCount;
 
     const DISCLOSURE_PREFIX: &str = "Your generated passphrase is intentionally shown here and may be captured by terminal scrollback or logs: ";
 
@@ -234,7 +240,10 @@ mod tests {
     fn generated_passphrase_secret_discloses_once_and_returns_same_bytes() {
         let mut messages = Vec::new();
 
-        let key = generated_passphrase_secret(&3, |message| messages.push(message.to_owned()));
+        let key =
+            generated_passphrase_secret(PassphraseWordCount::try_new(3).unwrap(), |message| {
+                messages.push(message.to_owned());
+            });
 
         assert_eq!(messages.len(), 1);
         let phrase = messages[0]
@@ -258,12 +267,46 @@ mod tests {
     fn generated_passphrase_debug_does_not_disclose_secret() {
         let mut messages = Vec::new();
 
-        let key = generated_passphrase_secret(&2, |message| messages.push(message.to_owned()));
+        let key =
+            generated_passphrase_secret(PassphraseWordCount::try_new(2).unwrap(), |message| {
+                messages.push(message.to_owned());
+            });
         let phrase = messages[0]
             .strip_prefix(DISCLOSURE_PREFIX)
             .expect("generated passphrase message should use the CLI disclosure prefix");
 
         assert!(!format!("{key:?}").contains(phrase));
-        assert!(!format!("{:?}", Key::Generate(2)).contains(phrase));
+        assert!(
+            !format!(
+                "{:?}",
+                Key::Generate(PassphraseWordCount::try_new(2).unwrap())
+            )
+            .contains(phrase)
+        );
+    }
+
+    #[test]
+    fn autogenerate_key_source_accepts_positive_word_count() {
+        let key = Key::resolve_key_source(None, Some("7"), true, &KeyParams::default()).unwrap();
+
+        assert_eq!(key, Key::Generate(PassphraseWordCount::try_new(7).unwrap()));
+    }
+
+    #[test]
+    fn invalid_explicit_autogenerate_word_counts_are_rejected() {
+        for words in ["0", "-1", "abc"] {
+            let error = Key::resolve_key_source(None, Some(words), true, &KeyParams::default())
+                .expect_err("invalid explicit generated-passphrase count should fail");
+            let error = error.to_string();
+
+            assert!(
+                error.contains("generated passphrase word count"),
+                "error should name the generated passphrase count: {error}"
+            );
+            assert!(
+                !error.contains(DISCLOSURE_PREFIX),
+                "invalid count error must not include generated-passphrase disclosure"
+            );
+        }
     }
 }
