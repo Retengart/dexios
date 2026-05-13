@@ -1,5 +1,5 @@
-use std::fmt;
 use std::path::PathBuf;
+use std::{fmt, io};
 
 use super::identity::{PathRole, ResolvedTarget};
 use super::temp::NamedStagedOutput;
@@ -16,36 +16,49 @@ pub struct CommittedArtifact {
     pub path: PathBuf,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub enum TransactionError {
     Write {
         path: PathBuf,
+        source: Option<io::Error>,
     },
     Flush {
         path: PathBuf,
+        source: Option<io::Error>,
     },
     Sync {
         path: PathBuf,
+        source: Option<io::Error>,
     },
     Persist {
         path: PathBuf,
+        source: Option<io::Error>,
     },
     PartialCommit {
         receipt: CommitReceipt,
         failed: CommittedArtifact,
+        source: Option<io::Error>,
     },
 }
 
 impl fmt::Display for TransactionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Write { path } => write!(f, "Unable to write staged output {}", path.display()),
-            Self::Flush { path } => write!(f, "Unable to flush staged output {}", path.display()),
-            Self::Sync { path } => write!(f, "Unable to sync staged output {}", path.display()),
-            Self::Persist { path } => {
+            Self::Write { path, .. } => {
+                write!(f, "Unable to write staged output {}", path.display())
+            }
+            Self::Flush { path, .. } => {
+                write!(f, "Unable to flush staged output {}", path.display())
+            }
+            Self::Sync { path, .. } => {
+                write!(f, "Unable to sync staged output {}", path.display())
+            }
+            Self::Persist { path, .. } => {
                 write!(f, "Unable to persist staged output {}", path.display())
             }
-            Self::PartialCommit { receipt, failed } => write!(
+            Self::PartialCommit {
+                receipt, failed, ..
+            } => write!(
                 f,
                 "Partial transaction commit after {} artifact(s); failed to persist {}",
                 receipt.artifacts.len(),
@@ -55,7 +68,37 @@ impl fmt::Display for TransactionError {
     }
 }
 
-impl std::error::Error for TransactionError {}
+impl std::error::Error for TransactionError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Write {
+                source: Some(source),
+                ..
+            }
+            | Self::Flush {
+                source: Some(source),
+                ..
+            }
+            | Self::Sync {
+                source: Some(source),
+                ..
+            }
+            | Self::Persist {
+                source: Some(source),
+                ..
+            }
+            | Self::PartialCommit {
+                source: Some(source),
+                ..
+            } => Some(source),
+            Self::Write { source: None, .. }
+            | Self::Flush { source: None, .. }
+            | Self::Sync { source: None, .. }
+            | Self::Persist { source: None, .. }
+            | Self::PartialCommit { source: None, .. } => None,
+        }
+    }
+}
 
 pub(crate) enum StagedWriteError<E> {
     Operation(E),
@@ -73,10 +116,12 @@ impl StagedOutputTransaction {
 
     fn with_hooks(target: ResolvedTarget, hooks: FailureHooks) -> Result<Self, TransactionError> {
         let path = target.target_path().to_path_buf();
-        let staged =
-            NamedStagedOutput::with_hooks(target, hooks).map_err(|_| TransactionError::Write {
+        let staged = NamedStagedOutput::with_hooks(target, hooks).map_err(|source| {
+            TransactionError::Write {
                 path,
-            })?;
+                source: Some(source),
+            }
+        })?;
         Ok(Self { staged })
     }
 
@@ -99,7 +144,7 @@ impl StagedOutputTransaction {
 
     pub fn with_writer<T>(
         &mut self,
-        write: impl FnOnce(&mut std::fs::File) -> std::io::Result<T>,
+        write: impl FnOnce(&mut std::fs::File) -> io::Result<T>,
     ) -> Result<T, TransactionError> {
         self.staged.with_writer(write)
     }
@@ -146,8 +191,12 @@ impl LinkedOutputTransaction {
 
     pub fn stage(&mut self, target: ResolvedTarget) -> Result<usize, TransactionError> {
         let path = target.target_path().to_path_buf();
-        let staged = NamedStagedOutput::with_hooks(target, self.hooks)
-            .map_err(|_| TransactionError::Write { path })?;
+        let staged = NamedStagedOutput::with_hooks(target, self.hooks).map_err(|source| {
+            TransactionError::Write {
+                path,
+                source: Some(source),
+            }
+        })?;
         self.staged.push(staged);
         Ok(self.staged.len() - 1)
     }
@@ -171,8 +220,12 @@ impl LinkedOutputTransaction {
             };
             match staged.persist_prepared() {
                 Ok(artifact) => receipt.artifacts.push(artifact),
-                Err(TransactionError::Persist { .. }) if !receipt.artifacts.is_empty() => {
-                    return Err(TransactionError::PartialCommit { receipt, failed });
+                Err(TransactionError::Persist { source, .. }) if !receipt.artifacts.is_empty() => {
+                    return Err(TransactionError::PartialCommit {
+                        receipt,
+                        failed,
+                        source,
+                    });
                 }
                 Err(error) => return Err(error),
             }

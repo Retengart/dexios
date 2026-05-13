@@ -176,9 +176,8 @@ fn unpack_errors_preserve_source_chains_for_workflow_wrappers() {
 
 #[test]
 fn storage_errors_preserve_io_sources() {
-    let storage_error = storage::Error::CreateDirWithSource(io::Error::from(
-        io::ErrorKind::PermissionDenied,
-    ));
+    let storage_error =
+        storage::Error::CreateDirWithSource(io::Error::from(io::ErrorKind::PermissionDenied));
     let wrapped_storage = unpack::Error::Storage(storage_error);
     assert_eq!(
         wrapped_storage.workflow_class(),
@@ -248,9 +247,9 @@ fn domain_errors_classify_path_identity_without_display_strings() {
     let unsafe_path = decrypt::Error::PathIdentity(IdentityError::UnsafePath(path("..")));
     assert_eq!(unsafe_path.workflow_class(), WorkflowErrorClass::UnsafePath);
 
-    let identity_io = encrypt::Error::PathIdentity(IdentityError::from_io_error(
-        io::Error::from(io::ErrorKind::PermissionDenied),
-    ));
+    let identity_io = encrypt::Error::PathIdentity(IdentityError::from_io_error(io::Error::from(
+        io::ErrorKind::PermissionDenied,
+    )));
     assert_eq!(identity_io.workflow_class(), WorkflowErrorClass::IoFailure);
     let encrypt::Error::PathIdentity(inner) = &identity_io else {
         unreachable!("identity source fixture must stay identity-backed");
@@ -259,7 +258,7 @@ fn domain_errors_classify_path_identity_without_display_strings() {
 }
 
 #[test]
-fn domain_errors_classify_transaction_failures_without_display_strings() {
+fn domain_errors_classify_transactions_without_display_strings() {
     let write = encrypt::Error::Transaction(TransactionError::Write {
         path: path("target"),
         source: None,

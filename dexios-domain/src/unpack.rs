@@ -291,14 +291,12 @@ where
 
     // 2. Decrypt input file to temp zip archive.
     tmp_file.with_writer(|tmp_writer| {
-        tmp_writer
-            .rewind()
-            .map_err(|source| {
-                Error::Storage(storage::Error::OpenFileWithSource {
-                    mode: storage::FileMode::Write,
-                    source,
-                })
-            })?;
+        tmp_writer.rewind().map_err(|source| {
+            Error::Storage(storage::Error::OpenFileWithSource {
+                mode: storage::FileMode::Write,
+                source,
+            })
+        })?;
         let writer = RefCell::new(tmp_writer);
         decrypt::execute_handles(decrypt::HandleRequest {
             header_reader: req.header_reader,
@@ -466,6 +464,7 @@ fn stage_extracted_file<R: Read + Seek>(
         .ok_or_else(|| {
             Error::Transaction(TransactionError::Write {
                 path: entity.full_path.clone(),
+                source: None,
             })
         })?;
     let mut zip_file = archive

@@ -102,6 +102,7 @@ impl NamedStagedOutput {
         self.with_writer_result(write).map_err(|error| match error {
             StagedWriteError::Operation(_) => TransactionError::Write {
                 path: self.target.target_path().to_path_buf(),
+                source: None,
             },
             StagedWriteError::Transaction(error) => error,
         })
@@ -121,6 +122,7 @@ impl NamedStagedOutput {
                 .as_mut()
                 .ok_or(StagedWriteError::Transaction(TransactionError::Write {
                     path: target_path,
+                    source: None,
                 }))?;
         let result = write(file.as_file_mut()).map_err(StagedWriteError::Operation)?;
         self.wrote = true;
@@ -135,14 +137,15 @@ impl NamedStagedOutput {
             .map_err(|_| self.error_at(FailurePoint::Flush))?;
 
         let target_path = self.target.target_path().to_path_buf();
-        let file = self
-            .file
-            .as_mut()
-            .ok_or(TransactionError::Flush { path: target_path })?;
+        let file = self.file.as_mut().ok_or(TransactionError::Flush {
+            path: target_path,
+            source: None,
+        })?;
         file.as_file_mut()
             .flush()
             .map_err(|_| TransactionError::Flush {
                 path: self.target.target_path().to_path_buf(),
+                source: None,
             })?;
         self.flushed = true;
         Ok(())
@@ -154,14 +157,15 @@ impl NamedStagedOutput {
             .map_err(|_| self.error_at(FailurePoint::Sync))?;
 
         let target_path = self.target.target_path().to_path_buf();
-        let file = self
-            .file
-            .as_ref()
-            .ok_or(TransactionError::Sync { path: target_path })?;
+        let file = self.file.as_ref().ok_or(TransactionError::Sync {
+            path: target_path,
+            source: None,
+        })?;
         file.as_file()
             .sync_all()
             .map_err(|_| TransactionError::Sync {
                 path: self.target.target_path().to_path_buf(),
+                source: None,
             })?;
         self.synced = true;
         Ok(())
@@ -176,6 +180,7 @@ impl NamedStagedOutput {
         if !self.wrote {
             return Err(TransactionError::Write {
                 path: self.target.target_path().to_path_buf(),
+                source: None,
             });
         }
         self.flush()?;
@@ -186,11 +191,13 @@ impl NamedStagedOutput {
         if !self.flushed {
             return Err(TransactionError::Flush {
                 path: self.target.target_path().to_path_buf(),
+                source: None,
             });
         }
         if !self.synced {
             return Err(TransactionError::Sync {
                 path: self.target.target_path().to_path_buf(),
+                source: None,
             });
         }
 
@@ -200,17 +207,20 @@ impl NamedStagedOutput {
 
         let path = self.target.target_path().to_path_buf();
         let role = self.target.role();
-        let file = self
-            .file
-            .take()
-            .ok_or(TransactionError::Persist { path: path.clone() })?;
+        let file = self.file.take().ok_or(TransactionError::Persist {
+            path: path.clone(),
+            source: None,
+        })?;
 
         match self.target.overwrite_policy() {
             Some(OverwritePolicy::CreateNew) => file.persist_noclobber(&path),
             Some(OverwritePolicy::ReplaceAtCommit) => file.persist(&path),
-            None => return Err(TransactionError::Persist { path }),
+            None => return Err(TransactionError::Persist { path, source: None }),
         }
-        .map_err(|_| TransactionError::Persist { path: path.clone() })?;
+        .map_err(|_| TransactionError::Persist {
+            path: path.clone(),
+            source: None,
+        })?;
 
         Ok(CommittedArtifact { role, path })
     }
@@ -218,10 +228,12 @@ impl NamedStagedOutput {
     fn error_at(&self, point: FailurePoint) -> TransactionError {
         let path = self.target.target_path().to_path_buf();
         match point {
-            FailurePoint::Write => TransactionError::Write { path },
-            FailurePoint::Flush => TransactionError::Flush { path },
-            FailurePoint::Sync => TransactionError::Sync { path },
-            FailurePoint::Persist | FailurePoint::Cleanup => TransactionError::Persist { path },
+            FailurePoint::Write => TransactionError::Write { path, source: None },
+            FailurePoint::Flush => TransactionError::Flush { path, source: None },
+            FailurePoint::Sync => TransactionError::Sync { path, source: None },
+            FailurePoint::Persist | FailurePoint::Cleanup => {
+                TransactionError::Persist { path, source: None }
+            }
         }
     }
 }
