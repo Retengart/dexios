@@ -399,13 +399,13 @@ fn assurance_replay_runs_once_after_workspace_tests_before_audit() {
         "run bash scripts/verify_assurance_replay.sh",
         1,
     );
-    assert_occurs_before(
+    assert_non_comment_line_occurs_before(
         "scripts/verify_phase_gate.sh",
         VERIFY_PHASE_GATE,
         "run cargo test --workspace --all-features --release --verbose",
         "run bash scripts/verify_assurance_replay.sh",
     );
-    assert_occurs_before(
+    assert_non_comment_line_occurs_before(
         "scripts/verify_phase_gate.sh",
         VERIFY_PHASE_GATE,
         "run bash scripts/verify_assurance_replay.sh",
