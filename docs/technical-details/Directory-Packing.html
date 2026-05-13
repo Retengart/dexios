@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-dba32a10.js";
+            window.path_to_searchindex_js = "../searchindex-a3f1c30d.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-532d5d21.js"></script>
@@ -232,7 +232,12 @@ before transaction commit. It is not a streaming archive redesign.</p>
 <p>Files are currently copied into the zip archive in streaming chunks. The code does not attempt to preserve full original filesystem metadata as a stable compatibility guarantee.</p>
 <h2 id="unpacking"><a class="header" href="#unpacking">Unpacking</a></h2>
 <p>The current unpack flow is stricter than the historical docs:</p>
+<p>The public Rust API constructs unpack work through checked <code>UnpackIntent</code> state
+rather than raw request fields. The CLI still owns prompting and selected input
+paths; the domain layer keeps archive validation, path identity checks, staging,
+and transaction commit behavior.</p>
 <ol>
+<li>construct checked unpack intent from opened input/header entries and the requested output root</li>
 <li>decrypt the packed file into a temporary zip artifact</li>
 <li>normalize every archive path before writing anything to disk</li>
 <li>enforce the shared <code>ArchiveLimits</code> entry count, path byte, and path depth policy</li>
@@ -250,6 +255,7 @@ before transaction commit. It is not a streaming archive redesign.</p>
 <li>Packing hides original directory layout inside the encrypted payload, but the outer ciphertext still leaks overall file size.</li>
 <li>Unpack should still be treated as a risky operation on untrusted input, even though the current implementation has explicit path identity and path-safety checks.</li>
 <li>The temporary decrypted archive is plaintext while it exists.</li>
+<li>Checked unpack construction makes the public API harder to bypass; it does not reduce plaintext temporary ZIP exposure or add a capacity proof.</li>
 <li>Byte and storage needs are real operating assumptions. The structural limits bound archive metadata shape; they do not prove that the host has enough free memory or disk space.</li>
 </ul>
 

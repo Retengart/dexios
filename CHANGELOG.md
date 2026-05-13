@@ -11,9 +11,9 @@
   behavior instead of compatibility paths.
 - Cleaned up the Rust domain API around unpacking: public unpack construction
   now uses checked `UnpackIntent` state instead of raw request fields, storage
-  failure-injection hooks are gated out of the default production API, and typed
-  domain errors preserve safe diagnostic source chains while CLI mapping stays
-  class-based and terse.
+  failure-injection hooks are gated behind the non-default `test-support`
+  feature, and typed domain errors preserve safe diagnostic source chains while
+  CLI mapping stays class-based and terse.
 
 ### Security
 

@@ -12,6 +12,7 @@ const PROTECTED_WRAPPER: &str = include_str!("../../book/src/dexios-core/Protect
 const KEYS: &str = include_str!("../../book/src/technical-details/Keys.md");
 const CHANGELOG: &str = include_str!("../../CHANGELOG.md");
 const CARGO_TOML: &str = include_str!("../../Cargo.toml");
+const DEXIOS_DOMAIN_CARGO_TOML: &str = include_str!("../../dexios-domain/Cargo.toml");
 const GITIGNORE: &str = include_str!("../../.gitignore");
 const DENY_TOML: &str = include_str!("../../deny.toml");
 const VERIFY_PHASE_GATE: &str = include_str!("../../scripts/verify_phase_gate.sh");
@@ -21,10 +22,20 @@ const MEASURE_PERFORMANCE_GATE: &str = include_str!("../../scripts/measure_perfo
 const DEXIOS_MAIN_RS: &str = include_str!("../src/main.rs");
 const DEXIOS_CLI_RS: &str = include_str!("../src/cli.rs");
 const DEXIOS_STATES_RS: &str = include_str!("../src/global/states.rs");
+const DEXIOS_UNPACK_RS: &str = include_str!("../src/subcommands/unpack.rs");
+const DEXIOS_SUBCOMMAND_ERRORS_RS: &str = include_str!("../src/subcommands/errors.rs");
 const DEXIOS_CORE_LIB_RS: &str = include_str!("../../dexios-core/src/lib.rs");
 const DEXIOS_CORE_KEY_RS: &str = include_str!("../../dexios-core/src/key.rs");
 const DEXIOS_CORE_PROTECTED_RS: &str = include_str!("../../dexios-core/src/protected.rs");
 const DEXIOS_DOMAIN_LIB_RS: &str = include_str!("../../dexios-domain/src/lib.rs");
+const DEXIOS_DOMAIN_UNPACK_RS: &str = include_str!("../../dexios-domain/src/unpack.rs");
+const DEXIOS_DOMAIN_STORAGE_RS: &str = include_str!("../../dexios-domain/src/storage/mod.rs");
+const DEXIOS_DOMAIN_TRANSACTION_RS: &str =
+    include_str!("../../dexios-domain/src/storage/transaction.rs");
+const DEXIOS_DOMAIN_TEMP_RS: &str = include_str!("../../dexios-domain/src/storage/temp.rs");
+const DEXIOS_DOMAIN_WORKFLOW_ERROR_TESTS: &str =
+    include_str!("../../dexios-domain/tests/workflow_errors.rs");
+const DEXIOS_WORKFLOW_ERROR_CLI_TESTS: &str = include_str!("workflow_error_cli.rs");
 const AUDIT_WORKFLOW: &str = include_str!("../../.github/workflows/audit.yml");
 const DOCS_WORKFLOW: &str = include_str!("../../.github/workflows/docs.yml");
 const DEXIOS_TESTS_WORKFLOW: &str = include_str!("../../.github/workflows/dexios-tests.yml");
@@ -460,6 +471,184 @@ fn phase9_kdf_passphrase_and_secret_contract_is_source_gated() {
             "dexios-core/src/protected.rs",
             DEXIOS_CORE_PROTECTED_RS,
             forbidden,
+        );
+    }
+}
+
+#[test]
+fn phase10_domain_api_and_error_cleanup_is_source_gated() {
+    for required in [
+        "UnpackIntent",
+        "test-support",
+        "diagnostic source chains",
+        "class-based and terse",
+    ] {
+        assert_contains("CHANGELOG.md", CHANGELOG, required);
+    }
+
+    for required in [
+        "API-001",
+        "checked `UnpackIntent`",
+        "test-support",
+        "WorkflowErrorClass",
+        "diagnostic `source()` chains",
+        "source-chain",
+        "not printed by default CLI errors",
+    ] {
+        assert_contains("book/src/Safety-Contract.md", SAFETY_CONTRACT, required);
+    }
+
+    for required in [
+        "checked `UnpackIntent` state",
+        "plaintext temporary ZIP exposure",
+        "does not reduce plaintext temporary ZIP exposure",
+        "they do not prove that the host has enough free memory or disk space",
+    ] {
+        assert_contains(
+            "book/src/technical-details/Directory-Packing.md",
+            DIRECTORY_PACKING,
+            required,
+        );
+    }
+
+    for forbidden in [
+        "crash-consistency guarantee",
+        "crash consistency guarantee",
+        "temp-space threshold",
+        "performance threshold",
+        "plaintext ZIP exposure reduction",
+        "secure erase guarantee",
+        "physical sanitization guarantee",
+        "provides forensic recovery resistance",
+    ] {
+        assert_not_contains("CHANGELOG.md", CHANGELOG, forbidden);
+        assert_not_contains("book/src/Safety-Contract.md", SAFETY_CONTRACT, forbidden);
+        assert_not_contains(
+            "book/src/technical-details/Directory-Packing.md",
+            DIRECTORY_PACKING,
+            forbidden,
+        );
+    }
+
+    for required in [
+        "pub struct UnpackIntent",
+        "impl UnpackIntent",
+        "input.try_reader().map_err(Error::Storage)?",
+        "pub fn execute(intent: UnpackIntent)",
+        "fn source(&self) -> Option<&(dyn std::error::Error + 'static)>",
+    ] {
+        assert_contains(
+            "dexios-domain/src/unpack.rs",
+            DEXIOS_DOMAIN_UNPACK_RS,
+            required,
+        );
+    }
+    for forbidden in ["pub struct Request", "pub(crate) struct Request"] {
+        assert_not_contains(
+            "dexios-domain/src/unpack.rs",
+            DEXIOS_DOMAIN_UNPACK_RS,
+            forbidden,
+        );
+    }
+
+    assert_contains(
+        "dexios/src/subcommands/unpack.rs",
+        DEXIOS_UNPACK_RS,
+        "domain::unpack::UnpackIntent::new",
+    );
+    assert_not_contains(
+        "dexios/src/subcommands/unpack.rs",
+        DEXIOS_UNPACK_RS,
+        "domain::unpack::Request",
+    );
+
+    for required in ["default = []", "test-support = []"] {
+        assert_contains(
+            "dexios-domain/Cargo.toml",
+            DEXIOS_DOMAIN_CARGO_TOML,
+            required,
+        );
+    }
+    for required in [
+        "#[cfg(any(test, feature = \"test-support\"))]",
+        "pub mod test_support;",
+        "#[cfg(not(any(test, feature = \"test-support\")))]",
+        "mod test_support;",
+    ] {
+        assert_contains(
+            "dexios-domain/src/storage/mod.rs",
+            DEXIOS_DOMAIN_STORAGE_RS,
+            required,
+        );
+    }
+    for required in [
+        "#[cfg(any(test, feature = \"test-support\"))]",
+        "pub fn with_failure_hooks",
+    ] {
+        assert_contains(
+            "dexios-domain/src/storage/transaction.rs",
+            DEXIOS_DOMAIN_TRANSACTION_RS,
+            required,
+        );
+        assert_contains(
+            "dexios-domain/src/storage/temp.rs",
+            DEXIOS_DOMAIN_TEMP_RS,
+            required,
+        );
+    }
+    for required in [
+        "source: Option<io::Error>",
+        "fn source(&self) -> Option<&(dyn std::error::Error + 'static)>",
+        "source: Some(source)",
+    ] {
+        assert_contains(
+            "dexios-domain/src/storage/transaction.rs",
+            DEXIOS_DOMAIN_TRANSACTION_RS,
+            required,
+        );
+    }
+
+    for required in [
+        "WorkflowErrorClass::IoFailure",
+        "WorkflowErrorClass::TransactionCommitFailure",
+        "map_unpack_error",
+    ] {
+        assert_contains(
+            "dexios/src/subcommands/errors.rs",
+            DEXIOS_SUBCOMMAND_ERRORS_RS,
+            required,
+        );
+    }
+    for forbidden in [".chain()", ".source()", "source chain"] {
+        assert_not_contains(
+            "dexios/src/subcommands/errors.rs",
+            DEXIOS_SUBCOMMAND_ERRORS_RS,
+            forbidden,
+        );
+    }
+
+    for required in [
+        "error.source().is_some()",
+        "storage_errors_preserve_io_sources",
+        "transaction_errors_preserve_io_sources",
+        "domain_errors_classify_transactions_without_display_strings",
+    ] {
+        assert_contains(
+            "dexios-domain/tests/workflow_errors.rs",
+            DEXIOS_DOMAIN_WORKFLOW_ERROR_TESTS,
+            required,
+        );
+    }
+    for required in [
+        "assert_no_default_source_chain",
+        "Authentication failed",
+        "master key",
+        "keyslot",
+    ] {
+        assert_contains(
+            "dexios/tests/workflow_error_cli.rs",
+            DEXIOS_WORKFLOW_ERROR_CLI_TESTS,
+            required,
         );
     }
 }
