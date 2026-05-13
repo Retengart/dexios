@@ -115,17 +115,58 @@ impl Error {
 type OnArchiveInfo = Box<dyn FnOnce(usize)>;
 type OnZipFileFn = Box<dyn Fn(PathBuf) -> Result<bool, String>>;
 
-pub struct Request<'a, R>
+pub struct UnpackIntent {
+    input: storage::Entry<fs::File>,
+    detached_header: Option<storage::Entry<fs::File>>,
+    raw_key: Protected<Vec<u8>>,
+    output_dir_path: PathBuf,
+    on_decrypted_header: Option<decrypt::OnDecryptedHeaderFn>,
+    on_archive_info: Option<OnArchiveInfo>,
+    on_zip_file: Option<OnZipFileFn>,
+}
+
+impl UnpackIntent {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new<P>(
+        input: storage::Entry<fs::File>,
+        detached_header: Option<storage::Entry<fs::File>>,
+        output_dir_path: P,
+        raw_key: Protected<Vec<u8>>,
+        on_decrypted_header: Option<decrypt::OnDecryptedHeaderFn>,
+        on_archive_info: Option<OnArchiveInfo>,
+        on_zip_file: Option<OnZipFileFn>,
+    ) -> Result<Self, Error>
+    where
+        P: AsRef<Path>,
+    {
+        input.try_reader().map_err(Error::Storage)?;
+        if let Some(header) = &detached_header {
+            header.try_reader().map_err(Error::Storage)?;
+        }
+
+        Ok(Self {
+            input,
+            detached_header,
+            raw_key,
+            output_dir_path: output_dir_path.as_ref().to_path_buf(),
+            on_decrypted_header,
+            on_archive_info,
+            on_zip_file,
+        })
+    }
+}
+
+struct HandleRequest<'a, R>
 where
-    R: Read,
+    R: Read + Seek,
 {
-    pub reader: &'a RefCell<R>,
-    pub header_reader: Option<&'a RefCell<R>>,
-    pub raw_key: Protected<Vec<u8>>,
-    pub output_dir_path: PathBuf,
-    pub on_decrypted_header: Option<decrypt::OnDecryptedHeaderFn>,
-    pub on_archive_info: Option<OnArchiveInfo>,
-    pub on_zip_file: Option<OnZipFileFn>,
+    reader: &'a RefCell<R>,
+    header_reader: Option<&'a RefCell<R>>,
+    raw_key: Protected<Vec<u8>>,
+    output_dir_path: PathBuf,
+    on_decrypted_header: Option<decrypt::OnDecryptedHeaderFn>,
+    on_archive_info: Option<OnArchiveInfo>,
+    on_zip_file: Option<OnZipFileFn>,
 }
 
 struct ExtractionEntity {
@@ -189,10 +230,34 @@ impl ArchivePathTree {
     }
 }
 
-pub fn execute(
-    stor: Arc<storage::FileStorage>,
-    req: Request<'_, fs::File>,
-) -> Result<CommitReceipt, Error> {
+pub fn execute(intent: UnpackIntent) -> Result<CommitReceipt, Error> {
+    let UnpackIntent {
+        input,
+        detached_header,
+        raw_key,
+        output_dir_path,
+        on_decrypted_header,
+        on_archive_info,
+        on_zip_file,
+    } = intent;
+
+    let reader = input.try_reader().map_err(Error::Storage)?;
+    let header_reader = detached_header
+        .as_ref()
+        .map(|header| header.try_reader())
+        .transpose()
+        .map_err(Error::Storage)?;
+    let req = HandleRequest {
+        reader,
+        header_reader,
+        raw_key,
+        output_dir_path,
+        on_decrypted_header,
+        on_archive_info,
+        on_zip_file,
+    };
+
+    let stor = Arc::new(storage::FileStorage);
     execute_with_temp_artifact(stor, req, || {
         storage::FileStorage
             .create_temp_artifact()
@@ -200,12 +265,13 @@ pub fn execute(
     })
 }
 
-fn execute_with_temp_artifact<T, F>(
+fn execute_with_temp_artifact<R, T, F>(
     stor: Arc<storage::FileStorage>,
-    req: Request<'_, fs::File>,
+    req: HandleRequest<'_, R>,
     temp_factory: F,
 ) -> Result<CommitReceipt, Error>
 where
+    R: Read + Seek,
     T: TempArtifactLike,
     F: FnOnce() -> Result<T, Error>,
 {
@@ -599,7 +665,7 @@ mod tests {
 
         let stor = Arc::new(FileStorage);
         let archive = stor.read_file(&encrypted_archive).unwrap();
-        let req = Request {
+        let req = HandleRequest {
             reader: archive.try_reader().unwrap(),
             header_reader: None,
             raw_key: Protected::new(PASSWORD.to_vec()),
@@ -630,17 +696,18 @@ mod tests {
 
         let stor = Arc::new(FileStorage);
         let archive = stor.read_file(&encrypted_archive).unwrap();
-        let req = Request {
-            reader: archive.try_reader().unwrap(),
-            header_reader: None,
-            raw_key: Protected::new(PASSWORD.to_vec()),
-            output_dir_path: output_dir.clone(),
-            on_decrypted_header: None,
-            on_archive_info: None,
-            on_zip_file: None,
-        };
+        let intent = UnpackIntent::new(
+            archive,
+            None,
+            output_dir.clone(),
+            Protected::new(PASSWORD.to_vec()),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
-        let receipt = execute(stor.clone(), req).unwrap();
+        let receipt = execute(intent).unwrap();
 
         assert_eq!(receipt.artifacts.len(), 3);
         assert_text(&output_dir.join("bar/.hello.txt"), "hello");
@@ -662,17 +729,18 @@ mod tests {
         let stor = Arc::new(FileStorage);
         let archive = stor.read_file(&encrypted_archive).unwrap();
         let header = stor.read_file(&detached_header).unwrap();
-        let req = Request {
-            reader: archive.try_reader().unwrap(),
-            header_reader: Some(header.try_reader().unwrap()),
-            raw_key: Protected::new(PASSWORD.to_vec()),
-            output_dir_path: output_dir.clone(),
-            on_decrypted_header: None,
-            on_archive_info: None,
-            on_zip_file: None,
-        };
+        let intent = UnpackIntent::new(
+            archive,
+            Some(header),
+            output_dir.clone(),
+            Protected::new(PASSWORD.to_vec()),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
-        let receipt = execute(stor.clone(), req).unwrap();
+        let receipt = execute(intent).unwrap();
 
         assert_eq!(receipt.artifacts.len(), 3);
         assert_text(&output_dir.join("bar/.hello.txt"), "hello");
@@ -692,17 +760,18 @@ mod tests {
 
         let stor = Arc::new(FileStorage);
         let archive = stor.read_file(&encrypted_archive).unwrap();
-        let req = Request {
-            reader: archive.try_reader().unwrap(),
-            header_reader: None,
-            raw_key: Protected::new(PASSWORD.to_vec()),
-            output_dir_path: output_dir.clone(),
-            on_decrypted_header: None,
-            on_archive_info: None,
-            on_zip_file: None,
-        };
+        let intent = UnpackIntent::new(
+            archive,
+            None,
+            output_dir.clone(),
+            Protected::new(PASSWORD.to_vec()),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
-        let receipt = execute(stor.clone(), req).unwrap();
+        let receipt = execute(intent).unwrap();
 
         assert_eq!(receipt.artifacts.len(), 3);
         assert_text(&output_dir.join("bar/.hello.txt"), "hello");
