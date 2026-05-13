@@ -1,5 +1,6 @@
 const DOMAIN_ENCRYPT: &str = include_str!("../src/encrypt.rs");
 const DOMAIN_DECRYPT: &str = include_str!("../src/decrypt.rs");
+const DOMAIN_UNPACK: &str = include_str!("../src/unpack.rs");
 const DOMAIN_HEADER_DUMP: &str = include_str!("../src/header/dump.rs");
 const DOMAIN_HEADER_STRIP: &str = include_str!("../src/header/strip.rs");
 const DOMAIN_HEADER_RESTORE: &str = include_str!("../src/header/restore.rs");
@@ -7,9 +8,15 @@ const DOMAIN_KEY_ADD: &str = include_str!("../src/key/add.rs");
 const DOMAIN_KEY_CHANGE: &str = include_str!("../src/key/change.rs");
 const DOMAIN_KEY_DELETE: &str = include_str!("../src/key/delete.rs");
 const DOMAIN_KEY_VERIFY: &str = include_str!("../src/key/verify.rs");
+const STORAGE_MOD: &str = include_str!("../src/storage/mod.rs");
+const STORAGE_TEST_SUPPORT: &str = include_str!("../src/storage/test_support.rs");
+const STORAGE_TRANSACTION: &str = include_str!("../src/storage/transaction.rs");
+const STORAGE_TEMP: &str = include_str!("../src/storage/temp.rs");
+const STORAGE_CLEANUP: &str = include_str!("../src/storage/cleanup.rs");
 
 const CLI_ENCRYPT: &str = include_str!("../../dexios/src/subcommands/encrypt.rs");
 const CLI_DECRYPT: &str = include_str!("../../dexios/src/subcommands/decrypt.rs");
+const CLI_UNPACK: &str = include_str!("../../dexios/src/subcommands/unpack.rs");
 const CLI_HEADER: &str = include_str!("../../dexios/src/subcommands/header.rs");
 const CLI_KEY: &str = include_str!("../../dexios/src/subcommands/key.rs");
 const CLI_ERRORS: &str = include_str!("../../dexios/src/subcommands/errors.rs");
@@ -33,6 +40,10 @@ fn domain_workflow_sources() -> Vec<Source<'static>> {
         Source {
             path: "dexios-domain/src/decrypt.rs",
             text: DOMAIN_DECRYPT,
+        },
+        Source {
+            path: "dexios-domain/src/unpack.rs",
+            text: DOMAIN_UNPACK,
         },
         Source {
             path: "dexios-domain/src/header/dump.rs",
@@ -76,6 +87,10 @@ fn cli_adapter_sources() -> Vec<Source<'static>> {
             text: CLI_DECRYPT,
         },
         Source {
+            path: "dexios/src/subcommands/unpack.rs",
+            text: CLI_UNPACK,
+        },
+        Source {
             path: "dexios/src/subcommands/header.rs",
             text: CLI_HEADER,
         },
@@ -104,6 +119,26 @@ fn d05_policy_sources() -> Vec<Source<'static>> {
         Source {
             path: "dexios-domain/tests/keyslots_v1.rs",
             text: DOMAIN_KEYSLOTS_TESTS,
+        },
+        Source {
+            path: "dexios-domain/src/storage/mod.rs",
+            text: STORAGE_MOD,
+        },
+        Source {
+            path: "dexios-domain/src/storage/test_support.rs",
+            text: STORAGE_TEST_SUPPORT,
+        },
+        Source {
+            path: "dexios-domain/src/storage/transaction.rs",
+            text: STORAGE_TRANSACTION,
+        },
+        Source {
+            path: "dexios-domain/src/storage/temp.rs",
+            text: STORAGE_TEMP,
+        },
+        Source {
+            path: "dexios-domain/src/storage/cleanup.rs",
+            text: STORAGE_CLEANUP,
         },
     ]);
     sources
@@ -218,6 +253,7 @@ fn cli_raw_request_constructor_violations(source: Source<'_>) -> Vec<String> {
     let workflow_modules = [
         "domain::encrypt",
         "domain::decrypt",
+        "domain::unpack",
         "domain::header::dump",
         "domain::header::strip",
         "domain::header::restore",
@@ -305,6 +341,22 @@ fn d05_escape_hatch_violations(source: Source<'_>) -> Vec<String> {
             ));
         }
 
+        if !test_context.is_test_only() && is_public_failure_hook_declaration(trimmed) {
+            violations.push(violation(
+                source.path,
+                index,
+                "D-05 failure hooks must be test-support scoped",
+            ));
+        }
+
+        if !test_context.is_test_only() && is_test_support_export(trimmed) {
+            violations.push(violation(
+                source.path,
+                index,
+                "D-05 test_support export must be cfg(test) or feature-gated",
+            ));
+        }
+
         test_context.update_after_line(trimmed);
     }
 
@@ -359,6 +411,7 @@ fn d05_fixture_name_violations(source: Source<'_>) -> Vec<String> {
 
 struct TestContext {
     integration_test: bool,
+    test_support_file: bool,
     cfg_test_pending: bool,
     cfg_test_depth: usize,
 }
@@ -367,17 +420,21 @@ impl TestContext {
     fn new(path: &str) -> Self {
         Self {
             integration_test: path.contains("/tests/"),
+            test_support_file: path.ends_with("/test_support.rs"),
             cfg_test_pending: false,
             cfg_test_depth: 0,
         }
     }
 
     fn is_test_only(&self) -> bool {
-        self.integration_test || self.cfg_test_depth > 0 || self.cfg_test_pending
+        self.integration_test
+            || self.test_support_file
+            || self.cfg_test_depth > 0
+            || self.cfg_test_pending
     }
 
     fn update_before_line(&mut self, trimmed: &str) {
-        if trimmed.starts_with("#[cfg(test)]") {
+        if is_test_or_test_support_cfg(trimmed) {
             self.cfg_test_pending = true;
         }
 
@@ -395,10 +452,15 @@ impl TestContext {
             } else {
                 self.cfg_test_depth = self.cfg_test_depth.saturating_add(delta as usize);
             }
-        } else if self.cfg_test_pending && !trimmed.starts_with("#[cfg(test)]") {
+        } else if self.cfg_test_pending && !is_test_or_test_support_cfg(trimmed) {
             self.cfg_test_pending = false;
         }
     }
+}
+
+fn is_test_or_test_support_cfg(trimmed: &str) -> bool {
+    trimmed.starts_with("#[cfg(test)]")
+        || (trimmed.starts_with("#[cfg(") && trimmed.contains("feature = \"test-support\""))
 }
 
 fn declares_test_module(trimmed: &str) -> bool {
@@ -444,6 +506,15 @@ fn is_escape_hatch_declaration(name: &str) -> bool {
     .any(|word| name.contains(word));
 
     has_escape_word && has_request_word
+}
+
+fn is_public_failure_hook_declaration(trimmed: &str) -> bool {
+    (trimmed.starts_with("pub fn ") || trimmed.starts_with("pub(crate) fn "))
+        && trimmed.contains("with_failure_hooks")
+}
+
+fn is_test_support_export(trimmed: &str) -> bool {
+    trimmed.starts_with("pub mod test_support") || trimmed.starts_with("pub use test_support")
 }
 
 fn is_fixture_or_helper_name(name: &str) -> bool {
@@ -497,6 +568,10 @@ fn public_workflow_api_rejects_request_structs_execute_signatures_and_refcell_co
             text: "pub struct Request { raw: () }",
         },
         Source {
+            path: "synthetic/public-unpack-request.rs",
+            text: "pub struct Request<'a> { reader: &'a std::cell::RefCell<Vec<u8>> }",
+        },
+        Source {
             path: "synthetic/crate-request.rs",
             text: "pub(crate) struct TransactionalRequest { raw: () }",
         },
@@ -528,6 +603,7 @@ fn raw_workflow_bypass_scans_domain_and_cli_sources() {
     for expected in [
         "dexios-domain/src/encrypt.rs",
         "dexios-domain/src/decrypt.rs",
+        "dexios-domain/src/unpack.rs",
         "dexios-domain/src/header/dump.rs",
         "dexios-domain/src/header/strip.rs",
         "dexios-domain/src/header/restore.rs",
@@ -554,6 +630,10 @@ fn raw_workflow_bypass_scans_domain_and_cli_sources() {
         Source {
             path: "synthetic/key-cli.rs",
             text: "use domain::key::change::{Request, TransactionalRequest};",
+        },
+        Source {
+            path: "synthetic/unpack-cli.rs",
+            text: "let req = domain::unpack::Request { raw: () };",
         },
     ];
 
@@ -608,6 +688,14 @@ fn test_support_escape_hatches_are_scoped_and_named_by_d05() {
         Source {
             path: "synthetic/bypass-production-module.rs",
             text: "pub mod bypass_request_builders {}",
+        },
+        Source {
+            path: "synthetic/public-failure-hooks.rs",
+            text: "pub fn with_failure_hooks() {}",
+        },
+        Source {
+            path: "synthetic/unscoped-test-support.rs",
+            text: "pub mod test_support;",
         },
     ];
 
