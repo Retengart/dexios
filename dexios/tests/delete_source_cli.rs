@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use zip::write::SimpleFileOptions;
 
 const PASSWORD: &str = "12345678";
+const DEXIOS_SUBCOMMANDS_RS: &str = include_str!("../src/subcommands.rs");
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 
 struct TestDir {
@@ -63,6 +64,13 @@ fn write_zip_with_entries(path: &Path, entries: &[(&str, &[u8])]) {
     }
 
     zip_writer.finish().unwrap();
+}
+
+fn assert_source_contains(source_name: &str, source: &str, needle: &str) {
+    assert!(
+        source.contains(needle),
+        "{source_name} must contain {needle:?}"
+    );
 }
 
 #[test]
@@ -356,4 +364,18 @@ fn pack_delete_source_reports_partial_cleanup_failure() {
     assert!(encrypted.exists());
     assert!(!ok_source.exists());
     assert!(locked_source.exists());
+}
+
+#[test]
+fn cli_delete_after_success_hash_failure_and_identity_mismatch_are_source_gated() {
+    for required in [
+        "HashVerification::Failed",
+        "changed cleanup identity",
+        "cleanup target identity",
+        "ordinary delete-after-success cleanup",
+        "PostCommitSuccess",
+        "committed outputs were not rolled back",
+    ] {
+        assert_source_contains("dexios/src/subcommands.rs", DEXIOS_SUBCOMMANDS_RS, required);
+    }
 }

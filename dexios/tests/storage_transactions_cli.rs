@@ -7,6 +7,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use core::header::common::HEADER_LEN;
 
 const PASSWORD: &str = "12345678";
+const DEXIOS_SUBCOMMANDS_RS: &str = include_str!("../src/subcommands.rs");
+const DEXIOS_SUBCOMMAND_ERRORS_RS: &str = include_str!("../src/subcommands/errors.rs");
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 
 struct TestDir {
@@ -48,6 +50,13 @@ fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
         .args(args)
         .output()
         .unwrap()
+}
+
+fn assert_source_contains(source_name: &str, source: &str, needle: &str) {
+    assert!(
+        source.contains(needle),
+        "{source_name} must contain {needle:?}"
+    );
 }
 
 #[test]
@@ -375,4 +384,18 @@ fn unpack_delete_input_keeps_input_after_extraction_commit_failure() {
         String::from_utf8_lossy(&unpack_output.stderr)
     );
     assert!(encrypted.exists());
+}
+
+#[test]
+fn cli_delete_after_success_is_source_gated_against_partial_commit_and_failed_hash() {
+    for required in [
+        "TransactionError::PartialCommit",
+        "cleanup is blocked after partial commit",
+        "HashVerification::Failed",
+        "requested hash did not succeed",
+        "cleanup_after_commit",
+    ] {
+        let source = format!("{DEXIOS_SUBCOMMANDS_RS}\n{DEXIOS_SUBCOMMAND_ERRORS_RS}");
+        assert_source_contains("dexios CLI transaction cleanup corpus", &source, required);
+    }
 }

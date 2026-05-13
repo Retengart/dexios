@@ -5,6 +5,7 @@ const CLI_README: &str = include_str!("../../dexios/README.md");
 const USAGE_EXAMPLES: &str = include_str!("../../book/src/Usage-Examples.md");
 const DIRECTORY_PACKING: &str =
     include_str!("../../book/src/technical-details/Directory-Packing.md");
+const SECURE_ERASE: &str = include_str!("../../book/src/technical-details/Secure-Erase.md");
 const INSTALLING_AND_BUILDING: &str = include_str!("../../book/src/Installing-and-Building.md");
 const AUDITING: &str = include_str!("../../book/src/dexios-core/Auditing.md");
 const PASSWORD_HASHING: &str = include_str!("../../book/src/dexios-core/Password-Hashing.md");
@@ -30,6 +31,7 @@ const DEXIOS_CORE_PROTECTED_RS: &str = include_str!("../../dexios-core/src/prote
 const DEXIOS_DOMAIN_LIB_RS: &str = include_str!("../../dexios-domain/src/lib.rs");
 const DEXIOS_DOMAIN_UNPACK_RS: &str = include_str!("../../dexios-domain/src/unpack.rs");
 const DEXIOS_DOMAIN_STORAGE_RS: &str = include_str!("../../dexios-domain/src/storage/mod.rs");
+const DEXIOS_DOMAIN_CLEANUP_RS: &str = include_str!("../../dexios-domain/src/storage/cleanup.rs");
 const DEXIOS_DOMAIN_TRANSACTION_RS: &str =
     include_str!("../../dexios-domain/src/storage/transaction.rs");
 const DEXIOS_DOMAIN_TEMP_RS: &str = include_str!("../../dexios-domain/src/storage/temp.rs");
@@ -74,6 +76,18 @@ fn assert_all_contains(source_name: &str, source: &str, needles: &[&str]) {
     for needle in needles {
         assert_contains(source_name, source, needle);
     }
+}
+
+fn assert_corpus_contains(corpus_name: &str, sources: &[(&str, &str)], needle: &str) {
+    assert!(
+        sources.iter().any(|(_, source)| source.contains(needle)),
+        "{corpus_name} must contain {needle:?} in one of: {}",
+        sources
+            .iter()
+            .map(|(source_name, _)| *source_name)
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
 }
 
 fn is_non_comment_line(line: &str) -> bool {
@@ -648,6 +662,97 @@ fn phase10_domain_api_and_error_cleanup_is_source_gated() {
         assert_contains(
             "dexios/tests/workflow_error_cli.rs",
             DEXIOS_WORKFLOW_ERROR_CLI_TESTS,
+            required,
+        );
+    }
+}
+
+#[test]
+fn phase11_filesystem_transaction_and_cleanup_contract_is_source_gated() {
+    let docs = [
+        ("README.md", README),
+        ("CHANGELOG.md", CHANGELOG),
+        ("book/src/Safety-Contract.md", SAFETY_CONTRACT),
+        ("book/src/technical-details/Secure-Erase.md", SECURE_ERASE),
+        (
+            "book/src/technical-details/Directory-Packing.md",
+            DIRECTORY_PACKING,
+        ),
+    ];
+    let sources = [
+        (
+            "dexios-domain/src/storage/cleanup.rs",
+            DEXIOS_DOMAIN_CLEANUP_RS,
+        ),
+        (
+            "dexios-domain/src/storage/transaction.rs",
+            DEXIOS_DOMAIN_TRANSACTION_RS,
+        ),
+        ("dexios-domain/src/storage/temp.rs", DEXIOS_DOMAIN_TEMP_RS),
+    ];
+
+    for (source_name, source) in docs {
+        for forbidden in [
+            "secure erase guarantee",
+            "physical sanitization guarantee",
+            "forensic recovery resistance",
+            "full crash-consistency guarantee",
+            "power-failure proof",
+            "rollback committed outputs",
+            "plaintext ZIP exposure reduction",
+        ] {
+            assert_not_contains(source_name, source, forbidden);
+        }
+    }
+
+    for required in [
+        "ordinary delete-after-success cleanup",
+        "changed cleanup identity",
+        "partial commit evidence",
+        "committed outputs are not rolled back",
+        "staged flush/sync/persist",
+        "same-directory temporary files",
+        "tempfile::NamedTempFile::persist",
+        "File::sync_all",
+        "remove_file does not guarantee immediate physical deletion",
+        "does not reduce plaintext temporary ZIP exposure",
+    ] {
+        assert_corpus_contains("Phase 11 documentation corpus", &docs, required);
+    }
+
+    for required in [
+        "CleanupTarget",
+        "target identity snapshot",
+        "changed cleanup identity",
+        "PostCommitSuccess",
+        "HashVerification::Failed",
+    ] {
+        assert_corpus_contains("Phase 11 cleanup source corpus", &sources, required);
+    }
+
+    for required in [
+        "TransactionError::PartialCommit",
+        "CommittedArtifact",
+        "receipt",
+        "failed",
+    ] {
+        assert_contains(
+            "dexios-domain/src/storage/transaction.rs",
+            DEXIOS_DOMAIN_TRANSACTION_RS,
+            required,
+        );
+    }
+
+    for required in [
+        "NamedTempFile::new_in",
+        "flush()",
+        "sync_all()",
+        "persist_noclobber",
+        "persist(&path)",
+    ] {
+        assert_contains(
+            "dexios-domain/src/storage/temp.rs",
+            DEXIOS_DOMAIN_TEMP_RS,
             required,
         );
     }

@@ -86,6 +86,90 @@ fn cleanup_receipt_deletes_all_targets_after_post_commit_success() {
 }
 
 #[test]
+fn cleanup_receipt_changed_target_identity_is_reported_and_replacement_file_is_not_deleted() {
+    let test_dir = TestDir::new("cleanup-receipt-changed-identity");
+    let committed = test_dir.path().join("committed.dexios");
+    let target = test_dir.path().join("source.txt");
+    fs::write(&committed, b"committed output").unwrap();
+    fs::write(&target, b"original source").unwrap();
+
+    let cleanup_receipt = CleanupReceipt::from_paths([target.as_path()]).unwrap();
+    let proof = post_commit_success(committed.clone());
+    fs::remove_file(&target).unwrap();
+    fs::write(&target, b"replacement source").unwrap();
+
+    let result = cleanup_receipt.run(&proof);
+
+    assert!(
+        !result.is_success(),
+        "cleanup must fail closed when a recorded target identity changes; result={result:?}"
+    );
+    assert_eq!(fs::read(&committed).unwrap(), b"committed output");
+    assert_eq!(fs::read(&target).unwrap(), b"replacement source");
+}
+
+#[test]
+fn cleanup_receipt_changed_target_kind_is_reported_and_replacement_directory_is_not_deleted() {
+    let test_dir = TestDir::new("cleanup-receipt-changed-kind");
+    let committed = test_dir.path().join("committed.dexios");
+    let target = test_dir.path().join("source");
+    fs::write(&committed, b"committed output").unwrap();
+    fs::write(&target, b"original source file").unwrap();
+
+    let cleanup_receipt = CleanupReceipt::from_paths([target.as_path()]).unwrap();
+    let proof = post_commit_success(committed.clone());
+    fs::remove_file(&target).unwrap();
+    fs::create_dir(&target).unwrap();
+    fs::write(target.join("replacement.txt"), b"replacement directory").unwrap();
+
+    let result = cleanup_receipt.run(&proof);
+
+    assert!(
+        !result.is_success(),
+        "cleanup must fail closed when a recorded file target becomes a directory"
+    );
+    assert_eq!(fs::read(&committed).unwrap(), b"committed output");
+    assert_eq!(
+        fs::read(target.join("replacement.txt")).unwrap(),
+        b"replacement directory"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn cleanup_receipt_changed_target_symlink_is_reported_and_symlink_is_not_deleted() {
+    use std::os::unix::fs::symlink;
+
+    let test_dir = TestDir::new("cleanup-receipt-changed-symlink");
+    let committed = test_dir.path().join("committed.dexios");
+    let target = test_dir.path().join("source.txt");
+    let linked_target = test_dir.path().join("replacement-target.txt");
+    fs::write(&committed, b"committed output").unwrap();
+    fs::write(&target, b"original source").unwrap();
+    fs::write(&linked_target, b"replacement target").unwrap();
+
+    let cleanup_receipt = CleanupReceipt::from_paths([target.as_path()]).unwrap();
+    let proof = post_commit_success(committed.clone());
+    fs::remove_file(&target).unwrap();
+    symlink(&linked_target, &target).unwrap();
+
+    let result = cleanup_receipt.run(&proof);
+
+    assert!(
+        !result.is_success(),
+        "cleanup must fail closed when a recorded file target becomes a symlink"
+    );
+    assert_eq!(fs::read(&committed).unwrap(), b"committed output");
+    assert!(
+        fs::symlink_metadata(&target)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(fs::read(&linked_target).unwrap(), b"replacement target");
+}
+
+#[test]
 #[cfg(feature = "test-support")]
 fn cleanup_receipt_reports_partial_failure() {
     let test_dir = TestDir::new("cleanup-receipt-partial-failure");

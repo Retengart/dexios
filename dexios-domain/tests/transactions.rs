@@ -4,6 +4,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use dexios_domain::storage::NamedStagedOutput;
+use dexios_domain::storage::cleanup::{HashVerification, PostCommitSuccess};
 use dexios_domain::storage::identity::{
     OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
 };
@@ -113,6 +114,40 @@ fn assert_no_source(error: &TransactionError, label: &str) {
         error.source().is_none(),
         "{label} must remain source-free for synthetic failure hooks"
     );
+}
+
+fn write_existing_linked_targets(output_path: &Path, header_path: &Path) {
+    fs::write(output_path, b"existing linked output").unwrap();
+    fs::write(header_path, b"existing linked header").unwrap();
+}
+
+fn assert_existing_linked_targets_preserved(output_path: &Path, header_path: &Path) {
+    assert_eq!(fs::read(output_path).unwrap(), b"existing linked output");
+    assert_eq!(fs::read(header_path).unwrap(), b"existing linked header");
+}
+
+#[cfg(feature = "test-support")]
+fn linked_transaction_with_failure_hook(
+    point: FailurePoint,
+    output_path: &Path,
+    header_path: &Path,
+) -> LinkedOutputTransaction {
+    let mut transaction = LinkedOutputTransaction::with_failure_hooks(FailureHooks::fail_on(point));
+    transaction
+        .stage(resolved_artifact(
+            output_path,
+            PathRole::Output,
+            OverwritePolicy::ReplaceAtCommit,
+        ))
+        .unwrap();
+    transaction
+        .stage(resolved_artifact(
+            header_path,
+            PathRole::DetachedHeader,
+            OverwritePolicy::ReplaceAtCommit,
+        ))
+        .unwrap();
+    transaction
 }
 
 #[test]
@@ -295,6 +330,83 @@ fn linked_transaction_commits_output_and_header_together() {
 }
 
 #[test]
+#[cfg(feature = "test-support")]
+fn linked_transaction_pre_commit_failure_write_preserves_all_existing_targets() {
+    let test_dir = TestDir::new("linked-transaction-write-failure");
+    let output_path = test_dir.path().join("output.dexios");
+    let header_path = test_dir.path().join("output.dexios.hdr");
+    write_existing_linked_targets(&output_path, &header_path);
+
+    let mut transaction =
+        linked_transaction_with_failure_hook(FailurePoint::Write, &output_path, &header_path);
+    let error = transaction
+        .staged_output_mut(0)
+        .unwrap()
+        .write_all(b"new ciphertext")
+        .unwrap_err();
+
+    assert!(matches!(error, TransactionError::Write { .. }));
+    assert_no_source(&error, "linked transaction pre-commit write failure");
+    assert_existing_linked_targets_preserved(&output_path, &header_path);
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn linked_transaction_pre_commit_failure_flush_preserves_all_existing_targets() {
+    let test_dir = TestDir::new("linked-transaction-flush-failure");
+    let output_path = test_dir.path().join("output.dexios");
+    let header_path = test_dir.path().join("output.dexios.hdr");
+    write_existing_linked_targets(&output_path, &header_path);
+
+    let mut transaction =
+        linked_transaction_with_failure_hook(FailurePoint::Flush, &output_path, &header_path);
+    transaction
+        .staged_output_mut(0)
+        .unwrap()
+        .write_all(b"new ciphertext")
+        .unwrap();
+    transaction
+        .staged_output_mut(1)
+        .unwrap()
+        .write_all(b"new detached header")
+        .unwrap();
+
+    let error = transaction.commit_all().unwrap_err();
+
+    assert!(matches!(error, TransactionError::Flush { .. }));
+    assert_no_source(&error, "linked transaction pre-commit flush failure");
+    assert_existing_linked_targets_preserved(&output_path, &header_path);
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn linked_transaction_pre_commit_failure_sync_preserves_all_existing_targets() {
+    let test_dir = TestDir::new("linked-transaction-sync-failure");
+    let output_path = test_dir.path().join("output.dexios");
+    let header_path = test_dir.path().join("output.dexios.hdr");
+    write_existing_linked_targets(&output_path, &header_path);
+
+    let mut transaction =
+        linked_transaction_with_failure_hook(FailurePoint::Sync, &output_path, &header_path);
+    transaction
+        .staged_output_mut(0)
+        .unwrap()
+        .write_all(b"new ciphertext")
+        .unwrap();
+    transaction
+        .staged_output_mut(1)
+        .unwrap()
+        .write_all(b"new detached header")
+        .unwrap();
+
+    let error = transaction.commit_all().unwrap_err();
+
+    assert!(matches!(error, TransactionError::Sync { .. }));
+    assert_no_source(&error, "linked transaction pre-commit sync failure");
+    assert_existing_linked_targets_preserved(&output_path, &header_path);
+}
+
+#[test]
 fn linked_transaction_blocks_cleanup_after_partial_commit() {
     let test_dir = TestDir::new("linked-transaction-partial");
     let output_path = test_dir.path().join("output.dexios");
@@ -338,6 +450,11 @@ fn linked_transaction_blocks_cleanup_after_partial_commit() {
             assert_eq!(receipt.artifacts[0].path, output_path);
             assert_eq!(failed.role, PathRole::DetachedHeader);
             assert_eq!(failed.path, header_path);
+            assert!(
+                PostCommitSuccess::from_commit_and_hash(receipt, HashVerification::Succeeded)
+                    .is_err(),
+                "partial commit evidence must not be enough to authorize delete-after-success cleanup"
+            );
         }
         other => panic!("expected partial commit error, got {other:?}"),
     }
