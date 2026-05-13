@@ -441,7 +441,7 @@ fn zip_streaming_proof_rejects_parent_traversal() {
 
     assert!(matches!(
         err,
-        ProofError::UnsafePath(path) if path == PathBuf::from("../escape.txt")
+        ProofError::UnsafePath(path) if path.as_path() == Path::new("../escape.txt")
     ));
     assert!(proof.committed_outputs().is_empty());
 }
@@ -458,7 +458,7 @@ fn zip_streaming_proof_rejects_duplicate_normalized_paths() {
 
     assert!(matches!(
         err,
-        ProofError::DuplicatePath(path) if path == PathBuf::from("same.txt")
+        ProofError::DuplicatePath(path) if path.as_path() == Path::new("same.txt")
     ));
     assert!(proof.committed_outputs().is_empty());
 }
@@ -472,7 +472,7 @@ fn zip_streaming_proof_rejects_file_directory_prefix_collision() {
 
     assert!(matches!(
         err,
-        ProofError::PrefixCollision(path) if path == PathBuf::from("a/b.txt")
+        ProofError::PrefixCollision(path) if path.as_path() == Path::new("a/b.txt")
     ));
     assert!(proof.committed_outputs().is_empty());
 }
