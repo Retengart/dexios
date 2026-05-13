@@ -52,7 +52,7 @@ Dexios reports partial commit evidence; committed outputs are not rolled back.
 
 Dexios syncs staged file contents and file metadata before persist, but it does
 not claim portable parent-directory durability across every filesystem or
-platform.
+platform. This is no full power-failure proof.
 
 The archive is always written with the Dexios-owned archive policy. Current pack
 output uses Zstd compression for offline at-rest archival use. The public
@@ -114,5 +114,6 @@ If the CLI is not run with `--force`, unpack may prompt before overwriting exist
 - Unpack should still be treated as a risky operation on untrusted input, even though the current implementation has explicit path identity and path-safety checks.
 - The temporary decrypted archive is plaintext while it exists.
 - Checked unpack construction makes the public API harder to bypass; it does not reduce plaintext temporary ZIP exposure or add a capacity proof.
+- Plaintext temporary ZIP exposure remains, not reduced in Phase 11.
 - Byte and storage needs are real operating assumptions. The structural limits bound archive metadata shape; they do not prove that the host has enough free memory or disk space.
 - Delete-source cleanup after successful pack or unpack remains ordinary delete-after-success cleanup, not sanitization.

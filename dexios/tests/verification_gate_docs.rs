@@ -6,6 +6,10 @@ const USAGE_EXAMPLES: &str = include_str!("../../book/src/Usage-Examples.md");
 const DIRECTORY_PACKING: &str =
     include_str!("../../book/src/technical-details/Directory-Packing.md");
 const SECURE_ERASE: &str = include_str!("../../book/src/technical-details/Secure-Erase.md");
+const GENERATED_SAFETY_CONTRACT: &str = include_str!("../../docs/Safety-Contract.html");
+const GENERATED_DIRECTORY_PACKING: &str =
+    include_str!("../../docs/technical-details/Directory-Packing.html");
+const GENERATED_SECURE_ERASE: &str = include_str!("../../docs/technical-details/Secure-Erase.html");
 const INSTALLING_AND_BUILDING: &str = include_str!("../../book/src/Installing-and-Building.md");
 const AUDITING: &str = include_str!("../../book/src/dexios-core/Auditing.md");
 const PASSWORD_HASHING: &str = include_str!("../../book/src/dexios-core/Password-Hashing.md");
@@ -703,6 +707,17 @@ fn phase11_filesystem_transaction_and_cleanup_contract_is_source_gated() {
         ),
         ("dexios-domain/src/storage/temp.rs", DEXIOS_DOMAIN_TEMP_RS),
     ];
+    let generated_docs = [
+        ("docs/Safety-Contract.html", GENERATED_SAFETY_CONTRACT),
+        (
+            "docs/technical-details/Secure-Erase.html",
+            GENERATED_SECURE_ERASE,
+        ),
+        (
+            "docs/technical-details/Directory-Packing.html",
+            GENERATED_DIRECTORY_PACKING,
+        ),
+    ];
 
     for (source_name, source) in docs {
         for forbidden in [
@@ -710,7 +725,7 @@ fn phase11_filesystem_transaction_and_cleanup_contract_is_source_gated() {
             "physical sanitization guarantee",
             "forensic recovery resistance",
             "full crash-consistency guarantee",
-            "power-failure proof",
+            "provides power-failure proof",
             "rollback committed outputs",
             "plaintext ZIP exposure reduction",
         ] {
@@ -722,6 +737,7 @@ fn phase11_filesystem_transaction_and_cleanup_contract_is_source_gated() {
         "ordinary delete-after-success cleanup",
         "changed cleanup identity",
         "partial commit evidence",
+        "linked commit evidence",
         "committed outputs are not rolled back",
         "staged flush/sync/persist",
         "same-directory temporary files",
@@ -729,9 +745,40 @@ fn phase11_filesystem_transaction_and_cleanup_contract_is_source_gated() {
         "File::sync_all",
         "does not claim portable parent-directory durability",
         "remove_file does not guarantee immediate physical deletion",
+        "no secure erase",
+        "no physical sanitization",
+        "no full power-failure proof",
         "does not reduce plaintext temporary ZIP exposure",
+        "plaintext temporary ZIP exposure remains, not reduced in Phase 11",
     ] {
         assert_corpus_contains("Phase 11 documentation corpus", &docs, required);
+    }
+
+    for required in [
+        "Phase 11 filesystem transaction and cleanup",
+        "linked commit evidence",
+        "changed cleanup identity",
+        "delete-after-success proof",
+        "committed outputs are not rolled back",
+        "no secure erase",
+        "no physical sanitization",
+        "no full power-failure proof",
+        "plaintext temporary ZIP exposure remains, not reduced in Phase 11",
+    ] {
+        assert_contains("CHANGELOG.md", CHANGELOG, required);
+    }
+
+    for required in [
+        "ordinary delete-after-success cleanup",
+        "changed cleanup identity",
+        "partial commit evidence",
+        "committed outputs are not rolled back",
+        "no secure erase",
+        "no physical sanitization",
+        "no full power-failure proof",
+        "Plaintext temporary ZIP exposure remains, not reduced in Phase 11.",
+    ] {
+        assert_corpus_contains("generated Phase 11 docs", &generated_docs, required);
     }
 
     for required in [

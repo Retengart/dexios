@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-a3f1c30d.js";
+            window.path_to_searchindex_js = "../searchindex-c86ac640.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-532d5d21.js"></script>
@@ -203,8 +203,18 @@ compression policy.</p>
 <p>The temporary zip artifact contains plaintext source data while it exists. It is
 an ordinary temporary file used as workflow scratch space. Dexios relies on
 normal drop/delete cleanup for that artifact and does not treat it as secure
-erase, sanitization, local temp-storage isolation, or forensic recovery
-resistance.</p>
+erase, sanitization, local temp-storage isolation, or recovery protection after
+host storage inspection.</p>
+<p>Storage transaction semantics here mean same-directory temporary files and
+staged flush/sync/persist before final placement. Dexios writes staged outputs,
+flushes them, calls <code>File::sync_all</code>, and then uses
+<code>tempfile::NamedTempFile::persist</code> or <code>persist_noclobber</code> according to the
+overwrite policy. Linked commits prepare every staged output before any output
+is persisted. If a later persist fails after an earlier artifact was committed,
+Dexios reports partial commit evidence; committed outputs are not rolled back.</p>
+<p>Dexios syncs staged file contents and file metadata before persist, but it does
+not claim portable parent-directory durability across every filesystem or
+platform. This is no full power-failure proof.</p>
 <p>The archive is always written with the Dexios-owned archive policy. Current pack
 output uses Zstd compression for offline at-rest archival use. The public
 archive contract intentionally stays small: archive path plus file/directory
@@ -256,7 +266,9 @@ and transaction commit behavior.</p>
 <li>Unpack should still be treated as a risky operation on untrusted input, even though the current implementation has explicit path identity and path-safety checks.</li>
 <li>The temporary decrypted archive is plaintext while it exists.</li>
 <li>Checked unpack construction makes the public API harder to bypass; it does not reduce plaintext temporary ZIP exposure or add a capacity proof.</li>
+<li>Plaintext temporary ZIP exposure remains, not reduced in Phase 11.</li>
 <li>Byte and storage needs are real operating assumptions. The structural limits bound archive metadata shape; they do not prove that the host has enough free memory or disk space.</li>
+<li>Delete-source cleanup after successful pack or unpack remains ordinary delete-after-success cleanup, not sanitization.</li>
 </ul>
 
                     </main>

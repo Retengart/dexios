@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-a3f1c30d.js";
+            window.path_to_searchindex_js = "../searchindex-c86ac640.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-532d5d21.js"></script>
@@ -176,7 +176,7 @@
                     <main>
                         <h2 id="delete-semantics"><a class="header" href="#delete-semantics">Delete Semantics</a></h2>
 <p>Dexios no longer exposes secure-erase behavior as a product feature.</p>
-<p>Instead, the CLI offers plain delete-after-success flags:</p>
+<p>Instead, the CLI offers ordinary delete-after-success cleanup flags:</p>
 <ul>
 <li><code>encrypt --delete-input</code></li>
 <li><code>decrypt --delete-input</code></li>
@@ -189,11 +189,18 @@
 <li>complete the requested workflow successfully</li>
 <li>commit every required staged output, detached header, extracted file, or metadata update</li>
 <li>complete the requested hash calculation when hashing is enabled</li>
+<li>revalidate cleanup receipts, including changed cleanup identity checks</li>
 <li>delete the selected source inputs as a post-commit cleanup step</li>
 </ol>
 <p>If the workflow fails, the source inputs remain in place.</p>
+<p>Partial commit evidence is not cleanup authorization. If a linked filesystem
+transaction commits one output and then fails on a later required artifact,
+Dexios reports the committed artifact and the failed artifact, leaves cleanup
+blocked, and committed outputs are not rolled back.</p>
 <p>Cleanup failures are reported after the output commit has already succeeded.
-Dexios does not roll back committed outputs during this cleanup step.</p>
+Dexios does not revert committed outputs during this cleanup step.</p>
+<p>The deletion primitive remains ordinary filesystem deletion. Rust
+<code>std::fs::remove_file</code> removes a path entry. In this contract, remove_file does not guarantee immediate physical deletion. Dexios therefore claims no secure erase, no physical sanitization, and no full power-failure proof for deleted inputs or temporary artifacts.</p>
 <h2 id="why-secure-erase-was-removed"><a class="header" href="#why-secure-erase-was-removed">Why Secure Erase Was Removed</a></h2>
 <p>Overwrite passes are not a trustworthy abstraction on SSDs and other flash-backed storage. Dexios now prefers a simpler and more honest promise: delete sources after success, without claiming physical sanitization.</p>
 <h2 id="temporary-archives"><a class="header" href="#temporary-archives">Temporary Archives</a></h2>
@@ -207,7 +214,9 @@ Dexios does not roll back committed outputs during this cleanup step.</p>
 <p>These temporary ZIP artifacts are plaintext exposure while they exist. Dexios
 does not claim secure erase for them, does not claim sanitization, does not
 defend against another local process with access to the host temporary storage,
-and does not claim resistance to forensic recovery.</p>
+does not claim resistance to forensic recovery, and does not reduce plaintext
+temporary ZIP exposure.
+Plaintext temporary ZIP exposure remains, not reduced in Phase 11.</p>
 
                     </main>
 

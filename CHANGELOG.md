@@ -18,6 +18,11 @@
 ### Security
 
 - Added a tracked release-note policy for future security-sensitive changes.
+- Hardened Phase 11 filesystem transaction and cleanup behavior: linked commit
+  evidence now distinguishes complete commit receipts from partial commit
+  evidence, cleanup identity is revalidated before ordinary delete-after-success
+  cleanup, and delete-after-success remains blocked until complete commit and
+  requested hash success.
 - Enabled the `balloon-hash 0.4.0` `zeroize` feature and source-gated the
   BLAKE3-Balloon dependency policy while keeping `blake3 = "=1.8.3"` pinned.
 - Rejected explicit invalid generated passphrase counts such as `--auto=0`,
@@ -36,6 +41,11 @@
 
 - Added the Phase 7 maintainer verification gate policy as tracked project
   documentation.
+- Added Phase 11 source gates for linked commit evidence, changed cleanup identity
+  revalidation, delete-after-success proof, and honest filesystem limitations:
+  committed outputs are not rolled back after cleanup failure, and Dexios makes
+  no secure erase, no physical sanitization, and no full power-failure proof
+  claims.
 - Made `scripts/verify_phase_gate.sh` the authoritative maintainer gate:
   formatting, clippy, workspace release tests, `cargo audit --deny warnings`,
   `cargo deny check`, release-lto CLI smoke, mdBook rebuild, generated-docs
@@ -48,6 +58,10 @@
 
 ### Documentation
 
+- Documented Phase 11 filesystem transaction and cleanup limits in the safety
+  contract and mdBook technical notes, including ordinary delete-after-success
+  cleanup, partial commit evidence, committed outputs are not rolled back, and
+  plaintext temporary ZIP exposure remains, not reduced in Phase 11.
 - Documented the Phase 9 KDF feature policy, generated passphrase validation,
   focused KDF measurement workflow, and narrow secret-memory claim boundaries.
 - Documented the release-note trigger and local-only `local-notes/` boundary for
