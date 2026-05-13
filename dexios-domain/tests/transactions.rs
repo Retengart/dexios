@@ -1,4 +1,6 @@
+use std::error::Error as _;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use dexios_domain::storage::NamedStagedOutput;
@@ -99,6 +101,20 @@ fn assert_existing_target_preserved(path: &Path) {
     assert_eq!(fs::read(path).unwrap(), EXISTING_OUTPUT);
 }
 
+fn assert_has_source(error: &TransactionError, label: &str) {
+    assert!(
+        error.source().is_some(),
+        "{label} must preserve its IO source"
+    );
+}
+
+fn assert_no_source(error: &TransactionError, label: &str) {
+    assert!(
+        error.source().is_none(),
+        "{label} must remain source-free for synthetic failure hooks"
+    );
+}
+
 #[test]
 fn staged_output_commits_replacement_after_flush_sync_persist() {
     let test_dir = TestDir::new("staged-output-commit");
@@ -118,6 +134,27 @@ fn staged_output_commits_replacement_after_flush_sync_persist() {
 }
 
 #[test]
+fn staged_output_write_error_preserves_io_source() {
+    let test_dir = TestDir::new("staged-output-write-source");
+    let target_path = test_dir.path().join("output.dexios");
+    write_existing_target(&target_path);
+
+    let target = resolved_output(&target_path, OverwritePolicy::ReplaceAtCommit);
+    let mut staged = NamedStagedOutput::new(target).unwrap();
+
+    let error = staged
+        .with_writer(|_| Err::<(), io::Error>(io::Error::from(io::ErrorKind::BrokenPipe)))
+        .unwrap_err();
+
+    match &error {
+        TransactionError::Write { path, .. } => assert_eq!(path, &target_path),
+        other => panic!("expected write error, got {other:?}"),
+    }
+    assert_has_source(&error, "staged output write error");
+    assert_existing_target_preserved(&target_path);
+}
+
+#[test]
 #[cfg(feature = "test-support")]
 fn staged_output_write_failure_preserves_existing_target() {
     let test_dir = TestDir::new("staged-output-write");
@@ -132,6 +169,7 @@ fn staged_output_write_failure_preserves_existing_target() {
     let error = staged.write_all(CANDIDATE_OUTPUT).unwrap_err();
 
     assert!(matches!(error, TransactionError::Write { .. }));
+    assert_no_source(&error, "synthetic staged output write failure");
     assert_existing_target_preserved(&target_path);
 }
 
@@ -151,6 +189,7 @@ fn staged_output_flush_failure_preserves_existing_target() {
     let error = staged.flush().unwrap_err();
 
     assert!(matches!(error, TransactionError::Flush { .. }));
+    assert_no_source(&error, "synthetic staged output flush failure");
     assert_existing_target_preserved(&target_path);
 }
 
@@ -171,6 +210,7 @@ fn staged_output_sync_failure_preserves_existing_target() {
     let error = staged.sync_all().unwrap_err();
 
     assert!(matches!(error, TransactionError::Sync { .. }));
+    assert_no_source(&error, "synthetic staged output sync failure");
     assert_existing_target_preserved(&target_path);
 }
 
@@ -190,6 +230,7 @@ fn staged_output_persist_failure_preserves_existing_target() {
     let error = staged.persist_replace_at_commit().unwrap_err();
 
     assert!(matches!(error, TransactionError::Persist { .. }));
+    assert_no_source(&error, "synthetic staged output persist failure");
     assert_existing_target_preserved(&target_path);
 }
 
@@ -206,6 +247,7 @@ fn staged_output_create_new_uses_no_clobber_persist() {
     let error = staged.persist_replace_at_commit().unwrap_err();
 
     assert!(matches!(error, TransactionError::Persist { .. }));
+    assert_has_source(&error, "staged output no-clobber persist failure");
     assert_existing_target_preserved(&target_path);
 }
 
@@ -287,8 +329,10 @@ fn linked_transaction_blocks_cleanup_after_partial_commit() {
 
     let error = transaction.commit_all().unwrap_err();
 
-    match error {
-        TransactionError::PartialCommit { receipt, failed } => {
+    match &error {
+        TransactionError::PartialCommit {
+            receipt, failed, ..
+        } => {
             assert_eq!(receipt.artifacts.len(), 1);
             assert_eq!(receipt.artifacts[0].role, PathRole::Output);
             assert_eq!(receipt.artifacts[0].path, output_path);
@@ -297,6 +341,7 @@ fn linked_transaction_blocks_cleanup_after_partial_commit() {
         }
         other => panic!("expected partial commit error, got {other:?}"),
     }
+    assert_has_source(&error, "linked transaction partial commit failure");
     assert_eq!(
         fs::read(test_dir.path().join("output.dexios")).unwrap(),
         b"ciphertext"
@@ -324,6 +369,7 @@ fn transaction_failure_hook_write_preserves_existing_target() {
     let error = transaction.write_all(CANDIDATE_OUTPUT).unwrap_err();
 
     assert!(matches!(error, TransactionError::Write { .. }));
+    assert_no_source(&error, "synthetic transaction write hook");
     assert_existing_target_preserved(&target_path);
 }
 
@@ -345,6 +391,7 @@ fn transaction_failure_hook_flush_preserves_existing_target() {
     let error = transaction.commit().unwrap_err();
 
     assert!(matches!(error, TransactionError::Flush { .. }));
+    assert_no_source(&error, "synthetic transaction flush hook");
     assert_existing_target_preserved(&target_path);
 }
 
@@ -366,6 +413,7 @@ fn transaction_failure_hook_sync_preserves_existing_target() {
     let error = transaction.commit().unwrap_err();
 
     assert!(matches!(error, TransactionError::Sync { .. }));
+    assert_no_source(&error, "synthetic transaction sync hook");
     assert_existing_target_preserved(&target_path);
 }
 
@@ -387,5 +435,6 @@ fn transaction_failure_hook_persist_preserves_existing_target() {
     let error = transaction.commit().unwrap_err();
 
     assert!(matches!(error, TransactionError::Persist { .. }));
+    assert_no_source(&error, "synthetic transaction persist hook");
     assert_existing_target_preserved(&target_path);
 }
