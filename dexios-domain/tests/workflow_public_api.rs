@@ -1,3 +1,5 @@
+const DOMAIN_CARGO_TOML: &str = include_str!("../Cargo.toml");
+
 const DOMAIN_ENCRYPT: &str = include_str!("../src/encrypt.rs");
 const DOMAIN_DECRYPT: &str = include_str!("../src/decrypt.rs");
 const DOMAIN_UNPACK: &str = include_str!("../src/unpack.rs");
@@ -10,6 +12,7 @@ const DOMAIN_KEY_DELETE: &str = include_str!("../src/key/delete.rs");
 const DOMAIN_KEY_VERIFY: &str = include_str!("../src/key/verify.rs");
 const STORAGE_MOD: &str = include_str!("../src/storage/mod.rs");
 const STORAGE_TEST_SUPPORT: &str = include_str!("../src/storage/test_support.rs");
+const STORAGE_IDENTITY: &str = include_str!("../src/storage/identity.rs");
 const STORAGE_TRANSACTION: &str = include_str!("../src/storage/transaction.rs");
 const STORAGE_TEMP: &str = include_str!("../src/storage/temp.rs");
 const STORAGE_CLEANUP: &str = include_str!("../src/storage/cleanup.rs");
@@ -129,6 +132,10 @@ fn d05_policy_sources() -> Vec<Source<'static>> {
             text: STORAGE_TEST_SUPPORT,
         },
         Source {
+            path: "dexios-domain/src/storage/identity.rs",
+            text: STORAGE_IDENTITY,
+        },
+        Source {
             path: "dexios-domain/src/storage/transaction.rs",
             text: STORAGE_TRANSACTION,
         },
@@ -162,6 +169,154 @@ fn assert_d05_test_support_escape_hatches(sources: &[Source<'_>]) -> Result<(), 
 
 fn assert_d05_fixture_names(sources: &[Source<'_>]) -> Result<(), String> {
     collect_violations(sources, d05_fixture_name_violations)
+}
+
+fn assert_test_support_feature_is_non_default(manifest: &str) -> Result<(), String> {
+    let test_support = feature_items(manifest, "test-support")
+        .ok_or_else(|| "dexios-domain Cargo.toml must declare test-support feature".to_string())?;
+    if !test_support.is_empty() {
+        return Err("test-support feature should not enable additional features".to_string());
+    }
+
+    let default_features = feature_items(manifest, "default")
+        .ok_or_else(|| "dexios-domain Cargo.toml must declare default features".to_string())?;
+    if default_features.contains(&"test-support") {
+        return Err("test-support must not be enabled by default".to_string());
+    }
+
+    Ok(())
+}
+
+fn feature_items<'a>(manifest: &'a str, feature: &str) -> Option<Vec<&'a str>> {
+    let prefix = format!("{feature} = [");
+    let line = manifest
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with(&prefix))?;
+    let items = line
+        .strip_prefix(&prefix)?
+        .strip_suffix(']')?
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(|item| item.trim_matches('"'))
+        .collect();
+    Some(items)
+}
+
+fn assert_public_test_support_export_is_cfg_gated(source: Source<'_>) -> Result<(), String> {
+    let lines: Vec<_> = source.text.lines().collect();
+    let Some(index) = lines
+        .iter()
+        .position(|line| is_test_support_export(line.trim_start()))
+    else {
+        return Err(format!(
+            "{}: missing public test_support export",
+            source.path
+        ));
+    };
+
+    if has_test_support_cfg_before(&lines, index) {
+        Ok(())
+    } else {
+        Err(violation(
+            source.path,
+            index,
+            "D-05 test_support export must be cfg-gated",
+        ))
+    }
+}
+
+fn assert_failure_hook_entrypoints_are_cfg_gated(sources: &[Source<'_>]) -> Result<(), String> {
+    let mut violations = Vec::new();
+
+    for source in sources {
+        let lines: Vec<_> = source.text.lines().collect();
+        for (index, line) in lines.iter().enumerate() {
+            let trimmed = line.trim_start();
+            if is_public_failure_hook_declaration(trimmed)
+                && !has_test_support_cfg_before(&lines, index)
+            {
+                violations.push(violation(
+                    source.path,
+                    index,
+                    "D-05 failure-hook entry point must be cfg-gated",
+                ));
+            }
+        }
+    }
+
+    if violations.is_empty() {
+        Ok(())
+    } else {
+        Err(violations.join("\n"))
+    }
+}
+
+fn has_test_support_cfg_before(lines: &[&str], index: usize) -> bool {
+    lines[..index]
+        .iter()
+        .rev()
+        .take(4)
+        .map(|line| line.trim_start())
+        .any(is_test_or_test_support_cfg)
+}
+
+fn assert_retained_public_storage_exports() {
+    for expected in [
+        "pub use entry::{Entry, FileData};",
+        "pub use fs::FileStorage;",
+        "pub use temp::{NamedStagedOutput, TempArtifact};",
+        "pub enum Error",
+        "pub trait Storage",
+    ] {
+        assert!(
+            STORAGE_MOD.contains(expected),
+            "D-06 storage public API must retain {expected}"
+        );
+    }
+
+    for expected in [
+        "pub enum PathRole",
+        "pub enum OverwritePolicy",
+        "pub struct ResolvedTarget",
+        "pub enum IdentityError",
+        "pub struct PathIdentityGraph",
+    ] {
+        assert!(
+            STORAGE_IDENTITY.contains(expected),
+            "D-06 identity public API must retain {expected}"
+        );
+    }
+
+    for expected in [
+        "pub struct CommitReceipt",
+        "pub struct CommittedArtifact",
+        "pub enum TransactionError",
+        "pub struct StagedOutputTransaction",
+        "pub struct LinkedOutputTransaction",
+    ] {
+        assert!(
+            STORAGE_TRANSACTION.contains(expected),
+            "D-07 transaction evidence API must retain {expected}"
+        );
+    }
+
+    for expected in [
+        "pub enum CleanupTargetKind",
+        "pub struct CleanupTarget",
+        "pub struct CleanupFailure",
+        "pub struct CleanupResult",
+        "pub struct CleanupReceipt",
+        "pub enum HashVerification",
+        "pub struct PostCommitSuccess",
+        "pub enum CleanupGateError",
+    ] {
+        assert!(
+            STORAGE_CLEANUP.contains(expected),
+            "D-07 cleanup evidence API must retain {expected}"
+        );
+    }
 }
 
 fn collect_violations(
@@ -680,6 +835,16 @@ fn formatted_error_control_flow_rejects_string_inspection() {
 
 #[test]
 fn test_support_escape_hatches_are_scoped_and_named_by_d05() {
+    let bad_manifest = r#"
+        [features]
+        default = ["test-support"]
+        test-support = []
+    "#;
+    assert!(
+        assert_test_support_feature_is_non_default(bad_manifest).is_err(),
+        "D-05 gate must reject test-support in default features"
+    );
+
     let bad_production_sources = [
         Source {
             path: "synthetic/unchecked-production-helper.rs",
@@ -706,6 +871,30 @@ fn test_support_escape_hatches_are_scoped_and_named_by_d05() {
             source.path
         );
     }
+
+    assert_test_support_feature_is_non_default(DOMAIN_CARGO_TOML)
+        .expect("test-support must be an explicit non-default feature");
+    assert_public_test_support_export_is_cfg_gated(Source {
+        path: "dexios-domain/src/storage/mod.rs",
+        text: STORAGE_MOD,
+    })
+    .expect("storage::test_support export must be cfg-gated");
+    assert_failure_hook_entrypoints_are_cfg_gated(&[
+        Source {
+            path: "dexios-domain/src/storage/transaction.rs",
+            text: STORAGE_TRANSACTION,
+        },
+        Source {
+            path: "dexios-domain/src/storage/temp.rs",
+            text: STORAGE_TEMP,
+        },
+        Source {
+            path: "dexios-domain/src/storage/cleanup.rs",
+            text: STORAGE_CLEANUP,
+        },
+    ])
+    .expect("failure-hook entry points must be cfg-gated");
+    assert_retained_public_storage_exports();
 
     assert_d05_test_support_escape_hatches(&d05_policy_sources())
         .expect("D-05 source and test-support placement");
