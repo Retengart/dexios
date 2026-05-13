@@ -6,15 +6,18 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
+use core::header::common::HEADER_LEN;
 use core::kdf::Kdf;
+use core::primitives::BLOCK_SIZE;
 use core::protected::Protected;
-use dexios_domain::encrypt;
 use dexios_domain::storage::identity::IdentityError;
 use dexios_domain::storage::{FileStorage, Storage};
 use dexios_domain::unpack;
+use dexios_domain::{decrypt, encrypt};
 use zip::write::SimpleFileOptions;
 
 const PASSWORD: &[u8; 8] = b"12345678";
+const STREAM_TAG_LEN: usize = 16;
 type TestOnZipFile = Box<dyn Fn(PathBuf) -> Result<bool, String>>;
 
 struct TestDir {
@@ -107,6 +110,19 @@ fn encrypt_archive(input_path: &Path, output_path: &Path) {
     encrypt::execute(intent).unwrap();
 }
 
+fn tamper_final_stream_chunk(path: &Path) {
+    let mut bytes = fs::read(path).unwrap();
+    let final_offset = HEADER_LEN + (bytes[HEADER_LEN..].len().saturating_sub(STREAM_TAG_LEN));
+    bytes[final_offset] ^= 0x40;
+    fs::write(path, bytes).unwrap();
+}
+
+fn truncate_stream(path: &Path) {
+    let mut bytes = fs::read(path).unwrap();
+    bytes.pop().expect("encrypted archive has payload bytes");
+    fs::write(path, bytes).unwrap();
+}
+
 fn unpack_archive(
     encrypted_archive: &Path,
     output_dir: &Path,
@@ -125,6 +141,39 @@ fn unpack_archive(
     )?;
 
     unpack::execute(intent)
+}
+
+#[test]
+fn unpack_corrupted_stream_never_extracts_outputs() {
+    let test_dir = TestDir::new("unpack-corrupted-stream");
+
+    for (label, corrupt) in [
+        ("final-tamper", tamper_final_stream_chunk as fn(&Path)),
+        ("one-byte-truncation", truncate_stream as fn(&Path)),
+    ] {
+        let plain_zip = test_dir.path().join(format!("{label}.zip"));
+        let encrypted_archive = test_dir.path().join(format!("{label}.enc"));
+        let output_dir = test_dir.path().join(format!("{label}-out"));
+        let payload = vec![0xA5; BLOCK_SIZE + 37];
+
+        write_zip_with_entries(&plain_zip, &[("safe.txt", payload.as_slice())]);
+        encrypt_archive(&plain_zip, &encrypted_archive);
+        corrupt(&encrypted_archive);
+
+        let result = unpack_archive(&encrypted_archive, &output_dir, None);
+
+        assert!(
+            matches!(
+                result,
+                Err(unpack::Error::Decrypt(decrypt::Error::DecryptData))
+            ),
+            "{label}: expected corrupted encrypted archive to fail authentication, got {result:?}"
+        );
+        assert!(
+            !output_dir.join("safe.txt").exists(),
+            "{label}: corrupted archive must not extract safe entries"
+        );
+    }
 }
 
 fn unpack_archive_with_detached_header(

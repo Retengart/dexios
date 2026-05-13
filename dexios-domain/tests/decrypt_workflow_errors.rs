@@ -5,6 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use core::header::common::{HEADER_LEN, HEADER_STATIC_LEN};
 use core::kdf::Kdf;
+use core::primitives::BLOCK_SIZE;
 use core::protected::Protected;
 use dexios_domain::storage::identity::{OverwritePolicy, PathRole};
 use dexios_domain::storage::transaction::{
@@ -16,6 +17,7 @@ use dexios_domain::{decrypt, encrypt};
 const DOMAIN_DECRYPT_SOURCE: &str = include_str!("../src/decrypt.rs");
 const CORRECT_PASSWORD: &[u8] = b"correct-password";
 const WRONG_PASSWORD: &[u8] = b"wrong-password";
+const STREAM_TAG_LEN: usize = 16;
 
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 
@@ -73,6 +75,28 @@ fn encrypted_fixture(test_dir: &TestDir, name: &str) -> PathBuf {
     encrypted
 }
 
+fn encrypted_multichunk_fixture(test_dir: &TestDir, name: &str) -> PathBuf {
+    let plain = test_dir.path().join(format!("{name}.txt"));
+    let encrypted = test_dir.path().join(format!("{name}.enc"));
+    let plaintext: Vec<u8> = (0..(BLOCK_SIZE * 3 + 37))
+        .map(|index| (index % 251) as u8)
+        .collect();
+    fs::write(&plain, plaintext).unwrap();
+
+    let intent = encrypt::EncryptIntent::new(
+        &plain,
+        &encrypted,
+        OverwritePolicy::CreateNew,
+        None,
+        protected_key(CORRECT_PASSWORD),
+        Kdf::Blake3Balloon,
+    )
+    .expect("build multichunk encrypt intent");
+    encrypt::execute(intent).expect("encrypt multichunk fixture");
+
+    encrypted
+}
+
 fn detached_encrypted_fixture(test_dir: &TestDir) -> (PathBuf, PathBuf) {
     let plain = test_dir.path().join("plain.txt");
     let encrypted = test_dir.path().join("plain.enc");
@@ -100,6 +124,23 @@ fn mark_first_keyslot_unsupported_argon2id(path: &Path) {
     let mut bytes = fs::read(path).unwrap();
     bytes[HEADER_STATIC_LEN..HEADER_STATIC_LEN + 2].copy_from_slice(&[0xDF, 0x02]);
     fs::write(path, bytes).unwrap();
+}
+
+fn corrupt_final_chunk(bytes: &mut [u8]) {
+    let final_offset = HEADER_LEN + (3 * (BLOCK_SIZE + STREAM_TAG_LEN));
+    bytes[final_offset] ^= 0x40;
+}
+
+fn truncate_one_byte(bytes: &mut Vec<u8>) {
+    bytes.pop().expect("encrypted fixture has payload bytes");
+}
+
+fn reorder_normal_chunks(bytes: &mut [u8]) {
+    let payload = &mut bytes[HEADER_LEN..];
+    let normal_chunk_len = BLOCK_SIZE + STREAM_TAG_LEN;
+    let (first, remaining) = payload.split_at_mut(normal_chunk_len);
+    let second = &mut remaining[..normal_chunk_len];
+    first.swap_with_slice(second);
 }
 
 #[test]
@@ -145,6 +186,80 @@ fn decrypt_intent_rejects_detached_header_aliases_before_output_creation() {
         !output.exists(),
         "validated intent construction must not create final plaintext output"
     );
+}
+
+#[test]
+fn decrypt_corrupted_stream_variants_never_commit_final_output() {
+    let test_dir = TestDir::new("decrypt-corrupted-stream-preserve");
+    let sentinel = b"existing final output must survive corrupted stream failure";
+
+    for (label, corrupt) in [
+        ("final-tamper", corrupt_final_chunk as fn(&mut [u8])),
+        (
+            "reordered-normal-chunks",
+            reorder_normal_chunks as fn(&mut [u8]),
+        ),
+    ] {
+        let encrypted = encrypted_multichunk_fixture(&test_dir, label);
+        let output = test_dir.path().join(format!("{label}.out"));
+        fs::write(&output, sentinel).unwrap();
+
+        let mut encrypted_bytes = fs::read(&encrypted).unwrap();
+        corrupt(&mut encrypted_bytes);
+        fs::write(&encrypted, encrypted_bytes).unwrap();
+
+        let intent = decrypt::DecryptIntent::new(
+            &encrypted,
+            &output,
+            OverwritePolicy::ReplaceAtCommit,
+            None::<&Path>,
+            protected_key(CORRECT_PASSWORD),
+            None,
+        )
+        .expect("build corrupted-stream decrypt intent");
+
+        let error = decrypt::execute(intent)
+            .err()
+            .unwrap_or_else(|| panic!("{label}: corrupted stream decrypt unexpectedly succeeded"));
+        assert_eq!(
+            error.workflow_class(),
+            WorkflowErrorClass::AuthenticationFailure,
+            "{label}: corrupted stream must fail as authentication/malformed stream data"
+        );
+        assert_eq!(
+            fs::read(&output).unwrap(),
+            sentinel.as_slice(),
+            "{label}: final output must remain the pre-existing sentinel"
+        );
+    }
+
+    let encrypted = encrypted_multichunk_fixture(&test_dir, "one-byte-truncation");
+    let output = test_dir.path().join("one-byte-truncation.out");
+    fs::write(&output, sentinel).unwrap();
+
+    let mut encrypted_bytes = fs::read(&encrypted).unwrap();
+    truncate_one_byte(&mut encrypted_bytes);
+    fs::write(&encrypted, encrypted_bytes).unwrap();
+
+    let intent = decrypt::DecryptIntent::new(
+        &encrypted,
+        &output,
+        OverwritePolicy::ReplaceAtCommit,
+        None::<&Path>,
+        protected_key(CORRECT_PASSWORD),
+        None,
+    )
+    .expect("build truncated-stream decrypt intent");
+
+    let error = decrypt::execute(intent)
+        .err()
+        .expect("truncated stream decrypt must fail");
+    assert_eq!(
+        error.workflow_class(),
+        WorkflowErrorClass::AuthenticationFailure,
+        "truncated stream must fail as authentication/malformed stream data"
+    );
+    assert_eq!(fs::read(&output).unwrap(), sentinel.as_slice());
 }
 
 #[test]
