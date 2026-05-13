@@ -176,6 +176,8 @@ impl NamedStagedOutput {
         self.persist_prepared()
     }
 
+    // NamedStagedOutput::prepare_for_persist is the staged flush/sync gate
+    // before persist.
     pub(crate) fn prepare_for_persist(&mut self) -> Result<(), TransactionError> {
         if !self.wrote {
             return Err(TransactionError::Write {

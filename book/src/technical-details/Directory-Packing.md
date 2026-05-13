@@ -39,8 +39,20 @@ The current implementation:
 The temporary zip artifact contains plaintext source data while it exists. It is
 an ordinary temporary file used as workflow scratch space. Dexios relies on
 normal drop/delete cleanup for that artifact and does not treat it as secure
-erase, sanitization, local temp-storage isolation, or forensic recovery
-resistance.
+erase, sanitization, local temp-storage isolation, or recovery protection after
+host storage inspection.
+
+Storage transaction semantics here mean same-directory temporary files and
+staged flush/sync/persist before final placement. Dexios writes staged outputs,
+flushes them, calls `File::sync_all`, and then uses
+`tempfile::NamedTempFile::persist` or `persist_noclobber` according to the
+overwrite policy. Linked commits prepare every staged output before any output
+is persisted. If a later persist fails after an earlier artifact was committed,
+Dexios reports partial commit evidence; committed outputs are not rolled back.
+
+Dexios syncs staged file contents and file metadata before persist, but it does
+not claim portable parent-directory durability across every filesystem or
+platform.
 
 The archive is always written with the Dexios-owned archive policy. Current pack
 output uses Zstd compression for offline at-rest archival use. The public
@@ -103,3 +115,4 @@ If the CLI is not run with `--force`, unpack may prompt before overwriting exist
 - The temporary decrypted archive is plaintext while it exists.
 - Checked unpack construction makes the public API harder to bypass; it does not reduce plaintext temporary ZIP exposure or add a capacity proof.
 - Byte and storage needs are real operating assumptions. The structural limits bound archive metadata shape; they do not prove that the host has enough free memory or disk space.
+- Delete-source cleanup after successful pack or unpack remains ordinary delete-after-success cleanup, not sanitization.

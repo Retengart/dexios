@@ -90,6 +90,19 @@ fn assert_corpus_contains(corpus_name: &str, sources: &[(&str, &str)], needle: &
     );
 }
 
+fn assert_occurs_before(source_name: &str, source: &str, earlier: &str, later: &str) {
+    let earlier_index = source
+        .find(earlier)
+        .unwrap_or_else(|| panic!("{source_name} must contain {earlier:?}"));
+    let later_index = source
+        .find(later)
+        .unwrap_or_else(|| panic!("{source_name} must contain {later:?}"));
+    assert!(
+        earlier_index < later_index,
+        "{source_name} must place {earlier:?} before {later:?}"
+    );
+}
+
 fn is_non_comment_line(line: &str) -> bool {
     let trimmed = line.trim_start();
     !trimmed.is_empty() && !trimmed.starts_with('#')
@@ -714,6 +727,7 @@ fn phase11_filesystem_transaction_and_cleanup_contract_is_source_gated() {
         "same-directory temporary files",
         "tempfile::NamedTempFile::persist",
         "File::sync_all",
+        "does not claim portable parent-directory durability",
         "remove_file does not guarantee immediate physical deletion",
         "does not reduce plaintext temporary ZIP exposure",
     ] {
@@ -745,8 +759,14 @@ fn phase11_filesystem_transaction_and_cleanup_contract_is_source_gated() {
 
     for required in [
         "NamedTempFile::new_in",
+        "target.target_parent()",
+        "self.wrote = true",
+        "if !self.wrote",
+        "NamedStagedOutput::prepare_for_persist",
+        "prepare_for_persist()?",
         "flush()",
         "sync_all()",
+        "persist_prepared",
         "persist_noclobber",
         "persist(&path)",
     ] {
@@ -756,6 +776,31 @@ fn phase11_filesystem_transaction_and_cleanup_contract_is_source_gated() {
             required,
         );
     }
+
+    assert_occurs_before(
+        "dexios-domain/src/storage/temp.rs",
+        DEXIOS_DOMAIN_TEMP_RS,
+        "self.flush()?;",
+        "self.sync_all()",
+    );
+    assert_occurs_before(
+        "dexios-domain/src/storage/temp.rs",
+        DEXIOS_DOMAIN_TEMP_RS,
+        "if !self.flushed",
+        "if !self.synced",
+    );
+    assert_occurs_before(
+        "dexios-domain/src/storage/temp.rs",
+        DEXIOS_DOMAIN_TEMP_RS,
+        "self.prepare_for_persist()?",
+        "self.persist_prepared()",
+    );
+    assert_occurs_before(
+        "dexios-domain/src/storage/transaction.rs",
+        DEXIOS_DOMAIN_TRANSACTION_RS,
+        "staged.prepare_for_persist()?",
+        "staged.persist_prepared()",
+    );
 }
 
 #[test]

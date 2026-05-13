@@ -2,7 +2,7 @@
 
 Dexios no longer exposes secure-erase behavior as a product feature.
 
-Instead, the CLI offers plain delete-after-success flags:
+Instead, the CLI offers ordinary delete-after-success cleanup flags:
 
 - `encrypt --delete-input`
 - `decrypt --delete-input`
@@ -16,12 +16,21 @@ The current contract is intentionally narrow:
 1. complete the requested workflow successfully
 2. commit every required staged output, detached header, extracted file, or metadata update
 3. complete the requested hash calculation when hashing is enabled
-4. delete the selected source inputs as a post-commit cleanup step
+4. revalidate cleanup receipts, including changed cleanup identity checks
+5. delete the selected source inputs as a post-commit cleanup step
 
 If the workflow fails, the source inputs remain in place.
 
+Partial commit evidence is not cleanup authorization. If a linked filesystem
+transaction commits one output and then fails on a later required artifact,
+Dexios reports the committed artifact and the failed artifact, leaves cleanup
+blocked, and committed outputs are not rolled back.
+
 Cleanup failures are reported after the output commit has already succeeded.
-Dexios does not roll back committed outputs during this cleanup step.
+Dexios does not revert committed outputs during this cleanup step.
+
+The deletion primitive remains ordinary filesystem deletion. Rust
+`std::fs::remove_file` removes a path entry. In this contract, remove_file does not guarantee immediate physical deletion. Dexios therefore does not claim physical sanitization for deleted inputs or temporary artifacts.
 
 ## Why Secure Erase Was Removed
 
@@ -40,4 +49,5 @@ The boundary is intentionally narrow:
 These temporary ZIP artifacts are plaintext exposure while they exist. Dexios
 does not claim secure erase for them, does not claim sanitization, does not
 defend against another local process with access to the host temporary storage,
-and does not claim resistance to forensic recovery.
+does not claim resistance to forensic recovery, and does not reduce plaintext
+temporary ZIP exposure.
