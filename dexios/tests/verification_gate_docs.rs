@@ -29,6 +29,8 @@ const DEXIOS_CORE_STREAM_V1_TESTS: &str = include_str!("../../dexios-core/tests/
 const DEXIOS_DOMAIN_DECRYPT_WORKFLOW_ERROR_TESTS: &str =
     include_str!("../../dexios-domain/tests/decrypt_workflow_errors.rs");
 const DEXIOS_DOMAIN_UNPACK_TESTS: &str = include_str!("../../dexios-domain/tests/unpack.rs");
+const ARCHIVE_STREAMING_FEASIBILITY: &str =
+    include_str!("../../dexios-domain/tests/archive_streaming_feasibility.rs");
 const DEXIOS_DECRYPT_CLI_REGRESSION_TESTS: &str = include_str!("decrypt_cli_regressions.rs");
 const DEXIOS_UNPACK_CLI_REGRESSION_TESTS: &str = include_str!("unpack_cli_regressions.rs");
 const DEXIOS_CORE_FIXTURE_MANIFEST: &str =
@@ -348,6 +350,38 @@ fn release_notes_track_breaking_security_verification_and_docs_changes() {
 #[test]
 fn planning_artifacts_remain_local_only() {
     assert_contains(".gitignore", GITIGNORE, "local-notes/");
+}
+
+#[test]
+fn archive_streaming_feasibility_rejects_direct_zip_extract() {
+    for required in [
+        "ZipStreamReader",
+        "ProofVisitor",
+        "finalize_after_auth",
+        "zip_streaming_proof_stages_without_committing_before_finalize",
+    ] {
+        assert_contains(
+            "dexios-domain/tests/archive_streaming_feasibility.rs",
+            ARCHIVE_STREAMING_FEASIBILITY,
+            required,
+        );
+    }
+
+    for (line_number, line) in ARCHIVE_STREAMING_FEASIBILITY.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if trimmed.is_empty() || trimmed.starts_with("//") {
+            continue;
+        }
+
+        for forbidden in [".extract(", "File::create", "std::fs::write"] {
+            assert!(
+                !line.contains(forbidden),
+                "dexios-domain/tests/archive_streaming_feasibility.rs:{} must not contain {forbidden:?}: {}",
+                line_number + 1,
+                line
+            );
+        }
+    }
 }
 
 #[test]
