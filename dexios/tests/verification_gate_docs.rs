@@ -174,18 +174,82 @@ fn assert_non_comment_line_count(source_name: &str, source: &str, needle: &str, 
     );
 }
 
-fn assert_manifest_row_contains(source_name: &str, source: &str, row_id: &str, required: &[&str]) {
-    let id_line = format!("id = \"{row_id}\"");
-    let start = source
-        .find(&id_line)
-        .unwrap_or_else(|| panic!("{source_name} must contain manifest row {row_id:?}"));
-    let row = &source[start..];
-    let end = row.find("\n[[fixture]]").unwrap_or(row.len());
-    let row = &row[..end];
+fn parsed_fixture_rows(source_name: &str, source: &str) -> Vec<toml::Value> {
+    let manifest: toml::Value =
+        toml::from_str(source).unwrap_or_else(|error| panic!("{source_name} must parse: {error}"));
+    manifest
+        .get("fixture")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_else(|| panic!("{source_name} must expose [[fixture]] rows"))
+}
 
-    for needle in required {
-        assert_contains(source_name, row, needle);
+fn required_manifest_field<'a>(
+    source_name: &str,
+    row_id: &str,
+    row: &'a toml::Value,
+    field: &str,
+) -> &'a str {
+    let value = row
+        .get(field)
+        .and_then(|value| value.as_str())
+        .unwrap_or_else(|| panic!("{source_name}:{row_id} must contain string field {field}"));
+    assert!(
+        !value.trim().is_empty(),
+        "{source_name}:{row_id} field {field} must not be empty"
+    );
+    value
+}
+
+fn assert_manifest_row(source_name: &str, rows: &[toml::Value], row_id: &str, requirement: &str) {
+    let matches = rows
+        .iter()
+        .filter(|row| row.get("id").and_then(|value| value.as_str()) == Some(row_id))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        matches.len(),
+        1,
+        "{source_name} must contain exactly one manifest row {row_id:?}"
+    );
+    let row = matches[0];
+
+    for field in [
+        "id",
+        "group",
+        "path",
+        "purpose",
+        "invariant",
+        "requirement",
+        "source",
+        "expected",
+        "owner_phase",
+    ] {
+        required_manifest_field(source_name, row_id, row, field);
     }
+
+    assert_eq!(
+        required_manifest_field(source_name, row_id, row, "id"),
+        row_id,
+        "{source_name}:{row_id} id must match the expected row"
+    );
+    assert!(
+        required_manifest_field(source_name, row_id, row, "group").starts_with("phase01-"),
+        "{source_name}:{row_id} group must remain in the Phase 01 namespace"
+    );
+    assert!(
+        required_manifest_field(source_name, row_id, row, "invariant").starts_with("D-"),
+        "{source_name}:{row_id} invariant must link to a Phase 01 decision"
+    );
+    assert_eq!(
+        required_manifest_field(source_name, row_id, row, "requirement"),
+        requirement,
+        "{source_name}:{row_id} requirement must link to {requirement}"
+    );
+    assert_eq!(
+        required_manifest_field(source_name, row_id, row, "owner_phase"),
+        "Phase 1",
+        "{source_name}:{row_id} owner phase must remain Phase 1"
+    );
 }
 
 fn is_non_comment_line(line: &str) -> bool {
@@ -332,11 +396,24 @@ fn assurance_replay_script_is_bounded_offline_and_crate_owned() {
         VERIFY_ASSURANCE_REPLAY,
         "CARGO_NET_OFFLINE=true",
     );
-    assert_all_contains(
-        "scripts/verify_assurance_replay.sh",
-        VERIFY_ASSURANCE_REPLAY,
-        ASSURANCE_REPLAY_COMMANDS,
-    );
+    for command in ASSURANCE_REPLAY_COMMANDS {
+        assert_non_comment_line_count(
+            "scripts/verify_assurance_replay.sh",
+            VERIFY_ASSURANCE_REPLAY,
+            &format!("run {command}"),
+            1,
+        );
+    }
+    for pair in ASSURANCE_REPLAY_COMMANDS.windows(2) {
+        let earlier = format!("run {}", pair[0]);
+        let later = format!("run {}", pair[1]);
+        assert_occurs_before(
+            "scripts/verify_assurance_replay.sh",
+            VERIFY_ASSURANCE_REPLAY,
+            &earlier,
+            &later,
+        );
+    }
     assert_not_contains(
         "scripts/verify_assurance_replay.sh",
         VERIFY_ASSURANCE_REPLAY,
@@ -424,22 +501,9 @@ fn phase01_assurance_manifests_link_requirements() {
             ][..],
         ),
     ] {
+        let manifest_rows = parsed_fixture_rows(source_name, source);
         for (row_id, requirement) in rows {
-            assert_manifest_row_contains(
-                source_name,
-                source,
-                row_id,
-                &[
-                    "group = \"phase01-",
-                    "path = \"",
-                    "purpose = \"",
-                    "invariant = \"D-",
-                    &format!("requirement = \"{requirement}\""),
-                    "source = \"",
-                    "expected = \"",
-                    "owner_phase = \"Phase 1\"",
-                ],
-            );
+            assert_manifest_row(source_name, &manifest_rows, row_id, requirement);
         }
     }
 }

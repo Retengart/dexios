@@ -308,6 +308,7 @@ dependencies = [
  "dexios-domain",
  "rand",
  "rpassword",
+ "toml",
  "zeroize",
  "zip",
 ]
