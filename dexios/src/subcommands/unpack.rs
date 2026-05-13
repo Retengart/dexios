@@ -1,5 +1,4 @@
 use crate::{cli::prompt::get_answer, global::states::DeleteInput};
-use std::sync::Arc;
 
 use anyhow::Result;
 
@@ -11,7 +10,7 @@ use crate::global::{
     structs::CryptoParams,
 };
 use crate::{info, warn};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 fn should_unpack_entry<F>(file_path: &Path, force: ForceMode, verbose: bool, ask: F) -> Result<bool>
 where
@@ -55,7 +54,7 @@ pub fn unpack(
     params: CryptoParams, // params for decrypt function
 ) -> Result<()> {
     // TODO: It is necessary to raise it to a higher level
-    let stor = Arc::new(domain::storage::FileStorage);
+    let stor = domain::storage::FileStorage;
 
     let input_file = stor.read_file(input)?;
     let header_file = match &params.header_location {
@@ -66,28 +65,24 @@ pub fn unpack(
     let raw_key = params.key.get_secret(&PasswordState::Direct)?;
     let verbose = print_mode == PrintMode::Verbose;
 
-    let extraction_receipt = domain::unpack::execute(
-        stor,
-        domain::unpack::Request {
-            header_reader: header_file.as_ref().and_then(|h| h.try_reader().ok()),
-            reader: input_file.try_reader()?,
-            output_dir_path: PathBuf::from(output),
-            raw_key,
-            on_decrypted_header: None,
-            on_archive_info: None,
-            on_zip_file: Some(Box::new(move |file_path| {
-                should_unpack_entry(&file_path, params.force, verbose, get_answer)
-                    .map_err(|_| String::from("prompt failed"))
-            })),
-        },
+    let intent = domain::unpack::UnpackIntent::new(
+        input_file,
+        header_file,
+        output,
+        raw_key,
+        None,
+        None,
+        Some(Box::new(move |file_path| {
+            should_unpack_entry(&file_path, params.force, verbose, get_answer)
+                .map_err(|_| String::from("prompt failed"))
+        })),
     )
     .map_err(map_unpack_error)?;
+    let extraction_receipt = domain::unpack::execute(intent).map_err(map_unpack_error)?;
 
     let hash_verification = super::hash_after_commit(&[String::from(input)], params.hash_mode)?;
 
     if params.delete_input == DeleteInput::Delete {
-        drop(header_file);
-        drop(input_file);
         super::cleanup_after_commit(
             &[String::from(input)],
             &extraction_receipt,
@@ -101,6 +96,7 @@ pub fn unpack(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn prompt_errors_are_returned_not_panicked() {
