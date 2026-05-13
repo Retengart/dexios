@@ -1,11 +1,15 @@
 use std::fs;
+#[cfg(feature = "test-support")]
 use std::io;
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "test-support")]
+use dexios_domain::storage::cleanup::CleanupTarget;
 use dexios_domain::storage::cleanup::{
-    CleanupGateError, CleanupReceipt, CleanupTarget, HashVerification, PostCommitSuccess,
+    CleanupGateError, CleanupReceipt, HashVerification, PostCommitSuccess,
 };
 use dexios_domain::storage::identity::PathRole;
+#[cfg(feature = "test-support")]
 use dexios_domain::storage::test_support::{FailureHooks, FailurePoint};
 use dexios_domain::storage::transaction::{CommitReceipt, CommittedArtifact};
 
@@ -82,6 +86,7 @@ fn cleanup_receipt_deletes_all_targets_after_post_commit_success() {
 }
 
 #[test]
+#[cfg(feature = "test-support")]
 fn cleanup_receipt_reports_partial_failure() {
     let test_dir = TestDir::new("cleanup-receipt-partial-failure");
     let committed = test_dir.path().join("committed.dexios");
@@ -128,6 +133,7 @@ fn cleanup_receipt_requires_hash_success_before_delete() {
 }
 
 #[test]
+#[cfg(feature = "test-support")]
 fn failure_hooks_select_cleanup_failure_point() {
     let hooks = FailureHooks::fail_on(FailurePoint::Cleanup);
 

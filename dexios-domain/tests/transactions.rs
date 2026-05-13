@@ -5,6 +5,7 @@ use dexios_domain::storage::NamedStagedOutput;
 use dexios_domain::storage::identity::{
     OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
 };
+#[cfg(feature = "test-support")]
 use dexios_domain::storage::test_support::{FailureHooks, FailurePoint};
 use dexios_domain::storage::transaction::{
     LinkedOutputTransaction, StagedOutputTransaction, TransactionError,
@@ -48,6 +49,7 @@ fn transaction_harness_creates_final_and_staged_paths() {
 }
 
 #[test]
+#[cfg(feature = "test-support")]
 fn failure_hooks_select_transaction_failure_points() {
     let points = [
         FailurePoint::Write,
@@ -116,6 +118,7 @@ fn staged_output_commits_replacement_after_flush_sync_persist() {
 }
 
 #[test]
+#[cfg(feature = "test-support")]
 fn staged_output_write_failure_preserves_existing_target() {
     let test_dir = TestDir::new("staged-output-write");
     let target_path = test_dir.path().join("output.dexios");
@@ -133,6 +136,7 @@ fn staged_output_write_failure_preserves_existing_target() {
 }
 
 #[test]
+#[cfg(feature = "test-support")]
 fn staged_output_flush_failure_preserves_existing_target() {
     let test_dir = TestDir::new("staged-output-flush");
     let target_path = test_dir.path().join("output.dexios");
@@ -151,6 +155,7 @@ fn staged_output_flush_failure_preserves_existing_target() {
 }
 
 #[test]
+#[cfg(feature = "test-support")]
 fn staged_output_sync_failure_preserves_existing_target() {
     let test_dir = TestDir::new("staged-output-sync");
     let target_path = test_dir.path().join("output.dexios");
@@ -170,6 +175,7 @@ fn staged_output_sync_failure_preserves_existing_target() {
 }
 
 #[test]
+#[cfg(feature = "test-support")]
 fn staged_output_persist_failure_preserves_existing_target() {
     let test_dir = TestDir::new("staged-output-persist");
     let target_path = test_dir.path().join("output.dexios");
@@ -302,6 +308,7 @@ fn linked_transaction_blocks_cleanup_after_partial_commit() {
 }
 
 #[test]
+#[cfg(feature = "test-support")]
 fn transaction_failure_hook_write_preserves_existing_target() {
     let test_dir = TestDir::new("failure-hook-write");
     let target_path = test_dir.path().join("output.dexios");
@@ -321,6 +328,7 @@ fn transaction_failure_hook_write_preserves_existing_target() {
 }
 
 #[test]
+#[cfg(feature = "test-support")]
 fn transaction_failure_hook_flush_preserves_existing_target() {
     let test_dir = TestDir::new("failure-hook-flush");
     let target_path = test_dir.path().join("output.dexios");
@@ -341,6 +349,7 @@ fn transaction_failure_hook_flush_preserves_existing_target() {
 }
 
 #[test]
+#[cfg(feature = "test-support")]
 fn transaction_failure_hook_sync_preserves_existing_target() {
     let test_dir = TestDir::new("failure-hook-sync");
     let target_path = test_dir.path().join("output.dexios");
@@ -361,6 +370,7 @@ fn transaction_failure_hook_sync_preserves_existing_target() {
 }
 
 #[test]
+#[cfg(feature = "test-support")]
 fn transaction_failure_hook_persist_preserves_existing_target() {
     let test_dir = TestDir::new("failure-hook-persist");
     let target_path = test_dir.path().join("output.dexios");
