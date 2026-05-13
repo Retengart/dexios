@@ -90,15 +90,20 @@ impl CleanupReceipt {
 
     #[must_use]
     pub fn run(&self, proof: &PostCommitSuccess) -> CleanupResult {
-        self.run_with_failure_hooks(proof, FailureHooks::none())
+        self.run_with_hooks(proof, FailureHooks::none())
     }
 
     #[must_use]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn run_with_failure_hooks(
         &self,
-        _proof: &PostCommitSuccess,
+        proof: &PostCommitSuccess,
         hooks: FailureHooks,
     ) -> CleanupResult {
+        self.run_with_hooks(proof, hooks)
+    }
+
+    fn run_with_hooks(&self, _proof: &PostCommitSuccess, hooks: FailureHooks) -> CleanupResult {
         let mut result = CleanupResult::default();
         let mut injected_cleanup_failure = false;
 

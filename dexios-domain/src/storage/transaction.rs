@@ -68,17 +68,24 @@ pub struct StagedOutputTransaction {
 
 impl StagedOutputTransaction {
     pub fn new(target: ResolvedTarget) -> Result<Self, TransactionError> {
-        Self::with_failure_hooks(target, FailureHooks::none())
+        Self::with_hooks(target, FailureHooks::none())
     }
 
+    fn with_hooks(target: ResolvedTarget, hooks: FailureHooks) -> Result<Self, TransactionError> {
+        let path = target.target_path().to_path_buf();
+        let staged =
+            NamedStagedOutput::with_hooks(target, hooks).map_err(|_| TransactionError::Write {
+                path,
+            })?;
+        Ok(Self { staged })
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
     pub fn with_failure_hooks(
         target: ResolvedTarget,
         hooks: FailureHooks,
     ) -> Result<Self, TransactionError> {
-        let path = target.target_path().to_path_buf();
-        let staged = NamedStagedOutput::with_failure_hooks(target, hooks)
-            .map_err(|_| TransactionError::Write { path })?;
-        Ok(Self { staged })
+        Self::with_hooks(target, hooks)
     }
 
     #[must_use]
@@ -120,20 +127,26 @@ pub struct LinkedOutputTransaction {
 impl LinkedOutputTransaction {
     #[must_use]
     pub fn new() -> Self {
-        Self::with_failure_hooks(FailureHooks::none())
+        Self::with_hooks(FailureHooks::none())
     }
 
     #[must_use]
-    pub fn with_failure_hooks(hooks: FailureHooks) -> Self {
+    fn with_hooks(hooks: FailureHooks) -> Self {
         Self {
             staged: Vec::new(),
             hooks,
         }
     }
 
+    #[must_use]
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_failure_hooks(hooks: FailureHooks) -> Self {
+        Self::with_hooks(hooks)
+    }
+
     pub fn stage(&mut self, target: ResolvedTarget) -> Result<usize, TransactionError> {
         let path = target.target_path().to_path_buf();
-        let staged = NamedStagedOutput::with_failure_hooks(target, self.hooks)
+        let staged = NamedStagedOutput::with_hooks(target, self.hooks)
             .map_err(|_| TransactionError::Write { path })?;
         self.staged.push(staged);
         Ok(self.staged.len() - 1)

@@ -61,10 +61,10 @@ pub struct NamedStagedOutput {
 
 impl NamedStagedOutput {
     pub fn new(target: ResolvedTarget) -> io::Result<Self> {
-        Self::with_failure_hooks(target, FailureHooks::none())
+        Self::with_hooks(target, FailureHooks::none())
     }
 
-    pub fn with_failure_hooks(target: ResolvedTarget, hooks: FailureHooks) -> io::Result<Self> {
+    pub(super) fn with_hooks(target: ResolvedTarget, hooks: FailureHooks) -> io::Result<Self> {
         let file = tempfile::NamedTempFile::new_in(target.target_parent())?;
         Ok(Self {
             target,
@@ -74,6 +74,11 @@ impl NamedStagedOutput {
             synced: false,
             hooks,
         })
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_failure_hooks(target: ResolvedTarget, hooks: FailureHooks) -> io::Result<Self> {
+        Self::with_hooks(target, hooks)
     }
 
     #[must_use]

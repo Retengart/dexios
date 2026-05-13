@@ -9,7 +9,10 @@ pub mod identity;
 mod memory;
 mod temp;
 /// Deterministic failure hooks for storage safety tests; runtime workflows do not use them.
+#[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
+#[cfg(not(any(test, feature = "test-support")))]
+mod test_support;
 pub mod transaction;
 
 pub use entry::{Entry, FileData};

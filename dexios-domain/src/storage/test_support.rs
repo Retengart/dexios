@@ -15,6 +15,7 @@ pub struct FailureError {
 }
 
 impl FailureError {
+    #[cfg(any(test, feature = "test-support"))]
     #[must_use]
     pub fn point(&self) -> FailurePoint {
         self.point
@@ -40,6 +41,7 @@ impl FailureHooks {
         Self { fail_on: None }
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     #[must_use]
     pub fn fail_on(point: FailurePoint) -> Self {
         Self {
