@@ -113,17 +113,17 @@ fn unpack_archive(
 ) -> Result<dexios_domain::storage::transaction::CommitReceipt, unpack::Error> {
     let stor = Arc::new(FileStorage);
     let archive = stor.read_file(encrypted_archive).unwrap();
-    let req = unpack::Request {
-        reader: archive.try_reader().unwrap(),
-        header_reader: None,
-        raw_key: Protected::new(PASSWORD.to_vec()),
-        output_dir_path: output_dir.to_path_buf(),
-        on_decrypted_header: None,
-        on_archive_info: None,
+    let intent = unpack::UnpackIntent::new(
+        archive,
+        None,
+        output_dir,
+        Protected::new(PASSWORD.to_vec()),
+        None,
+        None,
         on_zip_file,
-    };
+    )?;
 
-    unpack::execute(stor, req)
+    unpack::execute(intent)
 }
 
 #[test]
@@ -136,19 +136,7 @@ fn should_unpack_archive_without_explicit_directory_entries() {
     write_zip_without_directory_entries(&plain_zip);
     encrypt_archive(&plain_zip, &encrypted_archive);
 
-    let stor = Arc::new(FileStorage);
-    let archive = stor.read_file(&encrypted_archive).unwrap();
-    let req = unpack::Request {
-        reader: archive.try_reader().unwrap(),
-        header_reader: None,
-        raw_key: Protected::new(PASSWORD.to_vec()),
-        output_dir_path: output_dir.clone(),
-        on_decrypted_header: None,
-        on_archive_info: None,
-        on_zip_file: None,
-    };
-
-    unpack::execute(stor, req).unwrap();
+    unpack_archive(&encrypted_archive, &output_dir, None).unwrap();
 
     let restored = fs::read_to_string(output_dir.join("nested/inner/file.txt")).unwrap();
     assert_eq!(restored, "nested hello");
@@ -432,19 +420,7 @@ fn unpack_rejects_symlinked_intermediate_output_paths() {
     write_zip_with_entries(&plain_zip, &[("payload/secret.txt", b"top secret")]);
     encrypt_archive(&plain_zip, &encrypted_archive);
 
-    let stor = Arc::new(FileStorage);
-    let archive = stor.read_file(&encrypted_archive).unwrap();
-    let req = unpack::Request {
-        reader: archive.try_reader().unwrap(),
-        header_reader: None,
-        raw_key: Protected::new(PASSWORD.to_vec()),
-        output_dir_path: output_dir.clone(),
-        on_decrypted_header: None,
-        on_archive_info: None,
-        on_zip_file: None,
-    };
-
-    let result = unpack::execute(stor, req);
+    let result = unpack_archive(&encrypted_archive, &output_dir, None);
 
     assert!(
         matches!(
@@ -473,19 +449,7 @@ fn unpack_rejects_symlinked_output_directory_prefix() {
     write_zip_with_entries(&plain_zip, &[("secret.txt", b"top secret")]);
     encrypt_archive(&plain_zip, &encrypted_archive);
 
-    let stor = Arc::new(FileStorage);
-    let archive = stor.read_file(&encrypted_archive).unwrap();
-    let req = unpack::Request {
-        reader: archive.try_reader().unwrap(),
-        header_reader: None,
-        raw_key: Protected::new(PASSWORD.to_vec()),
-        output_dir_path: output_dir.clone(),
-        on_decrypted_header: None,
-        on_archive_info: None,
-        on_zip_file: None,
-    };
-
-    let result = unpack::execute(stor, req);
+    let result = unpack_archive(&encrypted_archive, &output_dir, None);
 
     assert!(
         matches!(result, Err(unpack::Error::UnsafeOutputPath(_))),
@@ -510,19 +474,7 @@ fn unpack_rejects_duplicate_targets_after_path_normalization() {
     );
     encrypt_archive(&plain_zip, &encrypted_archive);
 
-    let stor = Arc::new(FileStorage);
-    let archive = stor.read_file(&encrypted_archive).unwrap();
-    let req = unpack::Request {
-        reader: archive.try_reader().unwrap(),
-        header_reader: None,
-        raw_key: Protected::new(PASSWORD.to_vec()),
-        output_dir_path: output_dir.clone(),
-        on_decrypted_header: None,
-        on_archive_info: None,
-        on_zip_file: None,
-    };
-
-    let result = unpack::execute(stor, req);
+    let result = unpack_archive(&encrypted_archive, &output_dir, None);
 
     assert!(
         matches!(
@@ -555,19 +507,7 @@ fn unpack_preserves_existing_file_when_later_extraction_fails() {
     );
     encrypt_archive(&plain_zip, &encrypted_archive);
 
-    let stor = Arc::new(FileStorage);
-    let archive = stor.read_file(&encrypted_archive).unwrap();
-    let req = unpack::Request {
-        reader: archive.try_reader().unwrap(),
-        header_reader: None,
-        raw_key: Protected::new(PASSWORD.to_vec()),
-        output_dir_path: output_dir.clone(),
-        on_decrypted_header: None,
-        on_archive_info: None,
-        on_zip_file: None,
-    };
-
-    let result = unpack::execute(stor, req);
+    let result = unpack_archive(&encrypted_archive, &output_dir, None);
 
     assert!(
         matches!(
