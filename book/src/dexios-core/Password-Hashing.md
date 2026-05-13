@@ -14,6 +14,7 @@ For new files:
 - `Blake3Balloon` is the only normal KDF selector
 - KDF parameters are not user-configurable in Phase 3
 - the historical Argon2id tag is no longer supported for new writes
+- `balloon-hash 0.4.0` is built with the `zeroize` feature enabled
 
 For decryption and key manipulation, Dexios reads the required KDF family from the current keyslot metadata.
 The V1 keyslot tag `[0xDF, 0x02]` is recognized as an unsupported historical Argon2id tag and reported before any key derivation attempt.
@@ -36,6 +37,27 @@ and is exercised by `dexios-core/tests/key_derivation.rs`. Context7
 `/rustcrypto/password-hashes` documents the raw-output `Balloon` API that writes
 derived bytes into a caller-provided output buffer; Dexios uses that API with
 BLAKE3 as the Balloon hash primitive.
+
+The workspace manifest source-gates this dependency policy:
+
+- `balloon-hash = { version = "0.4.0", features = ["zeroize"] }`
+- `blake3 = "=1.8.3"`
+
+The enabled `zeroize` feature covers `balloon-hash`'s internal allocated memory
+buffer for the locked crate version. This is a crate-internal allocation
+handling claim. It is not a whole-process memory cleanup, allocator-history,
+swap, crash-dump, terminal, shell-log, secure-erase, or physical-media
+sanitization guarantee.
+
+KDF parameter changes require measured evidence from:
+
+```bash
+bash scripts/measure_performance_gate.sh --scenario kdf
+```
+
+The focused KDF measurement can enforce an opt-in local threshold with
+`--max-kdf-seconds` or `DEXIOS_KDF_MAX_SECONDS`. The default maintainer gate
+does not run this timing check.
 
 The same Context7 `/rustcrypto/password-hashes` source documents historical
 unsupported Argon2id as a RustCrypto implementation API. In Dexios, that tag is

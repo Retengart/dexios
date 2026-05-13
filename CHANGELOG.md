@@ -13,6 +13,11 @@
 ### Security
 
 - Added a tracked release-note policy for future security-sensitive changes.
+- Enabled the `balloon-hash 0.4.0` `zeroize` feature and source-gated the
+  BLAKE3-Balloon dependency policy while keeping `blake3 = "=1.8.3"` pinned.
+- Rejected explicit invalid generated passphrase counts such as `--auto=0`,
+  `--auto=-1`, and non-numeric values before passphrase generation or terminal
+  disclosure.
 - Resolved the `rand 0.10.0` / `RUSTSEC-2026-0097` exposure by updating to
   `rand 0.10.1` and keeping `cargo audit --deny warnings` in the maintainer
   gate.
@@ -33,9 +38,13 @@
 - Repaired CLI smoke and black-box CI coverage so removed `--aes`, `--argon`,
   `--zstd`, `--erase`, top-level `erase`, and `key add -n` behavior is rejected
   rather than positively invoked.
+- Added focused KDF measurement evidence with hardware-profile logging and
+  opt-in `--max-kdf-seconds` / `DEXIOS_KDF_MAX_SECONDS` threshold enforcement.
 
 ### Documentation
 
+- Documented the Phase 9 KDF feature policy, generated passphrase validation,
+  focused KDF measurement workflow, and narrow secret-memory claim boundaries.
 - Documented the release-note trigger and local-only `local-notes/` boundary for
   future maintainers.
 - Updated maintainer documentation to describe the dependency, cargo-deny, CLI,

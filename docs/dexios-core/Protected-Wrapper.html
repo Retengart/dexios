@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-c87ef55f.js";
+            window.path_to_searchindex_js = "../searchindex-dba32a10.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-532d5d21.js"></script>
@@ -186,7 +186,11 @@
 <li>Secret access is closure-scoped through <code>with_exposed</code>, which keeps each exposure lifetime local and easy to audit.</li>
 </ul>
 <p>The wrapper deliberately does not make secret copying convenient. If a caller needs bytes from a protected value, it must do the work inside a <code>with_exposed</code> closure and return only the non-secret result or a newly owned protected value.</p>
-<p>This is an in-process handling contract. It reduces accidental disclosure through debug output, clone paths, and long-lived references, but it does not claim that every historical CPU, allocator, terminal, or OS copy can be erased.</p>
+<p>This is an in-process owned-value handling contract. It reduces accidental
+disclosure through debug output, clone paths, and long-lived references, but it
+does not claim that every historical CPU, allocator, terminal, shell log, OS
+swap, crash dump, or physical-media copy can be erased. It also does not make
+generated passphrase terminal disclosure private after it has been printed.</p>
 <p>Implementation and regression coverage:</p>
 <ul>
 <li><code>dexios-core/src/protected.rs</code></li>

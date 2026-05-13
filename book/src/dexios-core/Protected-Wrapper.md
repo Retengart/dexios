@@ -13,7 +13,11 @@ Current contract:
 
 The wrapper deliberately does not make secret copying convenient. If a caller needs bytes from a protected value, it must do the work inside a `with_exposed` closure and return only the non-secret result or a newly owned protected value.
 
-This is an in-process handling contract. It reduces accidental disclosure through debug output, clone paths, and long-lived references, but it does not claim that every historical CPU, allocator, terminal, or OS copy can be erased.
+This is an in-process owned-value handling contract. It reduces accidental
+disclosure through debug output, clone paths, and long-lived references, but it
+does not claim that every historical CPU, allocator, terminal, shell log, OS
+swap, crash dump, or physical-media copy can be erased. It also does not make
+generated passphrase terminal disclosure private after it has been printed.
 
 Implementation and regression coverage:
 

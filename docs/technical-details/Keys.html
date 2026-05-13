@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-c87ef55f.js";
+            window.path_to_searchindex_js = "../searchindex-dba32a10.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-532d5d21.js"></script>
@@ -178,7 +178,12 @@
 <p>Dexios represents secrets with <code>Protected&lt;&gt;</code> values where possible. In practice, key material is read, normalized into bytes, wrapped, and then passed to the selected hashing flow.</p>
 <p>The CLI rejects empty key material.</p>
 <h2 id="autogenerating-a-key"><a class="header" href="#autogenerating-a-key">Autogenerating a Key</a></h2>
-<p><code>--auto</code> uses Dexios’ bundled wordlist to generate a passphrase. The current implementation generates <code>n</code> random words joined with <code>-</code>, with <code>7</code> words used by default.</p>
+<p><code>--auto</code> uses Dexios’ bundled wordlist to generate a passphrase. The current
+implementation generates <code>n</code> random words joined with <code>-</code>. <code>--auto</code> without a
+value defaults to <code>7</code> words.</p>
+<p>Explicit word counts must be positive integers. <code>--auto=0</code>, <code>--auto=-1</code>, and
+non-numeric values are rejected before passphrase generation and before the
+generated-passphrase disclosure message is printed.</p>
 <p>The generated passphrase is intentionally shown to the user because it is the only copy the user receives. This disclosure can be captured by terminal scrollback or logs. Dexios treats this output as deliberate disclosure, not as an accidental leak, and still keeps the returned key bytes inside <code>Protected&lt;Vec&lt;u8&gt;&gt;</code>.</p>
 <p>Examples:</p>
 <pre><code class="language-text">orchard-linen-buckle-river-amber-signal-willow

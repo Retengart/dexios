@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-c87ef55f.js";
+            window.path_to_searchindex_js = "../searchindex-dba32a10.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-532d5d21.js"></script>
@@ -181,7 +181,7 @@
 <p>Default changes to KDF cost, stream throughput behavior, pack/unpack memory
 behavior, archive structural limits, or temp-space assumptions require a
 measured-check run before the change is accepted.</p>
-<p>Use the Phase 7 harness from the repository root:</p>
+<p>Use the measurement harness from the repository root:</p>
 <pre><code class="language-bash">scripts/measure_performance_gate.sh --scenario &lt;name&gt;
 </code></pre>
 <p>Available scenarios are:</p>
@@ -197,6 +197,25 @@ notes or the phase summary. If a category is not applicable, record the reason
 instead of silently omitting it.</p>
 <p>The harness writes raw logs under <code>target/phase7-measurements/</code>. Do not commit
 those logs as evergreen benchmark claims.</p>
+<h3 id="focused-kdf-checks"><a class="header" href="#focused-kdf-checks">Focused KDF checks</a></h3>
+<p>KDF timing is a focused release check, not part of
+<code>scripts/verify_phase_gate.sh</code>. Run it explicitly before changing KDF
+parameters or dependency feature policy:</p>
+<pre><code class="language-bash">bash scripts/measure_performance_gate.sh --scenario kdf
+</code></pre>
+<p>The log records the scenario, UTC start time, <code>uname -a</code>, <code>rustc -Vv</code>,
+<code>cargo -V</code>, CPU model when <code>/proc/cpuinfo</code> is available, and total memory when
+<code>/proc/meminfo</code> is available. Record the hardware profile with the timing
+result in the release notes or phase summary before using it as KDF evidence.</p>
+<p>For focused release checks, set a conservative local budget with either:</p>
+<pre><code class="language-bash">bash scripts/measure_performance_gate.sh --scenario kdf --max-kdf-seconds &lt;seconds&gt;
+</code></pre>
+<p>or:</p>
+<pre><code class="language-bash">DEXIOS_KDF_MAX_SECONDS=&lt;seconds&gt; bash scripts/measure_performance_gate.sh --scenario kdf
+</code></pre>
+<p>This threshold applies only to the <code>kdf</code> scenario. Stream, pack/unpack, and
+temp-space scenarios continue to record measurements without KDF elapsed-time
+enforcement.</p>
 <p>Structural archive limits are not proof that the host has enough free memory or
 disk space. Temporary ZIP artifacts used by pack/unpack remain ordinary
 plaintext temporary files while they exist.</p>

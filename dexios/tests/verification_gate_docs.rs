@@ -7,7 +7,11 @@ const DIRECTORY_PACKING: &str =
     include_str!("../../book/src/technical-details/Directory-Packing.md");
 const INSTALLING_AND_BUILDING: &str = include_str!("../../book/src/Installing-and-Building.md");
 const AUDITING: &str = include_str!("../../book/src/dexios-core/Auditing.md");
+const PASSWORD_HASHING: &str = include_str!("../../book/src/dexios-core/Password-Hashing.md");
+const PROTECTED_WRAPPER: &str = include_str!("../../book/src/dexios-core/Protected-Wrapper.md");
+const KEYS: &str = include_str!("../../book/src/technical-details/Keys.md");
 const CHANGELOG: &str = include_str!("../../CHANGELOG.md");
+const CARGO_TOML: &str = include_str!("../../Cargo.toml");
 const GITIGNORE: &str = include_str!("../../.gitignore");
 const DENY_TOML: &str = include_str!("../../deny.toml");
 const VERIFY_PHASE_GATE: &str = include_str!("../../scripts/verify_phase_gate.sh");
@@ -15,7 +19,11 @@ const VERIFY_CLI_SURFACE: &str = include_str!("../../scripts/verify_cli_surface.
 const VERIFY_REPO_HYGIENE: &str = include_str!("../../scripts/verify_repo_hygiene.sh");
 const MEASURE_PERFORMANCE_GATE: &str = include_str!("../../scripts/measure_performance_gate.sh");
 const DEXIOS_MAIN_RS: &str = include_str!("../src/main.rs");
+const DEXIOS_CLI_RS: &str = include_str!("../src/cli.rs");
+const DEXIOS_STATES_RS: &str = include_str!("../src/global/states.rs");
 const DEXIOS_CORE_LIB_RS: &str = include_str!("../../dexios-core/src/lib.rs");
+const DEXIOS_CORE_KEY_RS: &str = include_str!("../../dexios-core/src/key.rs");
+const DEXIOS_CORE_PROTECTED_RS: &str = include_str!("../../dexios-core/src/protected.rs");
 const DEXIOS_DOMAIN_LIB_RS: &str = include_str!("../../dexios-domain/src/lib.rs");
 const AUDIT_WORKFLOW: &str = include_str!("../../.github/workflows/audit.yml");
 const DOCS_WORKFLOW: &str = include_str!("../../.github/workflows/docs.yml");
@@ -309,6 +317,150 @@ fn measurement_policy_is_source_gated() {
 
     for required in ["VERI-05", "measure_performance_gate.sh", "not applicable"] {
         assert_contains("book/src/Safety-Contract.md", SAFETY_CONTRACT, required);
+    }
+}
+
+#[test]
+fn phase9_kdf_passphrase_and_secret_contract_is_source_gated() {
+    for required in [
+        "balloon-hash = { version = \"0.4.0\", features = [\"zeroize\"] }",
+        "blake3 = \"=1.8.3\"",
+    ] {
+        assert_contains("Cargo.toml", CARGO_TOML, required);
+    }
+
+    for required in [
+        "PassphraseWordCount",
+        "pub const DEFAULT",
+        "generate_passphrase(total_words: PassphraseWordCount)",
+    ] {
+        assert_contains("dexios-core/src/key.rs", DEXIOS_CORE_KEY_RS, required);
+    }
+
+    for required in [
+        "validate_autogenerate_words",
+        "PassphraseWordCount::try_new",
+        "generated passphrase word count must be a positive integer",
+    ] {
+        assert_contains("dexios/src/cli.rs", DEXIOS_CLI_RS, required);
+    }
+
+    for required in [
+        "parse_generated_passphrase_word_count",
+        "Invalid generated passphrase word count",
+        "generated_passphrase_disclosure",
+    ] {
+        assert_contains("dexios/src/global/states.rs", DEXIOS_STATES_RS, required);
+    }
+
+    for required in [
+        "case_encrypt_auto_invalid_values_do_not_disclose",
+        "--auto=0",
+        "--auto=-1",
+        "--auto=abc",
+        "Your generated passphrase is intentionally shown here",
+    ] {
+        assert_contains(
+            "scripts/verify_cli_surface.sh",
+            VERIFY_CLI_SURFACE,
+            required,
+        );
+    }
+
+    for required in [
+        "balloon-hash 0.4.0",
+        "zeroize",
+        "blake3 = \"=1.8.3\"",
+        "scripts/measure_performance_gate.sh --scenario kdf",
+        "--max-kdf-seconds",
+        "DEXIOS_KDF_MAX_SECONDS",
+        "not a whole-process memory cleanup",
+    ] {
+        assert_contains(
+            "book/src/dexios-core/Password-Hashing.md",
+            PASSWORD_HASHING,
+            required,
+        );
+    }
+
+    for required in [
+        "--auto` without a",
+        "defaults to `7` words",
+        "--auto=0",
+        "--auto=-1",
+        "rejected before passphrase generation",
+        "terminal scrollback or logs",
+    ] {
+        assert_contains("book/src/technical-details/Keys.md", KEYS, required);
+    }
+
+    for required in [
+        "redacted",
+        "no blanket clone",
+        "no public direct exposure API",
+        "does not implement `Deref`",
+        "closure-scoped",
+        "OS",
+        "swap",
+        "crash dump",
+        "physical-media",
+    ] {
+        assert_contains(
+            "book/src/dexios-core/Protected-Wrapper.md",
+            PROTECTED_WRAPPER,
+            required,
+        );
+    }
+
+    for required in [
+        "uname=",
+        "rustc=",
+        "cargo=",
+        "cpu_model=",
+        "mem_total=",
+        "--max-kdf-seconds",
+        "DEXIOS_KDF_MAX_SECONDS",
+    ] {
+        assert_contains(
+            "scripts/measure_performance_gate.sh",
+            MEASURE_PERFORMANCE_GATE,
+            required,
+        );
+    }
+
+    for required in [
+        "balloon-hash 0.4.0",
+        "invalid `--auto` word counts",
+        "hardware profile",
+        "narrow secret-memory claim",
+    ] {
+        assert_contains("book/src/Safety-Contract.md", SAFETY_CONTRACT, required);
+    }
+
+    for required in [
+        "balloon-hash 0.4.0",
+        "invalid generated passphrase counts",
+        "--max-kdf-seconds",
+        "narrow secret-memory claim",
+    ] {
+        assert_contains("CHANGELOG.md", CHANGELOG, required);
+    }
+
+    for forbidden in [
+        "guaranteed unrecoverable",
+        "securely erased from all memory",
+        "physical media sanitization guarantee",
+    ] {
+        assert_not_contains(
+            "book/src/dexios-core/Protected-Wrapper.md",
+            PROTECTED_WRAPPER,
+            forbidden,
+        );
+        assert_not_contains(
+            "dexios-core/src/protected.rs",
+            DEXIOS_CORE_PROTECTED_RS,
+            forbidden,
+        );
     }
 }
 

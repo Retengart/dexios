@@ -6,7 +6,13 @@ The CLI rejects empty key material.
 
 ## Autogenerating a Key
 
-`--auto` uses Dexios' bundled wordlist to generate a passphrase. The current implementation generates `n` random words joined with `-`, with `7` words used by default.
+`--auto` uses Dexios' bundled wordlist to generate a passphrase. The current
+implementation generates `n` random words joined with `-`. `--auto` without a
+value defaults to `7` words.
+
+Explicit word counts must be positive integers. `--auto=0`, `--auto=-1`, and
+non-numeric values are rejected before passphrase generation and before the
+generated-passphrase disclosure message is printed.
 
 The generated passphrase is intentionally shown to the user because it is the only copy the user receives. This disclosure can be captured by terminal scrollback or logs. Dexios treats this output as deliberate disclosure, not as an accidental leak, and still keeps the returned key bytes inside `Protected<Vec<u8>>`.
 
