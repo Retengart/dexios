@@ -2,6 +2,7 @@ use std::fs;
 use std::path::Path;
 
 const DOMAIN_PACK: &str = include_str!("../src/pack.rs");
+const DOMAIN_UNPACK: &str = include_str!("../src/unpack.rs");
 const CLI_STATES: &str = include_str!("../../dexios/src/global/states.rs");
 const CLI_PARAMETERS: &str = include_str!("../../dexios/src/global/parameters.rs");
 const CLI: &str = include_str!("../../dexios/src/cli.rs");
@@ -25,6 +26,10 @@ fn domain_archive_sources(archive: &str) -> Vec<Source<'_>> {
         Source {
             path: "dexios-domain/src/pack.rs",
             text: DOMAIN_PACK,
+        },
+        Source {
+            path: "dexios-domain/src/unpack.rs",
+            text: DOMAIN_UNPACK,
         },
         Source {
             path: "dexios-domain/src/archive.rs",
@@ -268,6 +273,95 @@ fn d10_pack_execution_requires_validated_domain_intent() {
 }
 
 #[test]
+fn d04_unpack_execution_requires_checked_domain_intent() {
+    let bad_domain_sources = [
+        Source {
+            path: "synthetic/public-unpack-request.rs",
+            text: "pub struct Request<'a> { reader: &'a std::cell::RefCell<Vec<u8>> }",
+        },
+        Source {
+            path: "synthetic/public-unpack-execute.rs",
+            text: "pub fn execute(request: Request) -> Result<(), Error> { todo!() }",
+        },
+    ];
+    for source in bad_domain_sources {
+        assert!(
+            !unpack_checked_intent_violations(source).is_empty(),
+            "unpack intent gate must reject {}",
+            source.path
+        );
+    }
+
+    let bad_cli_source = Source {
+        path: "synthetic/unpack-cli.rs",
+        text: "let req = domain::unpack::Request { raw: () };",
+    };
+    assert!(
+        !collect_violations(&[bad_cli_source], |source| {
+            source
+                .text
+                .lines()
+                .enumerate()
+                .filter_map(|(index, line)| {
+                    let compact = line.split_whitespace().collect::<String>();
+                    if cli_constructs_raw_unpack_request(&compact) {
+                        Some(violation(
+                            source.path,
+                            index,
+                            "D-04 CLI must construct checked unpack intent, not raw domain unpack requests",
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        })
+        .is_empty(),
+        "unpack CLI gate must reject raw domain request construction"
+    );
+
+    let mut violations = Vec::new();
+    if !domain_unpack_exposes_checked_boundary() {
+        violations.push(violation(
+            "dexios-domain/src/unpack.rs",
+            0,
+            "D-04 public unpack execution must expose UnpackIntent or an equivalent checked boundary",
+        ));
+    }
+    violations.extend(unpack_checked_intent_violations(Source {
+        path: "dexios-domain/src/unpack.rs",
+        text: DOMAIN_UNPACK,
+    }));
+    violations.extend(collect_violations(
+        &[Source {
+            path: "dexios/src/subcommands/unpack.rs",
+            text: CLI_UNPACK,
+        }],
+        |source| {
+            source
+                .text
+                .lines()
+                .enumerate()
+                .filter_map(|(index, line)| {
+                    let compact = line.split_whitespace().collect::<String>();
+                    if cli_constructs_raw_unpack_request(&compact) {
+                        Some(violation(
+                            source.path,
+                            index,
+                            "D-04 CLI must construct checked unpack intent, not raw domain unpack requests",
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        },
+    ));
+
+    assert_no_violations(violations);
+}
+
+#[test]
 fn archive_cli_errors_use_typed_mappers_without_formatted_error_control_flow() {
     assert!(
         CLI_ERRORS.contains("map_pack_error") && CLI_PACK.contains("map_pack_error"),
@@ -276,6 +370,15 @@ fn archive_cli_errors_use_typed_mappers_without_formatted_error_control_flow() {
     assert!(
         CLI_ERRORS.contains("map_unpack_error") && CLI_UNPACK.contains("map_unpack_error"),
         "unpack CLI must route domain errors through map_unpack_error"
+    );
+
+    let bad_source = Source {
+        path: "synthetic/unpack-string-matching.rs",
+        text: r#"if error.to_string().contains("unsafe path") { return Ok(()); }"#,
+    };
+    assert!(
+        !formatted_archive_error_control_flow_violations(bad_source).is_empty(),
+        "archive CLI scanner must reject formatted-error control flow"
     );
 
     let violations = collect_violations(
@@ -293,29 +396,7 @@ fn archive_cli_errors_use_typed_mappers_without_formatted_error_control_flow() {
                 text: CLI_UNPACK,
             },
         ],
-        |source| {
-            source
-                .text
-                .lines()
-                .enumerate()
-                .filter_map(|(index, line)| {
-                    let compact = line.split_whitespace().collect::<String>();
-                    if compact.contains("to_string()")
-                        || (compact.contains("format!(") && compact.contains("{err"))
-                        || compact.contains("contains(err")
-                        || compact.contains("contains(error")
-                    {
-                        Some(violation(
-                            source.path,
-                            index,
-                            "archive CLI mapping must not inspect formatted error text",
-                        ))
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        },
+        formatted_archive_error_control_flow_violations,
     );
 
     assert_no_violations(violations);
@@ -387,6 +468,117 @@ fn public_raw_pack_execution_bypass(trimmed: &str) -> bool {
 fn cli_constructs_raw_pack_request_or_entry(compact: &str) -> bool {
     compact.contains("domain::pack::TransactionalPackRequest")
         || compact.contains("domain::pack::ArchiveSourceEntry{")
+}
+
+fn domain_unpack_exposes_checked_boundary() -> bool {
+    DOMAIN_UNPACK.contains("pub struct UnpackIntent")
+        || DOMAIN_UNPACK.contains("pub struct CheckedUnpackIntent")
+        || DOMAIN_UNPACK.contains("pub struct ValidatedUnpackIntent")
+}
+
+fn unpack_checked_intent_violations(source: Source<'_>) -> Vec<String> {
+    let mut violations = Vec::new();
+    let lines: Vec<_> = source.text.lines().collect();
+
+    for (index, line) in lines.iter().enumerate() {
+        let trimmed = line.trim_start();
+
+        for pattern in [
+            "pub struct Request",
+            "pub(crate) struct Request",
+            "pub struct TransactionalRequest",
+            "pub(crate) struct TransactionalRequest",
+        ] {
+            if trimmed.starts_with(pattern) {
+                violations.push(violation(
+                    source.path,
+                    index,
+                    "D-04 public unpack APIs must not expose raw request construction",
+                ));
+            }
+        }
+
+        if starts_public_unpack_execute_signature(trimmed) {
+            let signature = signature_window(&lines, index);
+            if mentions_raw_unpack_request(&signature) {
+                violations.push(violation(
+                    source.path,
+                    index,
+                    "D-04 public unpack execute signature must accept checked intent",
+                ));
+            }
+        }
+
+        if trimmed.starts_with("pub ") && trimmed.contains("RefCell") {
+            violations.push(violation(
+                source.path,
+                index,
+                "D-04 public unpack contract must not expose RefCell handles",
+            ));
+        }
+    }
+
+    violations
+}
+
+fn starts_public_unpack_execute_signature(trimmed: &str) -> bool {
+    [
+        "pub fn execute(",
+        "pub(crate) fn execute(",
+        "pub fn execute_transactional(",
+        "pub(crate) fn execute_transactional(",
+    ]
+    .into_iter()
+    .any(|prefix| trimmed.starts_with(prefix))
+}
+
+fn signature_window(lines: &[&str], start: usize) -> String {
+    lines
+        .iter()
+        .skip(start)
+        .take(6)
+        .copied()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn mentions_raw_unpack_request(signature: &str) -> bool {
+    signature.contains(" Request")
+        || signature.contains("(Request")
+        || signature.contains("::Request")
+        || signature.contains(" TransactionalRequest")
+        || signature.contains("(TransactionalRequest")
+        || signature.contains("::TransactionalRequest")
+}
+
+fn cli_constructs_raw_unpack_request(compact: &str) -> bool {
+    compact.contains("domain::unpack::Request")
+        || compact.contains("domain::unpack::{Request")
+        || compact.contains("domain::unpack::{Request,TransactionalRequest}")
+}
+
+fn formatted_archive_error_control_flow_violations(source: Source<'_>) -> Vec<String> {
+    source
+        .text
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| {
+            let compact = line.split_whitespace().collect::<String>();
+            if compact.contains("to_string()")
+                || (compact.contains("format!(") && compact.contains("{err"))
+                || compact.contains("contains(err")
+                || compact.contains("contains(error")
+            {
+                Some(violation(
+                    source.path,
+                    index,
+                    "archive CLI mapping must not inspect formatted error text",
+                ))
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 fn violation(path: &str, index: usize, message: &str) -> String {
