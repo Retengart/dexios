@@ -22,6 +22,10 @@ rust-version.workspace = true
 [badges]
 maintenance = { status = "actively-developed" }
 
+[features]
+default = []
+test-support = []
+
 [dependencies]
 core = { package = "dexios-core", path = "../dexios-core", version = "1.2.0" }
 
