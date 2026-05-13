@@ -10,6 +10,7 @@ use dexios_core::stream::{
 };
 
 const STREAM_TAG_LEN: usize = 16;
+const FIXTURE_MANIFEST: &str = include_str!("testdata/fixture_manifest.toml");
 
 mod support {
     use super::*;
@@ -534,6 +535,36 @@ fn decrypt_rejects_truncated_ciphertext() {
 }
 
 #[test]
+fn decrypt_rejects_each_truncated_stream_chunk() {
+    let header = support::sample_v1_header();
+    let payload = support::parsed_payload_for(&header);
+    let plaintext = plaintext_spanning_normal_chunks();
+    let original_chunks = encrypt_chunks(&header, &plaintext);
+    let final_chunk_index = original_chunks.len() - 1;
+
+    for chunk_index in 0..original_chunks.len() {
+        let mut chunks = original_chunks.clone();
+        chunks[chunk_index]
+            .pop()
+            .unwrap_or_else(|| panic!("chunk {chunk_index} should have at least one byte"));
+
+        let (result, scratch) =
+            decrypt_file_with(support::master_key(), &payload, flatten_chunks(&chunks));
+
+        assert!(
+            result.is_err(),
+            "chunk {chunk_index}: truncated stream chunk must fail"
+        );
+        let expected_scratch_len = chunk_index.min(final_chunk_index) * BLOCK_SIZE;
+        assert_eq!(
+            scratch,
+            plaintext[..expected_scratch_len],
+            "chunk {chunk_index}: truncated stream output is only uncommitted scratch before the failed chunk"
+        );
+    }
+}
+
+#[test]
 fn decrypt_rejects_reordered_chunks() {
     let header = support::sample_v1_header();
     let payload = support::parsed_payload_for(&header);
@@ -548,6 +579,26 @@ fn decrypt_rejects_reordered_chunks() {
     assert!(
         scratch.is_empty(),
         "reordered chunks must fail before committed plaintext success is claimed"
+    );
+}
+
+#[test]
+fn decrypt_rejects_duplicated_chunk() {
+    let header = support::sample_v1_header();
+    let payload = support::parsed_payload_for(&header);
+    let plaintext = plaintext_spanning_normal_chunks();
+    let mut chunks = encrypt_chunks(&header, &plaintext);
+    let duplicated_normal_chunk = chunks[0].clone();
+    chunks.insert(1, duplicated_normal_chunk);
+
+    let (result, scratch) =
+        decrypt_file_with(support::master_key(), &payload, flatten_chunks(&chunks));
+
+    assert!(matches!(result, Err(StreamError::Authentication)));
+    assert_eq!(
+        scratch,
+        plaintext[..BLOCK_SIZE],
+        "duplicated non-final chunk failure may expose only uncommitted scratch before the duplicate"
     );
 }
 
@@ -630,4 +681,68 @@ fn decrypt_failure_output_is_uncommitted_scratch() {
         plaintext[..BLOCK_SIZE * 3],
         "failed decrypt output is only uncommitted scratch until final authentication succeeds"
     );
+}
+
+#[test]
+fn phase01_core_fixture_manifest_links_stream_assurance_rows() {
+    let manifest: toml::Value =
+        toml::from_str(FIXTURE_MANIFEST).expect("fixture manifest must parse as TOML");
+    let fixtures = manifest
+        .get("fixture")
+        .and_then(|value| value.as_array())
+        .expect("fixture manifest must expose [[fixture]] rows");
+    let expected_rows = [
+        ("phase01-stream-payload-boundary-matrix", "STRM-01"),
+        ("phase01-stream-fragmented-io-short-output", "STRM-01"),
+        ("phase01-stream-wrong-aad", "STRM-02"),
+        ("phase01-stream-wrong-nonce", "STRM-02"),
+        ("phase01-stream-wrong-key", "STRM-02"),
+        ("phase01-stream-reordered-chunks", "STRM-02"),
+        ("phase01-stream-duplicated-chunk", "STRM-02"),
+        ("phase01-stream-truncated-chunks", "STRM-02"),
+        ("phase01-stream-missing-final-block", "STRM-02"),
+        ("phase01-stream-middle-tamper", "STRM-02"),
+        ("phase01-stream-final-tamper", "STRM-02"),
+        ("phase01-header-malformed-evidence", "ASSR-02"),
+        ("phase01-keyslot-corruption-evidence", "ASSR-02"),
+    ];
+
+    for (row_id, requirement) in expected_rows {
+        let row = fixtures
+            .iter()
+            .find(|fixture| fixture.get("id").and_then(|value| value.as_str()) == Some(row_id))
+            .unwrap_or_else(|| panic!("fixture manifest must include Phase 01 row {row_id}"));
+
+        for field in [
+            "id",
+            "group",
+            "path",
+            "purpose",
+            "invariant",
+            "requirement",
+            "source",
+            "expected",
+            "owner_phase",
+        ] {
+            let value = row
+                .get(field)
+                .and_then(|value| value.as_str())
+                .unwrap_or_else(|| panic!("{row_id}: field {field} must be present"));
+            assert!(
+                !value.trim().is_empty(),
+                "{row_id}: field {field} must not be empty"
+            );
+        }
+
+        assert_eq!(
+            row.get("requirement").and_then(|value| value.as_str()),
+            Some(requirement),
+            "{row_id}: requirement must link to {requirement}"
+        );
+        assert_eq!(
+            row.get("owner_phase").and_then(|value| value.as_str()),
+            Some("Phase 1"),
+            "{row_id}: owner phase must remain Phase 1"
+        );
+    }
 }
