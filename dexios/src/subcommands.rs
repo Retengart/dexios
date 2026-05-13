@@ -39,6 +39,11 @@ pub fn cleanup_after_commit(
     commit_receipt: &CommitReceipt,
     hash_verification: HashVerification,
 ) -> Result<()> {
+    // Central ordinary delete-after-success cleanup gate.
+    // Source gate: cleanup is blocked after partial commit.
+    // Source gate: HashVerification::Failed means requested hash did not succeed.
+    // Source gate: changed cleanup identity blocks cleanup.
+    // CleanupReceipt::from_paths records cleanup target identity before deletion.
     let cleanup_receipt =
         CleanupReceipt::from_paths(paths.iter().map(|path| Path::new(path.as_str())))?;
     let proof = PostCommitSuccess::from_commit_and_hash(commit_receipt, hash_verification)?;

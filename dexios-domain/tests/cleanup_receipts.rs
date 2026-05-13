@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 #[cfg(feature = "test-support")]
 use dexios_domain::storage::cleanup::CleanupTarget;
 use dexios_domain::storage::cleanup::{
-    CleanupGateError, CleanupReceipt, HashVerification, PostCommitSuccess,
+    CleanupGateError, CleanupReceipt, CleanupTargetIdentity, HashVerification, PostCommitSuccess,
 };
 use dexios_domain::storage::identity::PathRole;
 #[cfg(feature = "test-support")]
@@ -79,6 +79,13 @@ fn cleanup_receipt_deletes_all_targets_after_post_commit_success() {
 
     let result = cleanup_receipt.run(&proof);
 
+    assert!(
+        matches!(
+            cleanup_receipt.targets[0].identity,
+            CleanupTargetIdentity::Verified { .. }
+        ),
+        "CleanupReceipt::from_paths must capture target identity evidence"
+    );
     assert!(result.is_success(), "cleanup failures: {result:?}");
     assert_eq!(result.deleted.len(), 2);
     assert!(!file.exists());
@@ -135,6 +142,30 @@ fn cleanup_receipt_changed_target_kind_is_reported_and_replacement_directory_is_
     );
 }
 
+#[test]
+fn cleanup_receipt_changed_directory_kind_is_reported_and_replacement_file_is_not_deleted() {
+    let test_dir = TestDir::new("cleanup-receipt-changed-dir-kind");
+    let committed = test_dir.path().join("committed.dexios");
+    let target = test_dir.path().join("source-dir");
+    fs::write(&committed, b"committed output").unwrap();
+    fs::create_dir(&target).unwrap();
+    fs::write(target.join("original.txt"), b"original directory").unwrap();
+
+    let cleanup_receipt = CleanupReceipt::from_paths([target.as_path()]).unwrap();
+    let proof = post_commit_success(committed.clone());
+    fs::remove_dir_all(&target).unwrap();
+    fs::write(&target, b"replacement file").unwrap();
+
+    let result = cleanup_receipt.run(&proof);
+
+    assert!(
+        !result.is_success(),
+        "cleanup must fail closed when a recorded directory target becomes a file"
+    );
+    assert_eq!(fs::read(&committed).unwrap(), b"committed output");
+    assert_eq!(fs::read(&target).unwrap(), b"replacement file");
+}
+
 #[cfg(unix)]
 #[test]
 fn cleanup_receipt_changed_target_symlink_is_reported_and_symlink_is_not_deleted() {
@@ -184,6 +215,13 @@ fn cleanup_receipt_reports_partial_failure() {
         CleanupTarget::file(&injected_failure),
         CleanupTarget::file(&deleted),
     ]);
+    assert!(
+        cleanup_receipt.targets[0]
+            .identity
+            .source()
+            .contains("unchecked CleanupTarget::file constructor"),
+        "unchecked test constructor must make weaker cleanup identity status explicit"
+    );
     let proof = post_commit_success(committed);
 
     let result = cleanup_receipt

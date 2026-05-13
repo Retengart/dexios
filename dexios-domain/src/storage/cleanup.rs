@@ -1,9 +1,10 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use super::test_support::{FailureHooks, FailurePoint};
-use super::transaction::CommitReceipt;
+use super::transaction::CleanupAuthorizedReceipt;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CleanupTargetKind {
@@ -15,6 +16,37 @@ pub enum CleanupTargetKind {
 pub struct CleanupTarget {
     pub path: PathBuf,
     pub kind: CleanupTargetKind,
+    pub identity: CleanupTargetIdentity,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CleanupTargetIdentity {
+    Verified {
+        source: &'static str,
+        handle: Arc<same_file::Handle>,
+        is_symlink: bool,
+    },
+    Unchecked {
+        source: &'static str,
+    },
+}
+
+impl CleanupTargetIdentity {
+    fn verified(path: &Path, is_symlink: bool) -> io::Result<Self> {
+        let handle = same_file::Handle::from_path(path)?;
+        Ok(Self::Verified {
+            source: "cleanup target identity snapshot from same_file::Handle",
+            handle: Arc::new(handle),
+            is_symlink,
+        })
+    }
+
+    #[must_use]
+    pub fn source(&self) -> &'static str {
+        match self {
+            Self::Verified { source, .. } | Self::Unchecked { source } => source,
+        }
+    }
 }
 
 impl CleanupTarget {
@@ -23,6 +55,9 @@ impl CleanupTarget {
         Self {
             path: path.into(),
             kind: CleanupTargetKind::File,
+            identity: CleanupTargetIdentity::Unchecked {
+                source: "unchecked CleanupTarget::file constructor",
+            },
         }
     }
 
@@ -31,21 +66,23 @@ impl CleanupTarget {
         Self {
             path: path.into(),
             kind: CleanupTargetKind::Directory,
+            identity: CleanupTargetIdentity::Unchecked {
+                source: "unchecked CleanupTarget::directory constructor",
+            },
         }
     }
 
     pub fn from_path(path: impl AsRef<Path>) -> io::Result<Self> {
         let path = path.as_ref();
         let metadata = fs::symlink_metadata(path)?;
-        let kind = if metadata.is_dir() {
-            CleanupTargetKind::Directory
-        } else {
-            CleanupTargetKind::File
-        };
+        let kind = cleanup_kind(&metadata);
+        let is_symlink = metadata.file_type().is_symlink();
+        let identity = CleanupTargetIdentity::verified(path, is_symlink)?;
 
         Ok(Self {
             path: path.to_path_buf(),
             kind,
+            identity,
         })
     }
 }
@@ -144,9 +181,13 @@ pub struct PostCommitSuccess {
 
 impl PostCommitSuccess {
     pub fn from_commit_and_hash(
-        _receipt: &CommitReceipt,
+        receipt: &(impl CleanupAuthorizedReceipt + ?Sized),
         hash_verification: HashVerification,
     ) -> Result<Self, CleanupGateError> {
+        if receipt.committed_artifacts().is_empty() {
+            return Err(CleanupGateError::CommitNotAuthorized);
+        }
+
         match hash_verification {
             HashVerification::NotRequested | HashVerification::Succeeded => {
                 Ok(Self { hash_verification })
@@ -163,12 +204,14 @@ impl PostCommitSuccess {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CleanupGateError {
+    CommitNotAuthorized,
     HashNotVerified,
 }
 
 impl std::fmt::Display for CleanupGateError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::CommitNotAuthorized => f.write_str("commit receipt is not cleanup-authorized"),
             Self::HashNotVerified => f.write_str("requested hash did not succeed"),
         }
     }
@@ -177,8 +220,51 @@ impl std::fmt::Display for CleanupGateError {
 impl std::error::Error for CleanupGateError {}
 
 fn delete_target(target: &CleanupTarget) -> io::Result<()> {
+    revalidate_target(target)?;
+
     match target.kind {
         CleanupTargetKind::File => fs::remove_file(&target.path),
         CleanupTargetKind::Directory => fs::remove_dir_all(&target.path),
     }
+}
+
+fn revalidate_target(target: &CleanupTarget) -> io::Result<()> {
+    let metadata = fs::symlink_metadata(&target.path)?;
+    let current_kind = cleanup_kind(&metadata);
+    if current_kind != target.kind {
+        return Err(changed_target_error("changed cleanup target kind"));
+    }
+
+    let current_is_symlink = metadata.file_type().is_symlink();
+    match &target.identity {
+        CleanupTargetIdentity::Verified {
+            handle, is_symlink, ..
+        } => {
+            if current_is_symlink != *is_symlink {
+                return Err(changed_target_error(
+                    "changed cleanup target symlink status",
+                ));
+            }
+
+            let current_handle = same_file::Handle::from_path(&target.path)?;
+            if handle.as_ref() != &current_handle {
+                return Err(changed_target_error("changed cleanup identity"));
+            }
+        }
+        CleanupTargetIdentity::Unchecked { .. } => {}
+    }
+
+    Ok(())
+}
+
+fn cleanup_kind(metadata: &fs::Metadata) -> CleanupTargetKind {
+    if metadata.is_dir() {
+        CleanupTargetKind::Directory
+    } else {
+        CleanupTargetKind::File
+    }
+}
+
+fn changed_target_error(message: &'static str) -> io::Error {
+    io::Error::new(io::ErrorKind::Other, message)
 }
