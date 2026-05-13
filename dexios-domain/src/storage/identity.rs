@@ -69,11 +69,25 @@ impl ResolvedTarget {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub enum IdentityError {
     AliasedPath { left: PathBuf, right: PathBuf },
     UnsafePath(PathBuf),
     Io(io::ErrorKind),
+    IoWithSource {
+        kind: io::ErrorKind,
+        source: io::Error,
+    },
+}
+
+impl IdentityError {
+    #[must_use]
+    pub fn from_io_error(source: io::Error) -> Self {
+        Self::IoWithSource {
+            kind: source.kind(),
+            source,
+        }
+    }
 }
 
 impl std::fmt::Display for IdentityError {
@@ -88,12 +102,21 @@ impl std::fmt::Display for IdentityError {
                 )
             }
             Self::UnsafePath(path) => write!(f, "Unsafe path: {}", path.display()),
-            Self::Io(kind) => write!(f, "Path identity IO error: {kind:?}"),
+            Self::Io(kind) | Self::IoWithSource { kind, .. } => {
+                write!(f, "Path identity IO error: {kind:?}")
+            }
         }
     }
 }
 
-impl std::error::Error for IdentityError {}
+impl std::error::Error for IdentityError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::IoWithSource { source, .. } => Some(source),
+            Self::AliasedPath { .. } | Self::UnsafePath(_) | Self::Io(_) => None,
+        }
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct PathIdentityGraph {
@@ -113,9 +136,9 @@ impl PathIdentityGraph {
     ) -> Result<ResolvedTarget, IdentityError> {
         let original_path = path.as_ref().to_path_buf();
         let canonical_path =
-            fs::canonicalize(&original_path).map_err(|err| IdentityError::Io(err.kind()))?;
+            fs::canonicalize(&original_path).map_err(IdentityError::from_io_error)?;
         let is_dir = fs::metadata(&canonical_path)
-            .map_err(|err| IdentityError::Io(err.kind()))?
+            .map_err(IdentityError::from_io_error)?
             .is_dir();
         let target = ResolvedTarget {
             original_path,
@@ -143,7 +166,7 @@ impl PathIdentityGraph {
         match fs::symlink_metadata(&absolute_path) {
             Ok(meta) => {
                 let canonical_path = fs::canonicalize(&absolute_path)
-                    .map_err(|err| IdentityError::Io(err.kind()))?;
+                    .map_err(IdentityError::from_io_error)?;
                 let is_dir = meta.is_dir();
                 self.push(ResolvedTarget {
                     original_path,
@@ -173,7 +196,7 @@ impl PathIdentityGraph {
                     is_dir: false,
                 })
             }
-            Err(err) => Err(IdentityError::Io(err.kind())),
+            Err(err) => Err(IdentityError::from_io_error(err)),
         }
     }
 
@@ -218,7 +241,7 @@ fn ensure_distinct(left: &ResolvedTarget, right: &ResolvedTarget) -> Result<(), 
     let exact_alias = left.target_path == right.target_path;
     let platform_alias = if left.exists && right.exists {
         same_file::is_same_file(&left.target_path, &right.target_path)
-            .map_err(|err| IdentityError::Io(err.kind()))?
+            .map_err(IdentityError::from_io_error)?
     } else {
         false
     };
@@ -252,7 +275,7 @@ fn absolute_normalized_path(path: &Path) -> Result<PathBuf, IdentityError> {
         path.to_path_buf()
     } else {
         std::env::current_dir()
-            .map_err(|err| IdentityError::Io(err.kind()))?
+            .map_err(IdentityError::from_io_error)?
             .join(path)
     };
 
@@ -284,7 +307,7 @@ fn resolve_missing_target_parent(path: &Path) -> Result<(PathBuf, Vec<OsString>)
 
     reject_symlinked_prefix(&existing_parent)?;
     let canonical_parent =
-        fs::canonicalize(&existing_parent).map_err(|err| IdentityError::Io(err.kind()))?;
+        fs::canonicalize(&existing_parent).map_err(IdentityError::from_io_error)?;
 
     Ok((canonical_parent, missing_components))
 }
@@ -309,7 +332,7 @@ fn nearest_existing_ancestor(path: &Path) -> Result<(PathBuf, Vec<OsString>), Id
                     return Err(IdentityError::UnsafePath(path.to_path_buf()));
                 }
             }
-            Err(err) => return Err(IdentityError::Io(err.kind())),
+            Err(err) => return Err(IdentityError::from_io_error(err)),
         }
     }
 }
@@ -325,8 +348,8 @@ fn reject_symlinked_prefix(existing_parent: &Path) -> Result<(), IdentityError> 
             Component::ParentDir => return Err(IdentityError::UnsafePath(existing_parent.into())),
             Component::Normal(part) => {
                 current.push(part);
-                let meta =
-                    fs::symlink_metadata(&current).map_err(|err| IdentityError::Io(err.kind()))?;
+                let meta = fs::symlink_metadata(&current)
+                    .map_err(IdentityError::from_io_error)?;
                 if meta.file_type().is_symlink() {
                     return Err(IdentityError::UnsafePath(current));
                 }

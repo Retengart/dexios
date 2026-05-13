@@ -37,7 +37,7 @@ pub(crate) fn classify_identity_error(error: &IdentityError) -> WorkflowErrorCla
         IdentityError::AliasedPath { .. } | IdentityError::UnsafePath(_) => {
             WorkflowErrorClass::UnsafePath
         }
-        IdentityError::Io(_) => WorkflowErrorClass::IoFailure,
+        IdentityError::Io(_) | IdentityError::IoWithSource { .. } => WorkflowErrorClass::IoFailure,
     }
 }
 

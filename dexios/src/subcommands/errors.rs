@@ -130,7 +130,8 @@ pub fn map_header_error(error: domain::header::Error) -> anyhow::Error {
             | domain::storage::identity::IdentityError::UnsafePath(_) => {
                 anyhow!("Unsafe path: {error}")
             }
-            domain::storage::identity::IdentityError::Io(_) => {
+            domain::storage::identity::IdentityError::Io(_)
+            | domain::storage::identity::IdentityError::IoWithSource { .. } => {
                 anyhow!("I/O failure while checking header paths")
             }
         },
@@ -188,7 +189,8 @@ pub fn map_key_error(error: domain::key::Error) -> anyhow::Error {
             | domain::storage::identity::IdentityError::UnsafePath(_) => {
                 anyhow!("Unsafe path: {error}")
             }
-            domain::storage::identity::IdentityError::Io(_) => {
+            domain::storage::identity::IdentityError::Io(_)
+            | domain::storage::identity::IdentityError::IoWithSource { .. } => {
                 anyhow!("I/O failure while checking key workflow target")
             }
         },

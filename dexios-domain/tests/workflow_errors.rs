@@ -239,9 +239,14 @@ fn domain_errors_classify_path_identity_without_display_strings() {
     let unsafe_path = decrypt::Error::PathIdentity(IdentityError::UnsafePath(path("..")));
     assert_eq!(unsafe_path.workflow_class(), WorkflowErrorClass::UnsafePath);
 
-    let identity_io =
-        encrypt::Error::PathIdentity(IdentityError::Io(io::ErrorKind::PermissionDenied));
+    let identity_io = encrypt::Error::PathIdentity(IdentityError::from_io_error(
+        io::Error::from(io::ErrorKind::PermissionDenied),
+    ));
     assert_eq!(identity_io.workflow_class(), WorkflowErrorClass::IoFailure);
+    let encrypt::Error::PathIdentity(inner) = &identity_io else {
+        unreachable!("identity source fixture must stay identity-backed");
+    };
+    assert_source(inner, "IdentityError source-bearing IO failure");
 }
 
 #[test]
