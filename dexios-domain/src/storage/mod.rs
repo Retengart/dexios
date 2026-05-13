@@ -34,10 +34,7 @@ pub enum Error {
     CreateFile,
     CreateFileWithSource(io::Error),
     OpenFile(FileMode),
-    OpenFileWithSource {
-        mode: FileMode,
-        source: io::Error,
-    },
+    OpenFileWithSource { mode: FileMode, source: io::Error },
     RemoveFile,
     RemoveFileWithSource(io::Error),
     RemoveDir,

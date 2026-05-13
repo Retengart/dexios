@@ -71,7 +71,10 @@ impl ResolvedTarget {
 
 #[derive(Debug)]
 pub enum IdentityError {
-    AliasedPath { left: PathBuf, right: PathBuf },
+    AliasedPath {
+        left: PathBuf,
+        right: PathBuf,
+    },
     UnsafePath(PathBuf),
     Io(io::ErrorKind),
     IoWithSource {
@@ -165,8 +168,8 @@ impl PathIdentityGraph {
 
         match fs::symlink_metadata(&absolute_path) {
             Ok(meta) => {
-                let canonical_path = fs::canonicalize(&absolute_path)
-                    .map_err(IdentityError::from_io_error)?;
+                let canonical_path =
+                    fs::canonicalize(&absolute_path).map_err(IdentityError::from_io_error)?;
                 let is_dir = meta.is_dir();
                 self.push(ResolvedTarget {
                     original_path,
@@ -348,8 +351,7 @@ fn reject_symlinked_prefix(existing_parent: &Path) -> Result<(), IdentityError> 
             Component::ParentDir => return Err(IdentityError::UnsafePath(existing_parent.into())),
             Component::Normal(part) => {
                 current.push(part);
-                let meta = fs::symlink_metadata(&current)
-                    .map_err(IdentityError::from_io_error)?;
+                let meta = fs::symlink_metadata(&current).map_err(IdentityError::from_io_error)?;
                 if meta.file_type().is_symlink() {
                     return Err(IdentityError::UnsafePath(current));
                 }
