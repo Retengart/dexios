@@ -69,6 +69,20 @@ fn stderr(output: &std::process::Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
+fn assert_no_default_source_chain(stderr: &str) {
+    for forbidden in [
+        "Caused by:",
+        "caused by:",
+        "source chain",
+        "Stack backtrace",
+    ] {
+        assert!(
+            !stderr.contains(forbidden),
+            "normal CLI stderr must stay terse and omit source-chain text: {stderr}"
+        );
+    }
+}
+
 fn encrypt_fixture(test_dir: &TestDir) {
     fs::write(test_dir.path().join("plain.txt"), b"top secret").unwrap();
     let output = run_cli(
@@ -263,6 +277,7 @@ fn archive_unpack_errors_use_typed_cli_mapping() {
         unsafe_stderr.contains("Unsafe archive path"),
         "unsafe unpack did not expose typed unsafe path class: {unsafe_stderr}"
     );
+    assert_no_default_source_chain(&unsafe_stderr);
     assert!(!test_dir.path().join("escape.txt").exists());
 
     let collision_zip = test_dir.path().join("collision.zip");
@@ -312,7 +327,9 @@ fn archive_unpack_errors_use_typed_cli_mapping() {
         "wrong-key unpack did not expose terse auth class: {wrong_key_stderr}"
     );
     assert!(!wrong_key_stderr.contains(WRONG_PASSWORD));
+    assert!(!wrong_key_stderr.contains("keyslot"));
     assert!(!wrong_key_stderr.contains("master key"));
+    assert_no_default_source_chain(&wrong_key_stderr);
 }
 
 #[test]
@@ -334,6 +351,7 @@ fn incorrect_key_and_unsupported_workflow_messages_stay_terse() {
     assert!(!wrong_key_stderr.contains(WRONG_PASSWORD));
     assert!(!wrong_key_stderr.contains("keyslot"));
     assert!(!wrong_key_stderr.contains("master key"));
+    assert_no_default_source_chain(&wrong_key_stderr);
 
     fs::write(test_dir.path().join("old.key"), CORRECT_PASSWORD).unwrap();
     let add_output = run_cli(
@@ -370,6 +388,7 @@ fn key_verify_wrong_key_and_unsupported_kdf_use_typed_mapping() {
     assert!(!wrong_key_stderr.contains(CORRECT_PASSWORD));
     assert!(!wrong_key_stderr.contains("keyslot"));
     assert!(!wrong_key_stderr.contains("master key"));
+    assert_no_default_source_chain(&wrong_key_stderr);
 
     mark_keyslot_unsupported_argon2id(&test_dir.path().join("plain.enc"), 0);
     let unsupported_kdf_output = run_cli(

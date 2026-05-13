@@ -1,11 +1,15 @@
+#[allow(unused_imports)]
+use std::error::Error as _;
 use std::io;
 use std::path::PathBuf;
 
 use core::header::common::HeaderReadError;
+use dexios_domain::archive::{ArchiveLimitError, ArchiveLimitKind};
+use dexios_domain::storage;
 use dexios_domain::storage::identity::{IdentityError, PathRole};
 use dexios_domain::storage::transaction::{CommitReceipt, CommittedArtifact, TransactionError};
 use dexios_domain::workflow_error::WorkflowErrorClass;
-use dexios_domain::{decrypt, encrypt, header, key};
+use dexios_domain::{decrypt, encrypt, header, key, pack, unpack};
 
 fn path(name: &str) -> PathBuf {
     PathBuf::from(name)
@@ -24,6 +28,44 @@ fn partial_commit_error() -> TransactionError {
             path: path("failed.header"),
         },
     }
+}
+
+fn archive_limit_error() -> ArchiveLimitError {
+    ArchiveLimitError {
+        kind: ArchiveLimitKind::EntryCount,
+        limit: 1,
+        actual: 2,
+    }
+}
+
+fn assert_source<E>(error: &E, label: &str)
+where
+    E: std::error::Error + ?Sized,
+{
+    assert!(
+        error.source().is_some(),
+        "{label} must preserve a diagnostic source"
+    );
+}
+
+fn assert_encrypt_source(error: encrypt::Error, class: WorkflowErrorClass, label: &str) {
+    assert_eq!(error.workflow_class(), class);
+    assert_source(&error, label);
+}
+
+fn assert_decrypt_source(error: decrypt::Error, class: WorkflowErrorClass, label: &str) {
+    assert_eq!(error.workflow_class(), class);
+    assert_source(&error, label);
+}
+
+fn assert_pack_source(error: pack::Error, class: WorkflowErrorClass, label: &str) {
+    assert_eq!(error.workflow_class(), class);
+    assert_source(&error, label);
+}
+
+fn assert_unpack_source(error: unpack::Error, class: WorkflowErrorClass, label: &str) {
+    assert_eq!(error.workflow_class(), class);
+    assert_source(&error, label);
 }
 
 #[test]
@@ -46,6 +88,152 @@ fn workflow_error_class_lists_required_phase5_categories() {
             WorkflowErrorClass::ALL.contains(&class),
             "{class:?} must be part of the shared workflow error contract"
         );
+    }
+}
+
+#[test]
+fn domain_errors_preserve_source_chains_for_workflow_wrappers() {
+    assert_encrypt_source(
+        encrypt::Error::PathIdentity(IdentityError::Io(io::ErrorKind::PermissionDenied)),
+        WorkflowErrorClass::IoFailure,
+        "encrypt path identity wrapper",
+    );
+    assert_encrypt_source(
+        encrypt::Error::Transaction(TransactionError::Write {
+            path: path("encrypted.out"),
+        }),
+        WorkflowErrorClass::IoFailure,
+        "encrypt transaction wrapper",
+    );
+
+    assert_decrypt_source(
+        decrypt::Error::PathIdentity(IdentityError::Io(io::ErrorKind::PermissionDenied)),
+        WorkflowErrorClass::IoFailure,
+        "decrypt path identity wrapper",
+    );
+    assert_decrypt_source(
+        decrypt::Error::Transaction(TransactionError::Persist {
+            path: path("decrypted.out"),
+        }),
+        WorkflowErrorClass::TransactionCommitFailure,
+        "decrypt transaction wrapper",
+    );
+
+    assert_pack_source(
+        pack::Error::PathIdentity(IdentityError::Io(io::ErrorKind::PermissionDenied)),
+        WorkflowErrorClass::IoFailure,
+        "pack path identity wrapper",
+    );
+    assert_pack_source(
+        pack::Error::Transaction(TransactionError::Flush {
+            path: path("packed.out"),
+        }),
+        WorkflowErrorClass::IoFailure,
+        "pack transaction wrapper",
+    );
+    assert_pack_source(
+        pack::Error::Encrypt(encrypt::Error::HashKey),
+        WorkflowErrorClass::KdfFailure,
+        "pack encrypt wrapper",
+    );
+}
+
+#[test]
+fn unpack_errors_preserve_source_chains_for_workflow_wrappers() {
+    assert_unpack_source(
+        unpack::Error::PathIdentity(IdentityError::Io(io::ErrorKind::PermissionDenied)),
+        WorkflowErrorClass::IoFailure,
+        "unpack path identity wrapper",
+    );
+    assert_unpack_source(
+        unpack::Error::Transaction(TransactionError::Sync {
+            path: path("unpacked.out"),
+        }),
+        WorkflowErrorClass::IoFailure,
+        "unpack transaction wrapper",
+    );
+    assert_unpack_source(
+        unpack::Error::Decrypt(decrypt::Error::DecryptData),
+        WorkflowErrorClass::AuthenticationFailure,
+        "unpack decrypt wrapper",
+    );
+    assert_unpack_source(
+        unpack::Error::Storage(storage::Error::CreateDir),
+        WorkflowErrorClass::IoFailure,
+        "unpack storage wrapper",
+    );
+    assert_unpack_source(
+        unpack::Error::ArchiveLimit(archive_limit_error()),
+        WorkflowErrorClass::UnsafePath,
+        "unpack archive-limit wrapper",
+    );
+}
+
+#[test]
+fn storage_errors_preserve_io_sources() {
+    let storage_error = storage::Error::CreateDir;
+    let wrapped_storage = unpack::Error::Storage(storage_error);
+    assert_eq!(
+        wrapped_storage.workflow_class(),
+        WorkflowErrorClass::IoFailure
+    );
+    let unpack::Error::Storage(inner) = &wrapped_storage else {
+        unreachable!("wrapped storage fixture must stay storage-backed");
+    };
+    assert_source(inner, "storage::Error IO failure");
+
+    let identity_error = IdentityError::Io(io::ErrorKind::PermissionDenied);
+    let wrapped_identity = encrypt::Error::PathIdentity(identity_error);
+    assert_eq!(
+        wrapped_identity.workflow_class(),
+        WorkflowErrorClass::IoFailure
+    );
+    let encrypt::Error::PathIdentity(inner) = &wrapped_identity else {
+        unreachable!("wrapped identity fixture must stay identity-backed");
+    };
+    assert_source(inner, "IdentityError::Io failure");
+}
+
+#[test]
+fn transaction_errors_preserve_io_sources() {
+    let cases = [
+        (
+            TransactionError::Write {
+                path: path("write.out"),
+            },
+            WorkflowErrorClass::IoFailure,
+            "TransactionError::Write",
+        ),
+        (
+            TransactionError::Flush {
+                path: path("flush.out"),
+            },
+            WorkflowErrorClass::IoFailure,
+            "TransactionError::Flush",
+        ),
+        (
+            TransactionError::Sync {
+                path: path("sync.out"),
+            },
+            WorkflowErrorClass::IoFailure,
+            "TransactionError::Sync",
+        ),
+        (
+            TransactionError::Persist {
+                path: path("persist.out"),
+            },
+            WorkflowErrorClass::TransactionCommitFailure,
+            "TransactionError::Persist",
+        ),
+    ];
+
+    for (transaction_error, expected_class, label) in cases {
+        let wrapped = encrypt::Error::Transaction(transaction_error);
+        assert_eq!(wrapped.workflow_class(), expected_class);
+        let encrypt::Error::Transaction(inner) = &wrapped else {
+            unreachable!("transaction source fixture must stay transaction-backed");
+        };
+        assert_source(inner, label);
     }
 }
 
