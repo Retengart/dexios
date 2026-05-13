@@ -1,11 +1,13 @@
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Read, Write};
 
 use dexios_core::header::common::{KeyslotNonce, PayloadNonce, Salt as HeaderSalt};
 use dexios_core::header::v1::{V1Header, V1Keyslot, V1Keyslots};
 use dexios_core::header::{ParsedHeader, ParsedV1Payload};
 use dexios_core::kdf::Kdf;
 use dexios_core::primitives::{BLOCK_SIZE, MasterKey};
-use dexios_core::stream::{StreamError, V1PayloadDecryptor, V1PayloadEncryptor, V1PayloadStream};
+use dexios_core::stream::{
+    StreamError, V1PayloadDecryptor, V1PayloadEncryptingWriter, V1PayloadEncryptor, V1PayloadStream,
+};
 
 const STREAM_TAG_LEN: usize = 16;
 
@@ -229,6 +231,94 @@ fn exact_block_plaintext_emits_empty_authenticated_final_chunk() {
     assert!(
         decrypted_final.is_empty(),
         "exact-block streams must authenticate an empty final marker"
+    );
+}
+
+#[test]
+fn encrypting_writer_roundtrips_fragmented_writes() {
+    let header = support::sample_v1_header();
+    let payload = support::parsed_payload_for(&header);
+    let plaintext = plaintext_spanning_normal_chunks();
+
+    let mut writer = V1PayloadEncryptingWriter::new(support::master_key(), &header, Vec::new())
+        .expect("create encrypting writer");
+    for chunk in plaintext.chunks(257) {
+        writer
+            .write_all(chunk)
+            .expect("write fragmented plaintext into encrypting writer");
+    }
+    let encrypted = writer.finish().expect("finish encrypting writer");
+
+    let mut decrypted = Vec::new();
+    V1PayloadStream::decrypt_file(
+        support::master_key(),
+        &payload,
+        &mut Cursor::new(encrypted),
+        &mut decrypted,
+    )
+    .expect("decrypt writer output");
+
+    assert_eq!(decrypted, plaintext);
+}
+
+#[test]
+fn encrypting_writer_exact_block_payload_emits_final_marker() {
+    let header = support::sample_v1_header();
+    let payload = support::parsed_payload_for(&header);
+    let plaintext = vec![0x5A; BLOCK_SIZE];
+
+    let mut writer = V1PayloadEncryptingWriter::new(support::master_key(), &header, Vec::new())
+        .expect("create encrypting writer");
+    writer
+        .write_all(&plaintext)
+        .expect("write exact block plaintext");
+    let encrypted = writer.finish().expect("finish encrypting writer");
+
+    assert_eq!(
+        encrypted.len(),
+        BLOCK_SIZE + STREAM_TAG_LEN + STREAM_TAG_LEN
+    );
+
+    let mut decrypted = Vec::new();
+    V1PayloadStream::decrypt_file(
+        support::master_key(),
+        &payload,
+        &mut Cursor::new(encrypted),
+        &mut decrypted,
+    )
+    .expect("decrypt exact block writer output");
+
+    assert_eq!(decrypted, plaintext);
+}
+
+#[test]
+fn dropping_encrypting_writer_without_finish_does_not_finalize_payload() {
+    let header = support::sample_v1_header();
+    let payload = support::parsed_payload_for(&header);
+    let plaintext = vec![0x7B; BLOCK_SIZE];
+    let mut encrypted = Vec::new();
+
+    {
+        let mut writer =
+            V1PayloadEncryptingWriter::new(support::master_key(), &header, &mut encrypted)
+                .expect("create encrypting writer");
+        writer
+            .write_all(&plaintext)
+            .expect("write exact block plaintext");
+    }
+
+    let mut decrypted = Vec::new();
+    let result = V1PayloadStream::decrypt_file(
+        support::master_key(),
+        &payload,
+        &mut Cursor::new(encrypted),
+        &mut decrypted,
+    );
+
+    assert!(matches!(result, Err(StreamError::MissingFinalBlock)));
+    assert_eq!(
+        decrypted, plaintext,
+        "dropped writer output is uncommitted scratch because finish was explicit"
     );
 }
 

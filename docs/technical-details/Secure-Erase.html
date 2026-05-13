@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-c86ac640.js";
+            window.path_to_searchindex_js = "../searchindex-80ef0646.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-532d5d21.js"></script>
@@ -204,19 +204,22 @@ Dexios does not revert committed outputs during this cleanup step.</p>
 <h2 id="why-secure-erase-was-removed"><a class="header" href="#why-secure-erase-was-removed">Why Secure Erase Was Removed</a></h2>
 <p>Overwrite passes are not a trustworthy abstraction on SSDs and other flash-backed storage. Dexios now prefers a simpler and more honest promise: delete sources after success, without claiming physical sanitization.</p>
 <h2 id="temporary-archives"><a class="header" href="#temporary-archives">Temporary Archives</a></h2>
-<p><code>pack</code> and <code>unpack</code> still use temporary plaintext zip artifacts internally, but those artifacts are handled as ordinary temporary files rather than overwritten repeatedly before deletion.</p>
+<p><code>pack</code> no longer writes a separate plaintext temporary ZIP artifact before
+encryption. <code>unpack</code> still uses a decrypted temporary ZIP so it can validate
+archive metadata, selected paths, duplicate names, and staged outputs before
+committing extracted files.</p>
 <p>The boundary is intentionally narrow:</p>
 <ul>
-<li><code>pack</code> writes source data into an ordinary plaintext temporary ZIP, then encrypts it and drops the temporary artifact.</li>
+<li><code>pack</code> streams ZIP bytes directly into V1 encryption and then commits the encrypted staged output.</li>
 <li><code>unpack</code> decrypts the encrypted payload into an ordinary plaintext temporary ZIP, validates archive metadata, stages selected files, commits through storage transactions, and drops the temporary artifact.</li>
 <li>Failure-path tests cover ordinary best effort drop/delete cleanup and no committed output after selected failures.</li>
 </ul>
-<p>These temporary ZIP artifacts are plaintext exposure while they exist. Dexios
-does not claim secure erase for them, does not claim sanitization, does not
-defend against another local process with access to the host temporary storage,
-does not claim resistance to forensic recovery, and does not reduce plaintext
-temporary ZIP exposure.
-Plaintext temporary ZIP exposure remains, not reduced in Phase 11.</p>
+<p>The unpack temporary ZIP artifact is plaintext exposure while it exists.
+Dexios does not claim secure erase for it, does not claim sanitization, does
+not defend against another local process with access to the host temporary
+storage, and does not claim resistance to forensic recovery.</p>
+<p>Pack-side plaintext temporary ZIP exposure was reduced in Phase 12.
+Unpack-side plaintext temporary ZIP exposure remains.</p>
 
                     </main>
 

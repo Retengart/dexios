@@ -45,6 +45,10 @@ pub fn map_decrypt_error(error: domain::decrypt::Error) -> anyhow::Error {
 }
 
 pub fn map_pack_error(error: domain::pack::Error) -> anyhow::Error {
+    if error.is_resource_pressure() {
+        return anyhow!("Not enough temporary or output storage while packing archive");
+    }
+
     match error.workflow_class() {
         WorkflowErrorClass::UnsafePath => match error {
             domain::pack::Error::ArchiveLimit(_) => anyhow!("Archive limit error: {error}"),
@@ -68,6 +72,10 @@ pub fn map_pack_error(error: domain::pack::Error) -> anyhow::Error {
 }
 
 pub fn map_unpack_error(error: domain::unpack::Error) -> anyhow::Error {
+    if error.is_resource_pressure() {
+        return anyhow!("Not enough temporary or output storage while unpacking archive");
+    }
+
     match error.workflow_class() {
         WorkflowErrorClass::UnsafePath => anyhow!("Unsafe archive path: {error}"),
         WorkflowErrorClass::MalformedFormat => anyhow!("Malformed archive data"),
@@ -208,5 +216,62 @@ pub fn map_key_error(error: domain::key::Error) -> anyhow::Error {
         domain::key::Error::MasterKeyEncrypt | domain::key::Error::CipherInit => {
             anyhow!("Key workflow failed")
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+    use std::path::PathBuf;
+
+    use domain::storage::transaction::TransactionError;
+
+    use super::*;
+
+    fn storage_full() -> io::Error {
+        io::Error::from(io::ErrorKind::StorageFull)
+    }
+
+    fn path(name: &str) -> PathBuf {
+        PathBuf::from(name)
+    }
+
+    #[test]
+    fn pack_resource_pressure_uses_capacity_message() {
+        let mapped = map_pack_error(domain::pack::Error::Transaction(TransactionError::Write {
+            path: path("packed.enc"),
+            source: Some(storage_full()),
+        }));
+
+        assert_eq!(
+            format!("{mapped}"),
+            "Not enough temporary or output storage while packing archive"
+        );
+    }
+
+    #[test]
+    fn unpack_resource_pressure_uses_capacity_message() {
+        let mapped = map_unpack_error(domain::unpack::Error::Transaction(
+            TransactionError::Write {
+                path: path("unpacked.txt"),
+                source: Some(storage_full()),
+            },
+        ));
+
+        assert_eq!(
+            format!("{mapped}"),
+            "Not enough temporary or output storage while unpacking archive"
+        );
+    }
+
+    #[test]
+    fn unpack_format_and_authentication_errors_stay_distinct() {
+        let malformed = map_unpack_error(domain::unpack::Error::OpenArchive);
+        assert_eq!(format!("{malformed}"), "Malformed archive data");
+
+        let authentication = map_unpack_error(domain::unpack::Error::Decrypt(
+            domain::decrypt::Error::DecryptData,
+        ));
+        assert_eq!(format!("{authentication}"), "Authentication failed");
     }
 }

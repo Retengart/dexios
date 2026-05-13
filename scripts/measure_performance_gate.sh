@@ -8,15 +8,22 @@ cd "$REPO_ROOT"
 SCENARIO="all"
 DRY_RUN=0
 KDF_MAX_SECONDS="${DEXIOS_KDF_MAX_SECONDS:-}"
+STREAM_ENCRYPT_MAX_SECONDS="${DEXIOS_STREAM_ENCRYPT_MAX_SECONDS:-}"
+STREAM_DECRYPT_MAX_SECONDS="${DEXIOS_STREAM_DECRYPT_MAX_SECONDS:-}"
+PACK_MAX_SECONDS="${DEXIOS_PACK_MAX_SECONDS:-}"
+UNPACK_MAX_SECONDS="${DEXIOS_UNPACK_MAX_SECONDS:-}"
+TEMP_SPACE_MAX_KIB="${DEXIOS_TEMP_SPACE_MAX_KIB:-}"
 LAST_ELAPSED_SECONDS=""
+MAX_OBSERVED_TEMP_SPACE_KIB=0
 OUTPUT_ROOT="$REPO_ROOT/target/phase7-measurements"
-WORK_ROOT="$OUTPUT_ROOT/work"
-LOG_PATH="$OUTPUT_ROOT/measurement-$(date -u +%Y%m%dT%H%M%SZ).log"
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+WORK_ROOT="$OUTPUT_ROOT/work/$RUN_ID"
+LOG_PATH="$OUTPUT_ROOT/measurement-$RUN_ID.log"
 BIN="$REPO_ROOT/target/release/dexios"
 
 usage() {
     cat <<'USAGE'
-Usage: scripts/measure_performance_gate.sh [--dry-run] [--scenario <name>] [--max-kdf-seconds <seconds>]
+Usage: scripts/measure_performance_gate.sh [--dry-run] [--scenario <name>] [threshold options]
 
 Scenarios:
   kdf           Measure the release KDF regression test path.
@@ -26,7 +33,13 @@ Scenarios:
   all           Run every scenario above.
 
 Measurement logs are written under target/phase7-measurements/.
-Use --max-kdf-seconds or DEXIOS_KDF_MAX_SECONDS for focused KDF release checks.
+Use thresholds for focused release checks:
+  --max-kdf-seconds <seconds>             or DEXIOS_KDF_MAX_SECONDS
+  --max-stream-encrypt-seconds <seconds>  or DEXIOS_STREAM_ENCRYPT_MAX_SECONDS
+  --max-stream-decrypt-seconds <seconds>  or DEXIOS_STREAM_DECRYPT_MAX_SECONDS
+  --max-pack-seconds <seconds>            or DEXIOS_PACK_MAX_SECONDS
+  --max-unpack-seconds <seconds>          or DEXIOS_UNPACK_MAX_SECONDS
+  --max-temp-space-kib <kib>              or DEXIOS_TEMP_SPACE_MAX_KIB
 Use --dry-run to print the commands without creating fixtures or invoking dexios.
 USAGE
 }
@@ -39,6 +52,11 @@ die() {
 validate_seconds() {
     local value=$1
     [[ "$value" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "seconds must be a non-negative number: $value"
+}
+
+validate_positive_integer() {
+    local value=$1
+    [[ "$value" =~ ^[1-9][0-9]*$ ]] || die "KiB threshold must be a positive integer: $value"
 }
 
 parse_time_verbose_elapsed_seconds() {
@@ -69,6 +87,89 @@ exceeds_threshold() {
     awk -v elapsed="$elapsed" -v threshold="$threshold" 'BEGIN { exit(elapsed > threshold ? 0 : 1) }'
 }
 
+validate_thresholds() {
+    for value in \
+        "$KDF_MAX_SECONDS" \
+        "$STREAM_ENCRYPT_MAX_SECONDS" \
+        "$STREAM_DECRYPT_MAX_SECONDS" \
+        "$PACK_MAX_SECONDS" \
+        "$UNPACK_MAX_SECONDS"; do
+        if [[ -n "$value" ]]; then
+            validate_seconds "$value"
+        fi
+    done
+
+    if [[ -n "$TEMP_SPACE_MAX_KIB" ]]; then
+        validate_positive_integer "$TEMP_SPACE_MAX_KIB"
+    fi
+}
+
+threshold_value() {
+    local value=$1
+    if [[ -n "$value" ]]; then
+        echo "$value"
+    else
+        echo "unset"
+    fi
+}
+
+print_threshold_context() {
+    if [[ "$LOG_PATH" == "/dev/stdout" ]]; then
+        echo "Threshold context:"
+        echo "  kdf_max_seconds=$(threshold_value "$KDF_MAX_SECONDS")"
+        echo "  stream_encrypt_max_seconds=$(threshold_value "$STREAM_ENCRYPT_MAX_SECONDS")"
+        echo "  stream_decrypt_max_seconds=$(threshold_value "$STREAM_DECRYPT_MAX_SECONDS")"
+        echo "  pack_max_seconds=$(threshold_value "$PACK_MAX_SECONDS")"
+        echo "  unpack_max_seconds=$(threshold_value "$UNPACK_MAX_SECONDS")"
+        echo "  temp_space_max_kib=$(threshold_value "$TEMP_SPACE_MAX_KIB")"
+        return
+    fi
+
+    {
+        echo "Threshold context:"
+        echo "  kdf_max_seconds=$(threshold_value "$KDF_MAX_SECONDS")"
+        echo "  stream_encrypt_max_seconds=$(threshold_value "$STREAM_ENCRYPT_MAX_SECONDS")"
+        echo "  stream_decrypt_max_seconds=$(threshold_value "$STREAM_DECRYPT_MAX_SECONDS")"
+        echo "  pack_max_seconds=$(threshold_value "$PACK_MAX_SECONDS")"
+        echo "  unpack_max_seconds=$(threshold_value "$UNPACK_MAX_SECONDS")"
+        echo "  temp_space_max_kib=$(threshold_value "$TEMP_SPACE_MAX_KIB")"
+    } | tee -a "$LOG_PATH"
+}
+
+check_elapsed_threshold() {
+    local label=$1
+    local threshold=$2
+
+    if [[ -z "$threshold" ]]; then
+        return 0
+    fi
+
+    if exceeds_threshold "$LAST_ELAPSED_SECONDS" "$threshold"; then
+        echo "threshold failure: scenario=$SCENARIO operation=\"$label\" measured_seconds=$LAST_ELAPSED_SECONDS threshold_seconds=$threshold log_path=$LOG_PATH" | tee -a "$LOG_PATH" >&2
+        return 1
+    fi
+
+    echo "threshold ok: scenario=$SCENARIO operation=\"$label\" measured_seconds=$LAST_ELAPSED_SECONDS threshold_seconds=$threshold log_path=$LOG_PATH" | tee -a "$LOG_PATH"
+}
+
+record_temp_space_observed() {
+    local label=$1
+    local observed_root=$2
+    local observed
+
+    observed="$(du -sk "$observed_root" | awk '{print $1}')"
+    if (( observed > MAX_OBSERVED_TEMP_SPACE_KIB )); then
+        MAX_OBSERVED_TEMP_SPACE_KIB="$observed"
+    fi
+
+    echo "temp_space_observed: scenario=$SCENARIO operation=\"$label\" measured_kib=$observed max_observed_kib=$MAX_OBSERVED_TEMP_SPACE_KIB measured_path=$observed_root log_path=$LOG_PATH" | tee -a "$LOG_PATH"
+
+    if [[ -n "$TEMP_SPACE_MAX_KIB" ]] && (( MAX_OBSERVED_TEMP_SPACE_KIB > TEMP_SPACE_MAX_KIB )); then
+        echo "threshold failure: scenario=$SCENARIO operation=\"$label\" measured_kib=$MAX_OBSERVED_TEMP_SPACE_KIB threshold_kib=$TEMP_SPACE_MAX_KIB log_path=$LOG_PATH" | tee -a "$LOG_PATH" >&2
+        return 1
+    fi
+}
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --help|-h)
@@ -87,7 +188,31 @@ while [[ $# -gt 0 ]]; do
         --max-kdf-seconds)
             [[ $# -ge 2 ]] || die "--max-kdf-seconds requires a value"
             KDF_MAX_SECONDS="$2"
-            validate_seconds "$KDF_MAX_SECONDS"
+            shift 2
+            ;;
+        --max-stream-encrypt-seconds)
+            [[ $# -ge 2 ]] || die "--max-stream-encrypt-seconds requires a value"
+            STREAM_ENCRYPT_MAX_SECONDS="$2"
+            shift 2
+            ;;
+        --max-stream-decrypt-seconds)
+            [[ $# -ge 2 ]] || die "--max-stream-decrypt-seconds requires a value"
+            STREAM_DECRYPT_MAX_SECONDS="$2"
+            shift 2
+            ;;
+        --max-pack-seconds)
+            [[ $# -ge 2 ]] || die "--max-pack-seconds requires a value"
+            PACK_MAX_SECONDS="$2"
+            shift 2
+            ;;
+        --max-unpack-seconds)
+            [[ $# -ge 2 ]] || die "--max-unpack-seconds requires a value"
+            UNPACK_MAX_SECONDS="$2"
+            shift 2
+            ;;
+        --max-temp-space-kib)
+            [[ $# -ge 2 ]] || die "--max-temp-space-kib requires a value"
+            TEMP_SPACE_MAX_KIB="$2"
             shift 2
             ;;
         *)
@@ -100,6 +225,8 @@ case "$SCENARIO" in
     kdf|stream|pack-unpack|temp-space|all) ;;
     *) die "unknown scenario: $SCENARIO" ;;
 esac
+
+validate_thresholds
 
 print_cmd() {
     printf '+'
@@ -161,6 +288,7 @@ prepare_real_run() {
         echo "Dexios measurement gate"
         echo "repo=$REPO_ROOT"
         echo "scenario=$SCENARIO"
+        echo "work_root=$WORK_ROOT"
         echo "started_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo "output=$LOG_PATH"
         echo "uname=$(uname -a)"
@@ -175,9 +303,25 @@ prepare_real_run() {
         if [[ -n "$KDF_MAX_SECONDS" ]]; then
             echo "kdf_max_seconds=$KDF_MAX_SECONDS"
         fi
+        if [[ -n "$STREAM_ENCRYPT_MAX_SECONDS" ]]; then
+            echo "stream_encrypt_max_seconds=$STREAM_ENCRYPT_MAX_SECONDS"
+        fi
+        if [[ -n "$STREAM_DECRYPT_MAX_SECONDS" ]]; then
+            echo "stream_decrypt_max_seconds=$STREAM_DECRYPT_MAX_SECONDS"
+        fi
+        if [[ -n "$PACK_MAX_SECONDS" ]]; then
+            echo "pack_max_seconds=$PACK_MAX_SECONDS"
+        fi
+        if [[ -n "$UNPACK_MAX_SECONDS" ]]; then
+            echo "unpack_max_seconds=$UNPACK_MAX_SECONDS"
+        fi
+        if [[ -n "$TEMP_SPACE_MAX_KIB" ]]; then
+            echo "temp_space_max_kib=$TEMP_SPACE_MAX_KIB"
+        fi
         echo
     } > "$LOG_PATH"
     echo "Measurement output: $LOG_PATH"
+    print_threshold_context
 }
 
 scenario_kdf() {
@@ -194,11 +338,7 @@ scenario_kdf() {
     fi
 
     if [[ -n "$KDF_MAX_SECONDS" ]]; then
-        if exceeds_threshold "$LAST_ELAPSED_SECONDS" "$KDF_MAX_SECONDS"; then
-            echo "KDF elapsed seconds $LAST_ELAPSED_SECONDS exceeded threshold $KDF_MAX_SECONDS" | tee -a "$LOG_PATH" >&2
-            return 1
-        fi
-        echo "KDF elapsed seconds $LAST_ELAPSED_SECONDS within threshold $KDF_MAX_SECONDS" | tee -a "$LOG_PATH"
+        check_elapsed_threshold "kdf" "$KDF_MAX_SECONDS"
     fi
 }
 
@@ -231,7 +371,9 @@ scenario_stream() {
     mkdir -p "$dir"
     run_timed "stream fixture generation" dd if=/dev/urandom of="$plain" bs=1M count=16
     run_timed "stream encrypt throughput" env DEXIOS_KEY=12345678 "$BIN" encrypt -f "$plain" "$enc"
+    check_elapsed_threshold "stream encrypt throughput" "$STREAM_ENCRYPT_MAX_SECONDS"
     run_timed "stream decrypt throughput" env DEXIOS_KEY=12345678 "$BIN" decrypt -f "$enc" "$out"
+    check_elapsed_threshold "stream decrypt throughput" "$STREAM_DECRYPT_MAX_SECONDS"
     run_timed "stream roundtrip compare" cmp "$plain" "$out"
 }
 
@@ -258,7 +400,9 @@ scenario_pack_unpack() {
     run_timed "pack/unpack fixture root" dd if=/dev/urandom of="$src/root.bin" bs=1M count=8
     run_timed "pack/unpack fixture nested" dd if=/dev/urandom of="$src/nested/inner.bin" bs=1M count=8
     run_timed "pack memory and elapsed time" env DEXIOS_KEY=12345678 "$BIN" pack -f "$src" "$enc"
+    check_elapsed_threshold "pack memory and elapsed time" "$PACK_MAX_SECONDS"
     run_timed "unpack memory and elapsed time" env DEXIOS_KEY=12345678 "$BIN" unpack -f "$enc" "$out"
+    check_elapsed_threshold "unpack memory and elapsed time" "$UNPACK_MAX_SECONDS"
     run_timed "pack/unpack restored root" test -f "$out/src/root.bin"
     run_timed "pack/unpack restored nested" test -f "$out/src/nested/inner.bin"
 }
@@ -272,23 +416,25 @@ scenario_temp_space() {
     if [[ "$DRY_RUN" -eq 1 ]]; then
         dry_run cargo build -p dexios --release
         dry_run mkdir -p "$src" "$out"
-        dry_run du -sk "$WORK_ROOT"
+        dry_run du -sk "$dir"
         dry_run dd if=/dev/urandom of="$src/blob.bin" bs=1M count=16
         dry_run env DEXIOS_KEY=12345678 "$BIN" pack -f "$src" "$enc"
-        dry_run du -sk "$WORK_ROOT"
+        dry_run du -sk "$dir"
         dry_run env DEXIOS_KEY=12345678 "$BIN" unpack -f "$enc" "$out"
-        dry_run du -sk "$WORK_ROOT"
+        dry_run du -sk "$dir"
         return
     fi
 
     build_cli
     mkdir -p "$src" "$out"
-    run_timed "temp-space before fixture" du -sk "$WORK_ROOT"
+    run_timed "temp-space before fixture" du -sk "$dir"
     run_timed "temp-space fixture" dd if=/dev/urandom of="$src/blob.bin" bs=1M count=16
     run_timed "temp-space pack" env DEXIOS_KEY=12345678 "$BIN" pack -f "$src" "$enc"
-    run_timed "temp-space after pack" du -sk "$WORK_ROOT"
+    run_timed "temp-space after pack" du -sk "$dir"
+    record_temp_space_observed "temp-space after pack" "$dir"
     run_timed "temp-space unpack" env DEXIOS_KEY=12345678 "$BIN" unpack -f "$enc" "$out"
-    run_timed "temp-space after unpack" du -sk "$WORK_ROOT"
+    run_timed "temp-space after unpack" du -sk "$dir"
+    record_temp_space_observed "temp-space after unpack" "$dir"
 }
 
 run_scenario() {
@@ -302,6 +448,7 @@ run_scenario() {
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "Dry run only. Measurement output would be under: target/phase7-measurements/"
+    LOG_PATH=/dev/stdout print_threshold_context
 else
     prepare_real_run
 fi

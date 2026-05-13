@@ -11,6 +11,7 @@ use dexios_domain::pack::{self, DetachedHeaderTarget, PackIntent};
 use dexios_domain::storage::identity::OverwritePolicy;
 
 const PASSWORD: &[u8; 8] = b"12345678";
+const DOMAIN_PACK_RS: &str = include_str!("../src/pack.rs");
 
 fn create_source_dir(root: &Path) -> PathBuf {
     let source_dir = root.join("source");
@@ -18,6 +19,22 @@ fn create_source_dir(root: &Path) -> PathBuf {
     fs::write(source_dir.join("hello.txt"), b"hello").unwrap();
     fs::write(source_dir.join("nested/world.txt"), b"world").unwrap();
     source_dir
+}
+
+#[test]
+fn pack_streaming_source_gate_removes_plaintext_temp_zip_creation() {
+    assert!(
+        DOMAIN_PACK_RS.contains("zip::ZipWriter::new_stream"),
+        "PERF-03 pack must stream ZIP bytes into the encrypted output writer"
+    );
+    assert!(
+        DOMAIN_PACK_RS.contains("pack-side plaintext temporary ZIP exposure reduced"),
+        "PERF-03 pack source must state the implemented exposure outcome"
+    );
+    assert!(
+        !DOMAIN_PACK_RS.contains("create_temp_artifact"),
+        "PERF-03 pack execution must not create a plaintext temporary ZIP artifact"
+    );
 }
 
 fn create_deep_source_file(root: &Path, depth: usize) -> (PathBuf, PathBuf) {

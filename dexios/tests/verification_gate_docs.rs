@@ -33,6 +33,7 @@ const DEXIOS_CORE_LIB_RS: &str = include_str!("../../dexios-core/src/lib.rs");
 const DEXIOS_CORE_KEY_RS: &str = include_str!("../../dexios-core/src/key.rs");
 const DEXIOS_CORE_PROTECTED_RS: &str = include_str!("../../dexios-core/src/protected.rs");
 const DEXIOS_DOMAIN_LIB_RS: &str = include_str!("../../dexios-domain/src/lib.rs");
+const DEXIOS_DOMAIN_PACK_RS: &str = include_str!("../../dexios-domain/src/pack.rs");
 const DEXIOS_DOMAIN_UNPACK_RS: &str = include_str!("../../dexios-domain/src/unpack.rs");
 const DEXIOS_DOMAIN_STORAGE_RS: &str = include_str!("../../dexios-domain/src/storage/mod.rs");
 const DEXIOS_DOMAIN_CLEANUP_RS: &str = include_str!("../../dexios-domain/src/storage/cleanup.rs");
@@ -335,6 +336,25 @@ fn measurement_policy_is_source_gated() {
         "temp-space",
         "target/phase7-measurements",
         "--dry-run",
+        "--max-stream-encrypt-seconds",
+        "--max-stream-decrypt-seconds",
+        "--max-pack-seconds",
+        "--max-unpack-seconds",
+        "--max-temp-space-kib",
+        "DEXIOS_STREAM_ENCRYPT_MAX_SECONDS",
+        "DEXIOS_STREAM_DECRYPT_MAX_SECONDS",
+        "DEXIOS_PACK_MAX_SECONDS",
+        "DEXIOS_UNPACK_MAX_SECONDS",
+        "DEXIOS_TEMP_SPACE_MAX_KIB",
+        "threshold failure",
+        "operation=",
+        "measured_seconds=",
+        "threshold_seconds=",
+        "measured_kib=",
+        "threshold_kib=",
+        "measured_path=",
+        "log_path=$LOG_PATH",
+        "work_root=",
     ] {
         assert_contains(
             "scripts/measure_performance_gate.sh",
@@ -359,6 +379,144 @@ fn measurement_policy_is_source_gated() {
 
     for required in ["VERI-05", "measure_performance_gate.sh", "not applicable"] {
         assert_contains("book/src/Safety-Contract.md", SAFETY_CONTRACT, required);
+    }
+}
+
+#[test]
+fn phase12_performance_and_temp_exposure_contract_is_source_gated() {
+    for required in [
+        "--max-stream-encrypt-seconds",
+        "--max-stream-decrypt-seconds",
+        "--max-pack-seconds",
+        "--max-unpack-seconds",
+        "--max-temp-space-kib",
+        "DEXIOS_STREAM_ENCRYPT_MAX_SECONDS",
+        "DEXIOS_STREAM_DECRYPT_MAX_SECONDS",
+        "DEXIOS_PACK_MAX_SECONDS",
+        "DEXIOS_UNPACK_MAX_SECONDS",
+        "DEXIOS_TEMP_SPACE_MAX_KIB",
+        "threshold failure",
+        "operation=",
+        "measured_seconds=",
+        "threshold_seconds=",
+        "measured_kib=",
+        "threshold_kib=",
+        "log_path=$LOG_PATH",
+        "work_root=",
+    ] {
+        assert_contains(
+            "scripts/measure_performance_gate.sh",
+            MEASURE_PERFORMANCE_GATE,
+            required,
+        );
+    }
+
+    for (line_number, line) in VERIFY_PHASE_GATE.lines().enumerate() {
+        if is_non_comment_line(line) {
+            assert!(
+                !line.contains("measure_performance_gate.sh"),
+                "scripts/verify_phase_gate.sh:{} must keep the focused performance gate out of the default maintainer gate",
+                line_number + 1
+            );
+        }
+    }
+
+    for required in [
+        "focused release gate",
+        "stream encrypt threshold",
+        "stream decrypt threshold",
+        "pack threshold",
+        "unpack threshold",
+        "temp-space threshold",
+        "DEXIOS_STREAM_ENCRYPT_MAX_SECONDS",
+        "DEXIOS_TEMP_SPACE_MAX_KIB",
+        "target/phase7-measurements",
+        "hardware profile",
+        "advisory",
+    ] {
+        assert_contains(
+            "book/src/technical-details/Performance-Notes.md",
+            PERFORMANCE_NOTES,
+            required,
+        );
+    }
+
+    for required in [
+        "Phase 12 measured stream/archive/temp-space thresholds",
+        "focused release gate",
+        "capacity pressure",
+        "best-effort",
+        "does not prove portable free space",
+    ] {
+        assert_contains("book/src/Safety-Contract.md", SAFETY_CONTRACT, required);
+    }
+
+    for required in [
+        "pack-side plaintext temporary ZIP exposure",
+        "unpack-side plaintext temporary ZIP exposure",
+        "ordinary temp-file cleanup",
+        "capacity pressure",
+        "does not prove portable free space",
+    ] {
+        assert_contains(
+            "book/src/technical-details/Directory-Packing.md",
+            DIRECTORY_PACKING,
+            required,
+        );
+    }
+
+    for required in [
+        "Not enough temporary or output storage while packing archive",
+        "Not enough temporary or output storage while unpacking archive",
+        "is_resource_pressure",
+    ] {
+        assert_contains(
+            "dexios/src/subcommands/errors.rs",
+            DEXIOS_SUBCOMMAND_ERRORS_RS,
+            required,
+        );
+    }
+
+    assert_contains(
+        "dexios-domain/src/pack.rs",
+        DEXIOS_DOMAIN_PACK_RS,
+        "pack-side plaintext temporary ZIP exposure reduced",
+    );
+    assert_contains(
+        "dexios-domain/src/unpack.rs",
+        DEXIOS_DOMAIN_UNPACK_RS,
+        "unpack-side plaintext temporary ZIP exposure remains",
+    );
+
+    for required in [
+        "performance thresholds",
+        "capacity-pressure reporting",
+        "pack-side plaintext temporary ZIP exposure",
+        "unpack-side plaintext temporary ZIP exposure remains",
+    ] {
+        assert_contains("CHANGELOG.md", CHANGELOG, required);
+    }
+
+    for (source_name, source) in [
+        ("CHANGELOG.md", CHANGELOG),
+        ("book/src/Safety-Contract.md", SAFETY_CONTRACT),
+        (
+            "book/src/technical-details/Directory-Packing.md",
+            DIRECTORY_PACKING,
+        ),
+        ("book/src/technical-details/Secure-Erase.md", SECURE_ERASE),
+    ] {
+        for forbidden in [
+            "secure erase guarantee",
+            "physical sanitization guarantee",
+            "provides portable free-space proof",
+            "guarantees portable free-space proof",
+            "provides recovery protection",
+            "guarantees recovery protection",
+            "unpack streaming extraction is atomic",
+        ] {
+            assert_not_contains(source_name, source, forbidden);
+        }
     }
 }
 
@@ -532,7 +690,7 @@ fn phase10_domain_api_and_error_cleanup_is_source_gated() {
     for required in [
         "checked `UnpackIntent` state",
         "plaintext temporary ZIP exposure",
-        "does not reduce plaintext temporary ZIP exposure",
+        "does not remove unpack-side plaintext temporary ZIP exposure",
         "they do not prove that the host has enough free memory or disk space",
     ] {
         assert_contains(
@@ -545,9 +703,8 @@ fn phase10_domain_api_and_error_cleanup_is_source_gated() {
     for forbidden in [
         "crash-consistency guarantee",
         "crash consistency guarantee",
-        "temp-space threshold",
-        "performance threshold",
-        "plaintext ZIP exposure reduction",
+        "unpack-side plaintext temporary ZIP exposure eliminated",
+        "eliminates unpack-side plaintext temporary ZIP exposure",
         "secure erase guarantee",
         "physical sanitization guarantee",
         "provides forensic recovery resistance",
@@ -727,7 +884,8 @@ fn phase11_filesystem_transaction_and_cleanup_contract_is_source_gated() {
             "full crash-consistency guarantee",
             "provides power-failure proof",
             "rollback committed outputs",
-            "plaintext ZIP exposure reduction",
+            "unpack-side plaintext temporary ZIP exposure eliminated",
+            "eliminates unpack-side plaintext temporary ZIP exposure",
         ] {
             assert_not_contains(source_name, source, forbidden);
         }
@@ -748,8 +906,8 @@ fn phase11_filesystem_transaction_and_cleanup_contract_is_source_gated() {
         "no secure erase",
         "no physical sanitization",
         "no full power-failure proof",
-        "does not reduce plaintext temporary ZIP exposure",
-        "plaintext temporary ZIP exposure remains, not reduced in Phase 11",
+        "Pack-side plaintext temporary ZIP exposure was reduced in Phase 12",
+        "Unpack-side plaintext temporary ZIP exposure remains",
     ] {
         assert_corpus_contains("Phase 11 documentation corpus", &docs, required);
     }
@@ -776,7 +934,8 @@ fn phase11_filesystem_transaction_and_cleanup_contract_is_source_gated() {
         "no secure erase",
         "no physical sanitization",
         "no full power-failure proof",
-        "Plaintext temporary ZIP exposure remains, not reduced in Phase 11.",
+        "Pack-side plaintext temporary ZIP exposure was reduced in Phase 12.",
+        "Unpack-side plaintext temporary ZIP exposure remains.",
     ] {
         assert_corpus_contains("generated Phase 11 docs", &generated_docs, required);
     }

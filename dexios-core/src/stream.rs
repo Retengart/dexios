@@ -6,7 +6,7 @@
 //! not accept arbitrary caller-supplied AAD for the normal V1 API.
 
 use std::fmt::{Display, Formatter};
-use std::io::{ErrorKind, Read, Write};
+use std::io::{self, ErrorKind, Read, Write};
 
 use aead::{
     KeyInit, Payload,
@@ -182,6 +182,131 @@ impl V1PayloadEncryptor {
         pb.finish_and_clear();
 
         Ok(())
+    }
+}
+
+pub struct V1PayloadEncryptingWriter<W: Write> {
+    encryptor: Option<V1PayloadEncryptor>,
+    writer: Option<W>,
+    buffer: Box<[u8]>,
+    buffered: usize,
+    finished: bool,
+}
+
+impl<W: Write> V1PayloadEncryptingWriter<W> {
+    pub fn new(master_key: MasterKey, header: &V1Header, writer: W) -> Result<Self, StreamError> {
+        Ok(Self {
+            encryptor: Some(V1PayloadEncryptor::new(master_key, header)?),
+            writer: Some(writer),
+            buffer: vec![0u8; BLOCK_SIZE].into_boxed_slice(),
+            buffered: 0,
+            finished: false,
+        })
+    }
+
+    pub fn finish(mut self) -> Result<W, StreamError> {
+        self.finish_payload()?;
+        Ok(self.writer.take().expect("finished writer is present"))
+    }
+
+    fn write_plaintext(&mut self, mut input: &[u8]) -> Result<(), StreamError> {
+        if self.finished {
+            return Err(StreamError::Write(io::Error::new(
+                ErrorKind::BrokenPipe,
+                "V1 payload writer is already finished",
+            )));
+        }
+
+        while !input.is_empty() {
+            let available = BLOCK_SIZE - self.buffered;
+            let take = available.min(input.len());
+            self.buffer[self.buffered..self.buffered + take].copy_from_slice(&input[..take]);
+            self.buffered += take;
+            input = &input[take..];
+
+            if self.buffered == BLOCK_SIZE {
+                self.write_full_buffer()?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn write_full_buffer(&mut self) -> Result<(), StreamError> {
+        let encrypted = match self
+            .encryptor
+            .as_mut()
+            .expect("unfinished writer has encryptor")
+            .encrypt_next(&self.buffer)
+        {
+            Ok(encrypted) => encrypted,
+            Err(error) => {
+                self.buffer.zeroize();
+                self.buffered = 0;
+                return Err(error);
+            }
+        };
+        self.buffer.zeroize();
+        self.buffered = 0;
+        self.writer
+            .as_mut()
+            .expect("unfinished writer is present")
+            .write_all(&encrypted)
+            .map_err(StreamError::Write)
+    }
+
+    fn finish_payload(&mut self) -> Result<(), StreamError> {
+        if self.finished {
+            return Ok(());
+        }
+
+        let encryptor = self
+            .encryptor
+            .take()
+            .expect("unfinished writer has encryptor");
+        let encrypted = match encryptor.encrypt_last(&self.buffer[..self.buffered]) {
+            Ok(encrypted) => encrypted,
+            Err(error) => {
+                self.buffer.zeroize();
+                self.buffered = 0;
+                return Err(error);
+            }
+        };
+        self.buffer.zeroize();
+        self.buffered = 0;
+        let writer = self.writer.as_mut().expect("unfinished writer is present");
+        writer.write_all(&encrypted).map_err(StreamError::Write)?;
+        writer.flush().map_err(StreamError::Flush)?;
+        self.finished = true;
+        Ok(())
+    }
+}
+
+impl<W: Write> Write for V1PayloadEncryptingWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.write_plaintext(buf).map_err(stream_error_to_io)?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.writer
+            .as_mut()
+            .ok_or_else(|| io::Error::new(ErrorKind::BrokenPipe, "V1 payload writer is closed"))?
+            .flush()
+    }
+}
+
+impl<W: Write> Drop for V1PayloadEncryptingWriter<W> {
+    fn drop(&mut self) {
+        self.buffer.zeroize();
+        self.buffered = 0;
+    }
+}
+
+fn stream_error_to_io(error: StreamError) -> io::Error {
+    match error {
+        StreamError::Write(error) | StreamError::Flush(error) => error,
+        error => io::Error::other(error),
     }
 }
 

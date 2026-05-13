@@ -122,6 +122,13 @@ impl std::error::Error for TransactionError {
     }
 }
 
+impl TransactionError {
+    #[must_use]
+    pub fn is_resource_pressure(&self) -> bool {
+        super::error_chain_contains_resource_pressure(self)
+    }
+}
+
 pub(crate) enum StagedWriteError<E> {
     Operation(E),
     Transaction(TransactionError),

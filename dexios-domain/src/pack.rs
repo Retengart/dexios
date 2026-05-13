@@ -1,6 +1,5 @@
 //! This contains the logic for traversing one or more directories, placing
-//! their files into a temporary zip archive, and encrypting that archive. The
-//! temporary zip file is then dropped and deleted by the OS.
+//! their files into a zip archive streamed directly through V1 encryption.
 //!
 //! This is known as "packing" within Dexios.
 //!
@@ -8,10 +7,10 @@
 //! attacker-controlled settings. The Dexios `pack` workflow assumes offline
 //! at-rest archival use, where the user controls the packed input.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::ffi::OsString;
 use std::fs;
-use std::io::{self, BufWriter, Read, Seek, SeekFrom, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 use std::rc::Rc;
 
@@ -30,39 +29,23 @@ use crate::workflow_error::{
     WorkflowErrorClass, classify_identity_error, classify_transaction_error,
 };
 
-trait TempArtifactLike {
-    fn with_reader<T, E>(&self, f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>) -> Result<T, E>;
-    fn with_writer<T, E>(&self, f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>)
-    -> Result<T, E>;
-}
-
-trait ReadSeek: Read + Seek {}
-impl<T: Read + Seek + ?Sized> ReadSeek for T {}
-
-trait WriteSeek: Write + Seek {}
-impl<T: Write + Seek + ?Sized> WriteSeek for T {}
-
-impl TempArtifactLike for crate::storage::TempArtifact {
-    fn with_reader<T, E>(&self, f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>) -> Result<T, E> {
-        crate::storage::TempArtifact::with_reader(self, |file| f(file))
-    }
-
-    fn with_writer<T, E>(
-        &self,
-        f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>,
-    ) -> Result<T, E> {
-        crate::storage::TempArtifact::with_writer(self, |file| f(file))
-    }
-}
-
 #[derive(Debug)]
 pub enum Error {
     CreateArchive,
+    CreateArchiveWithSource(crate::storage::Error),
+    CreateArchiveIoWithSource(io::Error),
     AddDirToArchive,
+    AddDirToArchiveWithSource(zip::result::ZipError),
     AddFileToArchive,
+    AddFileToArchiveWithSource(zip::result::ZipError),
     FinishArchive,
+    FinishArchiveWithSource(zip::result::ZipError),
+    FinishArchiveIoWithSource(io::Error),
     ReadData,
+    ReadDataWithSource(io::Error),
+    ReadDataStorageWithSource(crate::storage::Error),
     WriteData,
+    WriteDataWithSource(io::Error),
     Encrypt(crate::encrypt::Error),
     PathIdentity(IdentityError),
     Transaction(TransactionError),
@@ -70,24 +53,37 @@ pub enum Error {
     ArchiveLimit(ArchiveLimitError),
     ArchiveRootName,
     ReadSource,
+    ReadSourceWithSource(crate::storage::Error),
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::CreateArchive => f.write_str("Unable to create archive"),
-            Error::AddDirToArchive => f.write_str("Unable to add directory to archive"),
-            Error::AddFileToArchive => f.write_str("Unable to add file to archive"),
-            Error::FinishArchive => f.write_str("Unable to finish archive"),
-            Error::ReadData => f.write_str("Unable to read data"),
-            Error::WriteData => f.write_str("Unable to write data"),
+            Error::CreateArchive
+            | Error::CreateArchiveWithSource(_)
+            | Error::CreateArchiveIoWithSource(_) => f.write_str("Unable to create archive"),
+            Error::AddDirToArchive | Error::AddDirToArchiveWithSource(_) => {
+                f.write_str("Unable to add directory to archive")
+            }
+            Error::AddFileToArchive | Error::AddFileToArchiveWithSource(_) => {
+                f.write_str("Unable to add file to archive")
+            }
+            Error::FinishArchive
+            | Error::FinishArchiveWithSource(_)
+            | Error::FinishArchiveIoWithSource(_) => f.write_str("Unable to finish archive"),
+            Error::ReadData
+            | Error::ReadDataWithSource(_)
+            | Error::ReadDataStorageWithSource(_) => f.write_str("Unable to read data"),
+            Error::WriteData | Error::WriteDataWithSource(_) => f.write_str("Unable to write data"),
             Error::Encrypt(inner) => write!(f, "Unable to encrypt archive: {inner}"),
             Error::PathIdentity(inner) => write!(f, "Pack path identity check failed: {inner}"),
             Error::Transaction(inner) => write!(f, "Pack transaction failed: {inner}"),
             Error::TransactionWriter => f.write_str("Unable to release staged pack writers"),
             Error::ArchiveLimit(inner) => write!(f, "Archive limit error: {inner}"),
             Error::ArchiveRootName => f.write_str("Unable to derive archive root names"),
-            Error::ReadSource => f.write_str("Unable to read pack source"),
+            Error::ReadSource | Error::ReadSourceWithSource(_) => {
+                f.write_str("Unable to read pack source")
+            }
         }
     }
 }
@@ -95,6 +91,16 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::CreateArchiveWithSource(error)
+            | Self::ReadDataStorageWithSource(error)
+            | Self::ReadSourceWithSource(error) => Some(error),
+            Self::CreateArchiveIoWithSource(error)
+            | Self::FinishArchiveIoWithSource(error)
+            | Self::ReadDataWithSource(error)
+            | Self::WriteDataWithSource(error) => Some(error),
+            Self::AddDirToArchiveWithSource(error)
+            | Self::AddFileToArchiveWithSource(error)
+            | Self::FinishArchiveWithSource(error) => Some(error),
             Self::Encrypt(error) => Some(error),
             Self::PathIdentity(error) => Some(error),
             Self::Transaction(error) => Some(error),
@@ -113,14 +119,29 @@ impl Error {
             Self::Transaction(error) => classify_transaction_error(error),
             Self::ArchiveLimit(_) | Self::ArchiveRootName => WorkflowErrorClass::UnsafePath,
             Self::CreateArchive
+            | Self::CreateArchiveWithSource(_)
+            | Self::CreateArchiveIoWithSource(_)
             | Self::AddDirToArchive
+            | Self::AddDirToArchiveWithSource(_)
             | Self::AddFileToArchive
+            | Self::AddFileToArchiveWithSource(_)
             | Self::FinishArchive
+            | Self::FinishArchiveWithSource(_)
+            | Self::FinishArchiveIoWithSource(_)
             | Self::ReadData
+            | Self::ReadDataWithSource(_)
+            | Self::ReadDataStorageWithSource(_)
             | Self::WriteData
+            | Self::WriteDataWithSource(_)
             | Self::TransactionWriter
-            | Self::ReadSource => WorkflowErrorClass::IoFailure,
+            | Self::ReadSource
+            | Self::ReadSourceWithSource(_) => WorkflowErrorClass::IoFailure,
         }
+    }
+
+    #[must_use]
+    pub fn is_resource_pressure(&self) -> bool {
+        crate::storage::error_chain_contains_resource_pressure(self)
     }
 }
 
@@ -238,7 +259,7 @@ impl PackIntent {
 struct HandleRequest<'a, SRW, W>
 where
     SRW: Read + Write + Seek,
-    W: Write + Seek,
+    W: Write,
 {
     writer: &'a RefCell<W>,
     entries: Vec<ArchiveSourceEntry<SRW>>,
@@ -292,21 +313,25 @@ pub fn execute_transactional(intent: PackIntent) -> Result<CommitReceipt, Error>
     let detached_header_writer = detached_header_index
         .map(|index| RefCell::new(LinkedStagedWriter::new(Rc::clone(&transaction), index)));
 
-    execute_with_temp_artifact(
-        HandleRequest {
-            entries,
-            archive_policy,
-            writer: &output_writer,
-            header_writer: detached_header_writer.as_ref(),
-            raw_key,
-            kdf,
-        },
-        || {
-            crate::storage::FileStorage
-                .create_temp_artifact()
-                .map_err(|_| Error::CreateArchive)
-        },
-    )?;
+    let pack_result = execute_streaming_archive(HandleRequest {
+        entries,
+        archive_policy,
+        writer: &output_writer,
+        header_writer: detached_header_writer.as_ref(),
+        raw_key,
+        kdf,
+    });
+    if let Err(error) = pack_result {
+        let resource_pressure = output_writer.borrow().resource_pressure_kind().or_else(|| {
+            detached_header_writer
+                .as_ref()
+                .and_then(|writer| writer.borrow().resource_pressure_kind())
+        });
+        return Err(map_encrypt_output_resource_pressure(
+            error,
+            resource_pressure,
+        ));
+    }
 
     drop(output_writer);
     drop(detached_header_writer);
@@ -316,79 +341,76 @@ pub fn execute_transactional(intent: PackIntent) -> Result<CommitReceipt, Error>
     transaction.commit_all().map_err(Error::Transaction)
 }
 
-fn execute_with_temp_artifact<SRW, W, T, F>(
-    req: HandleRequest<'_, SRW, W>,
-    temp_factory: F,
-) -> Result<(), Error>
+fn execute_streaming_archive<SRW, W>(req: HandleRequest<'_, SRW, W>) -> Result<(), Error>
 where
     SRW: Read + Write + Seek,
-    W: Write + Seek,
-    T: TempArtifactLike,
-    F: FnOnce() -> Result<T, Error>,
+    W: Write,
 {
-    // 1. Create zip archive.
-    let tmp_file = temp_factory()?;
-    tmp_file.with_writer(|tmp_writer| {
-        tmp_writer.rewind().map_err(|_| Error::CreateArchive)?;
-        let mut zip_writer = zip::ZipWriter::new(BufWriter::new(tmp_writer));
+    // pack-side plaintext temporary ZIP exposure reduced: ZIP bytes stream
+    // directly into the V1 payload writer for the staged output.
+    let mut output_writer = req.writer.borrow_mut();
+    let encrypting_writer = match req.header_writer {
+        None => {
+            crate::encrypt::begin_v1_payload_writer(&mut *output_writer, None, req.raw_key, req.kdf)
+                .map_err(Error::Encrypt)?
+        }
+        Some(header_writer) => {
+            let mut header_writer = header_writer.borrow_mut();
+            crate::encrypt::begin_v1_payload_writer(
+                &mut *output_writer,
+                Some(&mut *header_writer),
+                req.raw_key,
+                req.kdf,
+            )
+            .map_err(Error::Encrypt)?
+        }
+    };
+    let mut zip_writer = zip::ZipWriter::new_stream(encrypting_writer);
 
-        let options = SimpleFileOptions::default()
-            .compression_method(zip_compression_method(req.archive_policy))
-            .large_file(true)
-            .unix_permissions(0o755);
+    let options = SimpleFileOptions::default()
+        .compression_method(zip_compression_method(req.archive_policy))
+        .large_file(true)
+        .unix_permissions(0o755);
 
-        // 2. Add files to the archive.
-        req.entries.into_iter().try_for_each(|entry| {
-            if entry.source.is_dir() {
+    req.entries.into_iter().try_for_each(|entry| {
+        if entry.source.is_dir() {
+            zip_writer
+                .add_directory_from_path(&entry.archive_path, options)
+                .map_err(Error::AddDirToArchiveWithSource)?;
+        } else {
+            zip_writer
+                .start_file_from_path(&entry.archive_path, options)
+                .map_err(Error::AddFileToArchiveWithSource)?;
+
+            let mut reader = entry
+                .source
+                .try_reader()
+                .map_err(Error::ReadDataStorageWithSource)?
+                .borrow_mut();
+            let mut buffer = vec![0u8; BLOCK_SIZE].into_boxed_slice();
+            loop {
+                let read_count = reader
+                    .read(&mut buffer)
+                    .map_err(Error::ReadDataWithSource)?;
                 zip_writer
-                    .add_directory_from_path(&entry.archive_path, options)
-                    .map_err(|_| Error::AddDirToArchive)?;
-            } else {
-                zip_writer
-                    .start_file_from_path(&entry.archive_path, options)
-                    .map_err(|_| Error::AddFileToArchive)?;
-
-                let mut reader = entry
-                    .source
-                    .try_reader()
-                    .map_err(|_| Error::ReadData)?
-                    .borrow_mut();
-                let mut buffer = vec![0u8; BLOCK_SIZE].into_boxed_slice();
-                loop {
-                    let read_count = reader.read(&mut buffer).map_err(|_| Error::ReadData)?;
-                    zip_writer
-                        .write_all(&buffer[..read_count])
-                        .map_err(|_| Error::WriteData)?;
-                    if read_count != BLOCK_SIZE {
-                        break;
-                    }
+                    .write_all(&buffer[..read_count])
+                    .map_err(Error::WriteDataWithSource)?;
+                if read_count != BLOCK_SIZE {
+                    break;
                 }
             }
+        }
 
-            Ok::<(), Error>(())
-        })?;
-
-        zip_writer.finish().map_err(|_| Error::FinishArchive)?;
         Ok::<(), Error>(())
     })?;
 
-    // 4. Encrypt zip archive
-    let encrypt_res = tmp_file.with_reader(|tmp_reader| {
-        tmp_reader.rewind().map_err(|_| Error::FinishArchive)?;
-        let reader = RefCell::new(tmp_reader);
-        crate::encrypt::execute_handles(crate::encrypt::HandleRequest {
-            reader: &reader,
-            writer: req.writer,
-            header_writer: req.header_writer,
-            raw_key: req.raw_key,
-            kdf: req.kdf,
-        })
+    let encrypting_writer = zip_writer
+        .finish()
+        .map_err(Error::FinishArchiveWithSource)?
+        .into_inner();
+    crate::encrypt::finish_v1_payload_writer(encrypting_writer)
+        .map(|_| ())
         .map_err(Error::Encrypt)
-    });
-
-    drop(tmp_file);
-
-    encrypt_res
 }
 
 fn zip_compression_method(policy: ArchivePolicy) -> zip::CompressionMethod {
@@ -415,11 +437,11 @@ fn materialize_archive_entries_with_limits(
     for source_root in sources {
         let file = stor
             .read_file(source_root.target.target_path())
-            .map_err(|_| Error::ReadSource)?;
+            .map_err(Error::ReadSourceWithSource)?;
         let root_path = file.path().to_path_buf();
 
         if file.is_dir() {
-            let files = stor.read_dir(&file).map_err(|_| Error::ReadSource)?;
+            let files = stor.read_dir(&file).map_err(Error::ReadSourceWithSource)?;
             for source in files {
                 let relative = source
                     .path()
@@ -654,11 +676,20 @@ fn archive_root_names(inputs: &[PathBuf]) -> Result<Vec<PathBuf>, Error> {
 struct LinkedStagedWriter {
     transaction: Rc<RefCell<LinkedOutputTransaction>>,
     index: usize,
+    resource_pressure: Cell<Option<io::ErrorKind>>,
 }
 
 impl LinkedStagedWriter {
     fn new(transaction: Rc<RefCell<LinkedOutputTransaction>>, index: usize) -> Self {
-        Self { transaction, index }
+        Self {
+            transaction,
+            index,
+            resource_pressure: Cell::new(None),
+        }
+    }
+
+    fn resource_pressure_kind(&self) -> Option<io::ErrorKind> {
+        self.resource_pressure.get()
     }
 
     fn with_staged_file<T>(
@@ -669,7 +700,13 @@ impl LinkedStagedWriter {
         let staged = transaction
             .staged_output_mut(self.index)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "missing staged pack output"))?;
-        staged.with_writer(write).map_err(transaction_to_io_error)
+        staged.with_writer(write).map_err(|error| {
+            let error = transaction_to_io_error(error);
+            if let Some(kind) = crate::storage::resource_pressure_kind_in_error_chain(&error) {
+                self.resource_pressure.set(Some(kind));
+            }
+            error
+        })
     }
 }
 
@@ -690,84 +727,38 @@ impl Seek for LinkedStagedWriter {
 }
 
 fn transaction_to_io_error(error: TransactionError) -> io::Error {
-    io::Error::other(error.to_string())
+    io::Error::other(error)
+}
+
+fn map_encrypt_output_resource_pressure(
+    error: Error,
+    resource_pressure: Option<io::ErrorKind>,
+) -> Error {
+    match (&error, resource_pressure) {
+        (
+            Error::Encrypt(
+                crate::encrypt::Error::EncryptFile
+                | crate::encrypt::Error::WriteHeader
+                | crate::encrypt::Error::ResetCursorPosition,
+            ),
+            Some(kind),
+        ) => Error::WriteDataWithSource(io::Error::from(kind)),
+        (Error::FinishArchiveWithSource(_) | Error::WriteDataWithSource(_), Some(kind)) => {
+            Error::WriteDataWithSource(io::Error::from(kind))
+        }
+        _ => error,
+    }
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use std::cell::Cell;
-    use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
-    use std::rc::Rc;
+    use std::io::{Cursor, Read, Seek};
     use std::sync::Arc;
 
     use crate::archive::{ArchiveLimitKind, ArchiveLimits, ArchivePolicy};
     use crate::encrypt::tests::PASSWORD;
     use crate::storage::{InMemoryStorage, Storage};
-
-    struct DropTrackingTempArtifact {
-        cursor: RefCell<Cursor<Vec<u8>>>,
-        dropped: Rc<Cell<bool>>,
-    }
-
-    impl DropTrackingTempArtifact {
-        fn new(dropped: Rc<Cell<bool>>) -> Self {
-            Self {
-                cursor: RefCell::new(Cursor::new(Vec::new())),
-                dropped,
-            }
-        }
-    }
-
-    impl Drop for DropTrackingTempArtifact {
-        fn drop(&mut self) {
-            self.dropped.set(true);
-        }
-    }
-
-    impl TempArtifactLike for DropTrackingTempArtifact {
-        fn with_reader<T, E>(
-            &self,
-            f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>,
-        ) -> Result<T, E> {
-            f(&mut *self.cursor.borrow_mut())
-        }
-
-        fn with_writer<T, E>(
-            &self,
-            f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>,
-        ) -> Result<T, E> {
-            f(&mut *self.cursor.borrow_mut())
-        }
-    }
-
-    struct FailingWriteSeek {
-        cursor: Cursor<Vec<u8>>,
-    }
-
-    impl FailingWriteSeek {
-        fn new() -> Self {
-            Self {
-                cursor: Cursor::new(Vec::new()),
-            }
-        }
-    }
-
-    impl Write for FailingWriteSeek {
-        fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
-            Err(io::Error::other("injected write failure"))
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-
-    impl Seek for FailingWriteSeek {
-        fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-            self.cursor.seek(pos)
-        }
-    }
 
     #[allow(dead_code)]
     pub(crate) const ENCRYPTED_PACKED_BAR_DIR: [u8; 1202] = [
@@ -857,11 +848,7 @@ pub(crate) mod tests {
             kdf: Kdf::Blake3Balloon,
         };
 
-        match execute_with_temp_artifact(req, || {
-            crate::storage::FileStorage
-                .create_temp_artifact()
-                .map_err(|_| Error::CreateArchive)
-        }) {
+        match execute_streaming_archive(req) {
             Ok(()) => {
                 let reader = &mut *output_file.try_writer().unwrap().borrow_mut();
                 reader.rewind().unwrap();
@@ -878,33 +865,6 @@ pub(crate) mod tests {
             }
             _ => unreachable!(),
         }
-    }
-
-    #[test]
-    fn pack_arch_04_d16_temp_cleanup_on_encrypt_failure_drops_plaintext_temp_artifact() {
-        let stor = InMemoryStorage::default();
-        stor.add_hello_txt();
-        let output_writer = RefCell::new(FailingWriteSeek::new());
-        let dropped = Rc::new(Cell::new(false));
-        let dropped_for_factory = Rc::clone(&dropped);
-        let req = HandleRequest {
-            entries: vec![ArchiveSourceEntry {
-                source: stor.read_file("hello.txt").unwrap(),
-                archive_path: PathBuf::from("hello.txt"),
-            }],
-            archive_policy: ArchivePolicy::default(),
-            writer: &output_writer,
-            header_writer: None,
-            raw_key: Protected::new(PASSWORD.to_vec()),
-            kdf: Kdf::Blake3Balloon,
-        };
-
-        let result = execute_with_temp_artifact(req, || {
-            Ok(DropTrackingTempArtifact::new(dropped_for_factory))
-        });
-
-        assert!(result.is_err());
-        assert!(dropped.get(), "plaintext temp artifact should be dropped");
     }
 
     fn small_archive_limits(

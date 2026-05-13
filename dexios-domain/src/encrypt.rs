@@ -11,7 +11,7 @@ use core::header::v1::{V1Header, V1Keyslot, V1Keyslots};
 use core::kdf::Kdf;
 use core::primitives::{MasterKey, WrappingKey, gen_keyslot_nonce, gen_payload_nonce};
 use core::protected::Protected;
-use core::stream::V1PayloadStream;
+use core::stream::{StreamError, V1PayloadEncryptingWriter, V1PayloadStream};
 
 use crate::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
@@ -146,6 +146,7 @@ impl EncryptIntent {
 // Private crate adapter for legacy in-memory callers. Public encrypt workflows
 // must use `EncryptIntent` so path identity and transaction checks cannot be
 // bypassed by caller-owned final writers.
+#[cfg(test)]
 pub(crate) struct HandleRequest<'a, R, W>
 where
     R: Read + Seek,
@@ -158,6 +159,7 @@ where
     pub(crate) kdf: Kdf,
 }
 
+#[cfg(test)]
 pub(crate) fn execute_handles<R, W>(req: HandleRequest<'_, R, W>) -> Result<(), Error>
 where
     R: Read + Seek,
@@ -199,6 +201,37 @@ where
     }
 
     encrypt_payload(reader, &mut *writer.borrow_mut(), master_key, &header)
+}
+
+pub(crate) fn begin_v1_payload_writer<'a, W>(
+    writer: &'a mut W,
+    header_writer: Option<&mut dyn Write>,
+    raw_key: Protected<Vec<u8>>,
+    kdf: Kdf,
+) -> Result<V1PayloadEncryptingWriter<&'a mut W>, Error>
+where
+    W: Write,
+{
+    let (header, master_key) = build_v1_encryption_state(raw_key, kdf)?;
+    let header_bytes = header.serialize().map_err(|_| Error::WriteHeader)?;
+
+    match header_writer {
+        None => writer
+            .write_all(&header_bytes)
+            .map_err(|_| Error::WriteHeader)?,
+        Some(header_writer) => header_writer
+            .write_all(&header_bytes)
+            .map_err(|_| Error::WriteHeader)?,
+    }
+
+    V1PayloadEncryptingWriter::new(master_key, &header, writer).map_err(map_stream_error)
+}
+
+pub(crate) fn finish_v1_payload_writer<W>(writer: V1PayloadEncryptingWriter<W>) -> Result<W, Error>
+where
+    W: Write,
+{
+    writer.finish().map_err(map_stream_error)
 }
 
 pub fn execute(intent: EncryptIntent) -> Result<CommitReceipt, Error> {
@@ -322,6 +355,20 @@ where
         .map_err(|_| Error::EncryptFile)?;
 
     Ok(())
+}
+
+fn map_stream_error(error: StreamError) -> Error {
+    match error {
+        StreamError::InvalidNonceLength(_) => Error::InitializeStreams,
+        StreamError::CipherInit => Error::InitializeChiphers,
+        StreamError::Write(_)
+        | StreamError::Flush(_)
+        | StreamError::Read(_)
+        | StreamError::Authentication
+        | StreamError::TruncatedCiphertext
+        | StreamError::MissingFinalBlock
+        | StreamError::FinalBlockAuthentication => Error::EncryptFile,
+    }
 }
 
 fn map_header_transaction_error(error: TransactionError) -> Error {

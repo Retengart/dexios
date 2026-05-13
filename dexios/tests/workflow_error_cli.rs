@@ -157,6 +157,11 @@ fn cli_workflow_errors_are_routed_through_mapping_helpers() {
     assert!(ERRORS_SOURCE.contains("map_decrypt_error"));
     assert!(ERRORS_SOURCE.contains("map_pack_error"));
     assert!(ERRORS_SOURCE.contains("map_unpack_error"));
+    assert!(ERRORS_SOURCE.contains("Not enough temporary or output storage while packing archive"));
+    assert!(
+        ERRORS_SOURCE.contains("Not enough temporary or output storage while unpacking archive")
+    );
+    assert!(ERRORS_SOURCE.contains("error.is_resource_pressure()"));
     assert!(ERRORS_SOURCE.contains("map_header_error"));
     assert!(ERRORS_SOURCE.contains("map_key_error"));
     assert!(ERRORS_SOURCE.contains("WorkflowErrorClass::TransactionCommitFailure"));

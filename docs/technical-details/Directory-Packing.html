@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-c86ac640.js";
+            window.path_to_searchindex_js = "../searchindex-80ef0646.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-532d5d21.js"></script>
@@ -175,7 +175,9 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h2 id="directory-packing"><a class="header" href="#directory-packing">Directory Packing</a></h2>
-<p><code>pack</code> creates a temporary zip archive and then encrypts that archive with the normal Dexios file-encryption flow. <code>unpack</code> performs the reverse operation.</p>
+<p><code>pack</code> writes ZIP archive bytes directly into the normal Dexios V1 encrypted
+payload stream. <code>unpack</code> performs the reverse operation through a decrypted
+temporary ZIP so it can validate archive metadata before committing outputs.</p>
 <p>The resulting encrypted file is still just a Dexios-encrypted blob. After decryption, the packed payload is an ordinary zip archive.</p>
 <h2 id="current-cli-behavior"><a class="header" href="#current-cli-behavior">Current CLI Behavior</a></h2>
 <p>The current CLI accepts one or more input directories:</p>
@@ -194,17 +196,14 @@ compression policy.</p>
 <li>excludes the output file and detached header path from being re-packed</li>
 <li>materializes the directory and file entry list in memory</li>
 <li>checks the shared <code>ArchiveLimits</code> structural policy</li>
-<li>creates an ordinary plaintext temporary zip artifact</li>
-<li>writes directory and file entries into the archive</li>
-<li>encrypts the temporary archive using the same V1 stream encryption path used for normal files</li>
+<li>writes directory and file entries through <code>ZipWriter::new_stream</code></li>
+<li>encrypts those ZIP bytes using the same V1 stream encryption path used for normal files</li>
 <li>commits the final encrypted output and detached header through staged storage transaction semantics</li>
-<li>drops the temporary archive</li>
 </ol>
-<p>The temporary zip artifact contains plaintext source data while it exists. It is
-an ordinary temporary file used as workflow scratch space. Dexios relies on
-normal drop/delete cleanup for that artifact and does not treat it as secure
-erase, sanitization, local temp-storage isolation, or recovery protection after
-host storage inspection.</p>
+<p>Phase 12 reduced pack-side plaintext temporary ZIP exposure. Pack still
+materializes the entry list and streams file contents through the ZIP writer,
+but it no longer creates a separate plaintext temporary ZIP artifact before
+encryption.</p>
 <p>Storage transaction semantics here mean same-directory temporary files and
 staged flush/sync/persist before final placement. Dexios writes staged outputs,
 flushes them, calls <code>File::sync_all</code>, and then uses
@@ -232,10 +231,11 @@ metadata as stable compatibility behavior.</p>
 writing begins. Unpack checks entry count before metadata scanning, and checks
 each normalized archive path before prompts, staging, or writes.</p>
 <p>These are structural limits, not storage-capacity guarantees. Large directory
-trees and archives still require enough memory, temp storage, and final output
-space for the materialized entry lists, plaintext temporary ZIP, encrypted
-output, and extracted files. Dexios does not perform a robust OS capacity proof
-before starting the workflow.</p>
+trees and archives still require enough memory and output space for materialized
+entry lists, encrypted output, and extracted files. Unpack also requires
+temporary space for the decrypted plaintext ZIP. Dexios uses best-effort
+capacity pressure reporting where the platform preserves the source error, but
+it does not prove portable free space before starting the workflow.</p>
 <p>The current model is bounded by indexing: pack materializes entries before
 writing, and unpack pre-scans ZIP metadata, collision sets, and selected targets
 before transaction commit. It is not a streaming archive redesign.</p>
@@ -264,10 +264,11 @@ and transaction commit behavior.</p>
 <ul>
 <li>Packing hides original directory layout inside the encrypted payload, but the outer ciphertext still leaks overall file size.</li>
 <li>Unpack should still be treated as a risky operation on untrusted input, even though the current implementation has explicit path identity and path-safety checks.</li>
-<li>The temporary decrypted archive is plaintext while it exists.</li>
-<li>Checked unpack construction makes the public API harder to bypass; it does not reduce plaintext temporary ZIP exposure or add a capacity proof.</li>
-<li>Plaintext temporary ZIP exposure remains, not reduced in Phase 11.</li>
+<li>Pack-side plaintext temporary ZIP exposure is reduced because pack streams ZIP bytes into V1 encryption instead of writing a plaintext ZIP scratch file.</li>
+<li>Unpack-side plaintext temporary ZIP exposure remains. The temporary decrypted archive is plaintext while it exists and is handled as ordinary temp-file cleanup.</li>
+<li>Checked unpack construction makes the public API harder to bypass; it does not remove unpack-side plaintext temporary ZIP exposure or add a capacity proof.</li>
 <li>Byte and storage needs are real operating assumptions. The structural limits bound archive metadata shape; they do not prove that the host has enough free memory or disk space.</li>
+<li>capacity pressure messages are best-effort diagnostics from preserved IO sources; they are not a portable capacity preflight.</li>
 <li>Delete-source cleanup after successful pack or unpack remains ordinary delete-after-success cleanup, not sanitization.</li>
 </ul>
 

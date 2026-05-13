@@ -116,6 +116,42 @@ impl std::error::Error for Error {
     }
 }
 
+impl Error {
+    #[must_use]
+    pub fn is_resource_pressure(&self) -> bool {
+        error_chain_contains_resource_pressure(self)
+    }
+}
+
+pub(crate) fn error_chain_contains_resource_pressure(
+    error: &(dyn std::error::Error + 'static),
+) -> bool {
+    resource_pressure_kind_in_error_chain(error).is_some()
+}
+
+pub(crate) fn resource_pressure_kind_in_error_chain(
+    mut error: &(dyn std::error::Error + 'static),
+) -> Option<io::ErrorKind> {
+    loop {
+        if let Some(io_error) = error.downcast_ref::<io::Error>() {
+            let kind = io_error.kind();
+            if is_resource_pressure_kind(kind) {
+                return Some(kind);
+            }
+        }
+
+        let source = error.source()?;
+        error = source;
+    }
+}
+
+fn is_resource_pressure_kind(kind: io::ErrorKind) -> bool {
+    matches!(
+        kind,
+        io::ErrorKind::StorageFull | io::ErrorKind::QuotaExceeded | io::ErrorKind::FileTooLarge
+    )
+}
+
 pub trait Storage<RW>: Send + Sync
 where
     RW: Read + Write + Seek,

@@ -2,8 +2,12 @@
 //! each file to the target directory.
 //!
 //! This is known as "unpacking" within Dexios.
+//!
+//! unpack-side plaintext temporary ZIP exposure remains: unpack keeps the
+//! seekable temp ZIP so metadata validation, duplicate detection, selection,
+//! path revalidation, and staged commits all happen before final outputs commit.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs;
@@ -49,12 +53,67 @@ impl TempArtifactLike for storage::TempArtifact {
     }
 }
 
+struct ResourcePressureTrackingWriter<'a> {
+    inner: &'a mut dyn WriteSeek,
+    resource_pressure: &'a Cell<Option<io::ErrorKind>>,
+}
+
+impl<'a> ResourcePressureTrackingWriter<'a> {
+    fn new(
+        inner: &'a mut dyn WriteSeek,
+        resource_pressure: &'a Cell<Option<io::ErrorKind>>,
+    ) -> Self {
+        Self {
+            inner,
+            resource_pressure,
+        }
+    }
+
+    fn record(&self, error: &io::Error) {
+        if let Some(kind) = storage::resource_pressure_kind_in_error_chain(error) {
+            self.resource_pressure.set(Some(kind));
+        }
+    }
+}
+
+impl Write for ResourcePressureTrackingWriter<'_> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let result = self.inner.write(buf);
+        if let Err(error) = &result {
+            self.record(error);
+        }
+        result
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        let result = self.inner.flush();
+        if let Err(error) = &result {
+            self.record(error);
+        }
+        result
+    }
+}
+
+impl Seek for ResourcePressureTrackingWriter<'_> {
+    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+        let result = self.inner.seek(pos);
+        if let Err(error) = &result {
+            self.record(error);
+        }
+        result
+    }
+}
+
 #[derive(Debug)]
 pub enum Error {
     WriteData,
+    WriteDataWithSource(io::Error),
     OpenArchive,
+    OpenArchiveWithSource(zip::result::ZipError),
     OpenArchivedFile,
+    OpenArchivedFileWithSource(zip::result::ZipError),
     ResetCursorPosition,
+    ResetCursorPositionWithSource(io::Error),
     UnsafeOutputPath(PathBuf),
     DuplicateOutputPath(PathBuf),
     ArchiveLimit(ArchiveLimitError),
@@ -68,10 +127,16 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::WriteData => f.write_str("Unable to write data"),
-            Error::OpenArchive => f.write_str("Unable to open archive"),
-            Error::OpenArchivedFile => f.write_str("Unable to open archived file"),
-            Error::ResetCursorPosition => f.write_str("Unable to reset cursor position"),
+            Error::WriteData | Error::WriteDataWithSource(_) => f.write_str("Unable to write data"),
+            Error::OpenArchive | Error::OpenArchiveWithSource(_) => {
+                f.write_str("Unable to open archive")
+            }
+            Error::OpenArchivedFile | Error::OpenArchivedFileWithSource(_) => {
+                f.write_str("Unable to open archived file")
+            }
+            Error::ResetCursorPosition | Error::ResetCursorPositionWithSource(_) => {
+                f.write_str("Unable to reset cursor position")
+            }
             Error::UnsafeOutputPath(path) => {
                 write!(f, "Unsafe output path: {}", path.display())
             }
@@ -95,6 +160,12 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::WriteDataWithSource(error) | Self::ResetCursorPositionWithSource(error) => {
+                Some(error)
+            }
+            Self::OpenArchiveWithSource(error) | Self::OpenArchivedFileWithSource(error) => {
+                Some(error)
+            }
             Self::ArchiveLimit(error) => Some(error),
             Self::Storage(error) => Some(error),
             Self::PathIdentity(error) => Some(error),
@@ -112,14 +183,25 @@ impl Error {
             Self::UnsafeOutputPath(_) | Self::DuplicateOutputPath(_) | Self::ArchiveLimit(_) => {
                 WorkflowErrorClass::UnsafePath
             }
-            Self::OpenArchive | Self::OpenArchivedFile => WorkflowErrorClass::MalformedFormat,
+            Self::OpenArchive
+            | Self::OpenArchiveWithSource(_)
+            | Self::OpenArchivedFile
+            | Self::OpenArchivedFileWithSource(_) => WorkflowErrorClass::MalformedFormat,
             Self::Decrypt(error) => error.workflow_class(),
             Self::Storage(error) => classify_storage_error(error),
             Self::PathIdentity(error) => classify_identity_error(error),
             Self::Transaction(error) => classify_transaction_error(error),
-            Self::WriteData | Self::ResetCursorPosition => WorkflowErrorClass::IoFailure,
+            Self::WriteData
+            | Self::WriteDataWithSource(_)
+            | Self::ResetCursorPosition
+            | Self::ResetCursorPositionWithSource(_) => WorkflowErrorClass::IoFailure,
             Self::OnZipFile(_) => WorkflowErrorClass::Other,
         }
+    }
+
+    #[must_use]
+    pub fn is_resource_pressure(&self) -> bool {
+        storage::error_chain_contains_resource_pressure(self)
     }
 }
 
@@ -305,23 +387,33 @@ where
                 source,
             })
         })?;
-        let writer = RefCell::new(tmp_writer);
-        decrypt::execute_handles(decrypt::HandleRequest {
+        let resource_pressure = Cell::new(None);
+        let writer = RefCell::new(ResourcePressureTrackingWriter::new(
+            tmp_writer,
+            &resource_pressure,
+        ));
+        let result = decrypt::execute_handles(decrypt::HandleRequest {
             header_reader: req.header_reader,
             reader: req.reader,
             writer: &writer,
             raw_key: req.raw_key,
             on_decrypted_header: req.on_decrypted_header,
-        })
-        .map_err(Error::Decrypt)
+        });
+        match (result, resource_pressure.get()) {
+            (Ok(()), _) => Ok(()),
+            (Err(decrypt::Error::WriteData), Some(kind)) => {
+                Err(Error::WriteDataWithSource(io::Error::from(kind)))
+            }
+            (Err(error), _) => Err(Error::Decrypt(error)),
+        }
     })?;
 
     // 3. Recover files from temp archive.
     let receipt = tmp_file.with_reader(|tmp_reader| {
         tmp_reader
             .rewind()
-            .map_err(|_| Error::ResetCursorPosition)?;
-        let mut archive = zip::ZipArchive::new(tmp_reader).map_err(|_| Error::OpenArchive)?;
+            .map_err(Error::ResetCursorPositionWithSource)?;
+        let mut archive = zip::ZipArchive::new(tmp_reader).map_err(Error::OpenArchiveWithSource)?;
 
         let (output_dir, entities) = prepare_extraction_entities(
             &stor,
@@ -374,7 +466,7 @@ fn prepare_extraction_entities<R: Read + Seek>(
     let mut scanned_entries = Vec::new();
     let mut archive_paths = ArchivePathTree::default();
     for i in 0..archive.len() {
-        let zip_file = archive.by_index(i).map_err(|_| Error::OpenArchive)?;
+        let zip_file = archive.by_index(i).map_err(Error::OpenArchiveWithSource)?;
         let Some(path) = zip_file.enclosed_name() else {
             return Err(Error::UnsafeOutputPath(PathBuf::from(zip_file.name())));
         };
@@ -489,7 +581,7 @@ fn stage_extracted_file<R: Read + Seek>(
         })?;
     let mut zip_file = archive
         .by_index(entity.archive_index)
-        .map_err(|_| Error::OpenArchivedFile)?;
+        .map_err(Error::OpenArchivedFileWithSource)?;
     staged
         .with_writer(|writer| io::copy(&mut zip_file, writer).map(|_| ()))
         .map_err(Error::Transaction)

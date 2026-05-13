@@ -56,6 +56,10 @@ fn assert_encrypt_source(error: encrypt::Error, class: WorkflowErrorClass, label
     assert_source(&error, label);
 }
 
+fn storage_full() -> io::Error {
+    io::Error::from(io::ErrorKind::StorageFull)
+}
+
 fn assert_decrypt_source(error: decrypt::Error, class: WorkflowErrorClass, label: &str) {
     assert_eq!(error.workflow_class(), class);
     assert_source(&error, label);
@@ -189,6 +193,60 @@ fn storage_errors_preserve_io_sources() {
         unreachable!("wrapped storage fixture must stay storage-backed");
     };
     assert_source(inner, "storage::Error IO failure");
+}
+
+#[test]
+fn resource_pressure_helpers_detect_storage_full_source_chains() {
+    let storage_error = storage::Error::CreateFileWithSource(storage_full());
+    assert!(storage_error.is_resource_pressure());
+
+    let transaction_error = TransactionError::Write {
+        path: path("packed.out"),
+        source: Some(storage_full()),
+    };
+    assert!(transaction_error.is_resource_pressure());
+
+    let pack_error = pack::Error::Transaction(transaction_error);
+    assert_eq!(pack_error.workflow_class(), WorkflowErrorClass::IoFailure);
+    assert!(pack_error.is_resource_pressure());
+
+    let pack_temp_error = pack::Error::WriteDataWithSource(storage_full());
+    assert_eq!(
+        pack_temp_error.workflow_class(),
+        WorkflowErrorClass::IoFailure
+    );
+    assert!(pack_temp_error.is_resource_pressure());
+
+    let unpack_error = unpack::Error::Storage(storage::Error::CreateFileWithSource(storage_full()));
+    assert_eq!(unpack_error.workflow_class(), WorkflowErrorClass::IoFailure);
+    assert!(unpack_error.is_resource_pressure());
+
+    let unpack_commit_error = unpack::Error::Transaction(TransactionError::Persist {
+        path: path("unpacked.out"),
+        source: Some(storage_full()),
+    });
+    assert_eq!(
+        unpack_commit_error.workflow_class(),
+        WorkflowErrorClass::TransactionCommitFailure
+    );
+    assert!(unpack_commit_error.is_resource_pressure());
+}
+
+#[test]
+fn resource_pressure_helpers_do_not_relabel_format_or_authentication_errors() {
+    let malformed = unpack::Error::OpenArchive;
+    assert_eq!(
+        malformed.workflow_class(),
+        WorkflowErrorClass::MalformedFormat
+    );
+    assert!(!malformed.is_resource_pressure());
+
+    let authentication = unpack::Error::Decrypt(decrypt::Error::DecryptData);
+    assert_eq!(
+        authentication.workflow_class(),
+        WorkflowErrorClass::AuthenticationFailure
+    );
+    assert!(!authentication.is_resource_pressure());
 }
 
 #[test]
