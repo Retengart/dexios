@@ -153,6 +153,7 @@ fn decrypt_error_classification_keeps_format_key_auth_io_and_transaction_distinc
             role: PathRole::Output,
             path: PathBuf::from("plain.out"),
         },
+        source: None,
     });
 
     assert_eq!(

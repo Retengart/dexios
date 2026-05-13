@@ -14,6 +14,7 @@ fn path(name: &str) -> PathBuf {
 fn transaction_commit_error() -> TransactionError {
     TransactionError::Persist {
         path: path("target.dexios"),
+        source: None,
     }
 }
 
@@ -70,6 +71,7 @@ fn header_operation_error_classes_are_typed_not_display_derived() {
     let identity_io = header::Error::PathIdentity(IdentityError::Io(io::ErrorKind::NotFound));
     let transaction_io = header::Error::Transaction(TransactionError::Write {
         path: path("target.dexios"),
+        source: None,
     });
     let transaction_commit = header::Error::Transaction(transaction_commit_error());
     let partial_commit = header::Error::Transaction(TransactionError::PartialCommit {
@@ -78,6 +80,7 @@ fn header_operation_error_classes_are_typed_not_display_derived() {
             role: PathRole::MutationTarget,
             path: path("target.dexios"),
         },
+        source: None,
     });
 
     assert_eq!(

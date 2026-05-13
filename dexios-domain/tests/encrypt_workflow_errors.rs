@@ -172,6 +172,7 @@ fn encrypt_error_classification_keeps_actionable_failure_classes() {
             role: dexios_domain::storage::identity::PathRole::Output,
             path: PathBuf::from("ciphertext.dexios"),
         },
+        source: None,
     });
 
     assert_eq!(

@@ -100,9 +100,9 @@ impl NamedStagedOutput {
         write: impl FnOnce(&mut std_fs::File) -> io::Result<T>,
     ) -> Result<T, TransactionError> {
         self.with_writer_result(write).map_err(|error| match error {
-            StagedWriteError::Operation(_) => TransactionError::Write {
+            StagedWriteError::Operation(source) => TransactionError::Write {
                 path: self.target.target_path().to_path_buf(),
-                source: None,
+                source: Some(source),
             },
             StagedWriteError::Transaction(error) => error,
         })
@@ -143,9 +143,9 @@ impl NamedStagedOutput {
         })?;
         file.as_file_mut()
             .flush()
-            .map_err(|_| TransactionError::Flush {
+            .map_err(|source| TransactionError::Flush {
                 path: self.target.target_path().to_path_buf(),
-                source: None,
+                source: Some(source),
             })?;
         self.flushed = true;
         Ok(())
@@ -163,9 +163,9 @@ impl NamedStagedOutput {
         })?;
         file.as_file()
             .sync_all()
-            .map_err(|_| TransactionError::Sync {
+            .map_err(|source| TransactionError::Sync {
                 path: self.target.target_path().to_path_buf(),
-                source: None,
+                source: Some(source),
             })?;
         self.synced = true;
         Ok(())
@@ -217,9 +217,9 @@ impl NamedStagedOutput {
             Some(OverwritePolicy::ReplaceAtCommit) => file.persist(&path),
             None => return Err(TransactionError::Persist { path, source: None }),
         }
-        .map_err(|_| TransactionError::Persist {
+        .map_err(|error| TransactionError::Persist {
             path: path.clone(),
-            source: None,
+            source: Some(error.error),
         })?;
 
         Ok(CommittedArtifact { role, path })
