@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use dexios_domain::storage::identity::{
@@ -54,6 +55,28 @@ fn assert_alias(result: Result<impl std::fmt::Debug, IdentityError>) {
         matches!(result, Err(IdentityError::AliasedPath { .. })),
         "expected AliasedPath, got {result:?}"
     );
+}
+
+fn assert_identity_source_kind(error: &IdentityError, expected: ErrorKind) {
+    let source = std::error::Error::source(error)
+        .expect("identity IO error must preserve an io::Error source");
+    let source = source
+        .downcast_ref::<std::io::Error>()
+        .expect("identity error source must be std::io::Error");
+    assert_eq!(source.kind(), expected);
+}
+
+#[test]
+fn identity_io_failures_preserve_sources_for_missing_existing_paths() {
+    let test_dir = TestDir::new("path-identity-source");
+    let missing = test_dir.path().join("missing-input.txt");
+
+    let mut graph = PathIdentityGraph::new();
+    let error = graph
+        .add_existing(&missing, PathRole::Input)
+        .expect_err("missing existing input must fail");
+
+    assert_identity_source_kind(&error, ErrorKind::NotFound);
 }
 
 #[test]
