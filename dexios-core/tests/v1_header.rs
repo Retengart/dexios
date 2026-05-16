@@ -63,7 +63,7 @@ fn decode_hex_fixture(path: &str) -> Vec<u8> {
 }
 
 #[test]
-fn serializes_v1_header_to_canonical_length() {
+fn serializes_canonical_v1_header_to_canonical_length() {
     let header = support::sample_v1_header();
     let bytes = header.serialize().unwrap();
 
@@ -293,7 +293,7 @@ fn serializes_sample_v1_header_to_exact_bytes() {
 }
 
 #[test]
-fn fixture_v1_valid_single_keyslot_is_not_canonical_length() {
+fn obsolete_current_v1_valid_single_keyslot_is_rejection_evidence() {
     let path = fixture_path("v1_valid_single_keyslot.hex");
     let original_bytes = decode_hex_fixture(&path);
 
@@ -304,7 +304,7 @@ fn fixture_v1_valid_single_keyslot_is_not_canonical_length() {
 }
 
 #[test]
-fn fixture_v1_malformed_reserved_byte_is_rejected() {
+fn retired_current_v1_malformed_reserved_byte_is_rejection_evidence() {
     let path = fixture_path("v1_malformed_reserved_byte.hex");
     let bytes = decode_hex_fixture(&path);
     let error = dexios_core::header::read_header(&mut std::io::Cursor::new(&bytes))
@@ -332,7 +332,7 @@ fn creates_exact_aad_bytes_for_sample_v1_header() {
 }
 
 #[test]
-fn detached_v1_header_bytes_are_exactly_canonical_length() {
+fn detached_canonical_v1_header_bytes_are_exactly_canonical_length() {
     let header = support::sample_v1_header();
     let bytes = header.serialize().unwrap();
     assert_eq!(bytes.len(), HEADER_LEN);
@@ -392,6 +392,124 @@ fn read_header_rejects_truncated_header() {
         error,
         dexios_core::header::HeaderReadError::TruncatedHeader
     ));
+}
+
+#[test]
+fn parser_table_rejects_canonical_v1_malformed_metadata_by_variant() {
+    fn read_header_error(bytes: &[u8]) -> HeaderReadError {
+        dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
+            .expect_err("parser table case should reject malformed input")
+    }
+
+    fn retired_current_v1() -> Vec<u8> {
+        let path = fixture_path("v1_valid_single_keyslot.hex");
+        decode_hex_fixture(&path)
+    }
+
+    let canonical = support::sample_v1_header().serialize().unwrap();
+    let mut malformed_discriminator = canonical.clone();
+    malformed_discriminator[7] = b'X';
+    let mut malformed_schema = canonical.clone();
+    malformed_schema[10] = 0x02;
+    let mut malformed_reserved = canonical.clone();
+    malformed_reserved[36] = 0x01;
+    let mut unsupported_payload_kind = canonical.clone();
+    unsupported_payload_kind[11] = 0x7F;
+    let mut unsupported_payload_framing = canonical.clone();
+    unsupported_payload_framing[12] = 0x7F;
+    let mut unsupported_kdf_profile = canonical.clone();
+    unsupported_kdf_profile[HEADER_STATIC_LEN + 2] = 0x7F;
+    let mut unsupported_kdf_param_profile = canonical.clone();
+    unsupported_kdf_param_profile[HEADER_STATIC_LEN + 3] = 0x7F;
+    let mut invalid_keyslot_state = canonical.clone();
+    invalid_keyslot_state[HEADER_STATIC_LEN] = 0x03;
+    let mut invalid_physical_slot_index = canonical.clone();
+    invalid_physical_slot_index[HEADER_STATIC_LEN + 1] = 0x03;
+    let truncated_canonical_header = canonical[..HEADER_LEN - 1].to_vec();
+    let truncated_canonical_keyslot_input = canonical[..HEADER_STATIC_LEN + 8].to_vec();
+
+    let parser_table: Vec<(&str, Vec<u8>, fn(&HeaderReadError) -> bool)> = vec![
+        ("retired_current_v1", retired_current_v1(), |error| {
+            matches!(error, HeaderReadError::RetiredV1Layout)
+        }),
+        (
+            "malformed_discriminator",
+            malformed_discriminator,
+            |error| {
+                matches!(
+                    error,
+                    HeaderReadError::InvalidCanonicalDiscriminator(discriminator)
+                        if *discriminator == [b'C', b'X', b'1', 0]
+                )
+            },
+        ),
+        ("malformed_schema", malformed_schema, |error| {
+            matches!(error, HeaderReadError::UnsupportedVersion([0x00, 0x02]))
+        }),
+        ("malformed_reserved", malformed_reserved, |error| {
+            matches!(error, HeaderReadError::NonZeroReservedBytes)
+        }),
+        (
+            "unsupported_payload_kind",
+            unsupported_payload_kind,
+            |error| matches!(error, HeaderReadError::InvalidPayloadKind(0x7F)),
+        ),
+        (
+            "unsupported_payload_framing",
+            unsupported_payload_framing,
+            |error| matches!(error, HeaderReadError::InvalidPayloadFraming(0x7F)),
+        ),
+        (
+            "unsupported_kdf_profile",
+            unsupported_kdf_profile,
+            |error| matches!(error, HeaderReadError::InvalidKdfProfile(0x7F)),
+        ),
+        (
+            "unsupported_kdf_param_profile",
+            unsupported_kdf_param_profile,
+            |error| matches!(error, HeaderReadError::InvalidKdfParamProfile(0x7F)),
+        ),
+        ("invalid_keyslot_state", invalid_keyslot_state, |error| {
+            matches!(
+                error,
+                HeaderReadError::InvalidSlotState {
+                    index: 0,
+                    state: 0x03
+                }
+            )
+        }),
+        (
+            "invalid_physical_slot_index",
+            invalid_physical_slot_index,
+            |error| {
+                matches!(
+                    error,
+                    HeaderReadError::InvalidPhysicalSlotIndex {
+                        expected: 0,
+                        actual: 0x03
+                    }
+                )
+            },
+        ),
+        (
+            "truncated_canonical_header",
+            truncated_canonical_header,
+            |error| matches!(error, HeaderReadError::TruncatedHeader),
+        ),
+        (
+            "truncated_canonical_keyslot_input",
+            truncated_canonical_keyslot_input,
+            |error| matches!(error, HeaderReadError::TruncatedHeader),
+        ),
+    ];
+
+    for (case, bytes, matches_expected_variant) in parser_table {
+        let error = read_header_error(&bytes);
+        assert!(
+            matches_expected_variant(&error),
+            "{case}: unexpected parser error variant: {error:?}"
+        );
+    }
 }
 
 #[test]
