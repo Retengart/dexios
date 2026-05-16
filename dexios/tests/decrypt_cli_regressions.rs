@@ -12,6 +12,9 @@ const WRONG_PASSWORD: &str = "wrong-password";
 const DECRYPT_SOURCE: &str = include_str!("../src/subcommands/decrypt.rs");
 const ERRORS_SOURCE: &str = include_str!("../src/subcommands/errors.rs");
 const STREAM_TAG_LEN: usize = 16;
+const TRUNCATED_CANONICAL_V1_PREFIX: &[u8] = b"DXIO\x00\x01CV1\x00";
+const RETIRED_CURRENT_V1_PREFIX: &[u8] = b"DXIO\x00\x01\x01\x00\x07\x07";
+const LEGACY_DEXIOS_PREFIX: [u8; 10] = [0xDE, 0x01, 0, 0, 0, 0, 0, 0, 0, 0];
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 
 struct TestDir {
@@ -286,8 +289,17 @@ fn decrypt_with_detached_header_round_trips() {
 #[test]
 fn decrypt_malformed_and_legacy_formats_use_typed_mapping() {
     let test_dir = TestDir::new("decrypt-format-mapping");
-    fs::write(test_dir.path().join("malformed.enc"), b"DXIO\x00\x01short").unwrap();
-    fs::write(test_dir.path().join("legacy.enc"), [0xDE, 0x01, 0, 0, 0, 0]).unwrap();
+    fs::write(
+        test_dir.path().join("malformed.enc"),
+        TRUNCATED_CANONICAL_V1_PREFIX,
+    )
+    .unwrap();
+    fs::write(test_dir.path().join("legacy.enc"), LEGACY_DEXIOS_PREFIX).unwrap();
+    fs::write(
+        test_dir.path().join("retired-current-v1.enc"),
+        RETIRED_CURRENT_V1_PREFIX,
+    )
+    .unwrap();
 
     let malformed_output = run_cli(
         test_dir.path(),
@@ -317,6 +329,26 @@ fn decrypt_malformed_and_legacy_formats_use_typed_mapping() {
         stderr(&legacy_output).contains("Unsupported Dexios format"),
         "legacy stderr should use map_decrypt_error: {}",
         stderr(&legacy_output)
+    );
+
+    let retired_output = run_cli(
+        test_dir.path(),
+        CORRECT_PASSWORD,
+        &[
+            "decrypt",
+            "--force",
+            "retired-current-v1.enc",
+            "retired-current-v1.out",
+        ],
+    );
+    assert!(
+        !retired_output.status.success(),
+        "retired current-V1 decrypt unexpectedly succeeded"
+    );
+    assert!(
+        stderr(&retired_output).contains("Unsupported Dexios format"),
+        "retired current-V1 stderr should use map_decrypt_error: {}",
+        stderr(&retired_output)
     );
 }
 

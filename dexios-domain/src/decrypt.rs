@@ -31,6 +31,7 @@ pub enum Error {
     InvalidMagic([u8; 4]),
     UnsupportedFormat([u8; 2]),
     UnsupportedVersion([u8; 2]),
+    RetiredV1Layout,
     ReadEncryptedData,
     DecryptMasterKey,
     UnsupportedKdf([u8; 2]),
@@ -46,9 +47,10 @@ impl Error {
     pub fn workflow_class(&self) -> WorkflowErrorClass {
         match self {
             Self::DeserializeHeader => WorkflowErrorClass::MalformedFormat,
-            Self::InvalidMagic(_) | Self::UnsupportedFormat(_) | Self::UnsupportedVersion(_) => {
-                WorkflowErrorClass::UnsupportedFormat
-            }
+            Self::InvalidMagic(_)
+            | Self::UnsupportedFormat(_)
+            | Self::UnsupportedVersion(_)
+            | Self::RetiredV1Layout => WorkflowErrorClass::UnsupportedFormat,
             Self::ReadEncryptedData | Self::WriteData | Self::RewindDataReader => {
                 WorkflowErrorClass::IoFailure
             }
@@ -75,6 +77,7 @@ impl std::fmt::Display for Error {
             Error::UnsupportedVersion(version) => {
                 write!(f, "Unsupported Dexios header version: {version:02X?}")
             }
+            Error::RetiredV1Layout => f.write_str("Retired Dexios V1 header layout"),
             Error::ReadEncryptedData => f.write_str("Unable to read encrypted data"),
             Error::DecryptMasterKey => f.write_str("Cannot decrypt master key"),
             Error::UnsupportedKdf(tag) => write!(f, "Unsupported keyslot KDF tag: {tag:02X?}"),
@@ -324,8 +327,8 @@ fn map_header_read_error(error: HeaderReadError) -> Error {
         HeaderReadError::InvalidMagic(magic) => Error::InvalidMagic(magic),
         HeaderReadError::UnsupportedFormat(prefix) => Error::UnsupportedFormat(prefix),
         HeaderReadError::UnsupportedVersion(version) => Error::UnsupportedVersion(version),
-        HeaderReadError::RetiredV1Layout
-        | HeaderReadError::InvalidCanonicalDiscriminator(_)
+        HeaderReadError::RetiredV1Layout => Error::RetiredV1Layout,
+        HeaderReadError::InvalidCanonicalDiscriminator(_)
         | HeaderReadError::InvalidPayloadKind(_)
         | HeaderReadError::InvalidPayloadFraming(_)
         | HeaderReadError::InvalidKdfProfile(_)
