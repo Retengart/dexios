@@ -64,6 +64,13 @@ Generated docs are not authoritative over book/src and may drift until regenerat
 | error taxonomy and rollback decisions | Current source plus typed-error, diagnostic source-chain, and CLI mapping tests are the authority. | `dexios-domain/src/workflow_error.rs`; `dexios-domain/src/encrypt.rs`; `dexios-domain/src/decrypt.rs`; `dexios-domain/src/pack.rs`; `dexios-domain/src/unpack.rs`; `dexios-domain/src/header.rs`; `dexios-domain/src/key.rs`; `dexios-domain/src/storage/mod.rs`; `dexios-domain/src/storage/identity.rs`; `dexios-domain/src/storage/transaction.rs`; `dexios-domain/tests/workflow_errors.rs`; `dexios-domain/tests/workflow_public_api.rs`; `dexios/src/subcommands/errors.rs`; `dexios/tests/workflow_error_cli.rs`. | Historical docs and generated `docs/` may explain user-facing behavior but do not establish rollback correctness. | Treat `WorkflowErrorClass` as the typed CLI mapping boundary. Treat `std::error::Error::source()` chains as diagnostics only; they add maintainer/debug depth and are not printed by default CLI errors. |
 | security reporting policy | `SECURITY.md` is the authority for reporting channels and supported versions. | Current repository policy and maintainer-facing security notes. | Generated `docs/` may copy policy text but does not override `SECURITY.md`. | Use `SECURITY.md` for vulnerability reporting claims; use source/tests/contracts for runtime safety behavior. |
 
+Canonical V1 parser and stream failure evidence is typed. Source gates must keep
+the taxonomy visible enough for rollback and user guidance decisions:
+`RetiredV1Layout`, `InvalidCanonicalDiscriminator`, `InvalidPayloadKind`,
+`InvalidPayloadFraming`, `InvalidKdfProfile`, `InvalidKdfParamProfile`,
+`InvalidSlotState`, `InvalidPhysicalSlotIndex`, `TruncatedHeader`, and
+`FinalBlockAuthentication`.
+
 ## Resolved Phase 1 Broken Baselines
 
 The Phase 1 known-bug regressions remain named history for traceability, but Phase 4 made the storage invariants current and the tests are no longer ignored.

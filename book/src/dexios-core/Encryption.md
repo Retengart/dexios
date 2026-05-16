@@ -66,6 +66,7 @@ of returning committed plaintext success.
 scratch. Callers must treat the plaintext as accepted only after the function
 returns a `V1FinalAuth` receipt. The receipt is created only after the final
 block authenticates and the plaintext writer flushes successfully.
+This is the final authentication boundary for payload acceptance.
 
 Domain transactional decrypt commit observes that receipt before publishing the
 final output. A final-authentication failure after scratch plaintext exists must
@@ -87,6 +88,8 @@ ordered `DXBF` body frames. This is canonical V1 payload structure, not ZIP
 crate surface. ZIP implementation bytes, ZIP central-directory metadata, ZIP
 crate types, compression selectors, and broad metadata knobs are not canonical
 V1 format surface.
+Manifest-first framing is not ZIP crate surface.
+ZIP implementation details are not canonical V1 format surface.
 
 ## Header and Payload Authentication
 

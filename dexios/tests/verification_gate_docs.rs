@@ -12,6 +12,8 @@ const GENERATED_DIRECTORY_PACKING: &str =
 const GENERATED_SECURE_ERASE: &str = include_str!("../../docs/technical-details/Secure-Erase.html");
 const INSTALLING_AND_BUILDING: &str = include_str!("../../book/src/Installing-and-Building.md");
 const AUDITING: &str = include_str!("../../book/src/dexios-core/Auditing.md");
+const HEADERS: &str = include_str!("../../book/src/dexios-core/Headers.md");
+const ENCRYPTION: &str = include_str!("../../book/src/dexios-core/Encryption.md");
 const PASSWORD_HASHING: &str = include_str!("../../book/src/dexios-core/Password-Hashing.md");
 const PROTECTED_WRAPPER: &str = include_str!("../../book/src/dexios-core/Protected-Wrapper.md");
 const KEYS: &str = include_str!("../../book/src/technical-details/Keys.md");
@@ -80,6 +82,7 @@ const REPAIRED_GATE_COMMANDS: &[&str] = &[
 const ASSURANCE_REPLAY_COMMANDS: &[&str] = &[
     "cargo test --locked --offline -p dexios-core --test v1_header --release",
     "cargo test --locked --offline -p dexios-core --test stream_v1 --release",
+    "cargo test --locked --offline -p dexios-core --test key_derivation --release",
     "cargo test --locked --offline -p dexios-domain --test keyslots_v1 --release",
     "cargo test --locked --offline -p dexios-domain --test decrypt_workflow_errors --release",
     "cargo test --locked --offline -p dexios-domain --test unpack --release",
@@ -827,6 +830,139 @@ fn assurance_replay_script_is_bounded_offline_and_crate_owned() {
     ] {
         assert_all_contains(source_name, source, symbols);
     }
+}
+
+#[test]
+fn canonical_v1_docs_source_gate_catches_format_claims() {
+    for required in [
+        "canonical V1",
+        "512 bytes",
+        "DXIO 00 01 CV1\\0",
+        "retired 416-byte",
+        "obsolete retired layout",
+        "exact 512-byte canonical V1 header bytes",
+        "PayloadKind",
+        "PayloadFramingProfile",
+        "payload AAD",
+        "excludes mutable keyslot table state",
+        "slot-scoped AAD",
+        "payload nonce",
+        "keyslot nonce",
+        "fixed physical slots",
+        "do not compact or reorder",
+        "fresh keyslot wrapping nonce",
+        "unsupported keyslot metadata does not count",
+    ] {
+        assert_contains("book/src/dexios-core/Headers.md", HEADERS, required);
+    }
+
+    for forbidden in [
+        "416-byte V1 layout is supported",
+        "first **32 bytes** are the static header region",
+        "key add remains unsupported",
+    ] {
+        assert_not_contains("book/src/dexios-core/Headers.md", HEADERS, forbidden);
+    }
+}
+
+#[test]
+fn canonical_v1_docs_source_gate_catches_stream_and_payload_claims() {
+    for required in [
+        "canonical V1",
+        "payload nonce",
+        "keyslot nonce",
+        "immutable canonical V1 static header",
+        "Payload AAD excludes mutable keyslot table state",
+        "slot-scoped AAD",
+        "V1FinalAuth",
+        "final authentication",
+        "final output",
+        "PayloadKind",
+        "PayloadFramingProfile",
+        "manifest-first archive framing",
+        "ordered `DXBF` body frames",
+        "not ZIP crate surface",
+        "ZIP implementation bytes",
+        "not canonical V1 format surface",
+    ] {
+        assert_contains("book/src/dexios-core/Encryption.md", ENCRYPTION, required);
+    }
+
+    for forbidden in [
+        "returns `Ok(())`",
+        "first 32 bytes of the header",
+        "ZIP crate types are canonical V1 surface",
+    ] {
+        assert_not_contains("book/src/dexios-core/Encryption.md", ENCRYPTION, forbidden);
+    }
+}
+
+#[test]
+fn canonical_v1_docs_source_gate_catches_manifest_and_error_claims() {
+    for required in [
+        "canonical V1 archive payload framing",
+        "Dexios-owned manifest-first `DXAR` framing",
+        "ordered `DXBF` body frames",
+        "structural limit checks",
+        "body-frame length mismatch",
+        "ordered body-frame rules",
+        "ZIP bytes",
+        "ZIP crate types",
+        "not canonical V1 surface",
+    ] {
+        assert_contains(
+            "book/src/technical-details/Directory-Packing.md",
+            DIRECTORY_PACKING,
+            required,
+        );
+    }
+
+    for required in [
+        "RetiredV1Layout",
+        "InvalidCanonicalDiscriminator",
+        "InvalidPayloadKind",
+        "InvalidPayloadFraming",
+        "InvalidKdfProfile",
+        "InvalidKdfParamProfile",
+        "InvalidSlotState",
+        "InvalidPhysicalSlotIndex",
+        "TruncatedHeader",
+        "FinalBlockAuthentication",
+    ] {
+        assert_contains("book/src/Safety-Contract.md", SAFETY_CONTRACT, required);
+    }
+
+    assert_not_contains(
+        "book/src/technical-details/Directory-Packing.md",
+        DIRECTORY_PACKING,
+        "ZIP implementation types are canonical format surface",
+    );
+}
+
+#[test]
+fn canonical_v1_assurance_replay_includes_phase3_evidence() {
+    for command in [
+        "cargo test --locked --offline -p dexios-core --test v1_header --release",
+        "cargo test --locked --offline -p dexios-core --test stream_v1 --release",
+        "cargo test --locked --offline -p dexios-core --test key_derivation --release",
+        "cargo test --locked --offline -p dexios-domain --test keyslots_v1 --release",
+        "cargo test --locked --offline -p dexios-domain --test decrypt_workflow_errors --release",
+        "cargo test --locked --offline -p dexios-domain --test unpack --release",
+    ] {
+        assert_non_comment_line_count(
+            "scripts/verify_assurance_replay.sh",
+            VERIFY_ASSURANCE_REPLAY,
+            &format!("run {command}"),
+            1,
+        );
+    }
+
+    assert_non_comment_line_occurs_before(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "run cargo test --workspace --all-features --release --verbose",
+        "run bash scripts/verify_assurance_replay.sh",
+    );
 }
 
 #[test]

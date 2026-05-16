@@ -5,6 +5,8 @@ version bytes remain V1, but canonical V1 is a redesigned byte contract with an
 explicit discriminator. Old current-V1 artifacts using the retired 416-byte
 layout are rejected by the normal parser and decrypt paths as obsolete retired
 layout, not silently migrated or treated as supported input.
+The phrase obsolete retired layout means the old bytes are retained only for
+typed rejection evidence.
 
 Legacy Dexios formats are intentionally unsupported after the safety refactor.
 
@@ -29,6 +31,8 @@ The static header begins with:
 - 20-byte payload nonce
 - zeroed reserved bytes through the end of the 64-byte static header
 
+Together, the canonical V1 prefix is `DXIO 00 01 CV1\0`.
+
 Those 64 static bytes are the payload AAD. Payload AAD is immutable payload
 context: it includes the canonical discriminator, schema, payload kind, payload
 framing profile, KDF parameter profile, fixed slot capacity, and payload nonce.
@@ -45,6 +49,7 @@ Canonical V1 has four physical keyslot positions. Empty slots serialize as
 all-zero 112-byte records. Active slots serialize their physical slot index and
 must remain in that physical position; add, change, delete, and verify do not
 compact or reorder later slots.
+Canonical keyslot operations do not compact or reorder physical slots.
 
 Each active canonical V1 keyslot contains:
 
@@ -89,6 +94,7 @@ Important behavior:
 - `key change` replaces only the proven physical slot
 - `key add` and `key change` generate and persist a fresh keyslot wrapping
   nonce for the changed physical slot
+- the fresh keyslot wrapping nonce is part of the authenticated slot metadata
 - `key del` clears only the proven physical slot and rejects deletion of the
   final supported decrypting keyslot
 - unsupported keyslot metadata does not count as a supported recovery key
