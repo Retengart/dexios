@@ -573,8 +573,8 @@ fn formatted_error_control_flow_violations(source: Source<'_>) -> Vec<String> {
 
 fn formatted_error_binding_name(compact: &str) -> Option<String> {
     let (_, rhs) = compact.split_once('=')?;
-    let rhs_is_formatted_error = formatted_error_to_string_receiver(rhs)
-        || (rhs.contains("format!(") && (rhs.contains("{error") || rhs.contains("{err")));
+    let rhs_is_formatted_error =
+        formatted_error_to_string_receiver(rhs) || format_uses_error_identifier(rhs);
     if !rhs_is_formatted_error {
         return None;
     }
@@ -603,6 +603,115 @@ fn formatted_error_to_string_receiver(rhs: &str) -> bool {
         || receiver.ends_with("_err")
         || receiver == "error"
         || receiver.ends_with("_error")
+}
+
+fn format_uses_error_identifier(rhs: &str) -> bool {
+    let Some((_, format_args)) = rhs.split_once("format!(") else {
+        return false;
+    };
+
+    format_interpolates_error_identifier(format_args)
+        || format_passes_error_identifier_argument(format_args)
+}
+
+fn format_interpolates_error_identifier(format_args: &str) -> bool {
+    let mut rest = format_args;
+    while let Some(open) = rest.find('{') {
+        let after_open = &rest[open + 1..];
+        if let Some(stripped) = after_open.strip_prefix('{') {
+            rest = stripped;
+            continue;
+        }
+
+        let identifier_end = after_open
+            .find(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+            .unwrap_or(after_open.len());
+        if is_error_identifier(&after_open[..identifier_end]) {
+            return true;
+        }
+        rest = &after_open[identifier_end..];
+    }
+
+    false
+}
+
+fn format_passes_error_identifier_argument(format_args: &str) -> bool {
+    let Some(argument_tail) = format_args_after_first_comma(format_args) else {
+        return false;
+    };
+
+    contains_error_identifier_outside_string(argument_tail)
+}
+
+fn format_args_after_first_comma(format_args: &str) -> Option<&str> {
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (index, ch) in format_args.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if ch == '"' {
+            in_string = true;
+        } else if ch == ',' {
+            return Some(&format_args[index + 1..]);
+        } else if ch == ')' {
+            return None;
+        }
+    }
+
+    None
+}
+
+fn contains_error_identifier_outside_string(text: &str) -> bool {
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut identifier = String::new();
+
+    for ch in text.chars() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if ch == '"' {
+            if is_error_identifier(&identifier) {
+                return true;
+            }
+            identifier.clear();
+            in_string = true;
+        } else if ch.is_ascii_alphanumeric() || ch == '_' {
+            identifier.push(ch);
+        } else {
+            if is_error_identifier(&identifier) {
+                return true;
+            }
+            identifier.clear();
+        }
+    }
+
+    is_error_identifier(&identifier)
+}
+
+fn is_error_identifier(identifier: &str) -> bool {
+    identifier == "err"
+        || identifier.ends_with("_err")
+        || identifier == "error"
+        || identifier.ends_with("_error")
 }
 
 fn binding_contains_call(compact: &str, binding: &str) -> bool {
@@ -714,7 +823,7 @@ struct TestContext {
     test_support_file: bool,
     cfg_test_pending: bool,
     cfg_test_depth: usize,
-    cfg_entered_this_line: bool,
+    cfg_item_waiting_for_body: bool,
 }
 
 impl TestContext {
@@ -724,7 +833,7 @@ impl TestContext {
             test_support_file: path.ends_with("/test_support.rs"),
             cfg_test_pending: false,
             cfg_test_depth: 0,
-            cfg_entered_this_line: false,
+            cfg_item_waiting_for_body: false,
         }
     }
 
@@ -733,6 +842,7 @@ impl TestContext {
             || self.test_support_file
             || self.cfg_test_depth > 0
             || self.cfg_test_pending
+            || self.cfg_item_waiting_for_body
     }
 
     fn update_before_line(&mut self, trimmed: &str) {
@@ -741,22 +851,23 @@ impl TestContext {
         }
 
         if self.cfg_test_pending && declares_cfg_scoped_item(trimmed) {
-            self.cfg_test_depth = brace_delta(trimmed).max(1) as usize;
             self.cfg_test_pending = false;
-            self.cfg_entered_this_line = true;
+            self.cfg_item_waiting_for_body = true;
         }
     }
 
     fn update_after_line(&mut self, trimmed: &str) {
-        if self.cfg_test_depth > 0 {
-            if self.cfg_entered_this_line {
-                if brace_delta(trimmed) <= 0 {
-                    self.cfg_test_depth = 0;
-                }
-                self.cfg_entered_this_line = false;
-                return;
+        if self.cfg_item_waiting_for_body {
+            if trimmed.contains('{') {
+                self.cfg_test_depth = brace_delta(trimmed).max(0) as usize;
+                self.cfg_item_waiting_for_body = false;
+            } else if trimmed.ends_with(';') {
+                self.cfg_item_waiting_for_body = false;
             }
+            return;
+        }
 
+        if self.cfg_test_depth > 0 {
             let delta = brace_delta(trimmed);
             if delta.is_negative() {
                 self.cfg_test_depth = self.cfg_test_depth.saturating_sub(delta.unsigned_abs());
@@ -1033,6 +1144,24 @@ fn formatted_error_control_flow_rejects_string_inspection() {
                 }
             "#,
         },
+        Source {
+            path: "synthetic/indirect-format-workflow-error.rs",
+            text: r#"
+                let rendered = format!("{workflow_error}");
+                if rendered.contains("unsupported") {
+                    return Ok(());
+                }
+            "#,
+        },
+        Source {
+            path: "synthetic/indirect-format-workflow-error-argument.rs",
+            text: r#"
+                let rendered = format!("{}", workflow_error);
+                if rendered.contains("unsupported") {
+                    return Ok(());
+                }
+            "#,
+        },
     ];
 
     for source in bad_sources {
@@ -1055,6 +1184,15 @@ fn formatted_error_control_flow_rejects_string_inspection() {
                 fn classify_message(message: &str) -> bool {
                     let rendered = message.trim();
                     rendered.contains("unsupported")
+                }
+            "#,
+        },
+        Source {
+            path: "synthetic/unrelated-format-string.rs",
+            text: r#"
+                let rendered = format!("{}", "workflow_error");
+                if rendered.contains("workflow_error") {
+                    return Ok(());
                 }
             "#,
         },
@@ -1088,6 +1226,30 @@ fn formatted_error_control_flow_rejects_string_inspection() {
             text: r#"
                 #[cfg(feature = "test-support")]
                 pub(crate) fn assert_test_support_error(error: WorkflowError) {
+                    let rendered = error.to_string();
+                    assert!(rendered.contains("unsupported"));
+                }
+            "#,
+        },
+        Source {
+            path: "synthetic/cfg-test-multiline-function-message-assertion.rs",
+            text: r#"
+                #[cfg(test)]
+                fn reports_unsupported_error(
+                    error: WorkflowError,
+                ) {
+                    let rendered = error.to_string();
+                    assert!(rendered.contains("unsupported"));
+                }
+            "#,
+        },
+        Source {
+            path: "synthetic/test-support-multiline-function-message-assertion.rs",
+            text: r#"
+                #[cfg(feature = "test-support")]
+                pub(crate) fn assert_test_support_error(
+                    error: WorkflowError,
+                ) {
                     let rendered = error.to_string();
                     assert!(rendered.contains("unsupported"));
                 }

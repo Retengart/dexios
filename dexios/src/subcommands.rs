@@ -106,8 +106,7 @@ impl std::error::Error for CleanupAfterCommitError {
             Self::Gate(error) => Some(error),
             Self::CleanupFailed(result) => result
                 .failures
-                .iter()
-                .next()
+                .first()
                 .map(|failure: &CleanupFailure| failure as &(dyn std::error::Error + 'static)),
         }
     }
