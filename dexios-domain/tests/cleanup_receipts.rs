@@ -10,7 +10,7 @@ use dexios_domain::storage::cleanup::{
 };
 use dexios_domain::storage::identity::PathRole;
 #[cfg(feature = "test-support")]
-use dexios_domain::storage::test_support::{FailureHooks, FailurePoint};
+use dexios_domain::storage::test_support::{FailureError, FailureHooks, FailurePoint};
 use dexios_domain::storage::transaction::{CommitReceipt, CommittedArtifact};
 
 struct TestDir {
@@ -250,6 +250,11 @@ fn cleanup_receipt_reports_partial_failure() {
         .and_then(|source| source.downcast_ref::<io::Error>())
         .expect("injected cleanup failure must preserve owned io::Error source");
     assert_eq!(source.kind(), io::ErrorKind::Other);
+    let hook_source = source
+        .source()
+        .and_then(|source| source.downcast_ref::<FailureError>())
+        .expect("cleanup failure source must retain the typed failure hook");
+    assert_eq!(hook_source.point(), FailurePoint::Cleanup);
     assert!(injected_failure.exists());
     assert!(!deleted.exists());
 }

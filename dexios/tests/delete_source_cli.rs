@@ -352,14 +352,14 @@ fn pack_delete_source_reports_partial_cleanup_failure() {
         String::from_utf8_lossy(&pack_cmd.stdout),
         String::from_utf8_lossy(&pack_cmd.stderr)
     );
-    let combined_output = format!(
-        "{}{}",
-        String::from_utf8_lossy(&pack_cmd.stdout),
-        String::from_utf8_lossy(&pack_cmd.stderr)
-    );
     assert!(
-        combined_output.contains("cleanup failed after output commit"),
-        "output={combined_output}"
+        pack_cmd.stdout.is_empty(),
+        "cleanup failure must not print normal-output success text: stdout={}",
+        String::from_utf8_lossy(&pack_cmd.stdout)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&pack_cmd.stderr),
+        "Cleanup failed after output commit; committed outputs remain in place\n"
     );
     assert!(encrypted.exists());
     assert!(!ok_source.exists());
@@ -369,12 +369,16 @@ fn pack_delete_source_reports_partial_cleanup_failure() {
 #[test]
 fn cli_delete_after_success_hash_failure_and_identity_mismatch_are_source_gated() {
     for required in [
+        "CleanupAfterCommitError",
+        "CleanupFailed(CleanupResult)",
+        "result.failures",
+        "CleanupFailure",
         "HashVerification::Failed",
         "changed cleanup identity",
         "cleanup target identity",
         "ordinary delete-after-success cleanup",
         "PostCommitSuccess",
-        "committed outputs were not rolled back",
+        "committed outputs remain in place",
     ] {
         assert_source_contains("dexios/src/subcommands.rs", DEXIOS_SUBCOMMANDS_RS, required);
     }
