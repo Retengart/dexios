@@ -322,6 +322,11 @@ impl V1Keyslots {
         &self.inner
     }
 
+    pub fn iter_physical_slots(&self) -> impl Iterator<Item = (usize, Option<&V1Keyslot>)> + '_ {
+        (0..MAX_KEYSLOTS)
+            .map(move |physical_index| (physical_index, self.get_physical(physical_index)))
+    }
+
     #[must_use]
     pub fn len(&self) -> usize {
         self.inner.len()
@@ -338,6 +343,20 @@ impl V1Keyslots {
     }
 
     #[must_use]
+    pub fn supported_slot_count(&self) -> usize {
+        self.inner
+            .iter()
+            .filter(|keyslot| matches!(keyslot.kdf(), KeyslotKdf::Blake3Balloon))
+            .count()
+    }
+
+    pub fn first_empty_physical_slot(&self) -> Option<V1KeyslotIndex> {
+        (0..MAX_KEYSLOTS)
+            .find(|index| self.get_physical(*index).is_none())
+            .and_then(|index| V1KeyslotIndex::try_from_physical_index(index).ok())
+    }
+
+    #[must_use]
     pub fn count(&self) -> V1KeyslotCount {
         V1KeyslotCount::try_from_u8(self.inner.len() as u8)
             .expect("V1Keyslots invariant keeps count in 1..=4")
@@ -347,14 +366,24 @@ impl V1Keyslots {
         if self.is_full() {
             return Err(HeaderWriteError::TooManyKeyslots(self.inner.len() + 1));
         }
-        let physical_index = (0..MAX_KEYSLOTS)
-            .find(|index| {
-                self.inner
-                    .iter()
-                    .all(|keyslot| keyslot.physical_index() != *index)
-            })
+        let physical_index = self
+            .first_empty_physical_slot()
             .ok_or_else(|| HeaderWriteError::TooManyKeyslots(self.inner.len() + 1))?;
-        self.inner.push(keyslot.with_physical_index(physical_index));
+        self.insert_physical_slot(physical_index, keyslot)
+    }
+
+    pub fn insert_physical_slot(
+        &mut self,
+        index: V1KeyslotIndex,
+        keyslot: V1Keyslot,
+    ) -> Result<(), HeaderWriteError> {
+        if self.is_full() {
+            return Err(HeaderWriteError::TooManyKeyslots(self.inner.len() + 1));
+        }
+        if self.get_physical(index.get()).is_some() {
+            return Err(HeaderWriteError::InvalidKeyslotIndex(index.get()));
+        }
+        self.inner.push(keyslot.with_physical_index(index.get()));
         Ok(())
     }
 
@@ -374,19 +403,26 @@ impl V1Keyslots {
         ))
     }
 
-    pub fn remove(&mut self, index: V1KeyslotIndex) -> Result<V1Keyslot, HeaderWriteError> {
+    pub fn clear_physical_slot(
+        &mut self,
+        index: V1KeyslotIndex,
+    ) -> Result<V1Keyslot, HeaderWriteError> {
         if self.inner.len() == 1 {
             return Err(HeaderWriteError::NoKeyslots);
         }
-        let position = self
-            .inner
-            .iter()
-            .position(|keyslot| keyslot.physical_index() == index.get())
-            .ok_or_else(|| HeaderWriteError::InvalidKeyslotIndex(index.get()))?;
-        Ok(self.inner.remove(position))
+        let mut cleared = None;
+        self.inner.retain(|keyslot| {
+            if keyslot.physical_index() == index.get() {
+                cleared = Some(*keyslot);
+                false
+            } else {
+                true
+            }
+        });
+        cleared.ok_or_else(|| HeaderWriteError::InvalidKeyslotIndex(index.get()))
     }
 
-    fn get_physical(&self, physical_index: usize) -> Option<&V1Keyslot> {
+    pub fn get_physical(&self, physical_index: usize) -> Option<&V1Keyslot> {
         self.inner
             .iter()
             .find(|keyslot| keyslot.physical_index() == physical_index)
@@ -477,8 +513,8 @@ impl V1Header {
         let mut bytes = Vec::with_capacity(HEADER_LEN);
         bytes.extend_from_slice(self.aad().as_bytes());
 
-        for physical_index in 0..MAX_KEYSLOTS {
-            match self.keyslots.get_physical(physical_index) {
+        for (_physical_index, keyslot) in self.keyslots.iter_physical_slots() {
+            match keyslot {
                 Some(keyslot) => keyslot.serialize_into(&mut bytes),
                 None => bytes.extend_from_slice(&[0u8; KEYSLOT_LEN]),
             }
