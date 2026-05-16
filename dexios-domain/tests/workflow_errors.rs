@@ -66,6 +66,10 @@ fn storage_full() -> io::Error {
     io::Error::from(io::ErrorKind::StorageFull)
 }
 
+fn production_source(source: &str) -> &str {
+    source.split("#[cfg(test)]").next().unwrap_or(source)
+}
+
 fn assert_decrypt_source(error: decrypt::Error, class: WorkflowErrorClass, label: &str) {
     assert_eq!(error.workflow_class(), class);
     assert_source(&error, label);
@@ -273,7 +277,10 @@ fn workflow_and_cli_classification_do_not_use_formatted_error_substrings() {
         ("workflow_error.rs", DOMAIN_WORKFLOW_ERROR_SOURCE),
         ("pack.rs", DOMAIN_PACK_SOURCE),
         ("unpack.rs", DOMAIN_UNPACK_SOURCE),
-        ("subcommands/errors.rs", CLI_ERROR_MAPPER_SOURCE),
+        (
+            "subcommands/errors.rs",
+            production_source(CLI_ERROR_MAPPER_SOURCE),
+        ),
     ];
     let forbidden = [
         ".to_string().contains(",

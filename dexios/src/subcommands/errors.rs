@@ -10,6 +10,10 @@ pub fn map_encrypt_error(error: domain::encrypt::Error) -> anyhow::Error {
         WorkflowErrorClass::TransactionCommitFailure => {
             anyhow!("Unable to commit encrypted output")
         }
+        WorkflowErrorClass::CleanupFailure => anyhow!("Cleanup failed after output commit"),
+        WorkflowErrorClass::ResourcePressure => {
+            anyhow!("Not enough temporary or output storage while encrypting data")
+        }
         WorkflowErrorClass::MalformedFormat
         | WorkflowErrorClass::UnsupportedFormat
         | WorkflowErrorClass::AuthenticationFailure
@@ -38,6 +42,10 @@ pub fn map_decrypt_error(error: domain::decrypt::Error) -> anyhow::Error {
         WorkflowErrorClass::TransactionCommitFailure => {
             anyhow!("Unable to commit decrypted output")
         }
+        WorkflowErrorClass::CleanupFailure => anyhow!("Cleanup failed after output commit"),
+        WorkflowErrorClass::ResourcePressure => {
+            anyhow!("Not enough temporary or output storage while decrypting data")
+        }
         WorkflowErrorClass::UnsupportedWorkflow | WorkflowErrorClass::Other => {
             anyhow!("Decryption failed")
         }
@@ -45,11 +53,11 @@ pub fn map_decrypt_error(error: domain::decrypt::Error) -> anyhow::Error {
 }
 
 pub fn map_pack_error(error: domain::pack::Error) -> anyhow::Error {
-    if error.is_resource_pressure() {
-        return anyhow!("Not enough temporary or output storage while packing archive");
-    }
-
     match error.workflow_class() {
+        WorkflowErrorClass::ResourcePressure => {
+            debug_assert!(error.is_resource_pressure());
+            anyhow!("Not enough temporary or output storage while packing archive")
+        }
         WorkflowErrorClass::UnsafePath => match error {
             domain::pack::Error::ArchiveLimit(_) => anyhow!("Archive limit error: {error}"),
             _ => anyhow!("Unsafe path: {error}"),
@@ -65,6 +73,7 @@ pub fn map_pack_error(error: domain::pack::Error) -> anyhow::Error {
         WorkflowErrorClass::UnsupportedFormat => anyhow!("Unsupported archive format"),
         WorkflowErrorClass::KdfFailure => anyhow!("Unable to derive archive encryption key"),
         WorkflowErrorClass::OverwriteDenied => anyhow!("Output already exists"),
+        WorkflowErrorClass::CleanupFailure => anyhow!("Cleanup failed after output commit"),
         WorkflowErrorClass::UnsupportedWorkflow | WorkflowErrorClass::Other => {
             anyhow!("Archive packing failed")
         }
@@ -72,11 +81,11 @@ pub fn map_pack_error(error: domain::pack::Error) -> anyhow::Error {
 }
 
 pub fn map_unpack_error(error: domain::unpack::Error) -> anyhow::Error {
-    if error.is_resource_pressure() {
-        return anyhow!("Not enough temporary or output storage while unpacking archive");
-    }
-
     match error.workflow_class() {
+        WorkflowErrorClass::ResourcePressure => {
+            debug_assert!(error.is_resource_pressure());
+            anyhow!("Not enough temporary or output storage while unpacking archive")
+        }
         WorkflowErrorClass::UnsafePath => anyhow!("Unsafe archive path: {error}"),
         WorkflowErrorClass::MalformedFormat => anyhow!("Malformed archive data"),
         WorkflowErrorClass::UnsupportedFormat => anyhow!("Unsupported archive format"),
@@ -89,6 +98,7 @@ pub fn map_unpack_error(error: domain::unpack::Error) -> anyhow::Error {
             anyhow!("Unable to commit unpacked output")
         }
         WorkflowErrorClass::OverwriteDenied => anyhow!("Output already exists"),
+        WorkflowErrorClass::CleanupFailure => anyhow!("Cleanup failed after output commit"),
         WorkflowErrorClass::UnsupportedWorkflow | WorkflowErrorClass::Other => {
             anyhow!("Archive unpacking failed")
         }

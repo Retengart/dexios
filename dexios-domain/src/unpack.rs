@@ -24,7 +24,7 @@ use crate::storage::identity::{
 use crate::storage::transaction::{CommitReceipt, LinkedOutputTransaction, TransactionError};
 use crate::storage::{self, Storage};
 use crate::workflow_error::{
-    WorkflowErrorClass, classify_identity_error, classify_transaction_error,
+    WorkflowErrorClass, classify_identity_error, classify_storage_error, classify_transaction_error,
 };
 use core::protected::Protected;
 
@@ -179,6 +179,10 @@ impl std::error::Error for Error {
 impl Error {
     #[must_use]
     pub fn workflow_class(&self) -> WorkflowErrorClass {
+        if self.is_resource_pressure() {
+            return WorkflowErrorClass::ResourcePressure;
+        }
+
         match self {
             Self::UnsafeOutputPath(_) | Self::DuplicateOutputPath(_) | Self::ArchiveLimit(_) => {
                 WorkflowErrorClass::UnsafePath
@@ -632,32 +636,6 @@ fn map_identity_error(err: IdentityError) -> Error {
     match err {
         IdentityError::UnsafePath(path) => Error::UnsafeOutputPath(path),
         other => Error::PathIdentity(other),
-    }
-}
-
-fn classify_storage_error(error: &storage::Error) -> WorkflowErrorClass {
-    match error {
-        storage::Error::UnsafePath(_) => WorkflowErrorClass::UnsafePath,
-        storage::Error::CreateDir
-        | storage::Error::CreateDirWithSource(_)
-        | storage::Error::CreateFile
-        | storage::Error::CreateFileWithSource(_)
-        | storage::Error::OpenFile(_)
-        | storage::Error::OpenFileWithSource { .. }
-        | storage::Error::RemoveFile
-        | storage::Error::RemoveFileWithSource(_)
-        | storage::Error::RemoveDir
-        | storage::Error::RemoveDirWithSource(_)
-        | storage::Error::DirEntries
-        | storage::Error::DirEntriesWithSource(_)
-        | storage::Error::FlushFile
-        | storage::Error::FlushFileWithSource(_)
-        | storage::Error::SyncFile
-        | storage::Error::SyncFileWithSource(_)
-        | storage::Error::FileAccess
-        | storage::Error::FileAccessWithSource(_)
-        | storage::Error::FileLen
-        | storage::Error::FileLenWithSource(_) => WorkflowErrorClass::IoFailure,
     }
 }
 
