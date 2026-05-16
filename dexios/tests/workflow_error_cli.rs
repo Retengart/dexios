@@ -13,7 +13,14 @@ use core::kdf::Kdf;
 use core::protected::Protected;
 use domain::encrypt;
 use domain::storage::identity::OverwritePolicy;
+use domain::storage::identity::PathRole;
+use domain::storage::transaction::{CommittedArtifact, PartialCommitReceipt, TransactionError};
+use domain::workflow_error::WorkflowErrorClass;
 use zip::write::SimpleFileOptions;
+
+#[allow(dead_code)]
+#[path = "../src/subcommands/errors.rs"]
+mod cli_error_mappers;
 
 const CORRECT_PASSWORD: &str = "correct-password";
 const WRONG_PASSWORD: &str = "wrong-password";
@@ -206,11 +213,58 @@ fn write_retired_v1_fixture(path: &Path) {
     fs::write(path, retired_v1_fixture_bytes()).unwrap();
 }
 
+fn partial_commit_storage_full_error() -> TransactionError {
+    TransactionError::PartialCommit {
+        receipt: PartialCommitReceipt {
+            artifacts: vec![CommittedArtifact {
+                role: PathRole::Output,
+                path: PathBuf::from("committed.out"),
+            }],
+        },
+        failed: CommittedArtifact {
+            role: PathRole::DetachedHeader,
+            path: PathBuf::from("failed.header"),
+        },
+        source: Some(std::io::Error::from(std::io::ErrorKind::StorageFull)),
+    }
+}
+
 fn mark_keyslot_unsupported_argon2id(path: &Path, index: usize) {
     let mut bytes = fs::read(path).unwrap();
     let offset = HEADER_STATIC_LEN + (index * KEYSLOT_LEN) + 2;
     bytes[offset..offset + 2].copy_from_slice(&[0xDF, 0x02]);
     fs::write(path, bytes).unwrap();
+}
+
+#[test]
+fn partial_commit_resource_pressure_source_keeps_commit_failure_cli_mapping() {
+    let pack_error = domain::pack::Error::Transaction(partial_commit_storage_full_error());
+    assert!(pack_error.is_resource_pressure());
+    assert_eq!(
+        pack_error.workflow_class(),
+        WorkflowErrorClass::TransactionCommitFailure
+    );
+
+    let mapped = cli_error_mappers::map_pack_error(pack_error).to_string();
+    assert_eq!(mapped, "Unable to commit packed archive");
+    assert!(
+        !mapped.contains("Not enough temporary or output storage"),
+        "partial commit evidence must not collapse into resource-pressure wording: {mapped}"
+    );
+
+    let unpack_error = domain::unpack::Error::Transaction(partial_commit_storage_full_error());
+    assert!(unpack_error.is_resource_pressure());
+    assert_eq!(
+        unpack_error.workflow_class(),
+        WorkflowErrorClass::TransactionCommitFailure
+    );
+
+    let mapped = cli_error_mappers::map_unpack_error(unpack_error).to_string();
+    assert_eq!(mapped, "Unable to commit unpacked output");
+    assert!(
+        !mapped.contains("Not enough temporary or output storage"),
+        "partial commit evidence must not collapse into resource-pressure wording: {mapped}"
+    );
 }
 
 #[test]

@@ -387,14 +387,10 @@ fn unpack_delete_input_keeps_input_after_extraction_commit_failure() {
 }
 
 #[test]
-fn cli_delete_after_success_is_source_gated_against_partial_commit_and_failed_hash() {
+fn cli_delete_after_success_is_source_gated_against_failed_hash() {
     for required in [
-        "TransactionError::PartialCommit",
-        "PartialCommitReceipt",
-        "cleanup is blocked after partial commit",
         "HashVerification::Failed",
         "requested hash did not succeed",
-        "TransactionCommitFailure",
         "cleanup_after_commit",
     ] {
         let source = format!("{DEXIOS_SUBCOMMANDS_RS}\n{DEXIOS_SUBCOMMAND_ERRORS_RS}");

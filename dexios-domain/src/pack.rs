@@ -113,14 +113,11 @@ impl std::error::Error for Error {
 impl Error {
     #[must_use]
     pub fn workflow_class(&self) -> WorkflowErrorClass {
-        if self.is_resource_pressure() {
-            return WorkflowErrorClass::ResourcePressure;
-        }
-
         match self {
+            Self::Transaction(error) => classify_transaction_error(error),
+            _ if self.is_resource_pressure() => WorkflowErrorClass::ResourcePressure,
             Self::Encrypt(error) => error.workflow_class(),
             Self::PathIdentity(error) => classify_identity_error(error),
-            Self::Transaction(error) => classify_transaction_error(error),
             Self::ArchiveLimit(_) | Self::ArchiveRootName => WorkflowErrorClass::UnsafePath,
             Self::CreateArchive
             | Self::CreateArchiveWithSource(_)

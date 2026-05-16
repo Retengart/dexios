@@ -48,6 +48,10 @@ pub(crate) fn classify_identity_error(error: &IdentityError) -> WorkflowErrorCla
 }
 
 pub(crate) fn classify_transaction_error(error: &TransactionError) -> WorkflowErrorClass {
+    if matches!(error, TransactionError::PartialCommit { .. }) {
+        return WorkflowErrorClass::TransactionCommitFailure;
+    }
+
     if error.is_resource_pressure() {
         return WorkflowErrorClass::ResourcePressure;
     }

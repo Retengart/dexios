@@ -23,7 +23,7 @@ fn path(name: &str) -> PathBuf {
     PathBuf::from(name)
 }
 
-fn partial_commit_error() -> TransactionError {
+fn partial_commit_error_with_source(source: io::Error) -> TransactionError {
     TransactionError::PartialCommit {
         receipt: PartialCommitReceipt {
             artifacts: vec![CommittedArtifact {
@@ -35,8 +35,12 @@ fn partial_commit_error() -> TransactionError {
             role: PathRole::DetachedHeader,
             path: path("failed.header"),
         },
-        source: Some(io::Error::from(io::ErrorKind::AlreadyExists)),
+        source: Some(source),
     }
+}
+
+fn partial_commit_error() -> TransactionError {
+    partial_commit_error_with_source(io::Error::from(io::ErrorKind::AlreadyExists))
 }
 
 fn archive_limit_error() -> ArchiveLimitError {
@@ -217,6 +221,27 @@ fn resource_pressure_helpers_detect_storage_full_source_chains() {
         source: Some(storage_full()),
     };
     assert!(transaction_error.is_resource_pressure());
+
+    let partial_commit = TransactionError::PartialCommit {
+        receipt: PartialCommitReceipt {
+            artifacts: vec![CommittedArtifact {
+                role: PathRole::Output,
+                path: path("committed.out"),
+            }],
+        },
+        failed: CommittedArtifact {
+            role: PathRole::DetachedHeader,
+            path: path("failed.header"),
+        },
+        source: Some(storage_full()),
+    };
+    assert!(partial_commit.is_resource_pressure());
+    let pack_partial_commit = pack::Error::Transaction(partial_commit);
+    assert_eq!(
+        pack_partial_commit.workflow_class(),
+        WorkflowErrorClass::TransactionCommitFailure
+    );
+    assert!(pack_partial_commit.is_resource_pressure());
 
     let pack_error = pack::Error::Transaction(transaction_error);
     assert_eq!(
@@ -420,6 +445,14 @@ fn domain_errors_classify_transactions_without_display_strings() {
     assert_eq!(failed.role, PathRole::DetachedHeader);
     assert_eq!(failed.path, path("failed.header"));
     assert_source(&partial, "partial commit transaction wrapper");
+
+    let partial_with_storage_full =
+        unpack::Error::Transaction(partial_commit_error_with_source(storage_full()));
+    assert!(partial_with_storage_full.is_resource_pressure());
+    assert_eq!(
+        partial_with_storage_full.workflow_class(),
+        WorkflowErrorClass::TransactionCommitFailure
+    );
 }
 
 #[test]
