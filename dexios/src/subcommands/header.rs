@@ -93,13 +93,11 @@ pub fn dump(input: &str, output: &str, force: ForceMode) -> Result<()> {
 // this does not work for files encrypted *with* a detached header
 // it implements a check to ensure the header is valid before restoring to a file
 pub fn restore(input: &str, output: &str) -> Result<()> {
-    let intent = domain::header::restore::RestoreIntent::new(input, output)
-        .map_err(map_header_error)
-        .with_context(|| format!("Unable to restore header into {output}"))?;
+    let intent =
+        domain::header::restore::RestoreIntent::new(input, output).map_err(map_header_error)?;
 
     let _receipt = domain::header::restore::execute_transactional(intent)
-        .map_err(map_header_error)
-        .with_context(|| format!("Unable to restore header into {output}"))?;
+        .map_err(map_header_error)?;
 
     Ok(())
 }
@@ -109,13 +107,9 @@ pub fn restore(input: &str, output: &str) -> Result<()> {
 // it can be useful for storing the header separate from the file, to make an attacker's life that little bit harder
 // it implements a check to ensure the header is valid before stripping
 pub fn strip(input: &str) -> Result<()> {
-    let intent = domain::header::strip::StripIntent::new(input)
-        .map_err(map_header_error)
-        .with_context(|| format!("Unable to strip header from {input}"))?;
+    let intent = domain::header::strip::StripIntent::new(input).map_err(map_header_error)?;
 
-    let _receipt = domain::header::strip::execute_transactional(intent)
-        .map_err(map_header_error)
-        .with_context(|| format!("Unable to strip header from {input}"))?;
+    let _receipt = domain::header::strip::execute_transactional(intent).map_err(map_header_error)?;
 
     Ok(())
 }

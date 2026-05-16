@@ -11,7 +11,14 @@ mod subcommands;
 // it goes hand-in-hand with `subcommands.rs`
 // it works so that's good enough, and any changes are rather simple to make to it
 // it handles the calling of other functions, and some (minimal) argument parsing
-fn main() -> Result<()> {
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("{error}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
     let matches = cli::get_matches();
 
     match matches.subcommand() {
