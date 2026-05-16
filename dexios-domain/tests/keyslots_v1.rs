@@ -147,6 +147,45 @@ fn keyslot_kdfs(encrypted: &RefCell<Cursor<Vec<u8>>>) -> Vec<KeyslotKdf> {
         .collect()
 }
 
+fn keyslot_range(index: usize) -> std::ops::Range<usize> {
+    let start = HEADER_STATIC_LEN + (index * KEYSLOT_LEN);
+    start..start + KEYSLOT_LEN
+}
+
+fn keyslot_bytes(bytes: &[u8], index: usize) -> &[u8] {
+    &bytes[keyslot_range(index)]
+}
+
+fn keyslot_nonce_bytes(bytes: &[u8], index: usize) -> [u8; 24] {
+    let offset = HEADER_STATIC_LEN + (index * KEYSLOT_LEN) + 20;
+    let mut nonce = [0u8; 24];
+    nonce.copy_from_slice(&bytes[offset..offset + 24]);
+    nonce
+}
+
+fn add_key_file(path: &Path, old_key: &[u8], new_key: &[u8]) {
+    let intent = key::add::AddIntent::new(path).expect("prepare key add intent");
+    let proven = intent
+        .verify_old_key(Protected::new(old_key.to_vec()))
+        .expect("old key proof");
+    key::add::execute(proven, Protected::new(new_key.to_vec()), Kdf::Blake3Balloon)
+        .expect("add second keyslot");
+}
+
+fn change_key_file(path: &Path, old_key: &[u8], new_key: &[u8]) {
+    let intent = key::change::ChangeIntent::new(path).expect("prepare key change intent");
+    let proven = intent
+        .verify_old_key(Protected::new(old_key.to_vec()))
+        .expect("old key proof");
+    key::change::execute(proven, Protected::new(new_key.to_vec()), Kdf::Blake3Balloon)
+        .expect("change keyslot");
+}
+
+fn delete_key_file(path: &Path, key: &[u8]) -> Result<(), key::Error> {
+    let intent = key::delete::DeleteIntent::new(path)?;
+    key::delete::execute(intent, Protected::new(key.to_vec())).map(|_| ())
+}
+
 #[test]
 fn key_add_intent_adds_supported_v1_without_mutating_payload() {
     let (_dir, encrypted_path) = encrypted_v1_file("add-supported-v1");
@@ -171,6 +210,57 @@ fn key_add_intent_adds_supported_v1_without_mutating_payload() {
     );
     verify_file(&encrypted_path, b"old-pass").expect("old key should still verify");
     verify_file(&encrypted_path, b"new-pass").expect("new key should verify");
+}
+
+#[test]
+fn key_add_populates_empty_physical_slot_with_fresh_persisted_nonce() {
+    let (_dir, encrypted_path) = encrypted_v1_file("add-fixed-physical-slot");
+    let original = fs::read(&encrypted_path).expect("read original encrypted fixture");
+    assert_eq!(keyslot_bytes(&original, 1), [0u8; KEYSLOT_LEN]);
+
+    add_key_file(&encrypted_path, b"old-pass", b"new-pass");
+
+    let changed = fs::read(&encrypted_path).expect("read added encrypted fixture");
+    assert_eq!(
+        &changed[HEADER_LEN..],
+        &original[HEADER_LEN..],
+        "key add must preserve payload bytes"
+    );
+    assert_eq!(
+        keyslot_bytes(&changed, 0),
+        keyslot_bytes(&original, 0),
+        "key add must not rewrite the proven physical slot"
+    );
+    assert_ne!(
+        keyslot_bytes(&changed, 1),
+        [0u8; KEYSLOT_LEN],
+        "key add must populate the first empty physical slot"
+    );
+    assert_eq!(keyslot_bytes(&changed, 2), [0u8; KEYSLOT_LEN]);
+    assert_eq!(keyslot_bytes(&changed, 3), [0u8; KEYSLOT_LEN]);
+
+    let changed_header = read_v1_header_from_path(&encrypted_path);
+    let slot_one = changed_header
+        .keyslots_collection()
+        .get_physical(1)
+        .expect("added key must stay in physical slot 1");
+    assert_eq!(slot_one.physical_index(), 1);
+    assert_eq!(
+        slot_one.nonce().as_bytes(),
+        &keyslot_nonce_bytes(&changed, 1),
+        "persisted nonce bytes must match the reparsed physical slot"
+    );
+    assert_ne!(
+        keyslot_nonce_bytes(&changed, 1),
+        [0u8; 24],
+        "key add must persist a fresh nonce in the target slot"
+    );
+    let (_master_key, index) = key::decrypt_v1_master_key_with_index(
+        &changed_header,
+        Protected::new(b"new-pass".to_vec()),
+    )
+    .expect("new key must unwrap from the added physical slot");
+    assert_eq!(index.get(), 1);
 }
 
 #[test]
@@ -245,6 +335,20 @@ fn key_verify_intent_does_not_read_or_authenticate_payload_stream() {
     let intent = key::verify::VerifyIntent::new(&encrypted_path).expect("prepare verify intent");
     key::verify::execute(intent, Protected::new(b"old-pass".to_vec()))
         .expect("key verify must not inspect payload stream bytes");
+}
+
+#[test]
+fn key_verify_is_read_only_for_serialized_header_bytes() {
+    let (_dir, encrypted_path) = two_keyslot_v1_file("verify-read-only", b"new-pass");
+    let original = fs::read(&encrypted_path).expect("read original fixture");
+
+    verify_file(&encrypted_path, b"new-pass").expect("verify later physical slot");
+
+    assert_eq!(
+        fs::read(&encrypted_path).expect("read after verify"),
+        original,
+        "key verify must not normalize, compact, or rewrite serialized header bytes"
+    );
 }
 
 #[test]
@@ -705,6 +809,71 @@ fn key_change_commits_replacement_header_that_only_new_key_can_use() {
 }
 
 #[test]
+fn key_change_slot_one_keeps_physical_slot_and_persists_fresh_nonce() {
+    let (_dir, encrypted_path) = two_keyslot_v1_file("change-slot-one", b"new-pass");
+    let original = fs::read(&encrypted_path).expect("read original fixture");
+    let original_header = read_v1_header_from_path(&encrypted_path);
+    let (master_key_before, index_before) = key::decrypt_v1_master_key_with_index(
+        &original_header,
+        Protected::new(b"new-pass".to_vec()),
+    )
+    .expect("second key must prove physical slot 1");
+    assert_eq!(index_before.get(), 1);
+    let prior_slot_one_nonce = keyslot_nonce_bytes(&original, 1);
+
+    change_key_file(&encrypted_path, b"new-pass", b"third-pass");
+
+    let changed = fs::read(&encrypted_path).expect("read changed fixture");
+    assert_eq!(
+        &changed[HEADER_LEN..],
+        &original[HEADER_LEN..],
+        "key change must preserve payload bytes"
+    );
+    assert_eq!(
+        keyslot_bytes(&changed, 0),
+        keyslot_bytes(&original, 0),
+        "changing physical slot 1 must not rewrite physical slot 0"
+    );
+    assert_ne!(
+        keyslot_bytes(&changed, 1),
+        keyslot_bytes(&original, 1),
+        "changing physical slot 1 must rewrite only that slot record"
+    );
+    assert_eq!(keyslot_bytes(&changed, 2), keyslot_bytes(&original, 2));
+    assert_eq!(keyslot_bytes(&changed, 3), keyslot_bytes(&original, 3));
+
+    let changed_header = read_v1_header_from_path(&encrypted_path);
+    let slot_one = changed_header
+        .keyslots_collection()
+        .get_physical(1)
+        .expect("changed key must remain in physical slot 1");
+    assert_eq!(slot_one.physical_index(), 1);
+    assert_ne!(
+        keyslot_nonce_bytes(&changed, 1),
+        prior_slot_one_nonce,
+        "key change must persist a fresh nonce for the replaced physical slot"
+    );
+    assert_eq!(
+        slot_one.nonce().as_bytes(),
+        &keyslot_nonce_bytes(&changed, 1),
+        "reparsed physical slot 1 must expose the persisted nonce"
+    );
+
+    let (master_key_after, index_after) = key::decrypt_v1_master_key_with_index(
+        &changed_header,
+        Protected::new(b"third-pass".to_vec()),
+    )
+    .expect("replacement key must unwrap changed physical slot 1");
+    assert_eq!(index_after.get(), 1);
+    assert!(master_key_before.same_secret_as(&master_key_after));
+    verify_file(&encrypted_path, b"old-pass").expect("unchanged slot 0 should still verify");
+    assert!(matches!(
+        verify_file(&encrypted_path, b"new-pass"),
+        Err(key::Error::IncorrectKey)
+    ));
+}
+
+#[test]
 fn key_change_unsupported_kdf_preflight_preserves_original_bytes() {
     let (_dir, encrypted_path) = encrypted_v1_file("change-unsupported-kdf");
     mark_keyslot_unsupported_argon2id_file(&encrypted_path, 0);
@@ -804,6 +973,68 @@ fn key_delete_removes_only_old_key_proven_slot_and_preserves_payload() {
         proven_index.get(),
         0,
         "test fixture must prove old key selected the removed slot"
+    );
+}
+
+#[test]
+fn key_delete_zeroes_only_physical_slot_zero_and_keeps_slot_one_index() {
+    let (_dir, encrypted_path) = two_keyslot_v1_file("delete-fixed-physical-slot", b"new-pass");
+    let original = fs::read(&encrypted_path).expect("read original fixture");
+
+    delete_key_file(&encrypted_path, b"old-pass").expect("delete physical slot 0");
+
+    let changed = fs::read(&encrypted_path).expect("read changed fixture");
+    assert_eq!(
+        &changed[HEADER_LEN..],
+        &original[HEADER_LEN..],
+        "key delete must preserve payload bytes"
+    );
+    assert_eq!(
+        keyslot_bytes(&changed, 0),
+        [0u8; KEYSLOT_LEN],
+        "key delete must zero only the proven physical slot"
+    );
+    assert_eq!(
+        keyslot_bytes(&changed, 1),
+        keyslot_bytes(&original, 1),
+        "key delete must not compact physical slot 1 into slot 0"
+    );
+    assert_eq!(keyslot_bytes(&changed, 2), keyslot_bytes(&original, 2));
+    assert_eq!(keyslot_bytes(&changed, 3), keyslot_bytes(&original, 3));
+
+    let changed_header = read_v1_header_from_path(&encrypted_path);
+    assert!(
+        changed_header
+            .keyslots_collection()
+            .get_physical(0)
+            .is_none(),
+        "deleted physical slot 0 must reparse as empty"
+    );
+    let remaining = changed_header
+        .keyslots_collection()
+        .get_physical(1)
+        .expect("remaining key must stay at physical slot 1");
+    assert_eq!(remaining.physical_index(), 1);
+    verify_file(&encrypted_path, b"new-pass").expect("remaining physical slot 1 should verify");
+}
+
+#[test]
+fn unsupported_keyslot_does_not_count_as_supported_recovery_key_for_delete() {
+    let (_dir, encrypted_path) =
+        two_keyslot_v1_file("delete-unsupported-does-not-count", b"new-pass");
+    mark_keyslot_unsupported_argon2id_file(&encrypted_path, 0);
+    let original = fs::read(&encrypted_path).expect("read mixed KDF fixture");
+
+    let delete = delete_key_file(&encrypted_path, b"new-pass");
+
+    assert!(matches!(
+        delete,
+        Err(key::Error::CannotRemoveFinalV1Keyslot)
+    ));
+    assert_eq!(
+        fs::read(&encrypted_path).expect("read after rejected delete"),
+        original,
+        "unsupported keyslot metadata must not count as a supported recovery key"
     );
 }
 
