@@ -17,10 +17,13 @@ For new files:
 - the historical Argon2id tag is no longer supported for new writes
 - `balloon-hash 0.4.0` is built with the `zeroize` feature enabled
 
-For decryption and key manipulation, Dexios reads the required KDF family from the current keyslot metadata.
-Canonical V1 keyslots store a KDF profile id and KDF parameter profile id. The
-historical Argon2id profile pair is recognized as unsupported metadata and
-reported before any key derivation attempt.
+For decryption and key manipulation, Dexios reads the required KDF family from
+candidate keyslot metadata. Canonical V1 keyslots store a KDF profile id and KDF
+parameter profile id. The historical Argon2id profile pair is recognized as
+unsupported metadata and reported when the selected candidate requires it, when
+all candidate keyslots are unsupported, or when a workflow preflight rejects
+unsupported keyslot metadata before prompting. Mixed headers can still derive
+against supported keyslots.
 
 ## Frozen BLAKE3-Balloon Parameters
 
