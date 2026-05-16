@@ -8,7 +8,7 @@ use core::header::{ParsedHeader, read_header};
 use domain::storage::identity::OverwritePolicy;
 use domain::utils::hex_encode;
 
-use super::errors::map_header_error;
+use super::errors::{map_header_details_error, map_header_error};
 
 fn overwrite_policy(path_exists: bool) -> OverwritePolicy {
     if path_exists {
@@ -65,7 +65,7 @@ pub fn details(input: &str) -> Result<()> {
 
             Ok(())
         }
-        Err(error) => Err(map_header_error(domain::header::Error::from(error))),
+        Err(error) => Err(map_header_details_error(domain::header::Error::from(error))),
     }
 }
 

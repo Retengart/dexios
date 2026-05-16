@@ -105,28 +105,48 @@ pub fn map_unpack_error(error: domain::unpack::Error) -> anyhow::Error {
     }
 }
 
+#[derive(Clone, Copy)]
+enum HeaderDisclosure {
+    Terse,
+    Details,
+}
+
 pub fn map_header_error(error: domain::header::Error) -> anyhow::Error {
+    map_header_error_with_disclosure(error, HeaderDisclosure::Terse)
+}
+
+pub fn map_header_details_error(error: domain::header::Error) -> anyhow::Error {
+    map_header_error_with_disclosure(error, HeaderDisclosure::Details)
+}
+
+fn map_header_error_with_disclosure(
+    error: domain::header::Error,
+    disclosure: HeaderDisclosure,
+) -> anyhow::Error {
     match error.workflow_class() {
-        WorkflowErrorClass::MalformedFormat => match error {
-            domain::header::Error::MalformedV1Header(error) => {
+        WorkflowErrorClass::MalformedFormat => match (error, disclosure) {
+            (domain::header::Error::MalformedV1Header(error), HeaderDisclosure::Details) => {
                 anyhow!("Malformed Dexios V1 header: {error}")
             }
-            domain::header::Error::ShortDetachedHeader { actual_len } => {
+            (domain::header::Error::MalformedV1Header(_), HeaderDisclosure::Terse) => {
+                anyhow!("Malformed Dexios V1 header")
+            }
+            (domain::header::Error::ShortDetachedHeader { actual_len }, _) => {
                 anyhow!("Detached header is too short: {actual_len} bytes")
             }
-            domain::header::Error::TrailingDetachedHeader { actual_len } => {
+            (domain::header::Error::TrailingDetachedHeader { actual_len }, _) => {
                 anyhow!("Detached header has trailing bytes: {actual_len} bytes")
             }
-            domain::header::Error::MissingPayload { actual_len } => {
+            (domain::header::Error::MissingPayload { actual_len }, _) => {
                 anyhow!("Encrypted artifact is missing payload bytes: {actual_len} bytes")
             }
-            domain::header::Error::TargetTooShort { actual_len } => {
+            (domain::header::Error::TargetTooShort { actual_len }, _) => {
                 anyhow!("Header restore target is too short: {actual_len} bytes")
             }
-            domain::header::Error::TargetNotStripped => {
+            (domain::header::Error::TargetNotStripped, _) => {
                 anyhow!("Header restore target is not stripped")
             }
-            domain::header::Error::InvalidFile | domain::header::Error::HeaderSizeParse => {
+            (domain::header::Error::InvalidFile | domain::header::Error::HeaderSizeParse, _) => {
                 anyhow!("Malformed Dexios header or payload")
             }
             _ => anyhow!("Malformed Dexios header or payload"),

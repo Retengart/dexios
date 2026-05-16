@@ -169,7 +169,7 @@ fn write_legacy_header(path: &Path) {
 }
 
 fn write_malformed_v1_header(path: &Path) {
-    let mut bytes = [0u8; HEADER_LEN];
+    let mut bytes = vec![0u8; HEADER_LEN];
     bytes[0..4].copy_from_slice(b"DXIO");
     bytes[4..6].copy_from_slice(&[0x00, 0x01]);
     bytes[6..10].copy_from_slice(&CANONICAL_V1_DISCRIMINATOR);
@@ -179,6 +179,7 @@ fn write_malformed_v1_header(path: &Path) {
     bytes[13] = 0x01;
     bytes[14] = 0x04;
     bytes[15] = 1;
+    bytes.extend_from_slice(b"payload");
     fs::write(path, bytes).unwrap();
 }
 
@@ -385,6 +386,33 @@ fn malformed_and_unsupported_headers_use_typed_cli_mapping() {
         malformed_stderr.contains("Malformed Dexios V1 header"),
         "stderr did not expose the malformed header class: {malformed_stderr}"
     );
+    assert!(
+        malformed_stderr.contains("non-zero reserved bytes in V1 header"),
+        "header details should preserve safe V1 parse classes: {malformed_stderr}"
+    );
+
+    let dump_output = run_cli(
+        test_dir.path(),
+        CORRECT_PASSWORD,
+        &[
+            "header",
+            "dump",
+            "--force",
+            "malformed.enc",
+            "malformed.hdr",
+        ],
+    );
+    assert!(!dump_output.status.success());
+    let dump_stderr = stderr(&dump_output);
+    assert!(
+        dump_stderr.contains("Malformed Dexios V1 header"),
+        "header dump did not expose the malformed header class: {dump_stderr}"
+    );
+    assert!(
+        !dump_stderr.contains("non-zero reserved bytes in V1 header"),
+        "header dump must keep malformed parser details terse: {dump_stderr}"
+    );
+    assert!(!test_dir.path().join("malformed.hdr").exists());
 
     let legacy_output = run_cli(
         test_dir.path(),
