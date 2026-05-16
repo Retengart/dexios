@@ -261,6 +261,42 @@ fn decrypt_corrupted_stream_variants_never_commit_final_output() {
 }
 
 #[test]
+fn decrypt_final_auth_failure_preserves_final_output_after_staged_plaintext_exists() {
+    let test_dir = TestDir::new("decrypt-final-auth-no-commit");
+    let encrypted = encrypted_multichunk_fixture(&test_dir, "final-auth");
+    let output = test_dir.path().join("final-auth.out");
+    let sentinel = b"existing output must survive final authentication failure";
+    fs::write(&output, sentinel).unwrap();
+
+    let mut encrypted_bytes = fs::read(&encrypted).unwrap();
+    corrupt_final_chunk(&mut encrypted_bytes);
+    fs::write(&encrypted, encrypted_bytes).unwrap();
+
+    let intent = decrypt::DecryptIntent::new(
+        &encrypted,
+        &output,
+        OverwritePolicy::ReplaceAtCommit,
+        None::<&Path>,
+        protected_key(CORRECT_PASSWORD),
+        None,
+    )
+    .expect("build final-auth failure decrypt intent");
+
+    let error = decrypt::execute(intent).expect_err(
+        "decrypt final-auth failure after staged plaintext must not commit final output",
+    );
+    assert_eq!(
+        error.workflow_class(),
+        WorkflowErrorClass::AuthenticationFailure
+    );
+    assert_eq!(
+        fs::read(&output).unwrap(),
+        sentinel.as_slice(),
+        "final output decrypt target must remain unchanged until V1FinalAuth exists"
+    );
+}
+
+#[test]
 fn decrypt_error_classification_keeps_format_key_auth_io_and_transaction_distinct() {
     let transaction_commit = decrypt::Error::Transaction(TransactionError::PartialCommit {
         receipt: PartialCommitReceipt { artifacts: vec![] },

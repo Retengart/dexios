@@ -176,6 +176,38 @@ fn unpack_corrupted_stream_never_extracts_outputs() {
     }
 }
 
+#[test]
+fn unpack_archive_final_auth_failure_preserves_final_outputs() {
+    let test_dir = TestDir::new("unpack-final-auth-no-commit");
+    let plain_zip = test_dir.path().join("plain.zip");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+    let existing_file = output_dir.join("safe.txt");
+    let sentinel = b"existing archive final output";
+    let payload = vec![0xA5; BLOCK_SIZE + 37];
+
+    fs::create_dir_all(&output_dir).unwrap();
+    fs::write(&existing_file, sentinel).unwrap();
+    write_zip_with_entries(&plain_zip, &[("safe.txt", payload.as_slice())]);
+    encrypt_archive(&plain_zip, &encrypted_archive);
+    tamper_final_stream_chunk(&encrypted_archive);
+
+    let result = unpack_archive(&encrypted_archive, &output_dir, None);
+
+    assert!(
+        matches!(
+            result,
+            Err(unpack::Error::Decrypt(decrypt::Error::DecryptData))
+        ),
+        "archive final-auth failure must be reported before extraction commit, got {result:?}"
+    );
+    assert_eq!(
+        fs::read(&existing_file).unwrap(),
+        sentinel.as_slice(),
+        "unpack final output must remain unchanged until stream final auth succeeds"
+    );
+}
+
 fn unpack_archive_with_detached_header(
     encrypted_archive: &Path,
     detached_header: &Path,

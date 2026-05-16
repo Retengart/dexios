@@ -4,6 +4,11 @@ use dexios_core::header::common::{KeyslotNonce, PayloadNonce, Salt as HeaderSalt
 use dexios_core::header::v1::{V1Header, V1Keyslot, V1Keyslots};
 use dexios_core::header::{ParsedHeader, ParsedV1Payload};
 use dexios_core::kdf::Kdf;
+use dexios_core::payload::{
+    ArchiveBodyFrame, ArchiveManifest, MANIFEST_MAGIC, MAX_BODY_FRAME_LEN,
+    MAX_MANIFEST_ENTRY_COUNT, MAX_NORMALIZED_PATH_BYTES, ManifestEntry, ManifestFirstPayload,
+    PayloadError, PayloadFramingProfile, PayloadKind,
+};
 use dexios_core::primitives::{BLOCK_SIZE, MasterKey};
 use dexios_core::stream::{
     StreamError, V1FinalAuth, V1PayloadDecryptor, V1PayloadEncryptingWriter, V1PayloadEncryptor,
@@ -126,6 +131,20 @@ fn flatten_chunks(chunks: &[Vec<u8>]) -> Vec<u8> {
         .collect()
 }
 
+fn sample_manifest_first_payload() -> ManifestFirstPayload {
+    let manifest = ArchiveManifest::new(vec![
+        ManifestEntry::directory(b"docs".to_vec()).expect("directory entry"),
+        ManifestEntry::file(b"docs/readme.txt".to_vec(), 5).expect("file entry"),
+        ManifestEntry::file(b"data.bin".to_vec(), 3).expect("file entry"),
+    ])
+    .expect("manifest");
+    let bodies = vec![
+        ArchiveBodyFrame::new(1, b"hello".to_vec()).expect("first body"),
+        ArchiveBodyFrame::new(2, b"bin".to_vec()).expect("second body"),
+    ];
+    ManifestFirstPayload::new(manifest, bodies).expect("manifest-first payload")
+}
+
 fn decrypt_file_with(
     master_key: MasterKey,
     payload: &ParsedV1Payload,
@@ -208,6 +227,177 @@ fn v1_stream_roundtrips_with_header_derived_aad() {
     .expect("decrypt v1 stream");
 
     assert_eq!(decrypted, plaintext);
+}
+
+#[test]
+fn v1_decrypt_file_returns_v1_final_auth_receipt() {
+    let header = support::sample_v1_header();
+    let payload = support::parsed_payload_for(&header);
+    let plaintext = b"final auth receipt proves successful stream completion";
+
+    let mut encrypted = Vec::new();
+    V1PayloadStream::encrypt_file(
+        support::master_key(),
+        &header,
+        &mut Cursor::new(plaintext),
+        &mut encrypted,
+    )
+    .expect("encrypt v1 stream");
+
+    let mut decrypted = Vec::new();
+    let _final_auth: V1FinalAuth = V1PayloadStream::decrypt_file(
+        support::master_key(),
+        &payload,
+        &mut Cursor::new(encrypted),
+        &mut decrypted,
+    )
+    .expect("decrypt v1 stream returns final auth receipt");
+
+    assert_eq!(decrypted, plaintext);
+}
+
+#[test]
+fn manifest_first_frames_serialize_and_parse_deterministically() {
+    let payload = sample_manifest_first_payload();
+    let encoded = payload
+        .serialize()
+        .expect("serialize manifest-first payload");
+
+    assert_eq!(&encoded[..4], &MANIFEST_MAGIC);
+    assert!(
+        encoded.windows(4).any(|window| window == b"DXAR"),
+        "manifest-first bytes must carry the DXAR magic"
+    );
+
+    let parsed = ManifestFirstPayload::parse(&encoded).expect("parse manifest-first payload");
+    assert_eq!(parsed, payload);
+    assert_eq!(parsed.manifest().entries()[0].normalized_path(), b"docs");
+    assert_eq!(parsed.body_frames()[0].body(), b"hello");
+    assert_eq!(
+        parsed.body_frames()[1].entry_index(),
+        2,
+        "manifest-first body frames remain tied to manifest entry indexes"
+    );
+}
+
+#[test]
+fn manifest_first_rejects_malformed_lengths() {
+    let payload = sample_manifest_first_payload();
+    let mut encoded = payload
+        .serialize()
+        .expect("serialize manifest-first payload");
+    let body_frame_offset = encoded
+        .windows(4)
+        .position(|window| window == b"DXBF")
+        .expect("body frame magic");
+    let body_len_start = body_frame_offset + 8;
+    encoded[body_len_start..body_len_start + 8].copy_from_slice(&6u64.to_le_bytes());
+
+    let error = ManifestFirstPayload::parse(&encoded)
+        .expect_err("body frame length must match manifest entry length");
+    assert!(matches!(
+        error,
+        PayloadError::BodyFrameLengthMismatch {
+            expected: 5,
+            actual: 6
+        }
+    ));
+}
+
+#[test]
+fn manifest_first_rejects_unsupported_payload_kind_and_framing_profile() {
+    assert_eq!(
+        PayloadKind::ManifestArchive.to_byte(),
+        0x02,
+        "ManifestArchive payload kind byte is canonical"
+    );
+    assert_eq!(
+        PayloadFramingProfile::ManifestFirst.to_byte(),
+        0x02,
+        "ManifestFirst payload framing byte is canonical"
+    );
+    assert!(matches!(
+        PayloadKind::try_from_byte(0xFE),
+        Err(PayloadError::UnsupportedPayloadKind(0xFE))
+    ));
+    assert!(matches!(
+        PayloadFramingProfile::try_from_byte(0xFD),
+        Err(PayloadError::UnsupportedPayloadFramingProfile(0xFD))
+    ));
+}
+
+#[test]
+fn manifest_first_rejects_over_limit_entry_count_path_and_body() {
+    let mut encoded = Vec::new();
+    encoded.extend_from_slice(&MANIFEST_MAGIC);
+    encoded.extend_from_slice(&1u16.to_le_bytes());
+    encoded.extend_from_slice(&(MAX_MANIFEST_ENTRY_COUNT + 1).to_le_bytes());
+
+    let error = ManifestFirstPayload::parse(&encoded)
+        .expect_err("over-limit manifest entry count must fail before allocation");
+    assert!(matches!(
+        error,
+        PayloadError::ManifestEntryCountLimitExceeded { .. }
+    ));
+
+    let over_limit_path = vec![b'a'; MAX_NORMALIZED_PATH_BYTES + 1];
+    let error = ManifestEntry::file(over_limit_path, 0)
+        .expect_err("over-limit normalized path bytes must fail");
+    assert!(matches!(
+        error,
+        PayloadError::NormalizedPathLimitExceeded { .. }
+    ));
+
+    let error = ManifestEntry::file(b"too-large.bin".to_vec(), MAX_BODY_FRAME_LEN + 1)
+        .expect_err("over-limit body frame length must fail");
+    assert!(matches!(error, PayloadError::BodyFrameLimitExceeded { .. }));
+}
+
+#[test]
+fn manifest_first_requires_ordered_body_frames_to_match_manifest_entries() {
+    let manifest = ArchiveManifest::new(vec![
+        ManifestEntry::file(b"first.bin".to_vec(), 1).expect("first file"),
+        ManifestEntry::file(b"second.bin".to_vec(), 1).expect("second file"),
+    ])
+    .expect("manifest");
+    let payload = ManifestFirstPayload::new(
+        manifest,
+        vec![
+            ArchiveBodyFrame::new(0, b"a".to_vec()).expect("first body"),
+            ArchiveBodyFrame::new(1, b"b".to_vec()).expect("second body"),
+        ],
+    )
+    .expect("manifest-first payload");
+    let mut encoded = payload
+        .serialize()
+        .expect("serialize manifest-first payload");
+    let first_frame_offset = encoded
+        .windows(4)
+        .position(|window| window == b"DXBF")
+        .expect("first body frame");
+    encoded[first_frame_offset + 4..first_frame_offset + 8].copy_from_slice(&1u32.to_le_bytes());
+
+    let error = ManifestFirstPayload::parse(&encoded)
+        .expect_err("ordered body frames must match manifest entry order");
+    assert!(matches!(
+        error,
+        PayloadError::BodyFrameOrderMismatch {
+            expected: 0,
+            actual: 1
+        }
+    ));
+}
+
+#[test]
+fn manifest_first_core_module_keeps_archive_framing_free_of_zip_surface() {
+    let payload_source = include_str!("../src/payload.rs");
+
+    for forbidden in ["zip::", "ZipArchive", "ZipWriter", "CompressionMethod"] {
+        assert!(
+            !payload_source.contains(forbidden),
+            "core manifest-first payload framing must not expose {forbidden}"
+        );
+    }
 }
 
 #[test]
