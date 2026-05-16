@@ -599,7 +599,10 @@ fn parser_table_rejects_canonical_v1_malformed_metadata_by_variant() {
     let truncated_canonical_header = canonical[..HEADER_LEN - 1].to_vec();
     let truncated_canonical_keyslot_input = canonical[..HEADER_STATIC_LEN + 8].to_vec();
 
-    let parser_table: Vec<(&str, Vec<u8>, fn(&HeaderReadError) -> bool)> = vec![
+    type HeaderErrorPredicate = fn(&HeaderReadError) -> bool;
+    type ParserCase = (&'static str, Vec<u8>, HeaderErrorPredicate);
+
+    let parser_table: Vec<ParserCase> = vec![
         ("retired_current_v1", retired_current_v1(), |error| {
             matches!(error, HeaderReadError::RetiredV1Layout)
         }),

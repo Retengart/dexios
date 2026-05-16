@@ -53,8 +53,8 @@ impl Error {
             Self::InvalidMagic(_)
             | Self::UnsupportedFormat(_)
             | Self::UnsupportedVersion(_)
-            | Self::RetiredV1Layout => WorkflowErrorClass::UnsupportedFormat,
-            Self::Unsupported => WorkflowErrorClass::UnsupportedFormat,
+            | Self::RetiredV1Layout
+            | Self::Unsupported => WorkflowErrorClass::UnsupportedFormat,
             Self::UnsupportedKdf(_) | Self::KeyHash => WorkflowErrorClass::KdfFailure,
             Self::IncorrectKey => WorkflowErrorClass::IncorrectKey,
             Self::HeaderWrite | Self::Seek | Self::ReadIo => WorkflowErrorClass::IoFailure,
