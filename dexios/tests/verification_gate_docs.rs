@@ -1089,9 +1089,8 @@ fn repaired_cli_surface_is_rejection_only_for_removed_behavior() {
             || line.contains("--zstd")
             || line.contains("--erase");
         let has_removed_subcommand = line.contains("\"$BIN\" erase");
-        let has_removed_key_add = line.contains("key add") && line.contains(" -n");
 
-        if has_removed_flag || has_removed_subcommand || has_removed_key_add {
+        if has_removed_flag || has_removed_subcommand {
             assert!(
                 line.contains("expect_rejected"),
                 "scripts/verify_cli_surface.sh:{} removed CLI token must stay in an expect_rejected context: {}",
@@ -1116,12 +1115,6 @@ fn dexios_tests_workflow_does_not_reintroduce_removed_positive_cli_surface() {
         assert!(
             !(line.contains("\"$DEXIOS_BIN\" erase") || line.contains("dexios erase")),
             ".github/workflows/dexios-tests.yml:{} must not positively invoke top-level erase: {}",
-            line_number + 1,
-            line
-        );
-        assert!(
-            !(line.contains("key add") && line.contains(" -n")),
-            ".github/workflows/dexios-tests.yml:{} must not positively invoke removed key add -n behavior: {}",
             line_number + 1,
             line
         );

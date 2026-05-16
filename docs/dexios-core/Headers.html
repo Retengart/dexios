@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-80ef0646.js";
+            window.path_to_searchindex_js = "../searchindex-accc9426.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-532d5d21.js"></script>
@@ -175,71 +175,120 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h2 id="headers"><a class="header" href="#headers">Headers</a></h2>
-<p>The supported Dexios format is <strong>V1 only</strong>.</p>
-<p>Legacy Dexios formats are intentionally unsupported after the Phase 2 refactor.</p>
-<h2 id="v1-layout"><a class="header" href="#v1-layout">V1 Layout</a></h2>
-<p>The V1 header is <strong>416 bytes</strong> long.</p>
-<p>Its first <strong>32 bytes</strong> are the static header region and also the payload AAD:</p>
+<p>The supported Dexios format is <strong>canonical V1</strong>. The product format name and
+version bytes remain V1, but canonical V1 is a redesigned byte contract with an
+explicit discriminator. Old current-V1 artifacts using the retired 416-byte
+layout are rejected by the normal parser and decrypt paths as obsolete retired
+layout, not silently migrated or treated as supported input.
+The phrase obsolete retired layout means the old bytes are retained only for
+typed rejection evidence.</p>
+<p>Legacy Dexios formats are intentionally unsupported after the safety refactor.</p>
+<h2 id="canonical-v1-layout"><a class="header" href="#canonical-v1-layout">Canonical V1 Layout</a></h2>
+<p>The canonical V1 header is <strong>512 bytes</strong> long:</p>
+<ul>
+<li>64-byte immutable static header</li>
+<li>four fixed physical keyslot records, each 112 bytes</li>
+</ul>
+<p>The static header begins with:</p>
 <ul>
 <li>4-byte magic: <code>DXIO</code></li>
-<li>2-byte version field: <code>0x0001</code></li>
-<li>1-byte keyslot count</li>
+<li>2-byte product version field: <code>0x0001</code></li>
+<li>4-byte canonical discriminator: <code>CV1\0</code></li>
+<li>1-byte schema profile</li>
+<li>1-byte payload kind from <code>PayloadKind</code></li>
+<li>1-byte payload framing profile from <code>PayloadFramingProfile</code></li>
+<li>1-byte canonical KDF parameter profile</li>
+<li>1-byte fixed keyslot capacity</li>
 <li>1 reserved byte</li>
 <li>20-byte payload nonce</li>
-<li>4 reserved trailing bytes</li>
+<li>zeroed reserved bytes through the end of the 64-byte static header</li>
 </ul>
-<p>Those first 32 bytes are authenticated as AAD during payload encryption and decryption.</p>
-<p>After the static region comes space for up to <strong>4 keyslots</strong>, each <strong>96 bytes</strong> long.</p>
-<p>Each V1 keyslot contains:</p>
+<p>Together, the canonical V1 prefix is <code>DXIO 00 01 CV1\0</code>.</p>
+<p>Those 64 static bytes are the payload AAD. Payload AAD is immutable payload
+context: it includes the canonical discriminator, schema, payload kind, payload
+framing profile, KDF parameter profile, fixed slot capacity, and payload nonce.
+It excludes mutable keyslot table state such as slot occupancy, active slot
+count, salts, keyslot nonces, and wrapped master-key bytes.</p>
+<p>Detached headers are exact 512-byte canonical V1 header bytes. They are parsed
+by the same canonical parser as embedded headers; there is no detached metadata
+wrapper.</p>
+<h2 id="keyslot-records"><a class="header" href="#keyslot-records">Keyslot Records</a></h2>
+<p>Canonical V1 has four physical keyslot positions. Empty slots serialize as
+all-zero 112-byte records. Active slots serialize their physical slot index and
+must remain in that physical position; add, change, delete, and verify do not
+compact or reorder later slots.
+Canonical keyslot operations do not compact or reorder physical slots.</p>
+<p>Each active canonical V1 keyslot contains:</p>
 <ul>
-<li>a 2-byte KDF identifier</li>
-<li>a 48-byte encrypted master key</li>
-<li>a 24-byte keyslot nonce</li>
-<li>a 16-byte salt</li>
-<li>6 reserved zero bytes</li>
+<li>active-slot state byte</li>
+<li>physical slot index</li>
+<li>KDF profile id</li>
+<li>KDF parameter profile id</li>
+<li>16-byte salt</li>
+<li>24-byte keyslot nonce</li>
+<li>48-byte encrypted master key</li>
+<li>zeroed padding through the end of the 112-byte record</li>
 </ul>
-<p>Unused keyslot regions are serialized as all-zero 96-byte blocks.</p>
+<p>The wrapped master key is authenticated with slot-scoped AAD. That AAD binds
+the immutable static header context, physical slot index, KDF profile id, KDF
+parameter profile id, salt, and keyslot nonce. Changing the payload nonce fails
+payload authentication; changing the keyslot nonce, salt, physical index, or KDF
+metadata fails keyslot unwrap authentication.</p>
 <h2 id="kdf-identifiers"><a class="header" href="#kdf-identifiers">KDF Identifiers</a></h2>
-<p>The current V1 format recognizes:</p>
+<p>Canonical V1 normal writes use one KDF profile:</p>
 <ul>
-<li><code>[0xDF, 0x01]</code> = <code>Blake3Balloon</code>, the only normal KDF tag emitted for new V1 keyslots</li>
-<li><code>[0xDF, 0x02]</code> = <code>Argon2id</code>, an unsupported historical tag recognized for explicit diagnostics</li>
+<li>BLAKE3-Balloon with the canonical profile ids defined in <code>dexios-core/src/kdf.rs</code></li>
 </ul>
-<p>New V1 writes do not expose alternate KDF selection or user-configurable KDF
-parameters. The unsupported historical Argon2id tag can be parsed from an old
-header, but workflow code reports it as unsupported instead of deriving a key
-from it.</p>
+<p>New canonical V1 writes do not expose alternate KDF selection or
+user-configurable KDF parameters. Historical Argon2id metadata may still be
+recognized as unsupported metadata for explicit diagnostics, but it is not a
+normal write policy and is not used for derivation.</p>
 <h2 id="key-manipulation"><a class="header" href="#key-manipulation">Key Manipulation</a></h2>
-<p><code>key add</code>, <code>key change</code>, <code>key del</code>, and <code>key verify</code> now operate on V1 headers.</p>
+<p><code>key add</code>, <code>key change</code>, <code>key del</code>, and <code>key verify</code> operate on canonical V1
+headers and fixed physical slots.</p>
 <p>Important behavior:</p>
 <ul>
-<li>up to 4 keyslots may be populated</li>
-<li>matching is determined by successfully decrypting the wrapped master key</li>
-<li><code>change</code> and <code>del</code> affect the first matching keyslot</li>
+<li>up to four physical slots may be populated</li>
+<li>matching is determined by successfully decrypting a slot-scoped wrapped
+master key</li>
+<li><code>key add</code> proves an existing supported key before reading the new key source
+and writes the new key into the first empty physical slot</li>
+<li><code>key change</code> replaces only the proven physical slot</li>
+<li><code>key add</code> and <code>key change</code> generate and persist a fresh keyslot wrapping
+nonce for the changed physical slot</li>
+<li>the fresh keyslot wrapping nonce is part of the authenticated slot metadata</li>
+<li><code>key del</code> clears only the proven physical slot and rejects deletion of the
+final supported decrypting keyslot</li>
+<li>unsupported keyslot metadata does not count as a supported recovery key</li>
+<li><code>key verify</code> is read-only and must not normalize, compact, or mutate slots</li>
 </ul>
-<h2 id="legacy-removal"><a class="header" href="#legacy-removal">Legacy Removal</a></h2>
-<p>Legacy Dexios headers are intentionally unsupported in this refactor line.</p>
-<p>Inputs beginning with legacy <code>[DE,01]</code> through <code>[DE,05]</code> prefixes are rejected as unsupported format.</p>
+<h2 id="retired-and-legacy-layouts"><a class="header" href="#retired-and-legacy-layouts">Retired and Legacy Layouts</a></h2>
+<p>The retired old current-V1 416-byte layout used <code>DXIO 00 01</code> without the
+<code>CV1\0</code> discriminator. Canonical V1 rejects that layout on normal parser and
+decrypt paths. Migration tooling is out of scope unless a future requirement
+approves it.</p>
+<p>Inputs beginning with legacy <code>[DE,01]</code> through <code>[DE,05]</code> prefixes are rejected
+as unsupported format.</p>
 <h2 id="header-operations"><a class="header" href="#header-operations">Header Operations</a></h2>
 <p>Dexios supports V1-only header maintenance operations over encrypted artifacts:</p>
 <ul>
 <li><code>header dump</code> accepts an embedded encrypted artifact with payload bytes after
-the V1 header. It writes exactly 416 serialized header bytes to the detached
-header output.</li>
-<li><code>header strip</code> accepts an embedded encrypted artifact with a valid V1 header
-and payload bytes. It transactionally replaces only the first 416 bytes with
-zeroes and preserves the payload bytes.</li>
-<li><code>header restore</code> accepts a detached header file only when it is exactly 416
-bytes and parses as a V1 header. The restore target must be a stripped
-embedded artifact: it must contain a zeroed 416-byte header prefix and at
-least one payload byte after that prefix.</li>
+the canonical V1 header. It writes exactly 512 serialized canonical header
+bytes to the detached header output.</li>
+<li><code>header strip</code> accepts an embedded encrypted artifact with a valid canonical
+V1 header and payload bytes. It transactionally replaces only the first 512
+bytes with zeroes and preserves the payload bytes.</li>
+<li><code>header restore</code> accepts a detached header file only when it is exactly 512
+bytes and parses as a canonical V1 header. The restore target must be a
+stripped embedded artifact: it must contain a zeroed 512-byte header prefix
+and at least one payload byte after that prefix.</li>
 </ul>
 <p>Header-only files are not embedded encrypted artifacts. Dump and strip reject
 them because there are no payload bytes after the header. Restore rejects short
 detached headers, detached headers with trailing bytes, short restore targets,
-and targets whose first 416 bytes are not all zero before it stages any
+and targets whose first 512 bytes are not all zero before it stages any
 replacement.</p>
-<p>Detached-header encryption outputs usually do not reserve a zeroed 416-byte
+<p>Detached-header encryption outputs usually do not reserve a zeroed 512-byte
 prefix in the payload file, so restore remains a recovery operation for
 previously stripped embedded artifacts rather than a normal detached-header
 workflow.</p>

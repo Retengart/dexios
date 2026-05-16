@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-80ef0646.js";
+            window.path_to_searchindex_js = "../searchindex-accc9426.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-532d5d21.js"></script>
@@ -178,43 +178,84 @@
 <p>The current Dexios product surface uses one suite for new output:</p>
 <ul>
 <li><code>XChaCha20-Poly1305</code></li>
-<li>LE31 stream encryption for payloads</li>
+<li>LE31 stream encryption for raw-file payloads</li>
 <li>a separate wrapping nonce for the encrypted master key inside each keyslot</li>
 </ul>
 <h2 id="stream-encryption"><a class="header" href="#stream-encryption">Stream Encryption</a></h2>
 <p>Dexios reads and writes payloads in <strong>1 MiB</strong> blocks through the typed
 <code>V1PayloadStream</code> boundary. Normal callers pass a typed master key plus either a
-V1 header for encryption or a parsed V1 payload bundle for decryption.</p>
-<p>Stored payload nonces are shorter than their full AEAD counterparts because LE31 appends a 31-bit little-endian counter and a last-block flag internally:</p>
+canonical V1 header for encryption or a parsed V1 payload bundle for
+decryption.</p>
+<p>Stored payload nonces are shorter than their full AEAD counterparts because
+LE31 appends a 31-bit little-endian counter and a last-block flag internally:</p>
 <ul>
 <li>payload nonce: 20 bytes</li>
 <li>keyslot nonce: 24 bytes</li>
 </ul>
-<p>For new V1 files, the payload nonce is stored in the static header region. Each wrapped master key uses its own 24-byte nonce inside a keyslot.</p>
-<h2 id="header-derived-aad"><a class="header" href="#header-derived-aad">Header-Derived AAD</a></h2>
+<p>For new canonical V1 files, the payload nonce is immutable payload context in
+the 64-byte static header. Each wrapped master key uses its own 24-byte keyslot
+nonce inside a physical keyslot record.</p>
+<p>Changing the payload nonce changes the payload AAD and fails payload stream
+authentication. Changing a keyslot nonce changes the slot-scoped wrapping AAD
+and fails wrapped master-key authentication for that slot.</p>
+<h2 id="payload-aad-and-keyslot-aad"><a class="header" href="#payload-aad-and-keyslot-aad">Payload AAD and Keyslot AAD</a></h2>
 <p>Normal V1 stream APIs do not accept arbitrary caller-provided AAD. Encryption
-derives AAD from the V1 header, and decryption uses the parsed V1 payload bundle
-that binds the header to its matching AAD.</p>
+derives payload AAD from the immutable canonical V1 static header, and
+decryption uses the parsed V1 payload bundle that binds the header to its
+matching AAD.</p>
+<p>Payload AAD excludes mutable keyslot table state. Slot occupancy, active slot
+count, keyslot salts, keyslot nonces, KDF profile bytes, and wrapped master-key
+bytes are not part of payload AAD.</p>
+<p>Wrapped master keys use separate slot-scoped AAD. The slot-scoped AAD binds the
+immutable static header context, physical slot index, KDF profile id, KDF
+parameter profile id, salt, and keyslot nonce. This lets <code>key add</code>, <code>key change</code>, and <code>key del</code> mutate keyslot records without re-encrypting the payload
+or invalidating unrelated physical slots.</p>
 <p>The deterministic regression matrix in <code>dexios-core/tests/stream_v1.rs</code> covers
 wrong keys, mismatched header-derived AAD, wrong payload nonce, truncated
 ciphertext, reordered chunks, tampered middle chunks, tampered final chunks, and
-missing final blocks.</p>
+missing final blocks. The keyslot workflow tests cover keyslot nonce and slot
+metadata authentication.</p>
 <h2 id="final-block-semantics"><a class="header" href="#final-block-semantics">Final Block Semantics</a></h2>
-<p>If the plaintext length is exactly divisible by the 1 MiB block size, Dexios still emits a final authenticated last block. This avoids end-of-stream ambiguity.</p>
+<p>If the plaintext length is exactly divisible by the 1 MiB block size, Dexios
+still emits a final authenticated last block. This avoids end-of-stream
+ambiguity.</p>
 <p>For exact-block plaintext, that final block is an authenticated empty marker.
 Decryption requires the marker; ciphertext without the final block fails instead
 of returning committed plaintext success.</p>
-<h2 id="header-and-payload-authentication"><a class="header" href="#header-and-payload-authentication">Header and Payload Authentication</a></h2>
-<p>Payload authentication is provided by the AEAD itself.</p>
-<p>Header authentication is provided through V1 AAD: the first 32 bytes of the header are authenticated with every encrypted block.</p>
-<h2 id="decryption-output-state"><a class="header" href="#decryption-output-state">Decryption Output State</a></h2>
+<h2 id="final-authentication-receipt"><a class="header" href="#final-authentication-receipt">Final Authentication Receipt</a></h2>
 <p><code>V1PayloadStream::decrypt_file</code> writes plaintext to its writer as uncommitted
 scratch. Callers must treat the plaintext as accepted only after the function
-returns <code>Ok(())</code>, which means the final block authenticated successfully. This
-core contract does not implement storage transactions; final output commit
-semantics belong to the storage workflow layer.</p>
+returns a <code>V1FinalAuth</code> receipt. The receipt is created only after the final
+block authenticates and the plaintext writer flushes successfully.
+This is the final authentication boundary for payload acceptance.</p>
+<p>Domain transactional decrypt commit observes that receipt before publishing the
+final output. A final-authentication failure after scratch plaintext exists must
+leave existing final outputs uncommitted.</p>
+<h2 id="payload-framing"><a class="header" href="#payload-framing">Payload Framing</a></h2>
+<p>Canonical V1 stores payload kind and payload framing bytes in the static header.
+The bytes are interpreted by the shared core <code>PayloadKind</code> and
+<code>PayloadFramingProfile</code> contract:</p>
+<ul>
+<li><code>PayloadKind::RawFile</code> with <code>PayloadFramingProfile::RawLe31</code> for normal file
+encryption</li>
+<li><code>PayloadKind::ManifestArchive</code> with
+<code>PayloadFramingProfile::ManifestFirst</code> for Dexios-owned archive framing</li>
+</ul>
+<p>The manifest-first archive framing starts with a Dexios <code>DXAR</code> manifest and then
+ordered <code>DXBF</code> body frames. This is canonical V1 payload structure, not ZIP
+crate surface. ZIP implementation bytes, ZIP central-directory metadata, ZIP
+crate types, compression selectors, and broad metadata knobs are not canonical
+V1 format surface. Manifest-first framing is not ZIP crate surface. ZIP
+implementation details are not canonical V1 format surface.</p>
+<h2 id="header-and-payload-authentication"><a class="header" href="#header-and-payload-authentication">Header and Payload Authentication</a></h2>
+<p>Payload authentication is provided by the AEAD itself. Header authentication for
+payload bytes is provided through immutable canonical V1 payload AAD. Wrapped
+master-key authentication is provided separately through slot-scoped AAD for
+each physical keyslot.</p>
 <h2 id="legacy-notes"><a class="header" href="#legacy-notes">Legacy Notes</a></h2>
-<p>Older compatibility paths still exist internally, but the normal public surface no longer exposes alternate cipher selection or memory-mode encryption for new output.</p>
+<p>The normal public surface no longer exposes alternate cipher selection or
+memory-mode encryption for new output. Retired old current-V1 layout handling is
+an explicit parser rejection path, not a compatibility decrypt path.</p>
 
                     </main>
 

@@ -87,8 +87,6 @@ entry lists, encrypted output, and extracted files. Unpack also requires
 temporary space for the decrypted plaintext ZIP. Dexios uses best-effort
 capacity pressure reporting where the platform preserves the source error, but
 it does not prove portable free space before starting the workflow.
-Structural limits are metadata bounds; they do not prove that the host has
-enough free memory or disk space.
 Structural limits are metadata bounds; they do not prove that the host has enough free memory or disk space.
 
 The current unpack model is bounded by indexing: unpack pre-scans archive
@@ -160,9 +158,8 @@ existing files.
 - Unpack-side plaintext temporary ZIP exposure remains. The temporary decrypted
   archive is plaintext while it exists and is handled as ordinary temp-file
   cleanup.
-- Current hardening does not remove unpack-side plaintext temporary ZIP
-  exposure; it remains ordinary temp-file cleanup.
-- The current model does not remove unpack-side plaintext temporary ZIP exposure.
+- Current hardening does not remove unpack-side plaintext temporary ZIP exposure;
+  it remains ordinary temp-file cleanup.
 - Checked unpack construction makes the public API harder to bypass; it does
   not remove unpack-side plaintext temporary ZIP exposure or add a capacity
   proof.

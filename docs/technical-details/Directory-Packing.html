@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-80ef0646.js";
+            window.path_to_searchindex_js = "../searchindex-accc9426.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-532d5d21.js"></script>
@@ -175,20 +175,26 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h2 id="directory-packing"><a class="header" href="#directory-packing">Directory Packing</a></h2>
-<p><code>pack</code> writes ZIP archive bytes directly into the normal Dexios V1 encrypted
-payload stream. <code>unpack</code> performs the reverse operation through a decrypted
-temporary ZIP so it can validate archive metadata before committing outputs.</p>
-<p>The resulting encrypted file is still just a Dexios-encrypted blob. After decryption, the packed payload is an ordinary zip archive.</p>
+<p>Current <code>pack</code> writes archive bytes into the normal Dexios canonical V1
+encrypted payload stream. Existing unpack still uses a decrypted temporary ZIP
+artifact so it can validate archive metadata before committing outputs.</p>
+<p>Phase 3 also defines the future canonical V1 archive payload framing:
+Dexios-owned manifest-first <code>DXAR</code> framing with ordered <code>DXBF</code> body frames. That
+core framing is not yet the full unpack implementation; Phase 5 owns the
+workflow migration from the current ZIP-backed unpack model.</p>
+<p>The canonical V1 archive payload framing is Dexios-owned manifest-first <code>DXAR</code>
+framing plus ordered <code>DXBF</code> body frames.</p>
 <h2 id="current-cli-behavior"><a class="header" href="#current-cli-behavior">Current CLI Behavior</a></h2>
 <p>The current CLI accepts one or more input directories:</p>
 <pre><code class="language-bash">dexios pack photos/ archive.enc
 </code></pre>
 <pre><code class="language-bash">dexios pack photos/ videos/ archive.enc
 </code></pre>
-<p><code>--recursive</code> is retained for compatibility, but recursive traversal is already the default behavior.</p>
+<p><code>--recursive</code> is retained for compatibility, but recursive traversal is already
+the default behavior.</p>
 <p>Compression is not user-configurable. Pack uses the default Dexios archive
 compression policy.</p>
-<h2 id="archive-creation"><a class="header" href="#archive-creation">Archive Creation</a></h2>
+<h2 id="current-archive-creation"><a class="header" href="#current-archive-creation">Current Archive Creation</a></h2>
 <p>The current implementation:</p>
 <ol>
 <li>validates the input directories</li>
@@ -196,12 +202,14 @@ compression policy.</p>
 <li>excludes the output file and detached header path from being re-packed</li>
 <li>materializes the directory and file entry list in memory</li>
 <li>checks the shared <code>ArchiveLimits</code> structural policy</li>
-<li>writes directory and file entries through <code>ZipWriter::new_stream</code></li>
-<li>encrypts those ZIP bytes using the same V1 stream encryption path used for normal files</li>
-<li>commits the final encrypted output and detached header through staged storage transaction semantics</li>
+<li>writes directory and file entries through the current ZIP writer boundary</li>
+<li>encrypts those archive bytes using the same canonical V1 stream encryption
+path used for normal files</li>
+<li>commits the final encrypted output and detached header through staged storage
+transaction semantics</li>
 </ol>
 <p>Phase 12 reduced pack-side plaintext temporary ZIP exposure. Pack still
-materializes the entry list and streams file contents through the ZIP writer,
+materializes the entry list and streams file contents through the archive writer,
 but it no longer creates a separate plaintext temporary ZIP artifact before
 encryption.</p>
 <p>Storage transaction semantics here mean same-directory temporary files and
@@ -215,19 +223,19 @@ Dexios reports partial commit evidence; committed outputs are not rolled back.</
 not claim portable parent-directory durability across every filesystem or
 platform. This is no full power-failure proof.</p>
 <p>The archive is always written with the Dexios-owned archive policy. Current pack
-output uses Zstd compression for offline at-rest archival use. The public
-archive contract intentionally stays small: archive path plus file/directory
-distinction. Dexios does not currently guarantee preservation of permissions,
-timestamps, ZIP extra fields, symlinks, extended attributes, or other filesystem
-metadata as stable compatibility behavior.</p>
-<h2 id="structural-limits"><a class="header" href="#structural-limits">Structural Limits</a></h2>
+output uses the current archive compression policy for offline at-rest archival
+use. The public archive contract intentionally stays small: archive path plus
+file/directory distinction. Dexios does not currently guarantee preservation of
+permissions, timestamps, archive extra fields, symlinks, extended attributes, or
+other filesystem metadata as stable compatibility behavior.</p>
+<h2 id="current-structural-limits"><a class="header" href="#current-structural-limits">Current Structural Limits</a></h2>
 <p>Pack and unpack share the same <code>ArchiveLimits</code> defaults:</p>
 <ul>
 <li>maximum archive entries: <code>100000</code></li>
 <li>maximum normalized archive path bytes: <code>4096</code></li>
 <li>maximum normalized archive path depth: <code>64</code></li>
 </ul>
-<p>Pack checks these limits while materializing source entries and before ZIP
+<p>Pack checks these limits while materializing source entries and before archive
 writing begins. Unpack checks entry count before metadata scanning, and checks
 each normalized archive path before prompts, staging, or writes.</p>
 <p>These are structural limits, not storage-capacity guarantees. Large directory
@@ -235,23 +243,47 @@ trees and archives still require enough memory and output space for materialized
 entry lists, encrypted output, and extracted files. Unpack also requires
 temporary space for the decrypted plaintext ZIP. Dexios uses best-effort
 capacity pressure reporting where the platform preserves the source error, but
-it does not prove portable free space before starting the workflow.</p>
-<p>The current model is bounded by indexing: pack materializes entries before
-writing, and unpack pre-scans ZIP metadata, collision sets, and selected targets
-before transaction commit. It is not a streaming archive redesign.</p>
-<p>Files are currently copied into the zip archive in streaming chunks. The code does not attempt to preserve full original filesystem metadata as a stable compatibility guarantee.</p>
-<h2 id="unpacking"><a class="header" href="#unpacking">Unpacking</a></h2>
+it does not prove portable free space before starting the workflow.
+Structural limits are metadata bounds; they do not prove that the host has enough free memory or disk space.</p>
+<p>The current unpack model is bounded by indexing: unpack pre-scans archive
+metadata, collision sets, and selected targets before transaction commit. It is
+not yet the Phase 5 streaming archive redesign.</p>
+<h2 id="canonical-manifest-first-framing"><a class="header" href="#canonical-manifest-first-framing">Canonical Manifest-First Framing</a></h2>
+<p>Canonical V1 reserves archive payload structure for Dexios-owned
+manifest-first framing rather than ZIP implementation surface. The shared core
+payload contract distinguishes:</p>
+<ul>
+<li>raw-file payloads using LE31 stream framing</li>
+<li>manifest archive payloads using manifest-first framing</li>
+</ul>
+<p>The manifest-first framing starts with a <code>DXAR</code> manifest. The manifest records
+the ordered file/directory entries, normalized path bytes, entry kind, and file
+body lengths. File bodies then follow as ordered <code>DXBF</code> body frames.</p>
+<p>The core framing enforces structural limit checks for manifest entry count,
+normalized path byte length, body frame length, missing body frames, duplicate
+body frames, body-frame length mismatch, and ordered body-frame rules. Body
+frames must appear in manifest file-entry order; a body frame for a directory is
+rejected.</p>
+<p>ZIP bytes, ZIP central-directory metadata, ZIP crate types, compression
+selectors, and broad metadata knobs are not canonical V1 surface. Domain policy
+still owns path normalization, traversal rejection, duplicate and prefix
+collision checks, selected-output filtering, target revalidation, and staged
+transaction commit in later phases.</p>
+<h2 id="current-unpacking"><a class="header" href="#current-unpacking">Current Unpacking</a></h2>
 <p>The current unpack flow is stricter than the historical docs:</p>
 <p>The public Rust API constructs unpack work through checked <code>UnpackIntent</code> state
 rather than raw request fields. The CLI still owns prompting and selected input
 paths; the domain layer keeps archive validation, path identity checks, staging,
 and transaction commit behavior.</p>
 <ol>
-<li>construct checked unpack intent from opened input/header entries and the requested output root</li>
+<li>construct checked unpack intent from opened input/header entries and the
+requested output root</li>
 <li>decrypt the packed file into a temporary zip artifact</li>
 <li>normalize every archive path before writing anything to disk</li>
-<li>enforce the shared <code>ArchiveLimits</code> entry count, path byte, and path depth policy</li>
-<li>reject traversal attempts, unsafe ZIP names, duplicate normalized paths, and prefix collisions</li>
+<li>enforce the shared <code>ArchiveLimits</code> entry count, path byte, and path depth
+policy</li>
+<li>reject traversal attempts, unsafe archive names, duplicate normalized paths,
+and prefix collisions</li>
 <li>reject unsafe symlink-based output escapes through the storage layer</li>
 <li>run overwrite prompts only after the structural validation pass succeeds</li>
 <li>revalidate selected file targets near staging</li>
@@ -259,17 +291,33 @@ and transaction commit behavior.</p>
 <li>commit the extracted files through storage transaction semantics</li>
 <li>clean up the temporary archive</li>
 </ol>
-<p>If the CLI is not run with <code>--force</code>, unpack may prompt before overwriting existing files.</p>
+<p>If the CLI is not run with <code>--force</code>, unpack may prompt before overwriting
+existing files.</p>
 <h2 id="security-notes"><a class="header" href="#security-notes">Security Notes</a></h2>
 <ul>
-<li>Packing hides original directory layout inside the encrypted payload, but the outer ciphertext still leaks overall file size.</li>
-<li>Unpack should still be treated as a risky operation on untrusted input, even though the current implementation has explicit path identity and path-safety checks.</li>
-<li>Pack-side plaintext temporary ZIP exposure is reduced because pack streams ZIP bytes into V1 encryption instead of writing a plaintext ZIP scratch file.</li>
-<li>Unpack-side plaintext temporary ZIP exposure remains. The temporary decrypted archive is plaintext while it exists and is handled as ordinary temp-file cleanup.</li>
-<li>Checked unpack construction makes the public API harder to bypass; it does not remove unpack-side plaintext temporary ZIP exposure or add a capacity proof.</li>
-<li>Byte and storage needs are real operating assumptions. The structural limits bound archive metadata shape; they do not prove that the host has enough free memory or disk space.</li>
-<li>capacity pressure messages are best-effort diagnostics from preserved IO sources; they are not a portable capacity preflight.</li>
-<li>Delete-source cleanup after successful pack or unpack remains ordinary delete-after-success cleanup, not sanitization.</li>
+<li>Packing hides original directory layout inside the encrypted payload, but the
+outer ciphertext still leaks overall file size.</li>
+<li>Unpack should still be treated as a risky operation on untrusted input, even
+though the current implementation has explicit path identity and path-safety
+checks.</li>
+<li>Pack-side plaintext temporary ZIP exposure is reduced because pack streams
+archive bytes into V1 encryption instead of writing a plaintext ZIP scratch
+file.</li>
+<li>Unpack-side plaintext temporary ZIP exposure remains. The temporary decrypted
+archive is plaintext while it exists and is handled as ordinary temp-file
+cleanup.</li>
+<li>Current hardening does not remove unpack-side plaintext temporary ZIP exposure;
+it remains ordinary temp-file cleanup.</li>
+<li>Checked unpack construction makes the public API harder to bypass; it does
+not remove unpack-side plaintext temporary ZIP exposure or add a capacity
+proof.</li>
+<li>Byte and storage needs are real operating assumptions. The structural limits
+bound archive metadata shape; they do not prove that the host has enough free
+memory or disk space.</li>
+<li>capacity pressure messages are best-effort diagnostics from preserved IO
+sources; they are not a portable capacity preflight.</li>
+<li>Delete-source cleanup after successful pack or unpack remains ordinary
+delete-after-success cleanup, not sanitization.</li>
 </ul>
 
                     </main>

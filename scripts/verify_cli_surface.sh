@@ -115,7 +115,7 @@ expect_rejected() {
 }
 
 case_removed_token_source_gate() {
-    awk 'BEGIN { bad = 0 } /^[[:space:]]*#/ { next } /--aes|--argon|--zstd|--erase|"\$BIN"[[:space:]]+erase|key add -k .* -n/ { if ($0 !~ /expect_rejected/) { print; bad = 1 } } END { exit bad }' "$0"
+    awk 'BEGIN { bad = 0 } /^[[:space:]]*#/ { next } /--aes|--argon|--zstd|--erase|"\$BIN"[[:space:]]+erase/ { if ($0 !~ /expect_rejected/) { print; bad = 1 } } END { exit bad }' "$0"
 }
 
 case_encrypt_decrypt_env_hash_delete_input() {
@@ -238,6 +238,10 @@ case_key_subcommands() {
 
     "$BIN" encrypt -f -k "$dir/old.key" "$dir/plain.txt" "$dir/multi.enc" || return 1
     "$BIN" key verify -k "$dir/old.key" "$dir/multi.enc" || return 1
+    "$BIN" key add -k "$dir/old.key" -n "$dir/new.key" "$dir/multi.enc" || return 1
+    "$BIN" key verify -k "$dir/new.key" "$dir/multi.enc" || return 1
+    "$BIN" decrypt -f -k "$dir/new.key" "$dir/multi.enc" "$dir/multi.out" || return 1
+    file_eq "$dir/plain.txt" "$dir/multi.out" "key add should preserve decryptability with added key" || return 1
 
     "$BIN" encrypt -f -k "$dir/old.key" "$dir/plain.txt" "$dir/change.enc" || return 1
     "$BIN" key change -k "$dir/old.key" -n "$dir/changed.key" "$dir/change.enc" || return 1
@@ -347,7 +351,6 @@ case_removed_cli_surface_rejected() {
     expect_rejected "pack removed erase flag" "$BIN" pack --erase "$dir" "$dir/archive.enc" || return 1
     expect_rejected "unpack removed erase flag" "$BIN" unpack --erase "$dir/archive.enc" "$dir/out" || return 1
     expect_rejected "removed top level erase subcommand" "$BIN" erase "$dir/plain.txt" || return 1
-    expect_rejected "key add removed new key source" "$BIN" key add -k "$dir/old.key" -n "$dir/new.key" "$dir/plain.enc" || return 1
 }
 
 echo "Using binary: $BIN"
