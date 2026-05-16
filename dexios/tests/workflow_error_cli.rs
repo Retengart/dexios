@@ -73,6 +73,13 @@ fn stderr(output: &std::process::Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
+fn production_mapper_source() -> &'static str {
+    ERRORS_SOURCE
+        .split("#[cfg(test)]")
+        .next()
+        .expect("production mapper source")
+}
+
 fn assert_no_default_source_chain(stderr: &str) {
     for forbidden in [
         "Caused by:",
@@ -209,6 +216,7 @@ fn mark_keyslot_unsupported_argon2id(path: &Path, index: usize) {
 #[test]
 fn cli_workflow_errors_are_routed_through_mapping_helpers() {
     assert!(SUBCOMMANDS_SOURCE.contains("pub mod errors;"));
+    let mapper_source = production_mapper_source();
     assert!(ERRORS_SOURCE.contains("map_encrypt_error"));
     assert!(ERRORS_SOURCE.contains("map_decrypt_error"));
     assert!(ERRORS_SOURCE.contains("map_pack_error"));
@@ -221,14 +229,35 @@ fn cli_workflow_errors_are_routed_through_mapping_helpers() {
     assert!(ERRORS_SOURCE.contains("map_header_error"));
     assert!(ERRORS_SOURCE.contains("map_key_error"));
     assert!(ERRORS_SOURCE.contains("WorkflowErrorClass::TransactionCommitFailure"));
+    assert!(ERRORS_SOURCE.contains("WorkflowErrorClass::CleanupFailure"));
+    assert!(ERRORS_SOURCE.contains("WorkflowErrorClass::ResourcePressure"));
+    assert_eq!(
+        mapper_source.matches("match error.workflow_class()").count(),
+        6,
+        "all six CLI workflow mappers should route by typed WorkflowErrorClass"
+    );
     assert!(ENCRYPT_SOURCE.contains("map_encrypt_error"));
     assert!(DECRYPT_SOURCE.contains("map_decrypt_error"));
     assert!(PACK_SOURCE.contains("map_pack_error"));
     assert!(UNPACK_SOURCE.contains("map_unpack_error"));
     assert!(HEADER_SOURCE.contains("map_header_error"));
     assert!(KEY_SOURCE.contains("map_key_error"));
-    assert!(!ERRORS_SOURCE.contains("to_string()"));
-    assert!(!ERRORS_SOURCE.contains("contains("));
+    for forbidden in [
+        "clap::Error",
+        "Command::error",
+        ".to_string().contains(",
+        "format!(",
+        ".contains(",
+        ".chain()",
+        ".source()",
+        "{error:#}",
+        "{error:?}",
+    ] {
+        assert!(
+            !mapper_source.contains(forbidden),
+            "production workflow mappers must not use {forbidden} for post-parse error rendering"
+        );
+    }
 }
 
 #[test]

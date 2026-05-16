@@ -82,6 +82,25 @@ fn assert_no_prompt(output: &std::process::Output) {
     );
 }
 
+fn assert_sanitized_key_stderr(stderr: &str) {
+    for forbidden in [
+        "Error:",
+        "Caused by:",
+        "source chain",
+        "Stack backtrace",
+        "TransactionError::",
+        "WorkflowErrorClass::",
+        PASSWORD,
+        "keyslot internals",
+        "master key:",
+    ] {
+        assert!(
+            !stderr.contains(forbidden),
+            "key workflow stderr must stay sanitized: {stderr}"
+        );
+    }
+}
+
 fn encrypt_fixture(dir: &Path, name: &str) -> PathBuf {
     let input_path = dir.join(format!("{name}.txt"));
     let output_path = dir.join(format!("{name}.enc"));
@@ -381,6 +400,7 @@ fn key_verify_maps_success_and_incorrect_key_after_read_only_preparation() {
         "incorrect key did not use typed key mapping: {}",
         stderr(&wrong)
     );
+    assert_sanitized_key_stderr(&stderr(&wrong));
 }
 
 #[test]
@@ -429,6 +449,7 @@ fn key_change_rejects_preflight_errors_before_prompting_for_secrets() {
         "unsupported KDF change did not use typed mapping: {}",
         stderr(&unsupported_output)
     );
+    assert_sanitized_key_stderr(&stderr(&unsupported_output));
     assert_no_prompt(&unsupported_output);
 }
 
@@ -593,6 +614,7 @@ fn key_delete_maps_failures_without_remaining_key_collection() {
     );
     assert!(!wrong_output.status.success());
     assert!(stderr(&wrong_output).contains("Incorrect key"));
+    assert_sanitized_key_stderr(&stderr(&wrong_output));
 }
 
 #[test]
