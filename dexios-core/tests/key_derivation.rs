@@ -1,6 +1,7 @@
 use dexios_core::kdf::{
-    BLAKE3_BALLOON_ALGORITHM_DELTA, BLAKE3_BALLOON_P_COST, BLAKE3_BALLOON_SPACE_COST,
-    BLAKE3_BALLOON_TIME_COST, Kdf, Salt,
+    BLAKE3_BALLOON_ALGORITHM_DELTA, BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID,
+    BLAKE3_BALLOON_KDF_PROFILE_ID, BLAKE3_BALLOON_OUTPUT_LEN, BLAKE3_BALLOON_P_COST,
+    BLAKE3_BALLOON_SALT_LEN, BLAKE3_BALLOON_SPACE_COST, BLAKE3_BALLOON_TIME_COST, Kdf, Salt,
 };
 use dexios_core::protected::Protected;
 use serde::Deserialize;
@@ -136,6 +137,18 @@ fn blake3_balloon_vector_metadata_matches_frozen_contract() {
         vector.metadata["params_delta"].as_integer(),
         Some(i64::from(BLAKE3_BALLOON_ALGORITHM_DELTA))
     );
+}
+
+#[test]
+fn canonical_blake3_balloon_profile_ids_match_frozen_params() {
+    assert_eq!(BLAKE3_BALLOON_KDF_PROFILE_ID, 0x01);
+    assert_eq!(BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID, 0x01);
+    assert_eq!(BLAKE3_BALLOON_SPACE_COST, 278_528);
+    assert_eq!(BLAKE3_BALLOON_TIME_COST, 1);
+    assert_eq!(BLAKE3_BALLOON_P_COST, 1);
+    assert_eq!(BLAKE3_BALLOON_ALGORITHM_DELTA, 3);
+    assert_eq!(BLAKE3_BALLOON_OUTPUT_LEN, 32);
+    assert_eq!(BLAKE3_BALLOON_SALT_LEN, 16);
 }
 
 #[test]

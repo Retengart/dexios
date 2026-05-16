@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 
-use crate::kdf::Kdf;
+use crate::kdf::{BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID, BLAKE3_BALLOON_KDF_PROFILE_ID, Kdf};
 
 use super::common::{
     CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, HEADER_STATIC_LEN, HeaderReadError, HeaderWriteError,
@@ -8,10 +8,8 @@ use super::common::{
 };
 
 const CANONICAL_SCHEMA_PROFILE: u8 = 0x01;
-const CANONICAL_KDF_PARAM_PROFILE: u8 = 0x01;
 const SLOT_STATE_EMPTY: u8 = 0x00;
 const SLOT_STATE_ACTIVE: u8 = 0x01;
-const KDF_PROFILE_BLAKE3_BALLOON: u8 = 0x01;
 const KDF_PROFILE_HISTORICAL_ARGON2ID: u8 = 0xDF;
 const KDF_PARAM_PROFILE_HISTORICAL_ARGON2ID: u8 = 0x02;
 const SLOT_WRAPPING_AAD_LEN: usize = HEADER_STATIC_LEN + 1 + 1 + 1 + 16 + 24;
@@ -73,25 +71,27 @@ pub enum KeyslotKdf {
 impl KeyslotKdf {
     fn serialize_profile(self) -> u8 {
         match self {
-            Self::Blake3Balloon => KDF_PROFILE_BLAKE3_BALLOON,
+            Self::Blake3Balloon => BLAKE3_BALLOON_KDF_PROFILE_ID,
             Self::UnsupportedArgon2id => KDF_PROFILE_HISTORICAL_ARGON2ID,
         }
     }
 
     fn serialize_param_profile(self) -> u8 {
         match self {
-            Self::Blake3Balloon => CANONICAL_KDF_PARAM_PROFILE,
+            Self::Blake3Balloon => BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID,
             Self::UnsupportedArgon2id => KDF_PARAM_PROFILE_HISTORICAL_ARGON2ID,
         }
     }
 
     fn deserialize(profile: u8, param_profile: u8) -> Result<Self, HeaderReadError> {
         match (profile, param_profile) {
-            (KDF_PROFILE_BLAKE3_BALLOON, CANONICAL_KDF_PARAM_PROFILE) => Ok(Self::Blake3Balloon),
+            (BLAKE3_BALLOON_KDF_PROFILE_ID, BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID) => {
+                Ok(Self::Blake3Balloon)
+            }
             (KDF_PROFILE_HISTORICAL_ARGON2ID, KDF_PARAM_PROFILE_HISTORICAL_ARGON2ID) => {
                 Ok(Self::UnsupportedArgon2id)
             }
-            (KDF_PROFILE_BLAKE3_BALLOON, param_profile) => {
+            (BLAKE3_BALLOON_KDF_PROFILE_ID, param_profile) => {
                 Err(HeaderReadError::InvalidKdfParamProfile(param_profile))
             }
             (profile, _) => Err(HeaderReadError::InvalidKdfProfile(profile)),
@@ -448,7 +448,7 @@ impl V1Header {
         aad[10] = CANONICAL_SCHEMA_PROFILE;
         aad[11] = self.payload_kind.serialize();
         aad[12] = self.payload_framing.serialize();
-        aad[13] = CANONICAL_KDF_PARAM_PROFILE;
+        aad[13] = BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID;
         aad[14] = MAX_KEYSLOTS as u8;
         aad[16..36].copy_from_slice(self.payload_nonce.as_bytes());
         V1HeaderAad::from_static_header_bytes(aad)
@@ -525,7 +525,7 @@ impl V1Header {
         }
         let payload_kind = V1PayloadKind::deserialize(bytes[11])?;
         let payload_framing = V1PayloadFraming::deserialize(bytes[12])?;
-        if bytes[13] != CANONICAL_KDF_PARAM_PROFILE {
+        if bytes[13] != BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID {
             return Err(HeaderReadError::InvalidKdfParamProfile(bytes[13]));
         }
         if bytes[14] != MAX_KEYSLOTS as u8 {

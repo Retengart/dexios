@@ -9,6 +9,10 @@ pub const BLAKE3_BALLOON_SPACE_COST: u32 = 278_528;
 pub const BLAKE3_BALLOON_TIME_COST: u32 = 1;
 pub const BLAKE3_BALLOON_P_COST: u32 = 1;
 pub const BLAKE3_BALLOON_ALGORITHM_DELTA: u32 = 3;
+pub const BLAKE3_BALLOON_KDF_PROFILE_ID: u8 = 0x01;
+pub const BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID: u8 = 0x01;
+pub const BLAKE3_BALLOON_OUTPUT_LEN: usize = DERIVED_KEY_LEN;
+pub const BLAKE3_BALLOON_SALT_LEN: usize = SALT_LEN;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Salt([u8; SALT_LEN]);

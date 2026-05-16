@@ -4,7 +4,9 @@ use dexios_core::header::common::{
 };
 use dexios_core::header::v1::{EncryptedMasterKey, KeyslotKdf, V1Header, V1Keyslot, V1Keyslots};
 use dexios_core::header::{HeaderReadError, ParsedHeader, ParsedV1Payload};
-use dexios_core::kdf::{Kdf, Salt};
+use dexios_core::kdf::{
+    BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID, BLAKE3_BALLOON_KDF_PROFILE_ID, Kdf, Salt,
+};
 use dexios_core::primitives::{MasterKey, WrappingKey};
 use dexios_core::stream::{StreamError, V1PayloadDecryptor, V1PayloadEncryptor, V1PayloadStream};
 use std::path::Path;
@@ -694,6 +696,39 @@ fn new_keyslot_constructor_uses_supported_kdf_selector() {
         &bytes[HEADER_STATIC_LEN..HEADER_STATIC_LEN + 4],
         &[0x01, 0x00, 0x01, 0x01]
     );
+}
+
+#[test]
+fn canonical_header_serializes_kdf_profile_ids_not_parameter_values() {
+    let header = support::sample_v1_header();
+    let bytes = header.serialize().unwrap();
+
+    assert_eq!(bytes[13], BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID);
+    assert_eq!(bytes[HEADER_STATIC_LEN + 2], BLAKE3_BALLOON_KDF_PROFILE_ID);
+    assert_eq!(
+        bytes[HEADER_STATIC_LEN + 3],
+        BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID
+    );
+
+    let header_source = include_str!("../src/header/v1.rs");
+    assert!(
+        !header_source.contains("BLAKE3_BALLOON_SPACE_COST"),
+        "canonical V1 header must serialize the KDF parameter profile id, not raw parameter knobs"
+    );
+}
+
+#[test]
+fn v1_header_rejects_unsupported_static_kdf_param_profile_before_derivation() {
+    let mut bytes = support::sample_v1_header().serialize().unwrap();
+    bytes[13] = 0x02;
+
+    let error = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
+        .expect_err("unsupported static KDF parameter profile should fail during parsing");
+
+    assert!(matches!(
+        error,
+        HeaderReadError::InvalidKdfParamProfile(0x02)
+    ));
 }
 
 #[test]
