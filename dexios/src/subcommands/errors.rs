@@ -108,8 +108,8 @@ pub fn map_unpack_error(error: domain::unpack::Error) -> anyhow::Error {
 pub fn map_header_error(error: domain::header::Error) -> anyhow::Error {
     match error.workflow_class() {
         WorkflowErrorClass::MalformedFormat => match error {
-            domain::header::Error::MalformedV1Header(_) => {
-                anyhow!("Malformed Dexios V1 header")
+            domain::header::Error::MalformedV1Header(error) => {
+                anyhow!("Malformed Dexios V1 header: {error}")
             }
             domain::header::Error::ShortDetachedHeader { actual_len } => {
                 anyhow!("Detached header is too short: {actual_len} bytes")
