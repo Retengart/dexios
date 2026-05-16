@@ -37,7 +37,7 @@ impl DeleteIntent {
         let original = fs::read(target.target_path()).map_err(|_| Error::ReadIo)?;
         let header = parse_v1_header(&original)?;
 
-        if let Some(tag) = super::unsupported_keyslot_kdf_tag(header.keyslots_collection()) {
+        if let Some(tag) = super::all_keyslots_have_unsupported_kdf(header.keyslots_collection()) {
             return Err(Error::UnsupportedKdf(tag));
         }
 
@@ -80,11 +80,13 @@ fn deleted_header(header: &V1Header, raw_key_old: Protected<Vec<u8>>) -> Result<
     let (master_key, index) = super::decrypt_v1_master_key_with_index(header, raw_key_old)?;
     drop(master_key);
 
-    if keyslots.len() == 1 {
+    if keyslots.supported_slot_count() <= 1 {
         return Err(Error::CannotRemoveFinalV1Keyslot);
     }
 
-    keyslots.remove(index).map_err(|_| Error::HeaderWrite)?;
+    keyslots
+        .clear_physical_slot(index)
+        .map_err(|_| Error::HeaderWrite)?;
 
     V1Header::new(*header.payload_nonce(), keyslots).map_err(|_| Error::HeaderWrite)
 }

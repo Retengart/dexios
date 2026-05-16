@@ -148,22 +148,29 @@ fn keyslot_kdfs(encrypted: &RefCell<Cursor<Vec<u8>>>) -> Vec<KeyslotKdf> {
 }
 
 #[test]
-fn key_add_intent_rejects_supported_v1_without_mutating_header_or_payload() {
+fn key_add_intent_adds_supported_v1_without_mutating_payload() {
     let (_dir, encrypted_path) = encrypted_v1_file("add-supported-v1");
     let original = fs::read(&encrypted_path).expect("read original encrypted fixture");
 
     let intent = key::add::AddIntent::new(&encrypted_path).expect("prepare key add intent");
-    let add = key::add::execute(intent);
+    let proven = intent
+        .verify_old_key(Protected::new(b"old-pass".to_vec()))
+        .expect("old key proof");
+    key::add::execute(
+        proven,
+        Protected::new(b"new-pass".to_vec()),
+        Kdf::Blake3Balloon,
+    )
+    .expect("add second keyslot");
 
-    assert!(matches!(
-        add,
-        Err(key::Error::CannotAddV1KeyslotWithoutReencrypt)
-    ));
+    let changed = fs::read(&encrypted_path).expect("read after add");
     assert_eq!(
-        fs::read(&encrypted_path).expect("read after unsupported add"),
-        original,
-        "unsupported key add must not mutate header or payload bytes"
+        &changed[HEADER_LEN..],
+        &original[HEADER_LEN..],
+        "key add must not mutate payload bytes"
     );
+    verify_file(&encrypted_path, b"old-pass").expect("old key should still verify");
+    verify_file(&encrypted_path, b"new-pass").expect("new key should verify");
 }
 
 #[test]
@@ -489,12 +496,8 @@ fn domain_encrypt_add_change_sources_keep_borrowed_secret_contract() {
         "`key.rs` should borrow raw_key_old while trying keyslots"
     );
     assert!(
-        DOMAIN_KEY_ADD_SOURCE.contains("CannotAddV1KeyslotWithoutReencrypt"),
-        "`key/add.rs` should reject V1 count-changing keyslot additions until payload re-encryption exists"
-    );
-    assert!(
-        !DOMAIN_KEY_ADD_SOURCE.contains("raw_key_new"),
-        "`key/add.rs` should not request a new secret while V1 keyslot additions are rejected"
+        DOMAIN_KEY_ADD_SOURCE.contains(".derive(&new_key_secret,"),
+        "`key/add.rs` should borrow the new key secret for replacement keyslot derivation"
     );
     assert!(
         DOMAIN_KEY_CHANGE_SOURCE.contains(".derive(&raw_key_new,"),
@@ -534,7 +537,7 @@ fn key_del_rejects_final_keyslot_before_writing_header() {
 }
 
 #[test]
-fn key_add_rejects_v1_count_change_without_breaking_existing_decrypt() {
+fn key_add_commits_second_keyslot_without_breaking_existing_decrypt() {
     let encrypted = encrypted_v1_fixture();
     let temp_dir = tempfile::tempdir().expect("temp dir");
     let encrypted_path = temp_dir.path().join("plain.enc");
@@ -542,15 +545,26 @@ fn key_add_rejects_v1_count_change_without_breaking_existing_decrypt() {
     let original = fs::read(&encrypted_path).expect("read original fixture");
 
     let intent = key::add::AddIntent::new(&encrypted_path).expect("prepare key add intent");
-    let add = key::add::execute(intent);
+    let proven = intent
+        .verify_old_key(Protected::new(b"old-pass".to_vec()))
+        .expect("old key proof");
+    key::add::execute(
+        proven,
+        Protected::new(b"new-pass".to_vec()),
+        Kdf::Blake3Balloon,
+    )
+    .expect("add second keyslot");
 
-    assert!(matches!(
-        add,
-        Err(key::Error::CannotAddV1KeyslotWithoutReencrypt)
-    ));
-    assert_eq!(fs::read(&encrypted_path).expect("read after add"), original);
+    let changed = fs::read(&encrypted_path).expect("read after add");
+    assert_eq!(
+        &changed[HEADER_LEN..],
+        &original[HEADER_LEN..],
+        "key add must preserve payload bytes"
+    );
 
-    let plaintext = decrypt_fixture(&encrypted, b"old-pass").expect("decrypt with original key");
+    let plaintext = decrypt_file(&encrypted_path, b"old-pass").expect("decrypt with original key");
+    assert_eq!(plaintext, b"Hello world");
+    let plaintext = decrypt_file(&encrypted_path, b"new-pass").expect("decrypt with added key");
     assert_eq!(plaintext, b"Hello world");
 }
 

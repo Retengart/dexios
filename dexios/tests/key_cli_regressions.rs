@@ -128,27 +128,92 @@ fn write_malformed_v1_fixture(path: &Path) {
 }
 
 #[test]
-fn key_add_valid_v1_returns_unsupported_without_key_source() {
-    let test_dir = TestDir::new("add-no-key-source");
+fn key_add_reads_new_key_after_old_key_verification_succeeds() {
+    let test_dir = TestDir::new("add-valid");
     let encrypted = encrypt_fixture(test_dir.path(), "plain");
+    let old_keyfile = write_keyfile(test_dir.path(), "old.key", PASSWORD);
+    let new_keyfile = write_keyfile(test_dir.path(), "new.key", "new-pass");
 
     let output = run_cli(
         test_dir.path(),
-        &["key", "add", encrypted.to_str().unwrap()],
+        &[
+            "key",
+            "add",
+            "--keyfile-old",
+            old_keyfile.to_str().unwrap(),
+            "--keyfile-new",
+            new_keyfile.to_str().unwrap(),
+            encrypted.to_str().unwrap(),
+        ],
         None,
     );
 
     assert!(
-        !output.status.success(),
-        "key add unexpectedly succeeded: stdout={}\nstderr={}",
+        output.status.success(),
+        "key add failed with correct old/new keyfiles: stdout={}\nstderr={}",
         stdout(&output),
         stderr(&output)
     );
+
+    let old_verify = run_cli(
+        test_dir.path(),
+        &["key", "verify", encrypted.to_str().unwrap()],
+        Some(PASSWORD),
+    );
     assert!(
-        stderr(&output).contains("Cannot add a V1 keyslot without re-encrypting the payload"),
-        "unsupported add did not use typed key mapping: {}",
+        old_verify.status.success(),
+        "added file did not verify with original key: stdout={}\nstderr={}",
+        stdout(&old_verify),
+        stderr(&old_verify)
+    );
+
+    let new_verify = run_cli(
+        test_dir.path(),
+        &["key", "verify", encrypted.to_str().unwrap()],
+        Some("new-pass"),
+    );
+    assert!(
+        new_verify.status.success(),
+        "added file did not verify with new key: stdout={}\nstderr={}",
+        stdout(&new_verify),
+        stderr(&new_verify)
+    );
+}
+
+#[test]
+fn key_add_wrong_old_key_does_not_read_new_key_source() {
+    let test_dir = TestDir::new("add-wrong-old");
+    let encrypted = encrypt_fixture(test_dir.path(), "plain");
+    let original = fs::read(&encrypted).unwrap();
+    let old_keyfile = write_keyfile(test_dir.path(), "wrong-old.key", "wrong-pass");
+    let missing_new_keyfile = test_dir.path().join("missing-new.key");
+
+    let output = run_cli(
+        test_dir.path(),
+        &[
+            "key",
+            "add",
+            "--keyfile-old",
+            old_keyfile.to_str().unwrap(),
+            "--keyfile-new",
+            missing_new_keyfile.to_str().unwrap(),
+            encrypted.to_str().unwrap(),
+        ],
+        None,
+    );
+
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("Incorrect key"),
+        "wrong old key did not use typed key mapping: {}",
         stderr(&output)
     );
+    assert!(
+        !stderr(&output).contains("Unable to read file"),
+        "new key source was read before old-key verification: {}",
+        stderr(&output)
+    );
+    assert_eq!(fs::read(&encrypted).unwrap(), original);
     assert_no_prompt(&output);
 }
 
@@ -469,16 +534,29 @@ fn key_delete_maps_failures_without_remaining_key_collection() {
 
 #[test]
 fn key_mutation_cli_source_orders_secrets_through_domain_intents() {
-    let old_key_secret = KEY_SUBCOMMAND_SOURCE
+    let add_old_key_secret = KEY_SUBCOMMAND_SOURCE
         .find("params.key_old.get_secret")
+        .expect("add/change should read the old key");
+    let add_old_key_proof = KEY_SUBCOMMAND_SOURCE
+        .find("verify_old_key")
+        .expect("add/change should verify the old key before reading the new key");
+    let add_new_key_secret = KEY_SUBCOMMAND_SOURCE
+        .find("params.key_new.get_secret")
+        .expect("add/change should read the new key after old proof");
+    let old_key_secret = KEY_SUBCOMMAND_SOURCE
+        .rfind("params.key_old.get_secret")
         .expect("change should still read the old key");
     let old_key_proof = KEY_SUBCOMMAND_SOURCE
-        .find("verify_old_key")
+        .rfind("verify_old_key")
         .expect("change should verify the old key before reading the new key");
     let new_key_secret = KEY_SUBCOMMAND_SOURCE
-        .find("params.key_new.get_secret")
+        .rfind("params.key_new.get_secret")
         .expect("change should still read the new key after old proof");
 
+    assert!(
+        add_old_key_secret < add_old_key_proof && add_old_key_proof < add_new_key_secret,
+        "key add must read old key, verify it in domain, then read the new key"
+    );
     assert!(
         old_key_secret < old_key_proof && old_key_proof < new_key_secret,
         "key change must read old key, verify it in domain, then read the new key"

@@ -170,18 +170,9 @@ pub fn key_change(sub_matches: &ArgMatches) -> Result<()> {
 pub fn key_add(sub_matches: &ArgMatches) -> Result<()> {
     let sub_matches_add_key = sub_matches.subcommand_matches("add").unwrap();
 
-    let key_old = Key::init(
-        sub_matches_add_key,
-        &KeyParams {
-            user: true,
-            env: false,
-            autogenerate: false,
-            keyfile: true,
-        },
-        "keyfile-old",
-    )?;
+    let params = key_manipulation_params(sub_matches_add_key)?;
 
-    key::add(&get_param("input", sub_matches_add_key)?, &key_old)
+    key::add(&get_param("input", sub_matches_add_key)?, &params)
 }
 
 pub fn key_del(sub_matches: &ArgMatches) -> Result<()> {

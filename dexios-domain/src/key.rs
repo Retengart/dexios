@@ -169,6 +169,35 @@ pub fn decrypt_v1_master_key_with_index(
     Ok((master_key, index))
 }
 
+pub(crate) fn decrypt_v1_master_key_at_index(
+    header: &V1Header,
+    index: V1KeyslotIndex,
+    raw_key: Protected<Vec<u8>>,
+) -> Result<MasterKey, Error> {
+    let keyslot = header
+        .keyslots_collection()
+        .get_physical(index.get())
+        .ok_or(Error::IncorrectKey)?;
+    let kdf = match keyslot.kdf() {
+        KeyslotKdf::Blake3Balloon => Kdf::Blake3Balloon,
+        KeyslotKdf::UnsupportedArgon2id => return Err(Error::UnsupportedKdf([0xDF, 0x02])),
+    };
+    let salt = keyslot.salt().to_kdf_salt();
+    let key = kdf.derive(&raw_key, &salt).map_err(|_| Error::KeyHash)?;
+    let encrypted_master_key = EncryptedMasterKey::new(*keyslot.encrypted_master_key());
+    let slot_wrapping_aad = header
+        .slot_wrapping_aad(index.get(), keyslot)
+        .map_err(|_| Error::HeaderDeserialize)?;
+
+    unwrap_v1_master_key(
+        WrappingKey::from(key),
+        &encrypted_master_key,
+        keyslot.nonce(),
+        &slot_wrapping_aad,
+    )
+    .map_err(|_| Error::IncorrectKey)
+}
+
 impl std::error::Error for Error {}
 
 pub(crate) fn map_header_read_error(error: HeaderReadError) -> Error {

@@ -340,7 +340,7 @@ pub fn build_cli() -> Command {
                 )
                 .subcommand(
                     Command::new("add")
-                        .about("Check whether a key can be added to an encrypted file")
+                        .about("Add a key to an encrypted file")
                         .arg_required_else_help(true)
                         .arg(
                             Arg::new("input")
@@ -350,12 +350,32 @@ pub fn build_cli() -> Command {
                                 .help("The encrypted file/header file"),
                         )
                         .arg(
+                            Arg::new("autogenerate")
+                                .long("auto")
+                                .value_name("# of words")
+                                .num_args(0..=1)
+                                .default_missing_value("7")
+                                .value_parser(validate_autogenerate_words)
+                                .action(ArgAction::Set)
+                                .require_equals(true)
+                                .help("Autogenerate a passphrase for the new key")
+                                .conflicts_with("keyfile-new"),
+                        )
+                        .arg(
                             Arg::new("keyfile-old")
                                 .short('k')
                                 .long("keyfile-old")
                                 .value_name("file")
                                 .action(ArgAction::Set)
                                 .help("Use an old keyfile to decrypt the master key"),
+                        )
+                        .arg(
+                            Arg::new("keyfile-new")
+                                .short('n')
+                                .long("keyfile-new")
+                                .value_name("file")
+                                .action(ArgAction::Set)
+                                .help("Use a keyfile as the new key"),
                         ),
                 )
                 .subcommand(
@@ -747,9 +767,18 @@ mod tests {
     }
 
     #[test]
-    fn key_add_command_accepts_old_keyfile_only() {
+    fn key_add_command_accepts_old_and_new_keyfiles() {
         let matches = super::build_cli()
-            .try_get_matches_from(["dexios", "key", "add", "-k", "old.key", "cipher.enc"])
+            .try_get_matches_from([
+                "dexios",
+                "key",
+                "add",
+                "-k",
+                "old.key",
+                "-n",
+                "new.key",
+                "cipher.enc",
+            ])
             .expect("CLI should parse");
 
         let (name, sub) = matches.subcommand().expect("subcommand");
@@ -760,31 +789,34 @@ mod tests {
             Some("old.key")
         );
         assert_eq!(
+            add.get_one::<String>("keyfile-new").map(String::as_str),
+            Some("new.key")
+        );
+        assert_eq!(
             add.get_one::<String>("input").map(String::as_str),
             Some("cipher.enc")
         );
     }
 
     #[test]
-    fn key_add_command_rejects_new_key_sources_while_unsupported() {
-        assert_unknown_argument_is_rejected(
-            [
-                "dexios",
-                "key",
-                "add",
-                "-k",
-                "old.key",
-                "-n",
-                "new.key",
-                "cipher.enc",
-            ],
-            "-n",
-        );
+    fn key_add_auto_without_value_defaults_to_seven_words() {
+        let matches = super::build_cli()
+            .try_get_matches_from(["dexios", "key", "add", "--auto", "cipher.enc"])
+            .expect("CLI should parse");
+        let (_, sub) = matches.subcommand().expect("subcommand");
+        let add = sub.subcommand_matches("add").expect("key add");
 
-        assert_unknown_argument_is_rejected(
-            ["dexios", "key", "add", "--auto=7", "cipher.enc"],
-            "--auto",
+        assert_eq!(
+            add.get_one::<String>("autogenerate").map(String::as_str),
+            Some("7")
         );
+    }
+
+    #[test]
+    fn key_add_auto_rejects_invalid_explicit_values() {
+        for auto in ["--auto=0", "--auto=-1", "--auto=abc"] {
+            assert_invalid_auto_value_is_rejected(["dexios", "key", "add", auto, "cipher.enc"]);
+        }
     }
 
     #[test]

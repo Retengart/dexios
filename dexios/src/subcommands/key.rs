@@ -8,10 +8,23 @@ use std::path::Path;
 use super::errors::map_key_error;
 use crate::info;
 
-pub fn add(input: &str, _key_old: &Key) -> Result<()> {
+pub fn add(input: &str, params: &KeyManipulationParams) -> Result<()> {
     let intent = domain::key::add::AddIntent::new(Path::new(input)).map_err(map_key_error)?;
 
-    domain::key::add::execute(intent).map_err(map_key_error)?;
+    if params.key_old == Key::User {
+        info!("Please enter your old key below");
+    }
+
+    let raw_key_old = params.key_old.get_secret(&PasswordState::Direct)?;
+    let proven = intent.verify_old_key(raw_key_old).map_err(map_key_error)?;
+
+    if params.key_new == Key::User {
+        info!("Please enter your new key below");
+    }
+
+    let raw_key_new = params.key_new.get_secret(&PasswordState::Validate)?;
+
+    domain::key::add::execute(proven, raw_key_new, params.kdf).map_err(map_key_error)?;
 
     Ok(())
 }

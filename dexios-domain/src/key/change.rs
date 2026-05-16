@@ -118,9 +118,9 @@ fn changed_header(
         .derive(&raw_key_new, &salt.to_kdf_salt())
         .map_err(|_| Error::KeyHash)?;
 
-    let master_key_nonce = gen_keyslot_nonce();
+    let fresh_wrapping_nonce = gen_keyslot_nonce();
 
-    let placeholder_keyslot = V1Keyslot::new(kdf, [0u8; 48], master_key_nonce, salt);
+    let placeholder_keyslot = V1Keyslot::new(kdf, [0u8; 48], fresh_wrapping_nonce, salt);
     keyslots
         .replace(index, placeholder_keyslot)
         .map_err(|_| Error::HeaderWrite)?;
@@ -132,7 +132,7 @@ fn changed_header(
         index,
         master_key,
         key_new,
-        &master_key_nonce,
+        &fresh_wrapping_nonce,
         &salt,
         kdf,
     )?;
@@ -140,7 +140,7 @@ fn changed_header(
     keyslots
         .replace(
             index,
-            V1Keyslot::new(kdf, encrypted_master_key, master_key_nonce, salt),
+            V1Keyslot::new(kdf, encrypted_master_key, fresh_wrapping_nonce, salt),
         )
         .map_err(|_| Error::HeaderWrite)?;
 
