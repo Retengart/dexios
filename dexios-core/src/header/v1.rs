@@ -1,6 +1,7 @@
 use std::io::{Read, Write};
 
 use crate::kdf::{BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID, BLAKE3_BALLOON_KDF_PROFILE_ID, Kdf};
+use crate::payload::{PayloadFramingProfile, PayloadKind};
 
 use super::common::{
     CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, HEADER_STATIC_LEN, HeaderReadError, HeaderWriteError,
@@ -13,54 +14,6 @@ const SLOT_STATE_ACTIVE: u8 = 0x01;
 const KDF_PROFILE_HISTORICAL_ARGON2ID: u8 = 0xDF;
 const KDF_PARAM_PROFILE_HISTORICAL_ARGON2ID: u8 = 0x02;
 const SLOT_WRAPPING_AAD_LEN: usize = HEADER_STATIC_LEN + 1 + 1 + 1 + 16 + 24;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-/// Canonical V1 payload kind byte.
-pub enum V1PayloadKind {
-    RawFile,
-    ManifestArchive,
-}
-
-impl V1PayloadKind {
-    fn serialize(self) -> u8 {
-        match self {
-            Self::RawFile => 0x01,
-            Self::ManifestArchive => 0x02,
-        }
-    }
-
-    fn deserialize(value: u8) -> Result<Self, HeaderReadError> {
-        match value {
-            0x01 => Ok(Self::RawFile),
-            0x02 => Ok(Self::ManifestArchive),
-            _ => Err(HeaderReadError::InvalidPayloadKind(value)),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-/// Canonical V1 payload framing byte.
-pub enum V1PayloadFraming {
-    RawLe31Stream,
-    ManifestFirstArchiveStream,
-}
-
-impl V1PayloadFraming {
-    fn serialize(self) -> u8 {
-        match self {
-            Self::RawLe31Stream => 0x01,
-            Self::ManifestFirstArchiveStream => 0x02,
-        }
-    }
-
-    fn deserialize(value: u8) -> Result<Self, HeaderReadError> {
-        match value {
-            0x01 => Ok(Self::RawLe31Stream),
-            0x02 => Ok(Self::ManifestFirstArchiveStream),
-            _ => Err(HeaderReadError::InvalidPayloadFraming(value)),
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KeyslotKdf {
@@ -432,8 +385,8 @@ impl V1Keyslots {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct V1Header {
     payload_nonce: PayloadNonce,
-    payload_kind: V1PayloadKind,
-    payload_framing: V1PayloadFraming,
+    payload_kind: PayloadKind,
+    payload_framing: PayloadFramingProfile,
     keyslots: V1Keyslots,
 }
 
@@ -444,8 +397,8 @@ impl V1Header {
     ) -> Result<Self, HeaderWriteError> {
         Ok(Self {
             payload_nonce,
-            payload_kind: V1PayloadKind::RawFile,
-            payload_framing: V1PayloadFraming::RawLe31Stream,
+            payload_kind: PayloadKind::RawFile,
+            payload_framing: PayloadFramingProfile::RawLe31,
             keyslots,
         })
     }
@@ -466,12 +419,12 @@ impl V1Header {
     }
 
     #[must_use]
-    pub const fn payload_kind(&self) -> V1PayloadKind {
+    pub const fn payload_kind(&self) -> PayloadKind {
         self.payload_kind
     }
 
     #[must_use]
-    pub const fn payload_framing(&self) -> V1PayloadFraming {
+    pub const fn payload_framing(&self) -> PayloadFramingProfile {
         self.payload_framing
     }
 
@@ -482,8 +435,8 @@ impl V1Header {
         aad[4..6].copy_from_slice(&VERSION_V1);
         aad[6..10].copy_from_slice(&CANONICAL_V1_DISCRIMINATOR);
         aad[10] = CANONICAL_SCHEMA_PROFILE;
-        aad[11] = self.payload_kind.serialize();
-        aad[12] = self.payload_framing.serialize();
+        aad[11] = self.payload_kind.to_byte();
+        aad[12] = self.payload_framing.to_byte();
         aad[13] = BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID;
         aad[14] = MAX_KEYSLOTS as u8;
         aad[16..36].copy_from_slice(self.payload_nonce.as_bytes());
@@ -559,8 +512,10 @@ impl V1Header {
         if bytes[10] != CANONICAL_SCHEMA_PROFILE {
             return Err(HeaderReadError::UnsupportedVersion([0x00, bytes[10]]));
         }
-        let payload_kind = V1PayloadKind::deserialize(bytes[11])?;
-        let payload_framing = V1PayloadFraming::deserialize(bytes[12])?;
+        let payload_kind = PayloadKind::try_from_byte(bytes[11])
+            .map_err(|_| HeaderReadError::InvalidPayloadKind(bytes[11]))?;
+        let payload_framing = PayloadFramingProfile::try_from_byte(bytes[12])
+            .map_err(|_| HeaderReadError::InvalidPayloadFraming(bytes[12]))?;
         if bytes[13] != BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID {
             return Err(HeaderReadError::InvalidKdfParamProfile(bytes[13]));
         }

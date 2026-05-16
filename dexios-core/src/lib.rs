@@ -16,6 +16,7 @@ pub mod cipher;
 pub mod header;
 pub mod kdf;
 pub mod key;
+pub mod payload;
 pub mod primitives;
 pub mod protected;
 pub mod stream;

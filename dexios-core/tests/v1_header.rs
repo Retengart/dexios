@@ -7,6 +7,7 @@ use dexios_core::header::{HeaderReadError, ParsedHeader, ParsedV1Payload};
 use dexios_core::kdf::{
     BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID, BLAKE3_BALLOON_KDF_PROFILE_ID, Kdf, Salt,
 };
+use dexios_core::payload::{PayloadFramingProfile, PayloadKind};
 use dexios_core::primitives::{MasterKey, WrappingKey};
 use dexios_core::stream::{StreamError, V1PayloadDecryptor, V1PayloadEncryptor, V1PayloadStream};
 use std::path::Path;
@@ -287,7 +288,7 @@ fn v1_payload_stream_uses_header_derived_aad() {
 fn v1_stream_file_api_returns_typed_stream_errors() {
     let header = support::sample_v1_header();
     let payload = support::parsed_payload_for(&header);
-    let result: Result<(), StreamError> = V1PayloadStream::decrypt_file(
+    let result = V1PayloadStream::decrypt_file(
         MasterKey::new([31u8; 32]),
         &payload,
         &mut std::io::Cursor::new(Vec::<u8>::new()),
@@ -295,6 +296,56 @@ fn v1_stream_file_api_returns_typed_stream_errors() {
     );
 
     assert!(matches!(result, Err(StreamError::MissingFinalBlock)));
+}
+
+#[test]
+fn shared_payload_kind_and_framing_roundtrip_through_header_bytes() {
+    let header = support::sample_v1_header();
+    let raw_bytes = header.serialize().unwrap();
+
+    assert_eq!(header.payload_kind(), PayloadKind::RawFile);
+    assert_eq!(header.payload_framing(), PayloadFramingProfile::RawLe31);
+    assert_eq!(
+        &raw_bytes[11..13],
+        &[
+            PayloadKind::RawFile.to_byte(),
+            PayloadFramingProfile::RawLe31.to_byte(),
+        ],
+        "raw-file payload kind/framing bytes must be exact"
+    );
+
+    let mut archive_bytes = raw_bytes.clone();
+    archive_bytes[11] = PayloadKind::ManifestArchive.to_byte();
+    archive_bytes[12] = PayloadFramingProfile::ManifestFirst.to_byte();
+
+    let ParsedHeader::V1(archive_payload) =
+        dexios_core::header::read_header(&mut std::io::Cursor::new(archive_bytes.clone()))
+            .expect("manifest archive payload metadata must parse");
+
+    assert_eq!(
+        archive_payload.header().payload_kind(),
+        PayloadKind::ManifestArchive
+    );
+    assert_eq!(
+        archive_payload.header().payload_framing(),
+        PayloadFramingProfile::ManifestFirst
+    );
+    assert_eq!(
+        &archive_payload.header().serialize().unwrap()[11..13],
+        &[0x02, 0x02],
+        "manifest-archive payload kind/framing roundtrip must keep exact bytes"
+    );
+
+    assert!(matches!(
+        PayloadKind::try_from_byte(0x7F),
+        Err(dexios_core::payload::PayloadError::UnsupportedPayloadKind(
+            0x7F
+        ))
+    ));
+    assert!(matches!(
+        PayloadFramingProfile::try_from_byte(0x7F),
+        Err(dexios_core::payload::PayloadError::UnsupportedPayloadFramingProfile(0x7F))
+    ));
 }
 
 #[test]
