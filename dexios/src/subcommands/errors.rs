@@ -106,131 +106,142 @@ pub fn map_unpack_error(error: domain::unpack::Error) -> anyhow::Error {
 }
 
 pub fn map_header_error(error: domain::header::Error) -> anyhow::Error {
-    match error {
-        domain::header::Error::InvalidMagic(magic) => {
-            anyhow!("Invalid Dexios header magic: {magic:02X?}")
-        }
-        domain::header::Error::UnsupportedFormat(_)
-        | domain::header::Error::UnsupportedVersion(_)
-        | domain::header::Error::RetiredV1Layout => anyhow!("Unsupported Dexios format"),
-        domain::header::Error::MalformedV1Header(error) => {
-            anyhow!("Malformed Dexios V1 header: {error}")
-        }
-        domain::header::Error::UnsupportedRestore => {
+    match error.workflow_class() {
+        WorkflowErrorClass::MalformedFormat => match error {
+            domain::header::Error::MalformedV1Header(_) => {
+                anyhow!("Malformed Dexios V1 header")
+            }
+            domain::header::Error::ShortDetachedHeader { actual_len } => {
+                anyhow!("Detached header is too short: {actual_len} bytes")
+            }
+            domain::header::Error::TrailingDetachedHeader { actual_len } => {
+                anyhow!("Detached header has trailing bytes: {actual_len} bytes")
+            }
+            domain::header::Error::MissingPayload { actual_len } => {
+                anyhow!("Encrypted artifact is missing payload bytes: {actual_len} bytes")
+            }
+            domain::header::Error::TargetTooShort { actual_len } => {
+                anyhow!("Header restore target is too short: {actual_len} bytes")
+            }
+            domain::header::Error::TargetNotStripped => {
+                anyhow!("Header restore target is not stripped")
+            }
+            domain::header::Error::InvalidFile | domain::header::Error::HeaderSizeParse => {
+                anyhow!("Malformed Dexios header or payload")
+            }
+            _ => anyhow!("Malformed Dexios header or payload"),
+        },
+        WorkflowErrorClass::UnsupportedFormat => match error {
+            domain::header::Error::InvalidMagic(_) => anyhow!("Invalid Dexios header magic"),
+            domain::header::Error::UnsupportedFormat(_)
+            | domain::header::Error::UnsupportedVersion(_)
+            | domain::header::Error::RetiredV1Layout => anyhow!("Unsupported Dexios format"),
+            _ => anyhow!("Unsupported Dexios format"),
+        },
+        WorkflowErrorClass::UnsupportedWorkflow => {
             anyhow!("Unsupported header workflow for this file")
         }
-        domain::header::Error::ShortDetachedHeader { actual_len } => {
-            anyhow!("Detached header is too short: {actual_len} bytes")
-        }
-        domain::header::Error::TrailingDetachedHeader { actual_len } => {
-            anyhow!("Detached header has trailing bytes: {actual_len} bytes")
-        }
-        domain::header::Error::MissingPayload { actual_len } => {
-            anyhow!("Encrypted artifact is missing payload bytes: {actual_len} bytes")
-        }
-        domain::header::Error::TargetTooShort { actual_len } => {
-            anyhow!("Header restore target is too short: {actual_len} bytes")
-        }
-        domain::header::Error::TargetNotStripped => {
-            anyhow!("Header restore target is not stripped")
-        }
-        domain::header::Error::InvalidFile | domain::header::Error::HeaderSizeParse => {
-            anyhow!("Malformed Dexios header or payload")
-        }
-        domain::header::Error::Read
-        | domain::header::Error::ReadIo
-        | domain::header::Error::ReadIoWithSource(_) => {
-            anyhow!("I/O failure while reading header data")
-        }
-        domain::header::Error::Write | domain::header::Error::WriteIo => {
-            anyhow!("I/O failure while writing header data")
-        }
-        domain::header::Error::Rewind => anyhow!("I/O failure while rewinding header data"),
-        domain::header::Error::PathIdentity(error) => match error {
-            domain::storage::identity::IdentityError::AliasedPath { .. }
-            | domain::storage::identity::IdentityError::UnsafePath(_) => {
-                anyhow!("Unsafe path: {error}")
-            }
-            domain::storage::identity::IdentityError::Io(_)
-            | domain::storage::identity::IdentityError::IoWithSource { .. } => {
+        WorkflowErrorClass::UnsafePath => match error {
+            domain::header::Error::PathIdentity(error) => anyhow!("Unsafe path: {error}"),
+            _ => anyhow!("Unsafe path"),
+        },
+        WorkflowErrorClass::IoFailure => match error {
+            domain::header::Error::PathIdentity(_) => {
                 anyhow!("I/O failure while checking header paths")
             }
-        },
-        domain::header::Error::Transaction(error) => match error {
-            domain::storage::transaction::TransactionError::Persist { .. }
-            | domain::storage::transaction::TransactionError::PartialCommit { .. } => {
-                anyhow!("Unable to commit header update")
-            }
-            domain::storage::transaction::TransactionError::Write { .. }
-            | domain::storage::transaction::TransactionError::Flush { .. }
-            | domain::storage::transaction::TransactionError::Sync { .. } => {
+            domain::header::Error::Transaction(_) => {
                 anyhow!("I/O failure while writing header data")
             }
+            domain::header::Error::Read
+            | domain::header::Error::ReadIo
+            | domain::header::Error::ReadIoWithSource(_) => {
+                anyhow!("I/O failure while reading header data")
+            }
+            domain::header::Error::Write | domain::header::Error::WriteIo => {
+                anyhow!("I/O failure while writing header data")
+            }
+            domain::header::Error::Rewind => anyhow!("I/O failure while rewinding header data"),
+            _ => anyhow!("I/O failure while handling header data"),
         },
+        WorkflowErrorClass::TransactionCommitFailure => {
+            anyhow!("Unable to commit header update")
+        }
+        WorkflowErrorClass::ResourcePressure => {
+            anyhow!("Not enough temporary or output storage while updating header data")
+        }
+        WorkflowErrorClass::CleanupFailure => anyhow!("Cleanup failed after output commit"),
+        WorkflowErrorClass::KdfFailure
+        | WorkflowErrorClass::AuthenticationFailure
+        | WorkflowErrorClass::OverwriteDenied
+        | WorkflowErrorClass::IncorrectKey
+        | WorkflowErrorClass::Other => anyhow!("Header workflow failed"),
     }
 }
 
 pub fn map_key_error(error: domain::key::Error) -> anyhow::Error {
-    match error {
-        domain::key::Error::InvalidMagic(magic) => {
-            anyhow!("Invalid Dexios header magic: {magic:02X?}")
-        }
-        domain::key::Error::UnsupportedFormat(_)
-        | domain::key::Error::UnsupportedVersion(_)
-        | domain::key::Error::RetiredV1Layout => anyhow!("Unsupported Dexios format"),
-        domain::key::Error::MalformedV1Header(error) => {
-            anyhow!("Malformed Dexios V1 header: {error}")
-        }
-        domain::key::Error::UnsupportedKdf(tag) => {
-            anyhow!("Unsupported keyslot KDF tag: {tag:02X?}")
-        }
-        domain::key::Error::IncorrectKey => anyhow!("Incorrect key"),
-        domain::key::Error::CannotAddV1KeyslotWithoutReencrypt => {
-            anyhow!("Cannot add a V1 keyslot without re-encrypting the payload")
-        }
-        domain::key::Error::CannotRemoveFinalV1Keyslot => {
-            anyhow!("Cannot remove the final V1 keyslot")
-        }
-        domain::key::Error::TooManyKeyslots => {
-            anyhow!("There are already too many populated keyslots within this file")
-        }
-        domain::key::Error::Unsupported => {
-            anyhow!("Unsupported key workflow for this header version")
-        }
-        domain::key::Error::HeaderSizeParse | domain::key::Error::HeaderDeserialize => {
-            anyhow!("Malformed Dexios V1 header")
-        }
-        domain::key::Error::ReadIo | domain::key::Error::ReadIoWithSource(_) => {
-            anyhow!("I/O failure while reading key workflow target")
-        }
-        domain::key::Error::KeyHash => anyhow!("Unable to derive key"),
-        domain::key::Error::HeaderWrite | domain::key::Error::Seek => {
-            anyhow!("I/O failure while updating keyslots")
-        }
-        domain::key::Error::PathIdentity(error) => match error {
-            domain::storage::identity::IdentityError::AliasedPath { .. }
-            | domain::storage::identity::IdentityError::UnsafePath(_) => {
-                anyhow!("Unsafe path: {error}")
+    match error.workflow_class() {
+        WorkflowErrorClass::MalformedFormat => match error {
+            domain::key::Error::MalformedV1Header(_)
+            | domain::key::Error::HeaderSizeParse
+            | domain::key::Error::HeaderDeserialize => anyhow!("Malformed Dexios V1 header"),
+            _ => anyhow!("Malformed Dexios V1 header"),
+        },
+        WorkflowErrorClass::UnsupportedFormat => match error {
+            domain::key::Error::InvalidMagic(_) => anyhow!("Invalid Dexios header magic"),
+            domain::key::Error::Unsupported => {
+                anyhow!("Unsupported key workflow for this header version")
             }
-            domain::storage::identity::IdentityError::Io(_)
-            | domain::storage::identity::IdentityError::IoWithSource { .. } => {
+            domain::key::Error::UnsupportedFormat(_)
+            | domain::key::Error::UnsupportedVersion(_)
+            | domain::key::Error::RetiredV1Layout => anyhow!("Unsupported Dexios format"),
+            _ => anyhow!("Unsupported Dexios format"),
+        },
+        WorkflowErrorClass::KdfFailure => match error {
+            domain::key::Error::UnsupportedKdf(tag) => {
+                anyhow!("Unsupported keyslot KDF tag: {tag:02X?}")
+            }
+            domain::key::Error::KeyHash => anyhow!("Unable to derive key"),
+            _ => anyhow!("Unable to derive key"),
+        },
+        WorkflowErrorClass::IncorrectKey => anyhow!("Incorrect key"),
+        WorkflowErrorClass::UnsupportedWorkflow => match error {
+            domain::key::Error::CannotAddV1KeyslotWithoutReencrypt => {
+                anyhow!("Cannot add a V1 keyslot without re-encrypting the payload")
+            }
+            domain::key::Error::CannotRemoveFinalV1Keyslot => {
+                anyhow!("Cannot remove the final V1 keyslot")
+            }
+            domain::key::Error::TooManyKeyslots => {
+                anyhow!("There are already too many populated keyslots within this file")
+            }
+            _ => anyhow!("Unsupported key workflow for this header version"),
+        },
+        WorkflowErrorClass::UnsafePath => match error {
+            domain::key::Error::PathIdentity(error) => anyhow!("Unsafe path: {error}"),
+            _ => anyhow!("Unsafe path"),
+        },
+        WorkflowErrorClass::IoFailure => match error {
+            domain::key::Error::ReadIo | domain::key::Error::ReadIoWithSource(_) => {
+                anyhow!("I/O failure while reading key workflow target")
+            }
+            domain::key::Error::PathIdentity(_) => {
                 anyhow!("I/O failure while checking key workflow target")
             }
+            domain::key::Error::Transaction(_)
+            | domain::key::Error::HeaderWrite
+            | domain::key::Error::Seek => anyhow!("I/O failure while updating keyslots"),
+            _ => anyhow!("I/O failure while updating keyslots"),
         },
-        domain::key::Error::Transaction(error) => match error {
-            domain::storage::transaction::TransactionError::Persist { .. }
-            | domain::storage::transaction::TransactionError::PartialCommit { .. } => {
-                anyhow!("Unable to commit keyslot update")
-            }
-            domain::storage::transaction::TransactionError::Write { .. }
-            | domain::storage::transaction::TransactionError::Flush { .. }
-            | domain::storage::transaction::TransactionError::Sync { .. } => {
-                anyhow!("I/O failure while updating keyslots")
-            }
-        },
-        domain::key::Error::MasterKeyEncrypt | domain::key::Error::CipherInit => {
-            anyhow!("Key workflow failed")
+        WorkflowErrorClass::TransactionCommitFailure => {
+            anyhow!("Unable to commit keyslot update")
         }
+        WorkflowErrorClass::ResourcePressure => {
+            anyhow!("Not enough temporary or output storage while updating keyslots")
+        }
+        WorkflowErrorClass::CleanupFailure => anyhow!("Cleanup failed after output commit"),
+        WorkflowErrorClass::AuthenticationFailure
+        | WorkflowErrorClass::OverwriteDenied
+        | WorkflowErrorClass::Other => anyhow!("Key workflow failed"),
     }
 }
 
