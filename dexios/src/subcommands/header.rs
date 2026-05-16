@@ -96,8 +96,8 @@ pub fn restore(input: &str, output: &str) -> Result<()> {
     let intent =
         domain::header::restore::RestoreIntent::new(input, output).map_err(map_header_error)?;
 
-    let _receipt = domain::header::restore::execute_transactional(intent)
-        .map_err(map_header_error)?;
+    let _receipt =
+        domain::header::restore::execute_transactional(intent).map_err(map_header_error)?;
 
     Ok(())
 }
@@ -109,7 +109,8 @@ pub fn restore(input: &str, output: &str) -> Result<()> {
 pub fn strip(input: &str) -> Result<()> {
     let intent = domain::header::strip::StripIntent::new(input).map_err(map_header_error)?;
 
-    let _receipt = domain::header::strip::execute_transactional(intent).map_err(map_header_error)?;
+    let _receipt =
+        domain::header::strip::execute_transactional(intent).map_err(map_header_error)?;
 
     Ok(())
 }

@@ -232,7 +232,9 @@ fn cli_workflow_errors_are_routed_through_mapping_helpers() {
     assert!(ERRORS_SOURCE.contains("WorkflowErrorClass::CleanupFailure"));
     assert!(ERRORS_SOURCE.contains("WorkflowErrorClass::ResourcePressure"));
     assert_eq!(
-        mapper_source.matches("match error.workflow_class()").count(),
+        mapper_source
+            .matches("match error.workflow_class()")
+            .count(),
         6,
         "all six CLI workflow mappers should route by typed WorkflowErrorClass"
     );
@@ -297,8 +299,7 @@ fn wrong_key_decrypt_default_stderr_is_display_only() {
     assert!(!wrong_key_output.status.success());
     let wrong_key_stderr = stderr(&wrong_key_output);
     assert_eq!(
-        wrong_key_stderr,
-        "Authentication failed\n",
+        wrong_key_stderr, "Authentication failed\n",
         "default workflow stderr should be the sanitized Display message only"
     );
     assert_no_default_source_chain(&wrong_key_stderr);
