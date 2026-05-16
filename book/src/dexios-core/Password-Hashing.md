@@ -2,8 +2,8 @@
 
 Dexios derives 32-byte wrapping keys from user-provided key material and a 16-byte salt.
 
-The normal V1 KDF contract supports one hashing family for new files and new
-keyslots:
+The normal canonical V1 KDF contract supports one hashing family for new files
+and new keyslots:
 
 - `BLAKE3-Balloon`
 
@@ -12,16 +12,19 @@ keyslots:
 For new files:
 
 - `Blake3Balloon` is the only normal KDF selector
-- KDF parameters are not user-configurable in Phase 3
+- KDF parameters are serialized as canonical profile ids, not
+  user-configurable header knobs
 - the historical Argon2id tag is no longer supported for new writes
 - `balloon-hash 0.4.0` is built with the `zeroize` feature enabled
 
 For decryption and key manipulation, Dexios reads the required KDF family from the current keyslot metadata.
-The V1 keyslot tag `[0xDF, 0x02]` is recognized as an unsupported historical Argon2id tag and reported before any key derivation attempt.
+Canonical V1 keyslots store a KDF profile id and KDF parameter profile id. The
+historical Argon2id profile pair is recognized as unsupported metadata and
+reported before any key derivation attempt.
 
 ## Frozen BLAKE3-Balloon Parameters
 
-Phase 3 freezes the BLAKE3-Balloon contract for current V1 output:
+Phase 3 freezes the BLAKE3-Balloon contract for canonical V1 output:
 
 - space cost: `278_528`
 - time cost: `1`
@@ -60,9 +63,9 @@ The focused KDF measurement can enforce an opt-in local threshold with
 does not run this timing check.
 
 The same Context7 `/rustcrypto/password-hashes` source documents historical
-unsupported Argon2id as a RustCrypto implementation API. In Dexios, that tag is
-now a file-format diagnosis only, not a required dependency or normal write
-policy.
+unsupported Argon2id as a RustCrypto implementation API. In Dexios, historical
+Argon2id metadata is now a file-format diagnosis only, not a required dependency
+or normal write policy.
 
 ## Handling the Hash
 
