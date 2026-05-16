@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use core::header::common::{
     CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN,
+    RETIRED_CURRENT_V1_HEADER_LEN,
 };
 use core::kdf::Kdf;
 use core::protected::Protected;
@@ -127,6 +128,37 @@ fn write_malformed_v1_fixture(path: &Path) {
     fs::write(path, bytes).unwrap();
 }
 
+fn decode_hex_fixture(path: &Path) -> Vec<u8> {
+    let fixture = fs::read_to_string(path).unwrap();
+    let nibbles: Vec<u8> = fixture
+        .chars()
+        .filter(|ch| !ch.is_ascii_whitespace())
+        .map(|ch| ch.to_digit(16).unwrap() as u8)
+        .collect();
+
+    assert!(nibbles.len().is_multiple_of(2));
+    nibbles
+        .chunks_exact(2)
+        .map(|pair| (pair[0] << 4) | pair[1])
+        .collect()
+}
+
+fn retired_v1_fixture_bytes() -> Vec<u8> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("dexios-core")
+        .join("tests")
+        .join("testdata")
+        .join("v1_valid_single_keyslot.hex");
+    let bytes = decode_hex_fixture(&path);
+    assert_eq!(bytes.len(), RETIRED_CURRENT_V1_HEADER_LEN);
+    bytes
+}
+
+fn write_retired_v1_fixture(path: &Path) {
+    fs::write(path, retired_v1_fixture_bytes()).unwrap();
+}
+
 #[test]
 fn key_add_reads_new_key_after_old_key_verification_succeeds() {
     let test_dir = TestDir::new("add-valid");
@@ -178,6 +210,37 @@ fn key_add_reads_new_key_after_old_key_verification_succeeds() {
         stdout(&new_verify),
         stderr(&new_verify)
     );
+}
+
+#[test]
+fn key_commands_report_retired_416_byte_v1_as_unsupported_format_before_prompting() {
+    let test_dir = TestDir::new("retired-v1-key-commands");
+    let retired = test_dir.path().join("retired-current-v1.enc");
+    write_retired_v1_fixture(&retired);
+    let retired = retired.to_str().unwrap();
+
+    for (case, args) in [
+        ("add", vec!["key", "add", retired]),
+        ("change", vec!["key", "change", retired]),
+        ("delete", vec!["key", "del", retired]),
+        ("verify", vec!["key", "verify", retired]),
+    ] {
+        let output = run_cli(test_dir.path(), &args, None);
+        let stderr = stderr(&output);
+        assert!(
+            !output.status.success(),
+            "{case} unexpectedly accepted retired 416-byte V1"
+        );
+        assert!(
+            stderr.contains("Unsupported Dexios format"),
+            "{case} did not use unsupported-format mapping: {stderr}"
+        );
+        assert!(
+            !stderr.contains("Malformed Dexios V1 header"),
+            "{case} misclassified retired 416-byte V1 as malformed: {stderr}"
+        );
+        assert_no_prompt(&output);
+    }
 }
 
 #[test]

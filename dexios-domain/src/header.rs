@@ -18,6 +18,7 @@ pub enum Error {
     InvalidMagic([u8; 4]),
     UnsupportedFormat([u8; 2]),
     UnsupportedVersion([u8; 2]),
+    RetiredV1Layout,
     MalformedV1Header(HeaderReadError),
     Write,
     Read,
@@ -46,9 +47,10 @@ impl Error {
             | Self::MissingPayload { .. }
             | Self::TargetTooShort { .. }
             | Self::TargetNotStripped => WorkflowErrorClass::MalformedFormat,
-            Self::InvalidMagic(_) | Self::UnsupportedFormat(_) | Self::UnsupportedVersion(_) => {
-                WorkflowErrorClass::UnsupportedFormat
-            }
+            Self::InvalidMagic(_)
+            | Self::UnsupportedFormat(_)
+            | Self::UnsupportedVersion(_)
+            | Self::RetiredV1Layout => WorkflowErrorClass::UnsupportedFormat,
             Self::UnsupportedRestore => WorkflowErrorClass::UnsupportedWorkflow,
             Self::Write | Self::Read | Self::WriteIo | Self::ReadIo | Self::Rewind => {
                 WorkflowErrorClass::IoFailure
@@ -63,9 +65,9 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Error::{
             HeaderSizeParse, InvalidFile, InvalidMagic, MalformedV1Header, MissingPayload,
-            PathIdentity, Read, ReadIo, Rewind, ShortDetachedHeader, TargetNotStripped,
-            TargetTooShort, TrailingDetachedHeader, Transaction, UnsupportedFormat,
-            UnsupportedRestore, UnsupportedVersion, Write, WriteIo,
+            PathIdentity, Read, ReadIo, RetiredV1Layout, Rewind, ShortDetachedHeader,
+            TargetNotStripped, TargetTooShort, TrailingDetachedHeader, Transaction,
+            UnsupportedFormat, UnsupportedRestore, UnsupportedVersion, Write, WriteIo,
         };
         match self {
             UnsupportedRestore => f.write_str("The provided request is unsupported with this file. It maybe isn't an encrypted file, or it was encrypted in detached mode."),
@@ -77,6 +79,7 @@ impl std::fmt::Display for Error {
             UnsupportedVersion(version) => {
                 write!(f, "Unsupported Dexios format: {version:02X?}")
             }
+            RetiredV1Layout => f.write_str("Retired Dexios V1 header layout"),
             MalformedV1Header(error) => write!(f, "Malformed Dexios V1 header: {error}"),
             Write => f.write_str("Unable to write the data."),
             Read => f.write_str("Unable to read the data."),
@@ -112,6 +115,7 @@ impl From<HeaderReadError> for Error {
             HeaderReadError::InvalidMagic(magic) => Self::InvalidMagic(magic),
             HeaderReadError::UnsupportedFormat(prefix) => Self::UnsupportedFormat(prefix),
             HeaderReadError::UnsupportedVersion(version) => Self::UnsupportedVersion(version),
+            HeaderReadError::RetiredV1Layout => Self::RetiredV1Layout,
             error => Self::MalformedV1Header(error),
         }
     }

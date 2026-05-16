@@ -1,5 +1,6 @@
 use core::header::common::{
-    CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN, Salt,
+    CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN,
+    RETIRED_CURRENT_V1_HEADER_LEN, Salt,
 };
 use core::header::v1::{KeyslotKdf, V1Header, V1Keyslot};
 use core::header::{HeaderReadError, ParsedHeader, read_header};
@@ -7,6 +8,7 @@ use core::kdf::Kdf;
 use core::primitives::{WrappingKey, gen_keyslot_nonce, gen_salt};
 use core::protected::Protected;
 use core::stream::V1PayloadStream;
+use dexios_domain::workflow_error::WorkflowErrorClass;
 use dexios_domain::{decrypt, encrypt, key};
 use std::cell::RefCell;
 use std::fs::{self, File};
@@ -117,6 +119,46 @@ fn write_malformed_v1_fixture(path: &Path) {
     bytes[14] = 0x04;
     bytes[15] = 1;
     fs::write(path, bytes).expect("write malformed V1 fixture");
+}
+
+fn decode_hex_fixture(path: &Path) -> Vec<u8> {
+    let fixture = std::fs::read_to_string(path).expect("read hex fixture");
+    let nibbles: Vec<u8> = fixture
+        .chars()
+        .filter(|ch| !ch.is_ascii_whitespace())
+        .map(|ch| {
+            ch.to_digit(16)
+                .unwrap_or_else(|| panic!("invalid hex digit {ch:?} in {}", path.display()))
+                as u8
+        })
+        .collect();
+
+    assert!(
+        nibbles.len().is_multiple_of(2),
+        "hex fixture {} must have an even number of digits",
+        path.display()
+    );
+
+    nibbles
+        .chunks_exact(2)
+        .map(|pair| (pair[0] << 4) | pair[1])
+        .collect()
+}
+
+fn retired_v1_fixture_bytes() -> Vec<u8> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("dexios-core")
+        .join("tests")
+        .join("testdata")
+        .join("v1_valid_single_keyslot.hex");
+    let bytes = decode_hex_fixture(&path);
+    assert_eq!(bytes.len(), RETIRED_CURRENT_V1_HEADER_LEN);
+    bytes
+}
+
+fn write_retired_v1_fixture(path: &Path) {
+    fs::write(path, retired_v1_fixture_bytes()).expect("write retired V1 fixture");
 }
 
 fn read_v1_header_from_path(path: &Path) -> V1Header {
@@ -310,6 +352,45 @@ fn key_verify_intent_returns_typed_read_only_outcomes() {
 
     let missing = key::verify::VerifyIntent::new(encrypted_path.with_file_name("missing.enc"));
     assert!(matches!(missing, Err(key::Error::ReadIo)));
+}
+
+#[test]
+fn key_intents_classify_retired_416_byte_v1_as_unsupported_format() {
+    fn intent_error<T>(result: Result<T, key::Error>, case: &str) -> key::Error {
+        match result {
+            Ok(_) => panic!("{case} unexpectedly accepted retired 416-byte V1"),
+            Err(error) => error,
+        }
+    }
+
+    fn assert_retired_layout(error: key::Error) {
+        assert!(matches!(error, key::Error::RetiredV1Layout));
+        assert_eq!(
+            error.workflow_class(),
+            WorkflowErrorClass::UnsupportedFormat
+        );
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let retired = dir.path().join("retired-current-v1.enc");
+    write_retired_v1_fixture(&retired);
+
+    assert_retired_layout(intent_error(
+        key::add::AddIntent::new(&retired),
+        "add intent",
+    ));
+    assert_retired_layout(intent_error(
+        key::change::ChangeIntent::new(&retired),
+        "change intent",
+    ));
+    assert_retired_layout(intent_error(
+        key::delete::DeleteIntent::new(&retired),
+        "delete intent",
+    ));
+    assert_retired_layout(intent_error(
+        key::verify::VerifyIntent::new(&retired),
+        "verify intent",
+    ));
 }
 
 #[test]

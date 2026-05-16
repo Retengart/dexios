@@ -101,7 +101,8 @@ pub fn map_header_error(error: domain::header::Error) -> anyhow::Error {
             anyhow!("Invalid Dexios header magic: {magic:02X?}")
         }
         domain::header::Error::UnsupportedFormat(_)
-        | domain::header::Error::UnsupportedVersion(_) => anyhow!("Unsupported Dexios format"),
+        | domain::header::Error::UnsupportedVersion(_)
+        | domain::header::Error::RetiredV1Layout => anyhow!("Unsupported Dexios format"),
         domain::header::Error::MalformedV1Header(error) => {
             anyhow!("Malformed Dexios V1 header: {error}")
         }
@@ -162,9 +163,9 @@ pub fn map_key_error(error: domain::key::Error) -> anyhow::Error {
         domain::key::Error::InvalidMagic(magic) => {
             anyhow!("Invalid Dexios header magic: {magic:02X?}")
         }
-        domain::key::Error::UnsupportedFormat(_) | domain::key::Error::UnsupportedVersion(_) => {
-            anyhow!("Unsupported Dexios format")
-        }
+        domain::key::Error::UnsupportedFormat(_)
+        | domain::key::Error::UnsupportedVersion(_)
+        | domain::key::Error::RetiredV1Layout => anyhow!("Unsupported Dexios format"),
         domain::key::Error::MalformedV1Header(error) => {
             anyhow!("Malformed Dexios V1 header: {error}")
         }

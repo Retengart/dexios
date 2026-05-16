@@ -32,6 +32,7 @@ pub enum Error {
     InvalidMagic([u8; 4]),
     UnsupportedFormat([u8; 2]),
     UnsupportedVersion([u8; 2]),
+    RetiredV1Layout,
     MalformedV1Header(HeaderReadError),
     ReadIo,
     HeaderWrite,
@@ -49,9 +50,10 @@ impl Error {
             Self::HeaderSizeParse | Self::HeaderDeserialize | Self::MalformedV1Header(_) => {
                 WorkflowErrorClass::MalformedFormat
             }
-            Self::InvalidMagic(_) | Self::UnsupportedFormat(_) | Self::UnsupportedVersion(_) => {
-                WorkflowErrorClass::UnsupportedFormat
-            }
+            Self::InvalidMagic(_)
+            | Self::UnsupportedFormat(_)
+            | Self::UnsupportedVersion(_)
+            | Self::RetiredV1Layout => WorkflowErrorClass::UnsupportedFormat,
             Self::Unsupported => WorkflowErrorClass::UnsupportedFormat,
             Self::UnsupportedKdf(_) | Self::KeyHash => WorkflowErrorClass::KdfFailure,
             Self::IncorrectKey => WorkflowErrorClass::IncorrectKey,
@@ -80,6 +82,7 @@ impl std::fmt::Display for Error {
             Error::UnsupportedVersion(version) => {
                 write!(f, "Unsupported Dexios header version: {version:02X?}")
             }
+            Error::RetiredV1Layout => f.write_str("Retired Dexios V1 header layout"),
             Error::MalformedV1Header(error) => write!(f, "Malformed Dexios V1 header: {error}"),
             Error::ReadIo => f.write_str("Unable to read key workflow target"),
             Error::PathIdentity(error) => write!(f, "{error}"),
@@ -206,6 +209,7 @@ pub(crate) fn map_header_read_error(error: HeaderReadError) -> Error {
         HeaderReadError::InvalidMagic(magic) => Error::InvalidMagic(magic),
         HeaderReadError::UnsupportedFormat(prefix) => Error::UnsupportedFormat(prefix),
         HeaderReadError::UnsupportedVersion(version) => Error::UnsupportedVersion(version),
+        HeaderReadError::RetiredV1Layout => Error::RetiredV1Layout,
         error => Error::MalformedV1Header(error),
     }
 }

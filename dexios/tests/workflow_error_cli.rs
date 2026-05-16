@@ -7,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use core::header::common::{
     CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN,
+    RETIRED_CURRENT_V1_HEADER_LEN,
 };
 use core::kdf::Kdf;
 use core::protected::Protected;
@@ -151,6 +152,37 @@ fn write_malformed_v1_header(path: &Path) {
     fs::write(path, bytes).unwrap();
 }
 
+fn decode_hex_fixture(path: &Path) -> Vec<u8> {
+    let fixture = fs::read_to_string(path).unwrap();
+    let nibbles: Vec<u8> = fixture
+        .chars()
+        .filter(|ch| !ch.is_ascii_whitespace())
+        .map(|ch| ch.to_digit(16).unwrap() as u8)
+        .collect();
+
+    assert!(nibbles.len().is_multiple_of(2));
+    nibbles
+        .chunks_exact(2)
+        .map(|pair| (pair[0] << 4) | pair[1])
+        .collect()
+}
+
+fn retired_v1_fixture_bytes() -> Vec<u8> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("dexios-core")
+        .join("tests")
+        .join("testdata")
+        .join("v1_valid_single_keyslot.hex");
+    let bytes = decode_hex_fixture(&path);
+    assert_eq!(bytes.len(), RETIRED_CURRENT_V1_HEADER_LEN);
+    bytes
+}
+
+fn write_retired_v1_fixture(path: &Path) {
+    fs::write(path, retired_v1_fixture_bytes()).unwrap();
+}
+
 fn mark_keyslot_unsupported_argon2id(path: &Path, index: usize) {
     let mut bytes = fs::read(path).unwrap();
     let offset = HEADER_STATIC_LEN + (index * KEYSLOT_LEN) + 2;
@@ -188,8 +220,10 @@ fn malformed_and_unsupported_headers_use_typed_cli_mapping() {
     let test_dir = TestDir::new("workflow-error-header");
     let malformed = test_dir.path().join("malformed.enc");
     let legacy = test_dir.path().join("legacy.hdr");
+    let retired = test_dir.path().join("retired-current-v1.enc");
     write_malformed_v1_header(&malformed);
     write_legacy_header(&legacy);
+    write_retired_v1_fixture(&retired);
 
     let malformed_output = run_cli(
         test_dir.path(),
@@ -213,6 +247,22 @@ fn malformed_and_unsupported_headers_use_typed_cli_mapping() {
     assert!(
         legacy_stderr.contains("Unsupported Dexios format"),
         "stderr did not expose the unsupported format class: {legacy_stderr}"
+    );
+
+    let retired_output = run_cli(
+        test_dir.path(),
+        CORRECT_PASSWORD,
+        &["header", "details", "retired-current-v1.enc"],
+    );
+    assert!(!retired_output.status.success());
+    let retired_stderr = stderr(&retired_output);
+    assert!(
+        retired_stderr.contains("Unsupported Dexios format"),
+        "retired 416-byte V1 did not expose the unsupported format class: {retired_stderr}"
+    );
+    assert!(
+        !retired_stderr.contains("Malformed Dexios V1 header"),
+        "retired 416-byte V1 was misclassified as malformed: {retired_stderr}"
     );
 }
 
@@ -417,6 +467,24 @@ fn key_verify_wrong_key_and_unsupported_kdf_use_typed_mapping() {
         "stderr did not expose the typed unsupported-KDF class: {unsupported_kdf_stderr}"
     );
     assert!(!unsupported_kdf_stderr.contains(CORRECT_PASSWORD));
+
+    write_retired_v1_fixture(&test_dir.path().join("retired-current-v1.enc"));
+    let retired_output = run_cli(
+        test_dir.path(),
+        CORRECT_PASSWORD,
+        &["key", "verify", "retired-current-v1.enc"],
+    );
+    assert!(!retired_output.status.success());
+    let retired_stderr = stderr(&retired_output);
+    assert!(
+        retired_stderr.contains("Unsupported Dexios format"),
+        "retired 416-byte V1 did not expose key unsupported-format class: {retired_stderr}"
+    );
+    assert!(
+        !retired_stderr.contains("Malformed Dexios V1 header"),
+        "key verify misclassified retired 416-byte V1 as malformed: {retired_stderr}"
+    );
+    assert_no_default_source_chain(&retired_stderr);
 }
 
 #[test]
