@@ -555,7 +555,7 @@ fn formatted_error_control_flow_violations(source: Source<'_>) -> Vec<String> {
         }
 
         for (binding, _) in &formatted_error_bindings {
-            if compact.contains(&format!("{binding}.contains(")) {
+            if binding_contains_call(&compact, binding) {
                 violations.push(violation(
                     source.path,
                     index,
@@ -572,10 +572,9 @@ fn formatted_error_control_flow_violations(source: Source<'_>) -> Vec<String> {
 }
 
 fn formatted_error_binding_name(compact: &str) -> Option<String> {
-    let rhs_is_formatted_error = compact.contains("=error.to_string()")
-        || compact.contains("=err.to_string()")
-        || (compact.contains("=format!(")
-            && (compact.contains("{error") || compact.contains("{err")));
+    let (_, rhs) = compact.split_once('=')?;
+    let rhs_is_formatted_error = formatted_error_to_string_receiver(rhs)
+        || (rhs.contains("format!(") && (rhs.contains("{error") || rhs.contains("{err")));
     if !rhs_is_formatted_error {
         return None;
     }
@@ -590,6 +589,30 @@ fn formatted_error_binding_name(compact: &str) -> Option<String> {
     } else {
         Some(name.to_string())
     }
+}
+
+fn formatted_error_to_string_receiver(rhs: &str) -> bool {
+    let Some((receiver, _)) = rhs.split_once(".to_string()") else {
+        return false;
+    };
+    let receiver = receiver
+        .trim_start_matches('&')
+        .trim_start_matches('(')
+        .trim_end_matches(')');
+    receiver == "err"
+        || receiver.ends_with("_err")
+        || receiver == "error"
+        || receiver.ends_with("_error")
+}
+
+fn binding_contains_call(compact: &str, binding: &str) -> bool {
+    [
+        format!("{binding}.contains("),
+        format!("{binding}.as_str().contains("),
+        format!("(&{binding}).contains("),
+    ]
+    .iter()
+    .any(|needle| compact.contains(needle))
 }
 
 fn d05_escape_hatch_violations(source: Source<'_>) -> Vec<String> {
@@ -691,6 +714,7 @@ struct TestContext {
     test_support_file: bool,
     cfg_test_pending: bool,
     cfg_test_depth: usize,
+    cfg_entered_this_line: bool,
 }
 
 impl TestContext {
@@ -700,6 +724,7 @@ impl TestContext {
             test_support_file: path.ends_with("/test_support.rs"),
             cfg_test_pending: false,
             cfg_test_depth: 0,
+            cfg_entered_this_line: false,
         }
     }
 
@@ -715,14 +740,23 @@ impl TestContext {
             self.cfg_test_pending = true;
         }
 
-        if self.cfg_test_pending && declares_test_module(trimmed) {
+        if self.cfg_test_pending && declares_cfg_scoped_item(trimmed) {
             self.cfg_test_depth = brace_delta(trimmed).max(1) as usize;
             self.cfg_test_pending = false;
+            self.cfg_entered_this_line = true;
         }
     }
 
     fn update_after_line(&mut self, trimmed: &str) {
         if self.cfg_test_depth > 0 {
+            if self.cfg_entered_this_line {
+                if brace_delta(trimmed) <= 0 {
+                    self.cfg_test_depth = 0;
+                }
+                self.cfg_entered_this_line = false;
+                return;
+            }
+
             let delta = brace_delta(trimmed);
             if delta.is_negative() {
                 self.cfg_test_depth = self.cfg_test_depth.saturating_sub(delta.unsigned_abs());
@@ -740,10 +774,18 @@ fn is_test_or_test_support_cfg(trimmed: &str) -> bool {
         || (trimmed.starts_with("#[cfg(") && trimmed.contains("feature = \"test-support\""))
 }
 
-fn declares_test_module(trimmed: &str) -> bool {
-    trimmed.starts_with("mod tests")
-        || trimmed.starts_with("pub mod tests")
-        || trimmed.starts_with("pub(crate) mod tests")
+fn declares_cfg_scoped_item(trimmed: &str) -> bool {
+    [
+        "fn ",
+        "pub fn ",
+        "pub(crate) fn ",
+        "mod ",
+        "pub mod ",
+        "pub(crate) mod ",
+        "impl ",
+    ]
+    .into_iter()
+    .any(|prefix| trimmed.starts_with(prefix))
 }
 
 fn brace_delta(line: &str) -> isize {
@@ -973,6 +1015,24 @@ fn formatted_error_control_flow_rejects_string_inspection() {
                 }
             "#,
         },
+        Source {
+            path: "synthetic/indirect-rendered-error-as-str.rs",
+            text: r#"
+                let rendered = error.to_string();
+                if rendered.as_str().contains("unsupported") {
+                    return Ok(());
+                }
+            "#,
+        },
+        Source {
+            path: "synthetic/indirect-workflow-error.rs",
+            text: r#"
+                let rendered = workflow_error.to_string();
+                if rendered.contains("unsupported") {
+                    return Ok(());
+                }
+            "#,
+        },
     ];
 
     for source in bad_sources {
@@ -1009,6 +1069,27 @@ fn formatted_error_control_flow_rejects_string_inspection() {
                         let rendered = error.to_string();
                         assert!(rendered.contains("unsupported"));
                     }
+                }
+            "#,
+        },
+        Source {
+            path: "synthetic/cfg-test-function-message-assertion.rs",
+            text: r#"
+                #[cfg(test)]
+                fn reports_unsupported_error() {
+                    let error = build_error();
+                    let rendered = error.to_string();
+                    assert!(rendered.contains("unsupported"));
+                }
+            "#,
+        },
+        Source {
+            path: "synthetic/test-support-function-message-assertion.rs",
+            text: r#"
+                #[cfg(feature = "test-support")]
+                pub(crate) fn assert_test_support_error(error: WorkflowError) {
+                    let rendered = error.to_string();
+                    assert!(rendered.contains("unsupported"));
                 }
             "#,
         },
