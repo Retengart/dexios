@@ -14,6 +14,7 @@ const SLOT_STATE_ACTIVE: u8 = 0x01;
 const KDF_PROFILE_BLAKE3_BALLOON: u8 = 0x01;
 const KDF_PROFILE_HISTORICAL_ARGON2ID: u8 = 0xDF;
 const KDF_PARAM_PROFILE_HISTORICAL_ARGON2ID: u8 = 0x02;
+const SLOT_WRAPPING_AAD_LEN: usize = HEADER_STATIC_LEN + 1 + 1 + 1 + 16 + 24;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// Canonical V1 payload kind byte.
@@ -393,6 +394,25 @@ impl V1Header {
         aad[14] = MAX_KEYSLOTS as u8;
         aad[16..36].copy_from_slice(self.payload_nonce.as_bytes());
         V1HeaderAad::from_static_header_bytes(aad)
+    }
+
+    pub fn slot_wrapping_aad(
+        &self,
+        physical_index: usize,
+        keyslot: &V1Keyslot,
+    ) -> Result<Vec<u8>, HeaderWriteError> {
+        if physical_index >= MAX_KEYSLOTS {
+            return Err(HeaderWriteError::InvalidKeyslotIndex(physical_index));
+        }
+
+        let mut aad = Vec::with_capacity(SLOT_WRAPPING_AAD_LEN);
+        aad.extend_from_slice(self.aad().as_bytes());
+        aad.push(u8::try_from(physical_index).expect("physical V1 slot index fits in u8"));
+        aad.push(keyslot.kdf.serialize_profile());
+        aad.push(keyslot.kdf.serialize_param_profile());
+        aad.extend_from_slice(keyslot.salt.as_bytes());
+        aad.extend_from_slice(keyslot.nonce.as_bytes());
+        Ok(aad)
     }
 
     pub fn serialize(&self) -> Result<Vec<u8>, HeaderWriteError> {

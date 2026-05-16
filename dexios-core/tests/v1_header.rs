@@ -332,6 +332,60 @@ fn creates_exact_aad_bytes_for_sample_v1_header() {
 }
 
 #[test]
+fn payload_aad_excludes_mutable_keyslot_table_state() {
+    let first_header = support::sample_v1_header();
+    let second_keyslot = V1Keyslot::new(
+        Kdf::Blake3Balloon,
+        [29u8; 48],
+        KeyslotNonce::new([31u8; 24]),
+        HeaderSalt::new([37u8; 16]),
+    );
+    let two_slot_header = V1Header::new(
+        PayloadNonce::new([7u8; 20]),
+        V1Keyslots::try_from_vec(vec![first_header.keyslots()[0], second_keyslot])
+            .expect("two physical keyslots"),
+    )
+    .expect("two-slot header");
+    let changed_slot_header = V1Header::new(
+        PayloadNonce::new([7u8; 20]),
+        V1Keyslots::single(V1Keyslot::new(
+            Kdf::Blake3Balloon,
+            [41u8; 48],
+            KeyslotNonce::new([43u8; 24]),
+            HeaderSalt::new([47u8; 16]),
+        )),
+    )
+    .expect("changed slot header");
+
+    assert_eq!(first_header.aad(), two_slot_header.aad());
+    assert_eq!(first_header.aad(), changed_slot_header.aad());
+}
+
+#[test]
+fn slot_wrapping_aad_binds_static_header_and_physical_slot_metadata() {
+    let header = support::sample_v1_header();
+    let keyslot = &header.keyslots()[0];
+    let aad = header
+        .slot_wrapping_aad(0, keyslot)
+        .expect("slot wrapping aad");
+
+    let mut expected = Vec::new();
+    expected.extend_from_slice(header.aad().as_bytes());
+    expected.push(0);
+    expected.push(0x01);
+    expected.push(0x01);
+    expected.extend_from_slice(&[17u8; 16]);
+    expected.extend_from_slice(&[13u8; 24]);
+
+    assert_eq!(aad, expected);
+
+    let slot_one_aad = header
+        .slot_wrapping_aad(1, keyslot)
+        .expect("slot one wrapping aad");
+    assert_ne!(aad, slot_one_aad);
+}
+
+#[test]
 fn detached_canonical_v1_header_bytes_are_exactly_canonical_length() {
     let header = support::sample_v1_header();
     let bytes = header.serialize().unwrap();
