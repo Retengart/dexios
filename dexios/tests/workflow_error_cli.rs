@@ -5,7 +5,9 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use core::header::common::{HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN};
+use core::header::common::{
+    CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN,
+};
 use core::kdf::Kdf;
 use core::protected::Protected;
 use domain::encrypt;
@@ -136,16 +138,22 @@ fn write_legacy_header(path: &Path) {
 }
 
 fn write_malformed_v1_header(path: &Path) {
-    let mut bytes = [0u8; 416];
+    let mut bytes = [0u8; HEADER_LEN];
     bytes[0..4].copy_from_slice(b"DXIO");
     bytes[4..6].copy_from_slice(&[0x00, 0x01]);
-    bytes[7] = 1;
+    bytes[6..10].copy_from_slice(&CANONICAL_V1_DISCRIMINATOR);
+    bytes[10] = 0x01;
+    bytes[11] = 0x01;
+    bytes[12] = 0x01;
+    bytes[13] = 0x01;
+    bytes[14] = 0x04;
+    bytes[15] = 1;
     fs::write(path, bytes).unwrap();
 }
 
 fn mark_keyslot_unsupported_argon2id(path: &Path, index: usize) {
     let mut bytes = fs::read(path).unwrap();
-    let offset = HEADER_STATIC_LEN + (index * KEYSLOT_LEN);
+    let offset = HEADER_STATIC_LEN + (index * KEYSLOT_LEN) + 2;
     bytes[offset..offset + 2].copy_from_slice(&[0xDF, 0x02]);
     fs::write(path, bytes).unwrap();
 }

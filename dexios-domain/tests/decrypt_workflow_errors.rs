@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use core::header::common::{HEADER_LEN, HEADER_STATIC_LEN};
+use core::header::common::{CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, HEADER_STATIC_LEN};
 use core::kdf::Kdf;
 use core::primitives::BLOCK_SIZE;
 use core::protected::Protected;
@@ -122,7 +122,7 @@ fn detached_encrypted_fixture(test_dir: &TestDir) -> (PathBuf, PathBuf) {
 
 fn mark_first_keyslot_unsupported_argon2id(path: &Path) {
     let mut bytes = fs::read(path).unwrap();
-    bytes[HEADER_STATIC_LEN..HEADER_STATIC_LEN + 2].copy_from_slice(&[0xDF, 0x02]);
+    bytes[HEADER_STATIC_LEN + 2..HEADER_STATIC_LEN + 4].copy_from_slice(&[0xDF, 0x02]);
     fs::write(path, bytes).unwrap();
 }
 
@@ -348,7 +348,10 @@ fn decrypt_intent_maps_wrong_key_unsupported_kdf_and_header_format_errors() {
     ));
 
     let malformed_input = test_dir.path().join("malformed.enc");
-    fs::write(&malformed_input, b"DXIO\x00\x01short").unwrap();
+    let mut malformed_bytes = b"DXIO\x00\x01".to_vec();
+    malformed_bytes.extend_from_slice(&CANONICAL_V1_DISCRIMINATOR);
+    malformed_bytes.extend_from_slice(b"short");
+    fs::write(&malformed_input, malformed_bytes).unwrap();
     let malformed = decrypt::DecryptIntent::new(
         &malformed_input,
         test_dir.path().join("malformed.out"),
@@ -369,7 +372,7 @@ fn decrypt_intent_maps_wrong_key_unsupported_kdf_and_header_format_errors() {
     );
 
     let unsupported_input = test_dir.path().join("legacy.enc");
-    fs::write(&unsupported_input, [0xDE, 0x01, 0, 0, 0, 0]).unwrap();
+    fs::write(&unsupported_input, [0xDE, 0x01, 0, 0, 0, 0, 0, 0, 0, 0]).unwrap();
     let unsupported = decrypt::DecryptIntent::new(
         &unsupported_input,
         test_dir.path().join("legacy.out"),

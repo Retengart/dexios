@@ -2,7 +2,7 @@ use dexios_core::header::common::{
     CANONICAL_HEADER_LEN, CANONICAL_HEADER_STATIC_LEN, CANONICAL_V1_DISCRIMINATOR, HEADER_LEN,
     HEADER_STATIC_LEN, KEYSLOT_LEN, KeyslotNonce, PayloadNonce, Salt as HeaderSalt,
 };
-use dexios_core::header::v1::{EncryptedMasterKey, V1Header, V1Keyslot, V1Keyslots};
+use dexios_core::header::v1::{EncryptedMasterKey, KeyslotKdf, V1Header, V1Keyslot, V1Keyslots};
 use dexios_core::header::{HeaderReadError, ParsedHeader, ParsedV1Payload};
 use dexios_core::kdf::{Kdf, Salt};
 use dexios_core::primitives::{MasterKey, WrappingKey};
@@ -549,6 +549,21 @@ fn v1_header_rejects_historical_argon2id_profile_as_unsupported_metadata() {
         .expect_err("historical Argon2id profile is unsupported canonical metadata");
 
     assert!(matches!(error, HeaderReadError::InvalidKdfProfile(0x02)));
+}
+
+#[test]
+fn v1_header_parses_historical_argon2id_tag_as_unsupported_keyslot_metadata() {
+    let mut bytes = support::sample_v1_header().serialize().unwrap();
+    bytes[HEADER_STATIC_LEN + 2..HEADER_STATIC_LEN + 4].copy_from_slice(&[0xDF, 0x02]);
+
+    let ParsedHeader::V1(payload) =
+        dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
+            .expect("historical Argon2id keyslot tag should remain parseable");
+
+    assert_eq!(
+        payload.header().keyslots()[0].kdf(),
+        KeyslotKdf::UnsupportedArgon2id
+    );
 }
 
 #[test]

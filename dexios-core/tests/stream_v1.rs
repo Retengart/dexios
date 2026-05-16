@@ -40,6 +40,19 @@ mod support {
         payload
     }
 
+    pub fn parsed_payload_with_payload_metadata(
+        header: &V1Header,
+        payload_kind: u8,
+        payload_framing: u8,
+    ) -> ParsedV1Payload {
+        let mut bytes = header.serialize().expect("serialize header");
+        bytes[11] = payload_kind;
+        bytes[12] = payload_framing;
+        let ParsedHeader::V1(payload) =
+            dexios_core::header::read_header(&mut Cursor::new(bytes)).expect("parse header");
+        payload
+    }
+
     pub fn master_key() -> MasterKey {
         MasterKey::new([31u8; 32])
     }
@@ -484,8 +497,7 @@ fn decrypt_rejects_wrong_master_key() {
 #[test]
 fn decrypt_rejects_mismatched_header_aad() {
     let header = support::sample_v1_header();
-    let wrong_aad_header = support::sample_v1_header_with_nonce_and_keyslot_count([7u8; 20], 2);
-    let wrong_aad_payload = support::parsed_payload_for(&wrong_aad_header);
+    let wrong_aad_payload = support::parsed_payload_with_payload_metadata(&header, 0x02, 0x02);
     let plaintext = plaintext_spanning_normal_chunks();
     let ciphertext = flatten_chunks(&encrypt_chunks(&header, &plaintext));
 

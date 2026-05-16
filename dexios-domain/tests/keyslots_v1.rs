@@ -1,4 +1,6 @@
-use core::header::common::{HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN, Salt};
+use core::header::common::{
+    CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN, Salt,
+};
 use core::header::v1::{KeyslotKdf, V1Header, V1Keyslot, V1Keyslots};
 use core::header::{HeaderReadError, ParsedHeader, read_header};
 use core::kdf::Kdf;
@@ -15,6 +17,8 @@ const DOMAIN_ENCRYPT_SOURCE: &str = include_str!("../src/encrypt.rs");
 const DOMAIN_KEY_ADD_SOURCE: &str = include_str!("../src/key/add.rs");
 const DOMAIN_KEY_CHANGE_SOURCE: &str = include_str!("../src/key/change.rs");
 const DOMAIN_KEY_DELETE_SOURCE: &str = include_str!("../src/key/delete.rs");
+const CANONICAL_KEYSLOT_KDF_TAG_OFFSET: usize = 2;
+const HISTORICAL_ARGON2ID_KEY_TAG: [u8; 2] = [0xDF, 0x02];
 
 fn encrypted_v1_fixture() -> RefCell<Cursor<Vec<u8>>> {
     let dir = tempfile::tempdir().unwrap();
@@ -70,27 +74,34 @@ fn two_keyslot_v1_file(name: &str, second_key: &[u8]) -> (tempfile::TempDir, Pat
 
 fn mark_keyslot_unsupported_argon2id(encrypted: &RefCell<Cursor<Vec<u8>>>, index: usize) {
     let mut handle = encrypted.borrow_mut();
-    let offset = HEADER_STATIC_LEN + (index * KEYSLOT_LEN);
-    handle.get_mut()[offset..offset + 2].copy_from_slice(&[0xDF, 0x02]);
+    let offset = HEADER_STATIC_LEN + (index * KEYSLOT_LEN) + CANONICAL_KEYSLOT_KDF_TAG_OFFSET;
+    handle.get_mut()[offset..offset + 2].copy_from_slice(&HISTORICAL_ARGON2ID_KEY_TAG);
     handle.rewind().expect("rewind after KDF tag mutation");
 }
 
 fn mark_keyslot_unsupported_argon2id_file(path: &Path, index: usize) {
     let mut bytes = fs::read(path).expect("read encrypted fixture");
-    let offset = HEADER_STATIC_LEN + (index * KEYSLOT_LEN);
-    bytes[offset..offset + 2].copy_from_slice(&[0xDF, 0x02]);
+    let offset = HEADER_STATIC_LEN + (index * KEYSLOT_LEN) + CANONICAL_KEYSLOT_KDF_TAG_OFFSET;
+    bytes[offset..offset + 2].copy_from_slice(&HISTORICAL_ARGON2ID_KEY_TAG);
     fs::write(path, bytes).expect("write unsupported KDF fixture");
 }
 
 fn write_unsupported_format_fixture(path: &Path) {
-    fs::write(path, [0xDE, 0x01, 0, 0, 0, 0]).expect("write unsupported format fixture");
+    fs::write(path, [0xDE, 0x01, 0, 0, 0, 0, 0, 0, 0, 0])
+        .expect("write unsupported format fixture");
 }
 
 fn write_malformed_v1_fixture(path: &Path) {
     let mut bytes = [0u8; HEADER_LEN];
     bytes[0..4].copy_from_slice(b"DXIO");
     bytes[4..6].copy_from_slice(&[0x00, 0x01]);
-    bytes[7] = 1;
+    bytes[6..10].copy_from_slice(&CANONICAL_V1_DISCRIMINATOR);
+    bytes[10] = 0x01;
+    bytes[11] = 0x01;
+    bytes[12] = 0x01;
+    bytes[13] = 0x01;
+    bytes[14] = 0x04;
+    bytes[15] = 1;
     fs::write(path, bytes).expect("write malformed V1 fixture");
 }
 

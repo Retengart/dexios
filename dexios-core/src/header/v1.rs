@@ -12,6 +12,8 @@ const CANONICAL_KDF_PARAM_PROFILE: u8 = 0x01;
 const SLOT_STATE_EMPTY: u8 = 0x00;
 const SLOT_STATE_ACTIVE: u8 = 0x01;
 const KDF_PROFILE_BLAKE3_BALLOON: u8 = 0x01;
+const KDF_PROFILE_HISTORICAL_ARGON2ID: u8 = 0xDF;
+const KDF_PARAM_PROFILE_HISTORICAL_ARGON2ID: u8 = 0x02;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// Canonical V1 payload kind byte.
@@ -68,17 +70,30 @@ pub enum KeyslotKdf {
 }
 
 impl KeyslotKdf {
-    fn serialize(self) -> u8 {
+    fn serialize_profile(self) -> u8 {
         match self {
             Self::Blake3Balloon => KDF_PROFILE_BLAKE3_BALLOON,
-            Self::UnsupportedArgon2id => 0x02,
+            Self::UnsupportedArgon2id => KDF_PROFILE_HISTORICAL_ARGON2ID,
         }
     }
 
-    fn deserialize(profile: u8) -> Result<Self, HeaderReadError> {
-        match profile {
-            KDF_PROFILE_BLAKE3_BALLOON => Ok(Self::Blake3Balloon),
-            _ => Err(HeaderReadError::InvalidKdfProfile(profile)),
+    fn serialize_param_profile(self) -> u8 {
+        match self {
+            Self::Blake3Balloon => CANONICAL_KDF_PARAM_PROFILE,
+            Self::UnsupportedArgon2id => KDF_PARAM_PROFILE_HISTORICAL_ARGON2ID,
+        }
+    }
+
+    fn deserialize(profile: u8, param_profile: u8) -> Result<Self, HeaderReadError> {
+        match (profile, param_profile) {
+            (KDF_PROFILE_BLAKE3_BALLOON, CANONICAL_KDF_PARAM_PROFILE) => Ok(Self::Blake3Balloon),
+            (KDF_PROFILE_HISTORICAL_ARGON2ID, KDF_PARAM_PROFILE_HISTORICAL_ARGON2ID) => {
+                Ok(Self::UnsupportedArgon2id)
+            }
+            (KDF_PROFILE_BLAKE3_BALLOON, param_profile) => {
+                Err(HeaderReadError::InvalidKdfParamProfile(param_profile))
+            }
+            (profile, _) => Err(HeaderReadError::InvalidKdfProfile(profile)),
         }
     }
 }
@@ -206,8 +221,8 @@ impl V1Keyslot {
     fn serialize_into(&self, bytes: &mut Vec<u8>, physical_index: usize) {
         bytes.push(SLOT_STATE_ACTIVE);
         bytes.push(u8::try_from(physical_index).expect("physical V1 slot index fits in u8"));
-        bytes.push(self.kdf.serialize());
-        bytes.push(CANONICAL_KDF_PARAM_PROFILE);
+        bytes.push(self.kdf.serialize_profile());
+        bytes.push(self.kdf.serialize_param_profile());
         bytes.extend_from_slice(self.salt.as_bytes());
         bytes.extend_from_slice(self.nonce.as_bytes());
         bytes.extend_from_slice(self.encrypted_master_key.as_bytes());
@@ -230,10 +245,7 @@ impl V1Keyslot {
             });
         }
 
-        let kdf = KeyslotKdf::deserialize(slot_bytes[2])?;
-        if slot_bytes[3] != CANONICAL_KDF_PARAM_PROFILE {
-            return Err(HeaderReadError::InvalidKdfParamProfile(slot_bytes[3]));
-        }
+        let kdf = KeyslotKdf::deserialize(slot_bytes[2], slot_bytes[3])?;
 
         Ok(Self {
             kdf,
