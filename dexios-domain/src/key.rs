@@ -1,7 +1,9 @@
 use core::cipher::{unwrap_v1_master_key, wrap_v1_master_key};
 use core::header::HeaderReadError;
-use core::header::common::KeyslotNonce;
-use core::header::v1::{EncryptedMasterKey, KeyslotKdf, V1KeyslotIndex, V1Keyslots};
+use core::header::common::{KeyslotNonce, Salt};
+use core::header::v1::{
+    EncryptedMasterKey, KeyslotKdf, V1Header, V1Keyslot, V1KeyslotIndex, V1Keyslots,
+};
 use core::kdf::Kdf;
 use core::primitives::ENCRYPTED_MASTER_KEY_LEN;
 use core::primitives::{MasterKey, WrappingKey};
@@ -104,15 +106,17 @@ impl std::fmt::Display for Error {
 }
 
 pub fn decrypt_v1_master_key_with_index(
-    keyslots: &V1Keyslots,
+    header: &V1Header,
     raw_key_old: Protected<Vec<u8>>,
 ) -> Result<(MasterKey, V1KeyslotIndex), Error> {
+    let keyslots = header.keyslots_collection();
     let mut index = None;
     let mut master_key = None;
     let mut saw_unsupported_kdf = None;
 
     // we need the index, so we can't use `decrypt_master_key()`
-    for (i, keyslot) in keyslots.as_slice().iter().enumerate() {
+    for keyslot in keyslots.as_slice() {
+        let physical_index = keyslot.physical_index();
         let kdf = match keyslot.kdf() {
             KeyslotKdf::Blake3Balloon => Kdf::Blake3Balloon,
             KeyslotKdf::UnsupportedArgon2id => {
@@ -126,10 +130,14 @@ pub fn decrypt_v1_master_key_with_index(
             .map_err(|_| Error::KeyHash)?;
 
         let encrypted_master_key = EncryptedMasterKey::new(*keyslot.encrypted_master_key());
+        let slot_wrapping_aad = header
+            .slot_wrapping_aad(physical_index, keyslot)
+            .map_err(|_| Error::HeaderDeserialize)?;
         let master_key_result = unwrap_v1_master_key(
             WrappingKey::from(key_old),
             &encrypted_master_key,
             keyslot.nonce(),
+            &slot_wrapping_aad,
         );
 
         let Ok(decrypted_master_key) = master_key_result else {
@@ -138,7 +146,7 @@ pub fn decrypt_v1_master_key_with_index(
 
         master_key = Some(decrypted_master_key);
         index = Some(
-            V1KeyslotIndex::try_from_usize(i, keyslots.count())
+            V1KeyslotIndex::try_from_physical_index(physical_index)
                 .map_err(|_| Error::HeaderDeserialize)?,
         );
 
@@ -191,11 +199,24 @@ pub(crate) fn all_keyslots_have_unsupported_kdf(keyslots: &V1Keyslots) -> Option
 
 // TODO(brxken128): make this available in the core
 pub fn encrypt_master_key(
+    header: &V1Header,
+    index: V1KeyslotIndex,
     master_key: &MasterKey,
     key_new: Protected<[u8; 32]>,
     nonce: &KeyslotNonce,
+    salt: &Salt,
+    kdf: Kdf,
 ) -> Result<[u8; ENCRYPTED_MASTER_KEY_LEN], Error> {
-    let encrypted_master_key = wrap_v1_master_key(WrappingKey::from(key_new), master_key, nonce)
-        .map_err(|_| Error::MasterKeyEncrypt)?;
+    let placeholder_keyslot = V1Keyslot::new(kdf, [0u8; ENCRYPTED_MASTER_KEY_LEN], *nonce, *salt);
+    let slot_wrapping_aad = header
+        .slot_wrapping_aad(index.get(), &placeholder_keyslot)
+        .map_err(|_| Error::HeaderDeserialize)?;
+    let encrypted_master_key = wrap_v1_master_key(
+        WrappingKey::from(key_new),
+        master_key,
+        nonce,
+        &slot_wrapping_aad,
+    )
+    .map_err(|_| Error::MasterKeyEncrypt)?;
     Ok(*encrypted_master_key.as_bytes())
 }

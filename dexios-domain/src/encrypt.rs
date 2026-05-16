@@ -321,9 +321,20 @@ fn build_v1_encryption_state(
 
     let master_key: MasterKey = gen_master_key();
     let master_key_nonce = gen_keyslot_nonce();
-    let master_key_encrypted =
-        wrap_v1_master_key(WrappingKey::from(key), &master_key, &master_key_nonce)
-            .map_err(|_| Error::EncryptMasterKey)?;
+    let payload_nonce = gen_payload_nonce();
+    let placeholder_keyslot = V1Keyslot::new(kdf, [0u8; 48], master_key_nonce, header_salt);
+    let placeholder_header = V1Header::new(payload_nonce, V1Keyslots::single(placeholder_keyslot))
+        .map_err(|_| Error::WriteHeader)?;
+    let slot_wrapping_aad = placeholder_header
+        .slot_wrapping_aad(0, &placeholder_keyslot)
+        .map_err(|_| Error::WriteHeader)?;
+    let master_key_encrypted = wrap_v1_master_key(
+        WrappingKey::from(key),
+        &master_key,
+        &master_key_nonce,
+        &slot_wrapping_aad,
+    )
+    .map_err(|_| Error::EncryptMasterKey)?;
 
     let keyslot = V1Keyslot::new(
         kdf,
@@ -331,7 +342,6 @@ fn build_v1_encryption_state(
         master_key_nonce,
         header_salt,
     );
-    let payload_nonce = gen_payload_nonce();
     let header = V1Header::new(payload_nonce, V1Keyslots::single(keyslot))
         .map_err(|_| Error::WriteHeader)?;
 

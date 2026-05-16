@@ -138,6 +138,16 @@ impl V1KeyslotIndex {
         Ok(Self(index as u8))
     }
 
+    pub fn try_from_physical_index(index: usize) -> Result<Self, HeaderReadError> {
+        if index >= MAX_KEYSLOTS {
+            return Err(HeaderReadError::InvalidPhysicalSlotIndex {
+                expected: MAX_KEYSLOTS - 1,
+                actual: u8::try_from(index).unwrap_or(u8::MAX),
+            });
+        }
+        Ok(Self(index as u8))
+    }
+
     #[must_use]
     pub const fn get(self) -> usize {
         self.0 as usize
@@ -173,6 +183,7 @@ impl EncryptedMasterKey {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct V1Keyslot {
+    physical_index: u8,
     kdf: KeyslotKdf,
     encrypted_master_key: EncryptedMasterKey,
     nonce: KeyslotNonce,
@@ -192,11 +203,23 @@ impl V1Keyslot {
         };
 
         Self {
+            physical_index: 0,
             kdf,
             encrypted_master_key: EncryptedMasterKey::new(encrypted_master_key),
             nonce,
             salt,
         }
+    }
+
+    fn with_physical_index(mut self, physical_index: usize) -> Self {
+        self.physical_index =
+            u8::try_from(physical_index).expect("physical V1 slot index fits in u8");
+        self
+    }
+
+    #[must_use]
+    pub const fn physical_index(&self) -> usize {
+        self.physical_index as usize
     }
 
     #[must_use]
@@ -219,9 +242,9 @@ impl V1Keyslot {
         &self.salt
     }
 
-    fn serialize_into(&self, bytes: &mut Vec<u8>, physical_index: usize) {
+    fn serialize_into(&self, bytes: &mut Vec<u8>) {
         bytes.push(SLOT_STATE_ACTIVE);
-        bytes.push(u8::try_from(physical_index).expect("physical V1 slot index fits in u8"));
+        bytes.push(self.physical_index);
         bytes.push(self.kdf.serialize_profile());
         bytes.push(self.kdf.serialize_param_profile());
         bytes.extend_from_slice(self.salt.as_bytes());
@@ -249,6 +272,8 @@ impl V1Keyslot {
         let kdf = KeyslotKdf::deserialize(slot_bytes[2], slot_bytes[3])?;
 
         Ok(Self {
+            physical_index: u8::try_from(physical_index)
+                .expect("physical V1 slot index fits in u8"),
             kdf,
             salt: Salt::try_from_slice(&slot_bytes[4..20])?,
             nonce: KeyslotNonce::try_from_slice(&slot_bytes[20..44])?,
@@ -266,11 +291,25 @@ impl V1Keyslots {
     #[must_use]
     pub fn single(keyslot: V1Keyslot) -> Self {
         Self {
-            inner: vec![keyslot],
+            inner: vec![keyslot.with_physical_index(0)],
         }
     }
 
     pub fn try_from_vec(keyslots: Vec<V1Keyslot>) -> Result<Self, HeaderWriteError> {
+        match keyslots.len() {
+            0 => Err(HeaderWriteError::NoKeyslots),
+            len if len > MAX_KEYSLOTS => Err(HeaderWriteError::TooManyKeyslots(len)),
+            _ => Ok(Self {
+                inner: keyslots
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, keyslot)| keyslot.with_physical_index(index))
+                    .collect(),
+            }),
+        }
+    }
+
+    fn try_from_parsed_vec(keyslots: Vec<V1Keyslot>) -> Result<Self, HeaderWriteError> {
         match keyslots.len() {
             0 => Err(HeaderWriteError::NoKeyslots),
             len if len > MAX_KEYSLOTS => Err(HeaderWriteError::TooManyKeyslots(len)),
@@ -308,7 +347,14 @@ impl V1Keyslots {
         if self.is_full() {
             return Err(HeaderWriteError::TooManyKeyslots(self.inner.len() + 1));
         }
-        self.inner.push(keyslot);
+        let physical_index = (0..MAX_KEYSLOTS)
+            .find(|index| {
+                self.inner
+                    .iter()
+                    .all(|keyslot| keyslot.physical_index() != *index)
+            })
+            .ok_or_else(|| HeaderWriteError::TooManyKeyslots(self.inner.len() + 1))?;
+        self.inner.push(keyslot.with_physical_index(physical_index));
         Ok(())
     }
 
@@ -319,19 +365,31 @@ impl V1Keyslots {
     ) -> Result<V1Keyslot, HeaderWriteError> {
         let slot = self
             .inner
-            .get_mut(index.get())
+            .iter_mut()
+            .find(|keyslot| keyslot.physical_index() == index.get())
             .ok_or_else(|| HeaderWriteError::InvalidKeyslotIndex(index.get()))?;
-        Ok(std::mem::replace(slot, keyslot))
+        Ok(std::mem::replace(
+            slot,
+            keyslot.with_physical_index(index.get()),
+        ))
     }
 
     pub fn remove(&mut self, index: V1KeyslotIndex) -> Result<V1Keyslot, HeaderWriteError> {
         if self.inner.len() == 1 {
             return Err(HeaderWriteError::NoKeyslots);
         }
-        if index.get() >= self.inner.len() {
-            return Err(HeaderWriteError::InvalidKeyslotIndex(index.get()));
-        }
-        Ok(self.inner.remove(index.get()))
+        let position = self
+            .inner
+            .iter()
+            .position(|keyslot| keyslot.physical_index() == index.get())
+            .ok_or_else(|| HeaderWriteError::InvalidKeyslotIndex(index.get()))?;
+        Ok(self.inner.remove(position))
+    }
+
+    fn get_physical(&self, physical_index: usize) -> Option<&V1Keyslot> {
+        self.inner
+            .iter()
+            .find(|keyslot| keyslot.physical_index() == physical_index)
     }
 }
 
@@ -419,12 +477,11 @@ impl V1Header {
         let mut bytes = Vec::with_capacity(HEADER_LEN);
         bytes.extend_from_slice(self.aad().as_bytes());
 
-        for (physical_index, keyslot) in self.keyslots.as_slice().iter().enumerate() {
-            keyslot.serialize_into(&mut bytes, physical_index);
-        }
-
-        for _ in self.keyslots.len()..MAX_KEYSLOTS {
-            bytes.extend_from_slice(&[0u8; KEYSLOT_LEN]);
+        for physical_index in 0..MAX_KEYSLOTS {
+            match self.keyslots.get_physical(physical_index) {
+                Some(keyslot) => keyslot.serialize_into(&mut bytes),
+                None => bytes.extend_from_slice(&[0u8; KEYSLOT_LEN]),
+            }
         }
 
         Ok(bytes)
@@ -502,7 +559,7 @@ impl V1Header {
             }
         }
 
-        let keyslots = V1Keyslots::try_from_vec(keyslots)
+        let keyslots = V1Keyslots::try_from_parsed_vec(keyslots)
             .map_err(|_| HeaderReadError::InvalidKeyslotCount(0))?;
         Ok(Self {
             payload_nonce,

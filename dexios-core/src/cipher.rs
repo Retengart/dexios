@@ -17,10 +17,11 @@
 //! let master_key = dexios_core::primitives::MasterKey::new([7u8; 32]);
 //!
 //! let nonce = gen_keyslot_nonce();
-//! let encrypted = dexios_core::cipher::wrap_v1_master_key(key, &master_key, &nonce).unwrap();
+//! let aad = b"slot-scoped metadata";
+//! let encrypted = dexios_core::cipher::wrap_v1_master_key(key, &master_key, &nonce, aad).unwrap();
 //!
 //! let key = dexios_core::primitives::WrappingKey::new([9u8; 32]);
-//! let _ = dexios_core::cipher::unwrap_v1_master_key(key, &encrypted, &nonce);
+//! let _ = dexios_core::cipher::unwrap_v1_master_key(key, &encrypted, &nonce, aad);
 //! ```
 
 use std::fmt::{Display, Formatter};
@@ -62,10 +63,18 @@ pub fn wrap_v1_master_key(
     wrapping_key: WrappingKey,
     master_key: &MasterKey,
     nonce: &KeyslotNonce,
+    aad: &[u8],
 ) -> Result<EncryptedMasterKey, CipherError> {
     let cipher = Ciphers::initialize(wrapping_key)?;
-    let encrypted =
-        master_key.with_exposed(|master_key| cipher.encrypt(nonce, master_key.as_slice()))?;
+    let encrypted = master_key.with_exposed(|master_key| {
+        cipher.encrypt(
+            nonce,
+            Payload {
+                msg: master_key.as_slice(),
+                aad,
+            },
+        )
+    })?;
     EncryptedMasterKey::try_from_slice(&encrypted)
         .map_err(|_| CipherError::InvalidEncryptedMasterKeyLength(encrypted.len()))
 }
@@ -74,9 +83,16 @@ pub fn unwrap_v1_master_key(
     wrapping_key: WrappingKey,
     encrypted_master_key: &EncryptedMasterKey,
     nonce: &KeyslotNonce,
+    aad: &[u8],
 ) -> Result<MasterKey, CipherError> {
     let cipher = Ciphers::initialize(wrapping_key)?;
-    let mut decrypted = cipher.decrypt(nonce, encrypted_master_key.as_bytes().as_slice())?;
+    let mut decrypted = cipher.decrypt(
+        nonce,
+        Payload {
+            msg: encrypted_master_key.as_bytes().as_slice(),
+            aad,
+        },
+    )?;
     if decrypted.len() != crate::primitives::MASTER_KEY_LEN {
         let len = decrypted.len();
         decrypted.zeroize();

@@ -113,10 +113,14 @@ fn keyslot_wrap_unwrap_uses_typed_nonce_and_key_inputs() {
     let header = support::sample_v1_header();
     let payload = support::parsed_payload_for(&header);
     let nonce = KeyslotNonce::new([13u8; 24]);
+    let wrapping_aad = header
+        .slot_wrapping_aad(0, &header.keyslots()[0])
+        .expect("slot wrapping aad");
     let encrypted_master_key: EncryptedMasterKey = dexios_core::cipher::wrap_v1_master_key(
         WrappingKey::new([41u8; 32]),
         &MasterKey::new([31u8; 32]),
         &nonce,
+        &wrapping_aad,
     )
     .expect("wrap typed master key");
 
@@ -124,6 +128,7 @@ fn keyslot_wrap_unwrap_uses_typed_nonce_and_key_inputs() {
         WrappingKey::new([41u8; 32]),
         &encrypted_master_key,
         &nonce,
+        &wrapping_aad,
     )
     .expect("unwrap typed master key");
 
@@ -142,11 +147,64 @@ fn keyslot_wrap_unwrap_uses_typed_nonce_and_key_inputs() {
         WrappingKey::new([42u8; 32]),
         &encrypted_master_key,
         &nonce,
+        &wrapping_aad,
     );
     assert!(matches!(
         wrong_key,
         Err(dexios_core::cipher::CipherError::Authentication)
     ));
+}
+
+#[test]
+fn keyslot_wrap_unwrap_authenticates_slot_scoped_metadata() {
+    let header = support::sample_v1_header();
+    let keyslot = &header.keyslots()[0];
+    let wrapping_aad = header
+        .slot_wrapping_aad(0, keyslot)
+        .expect("slot wrapping aad");
+    let encrypted_master_key = dexios_core::cipher::wrap_v1_master_key(
+        WrappingKey::new([41u8; 32]),
+        &MasterKey::new([31u8; 32]),
+        keyslot.nonce(),
+        &wrapping_aad,
+    )
+    .expect("wrap typed master key");
+
+    let mut wrong_slot_index = wrapping_aad.clone();
+    wrong_slot_index[CANONICAL_HEADER_STATIC_LEN] = 1;
+    let mut wrong_kdf_profile = wrapping_aad.clone();
+    wrong_kdf_profile[CANONICAL_HEADER_STATIC_LEN + 1] = 0xDF;
+    let mut wrong_kdf_param_profile = wrapping_aad.clone();
+    wrong_kdf_param_profile[CANONICAL_HEADER_STATIC_LEN + 2] = 0x02;
+    let mut wrong_salt = wrapping_aad.clone();
+    wrong_salt[CANONICAL_HEADER_STATIC_LEN + 3] ^= 0x01;
+    let mut wrong_keyslot_nonce = wrapping_aad.clone();
+    wrong_keyslot_nonce[CANONICAL_HEADER_STATIC_LEN + 3 + 16] ^= 0x01;
+    let mut wrong_static_header = wrapping_aad.clone();
+    wrong_static_header[16] ^= 0x01;
+
+    for (case, aad) in [
+        ("slot_index", wrong_slot_index),
+        ("kdf_profile", wrong_kdf_profile),
+        ("kdf_param_profile", wrong_kdf_param_profile),
+        ("salt", wrong_salt),
+        ("keyslot_nonce", wrong_keyslot_nonce),
+        ("static_header_aad", wrong_static_header),
+    ] {
+        let result = dexios_core::cipher::unwrap_v1_master_key(
+            WrappingKey::new([41u8; 32]),
+            &encrypted_master_key,
+            keyslot.nonce(),
+            &aad,
+        );
+        assert!(
+            matches!(
+                result,
+                Err(dexios_core::cipher::CipherError::Authentication)
+            ),
+            "{case} must be authenticated by keyslot wrapping AAD"
+        );
+    }
 }
 
 #[test]

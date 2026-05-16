@@ -295,12 +295,10 @@ fn decrypt_master_key(
     raw_key: Protected<Vec<u8>>,
 ) -> Result<MasterKey, Error> {
     let (master_key, _) =
-        decrypt_v1_master_key_with_index(payload.header().keyslots_collection(), raw_key).map_err(
-            |err| match err {
-                crate::key::Error::UnsupportedKdf(tag) => Error::UnsupportedKdf(tag),
-                _ => Error::DecryptMasterKey,
-            },
-        )?;
+        decrypt_v1_master_key_with_index(payload.header(), raw_key).map_err(|err| match err {
+            crate::key::Error::UnsupportedKdf(tag) => Error::UnsupportedKdf(tag),
+            _ => Error::DecryptMasterKey,
+        })?;
 
     Ok(master_key)
 }

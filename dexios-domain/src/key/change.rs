@@ -55,10 +55,8 @@ impl ChangeIntent {
         self,
         raw_key_old: Protected<Vec<u8>>,
     ) -> Result<ProvenChangeIntent, Error> {
-        let (master_key, index) = super::decrypt_v1_master_key_with_index(
-            self.header.keyslots_collection(),
-            raw_key_old,
-        )?;
+        let (master_key, index) =
+            super::decrypt_v1_master_key_with_index(&self.header, raw_key_old)?;
 
         Ok(ProvenChangeIntent {
             target: self.target,
@@ -122,7 +120,22 @@ fn changed_header(
 
     let master_key_nonce = gen_keyslot_nonce();
 
-    let encrypted_master_key = super::encrypt_master_key(master_key, key_new, &master_key_nonce)?;
+    let placeholder_keyslot = V1Keyslot::new(kdf, [0u8; 48], master_key_nonce, salt);
+    keyslots
+        .replace(index, placeholder_keyslot)
+        .map_err(|_| Error::HeaderWrite)?;
+    let replacement_context_header =
+        V1Header::new(*header.payload_nonce(), keyslots.clone()).map_err(|_| Error::HeaderWrite)?;
+
+    let encrypted_master_key = super::encrypt_master_key(
+        &replacement_context_header,
+        index,
+        master_key,
+        key_new,
+        &master_key_nonce,
+        &salt,
+        kdf,
+    )?;
 
     keyslots
         .replace(
@@ -133,9 +146,8 @@ fn changed_header(
 
     let replacement_header =
         V1Header::new(*header.payload_nonce(), keyslots).map_err(|_| Error::HeaderWrite)?;
-    let replacement_keyslots = replacement_header.keyslots_collection().clone();
     let (replacement_master_key, replacement_index) =
-        super::decrypt_v1_master_key_with_index(&replacement_keyslots, raw_key_new)?;
+        super::decrypt_v1_master_key_with_index(&replacement_header, raw_key_new)?;
 
     if replacement_index.get() != index.get() || !master_key.same_secret_as(&replacement_master_key)
     {

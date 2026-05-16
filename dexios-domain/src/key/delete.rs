@@ -77,7 +77,7 @@ fn deleted_header(header: &V1Header, raw_key_old: Protected<Vec<u8>>) -> Result<
     let mut keyslots = header.keyslots_collection().clone();
 
     // all of these functions need either the master key, or the index
-    let (master_key, index) = super::decrypt_v1_master_key_with_index(&keyslots, raw_key_old)?;
+    let (master_key, index) = super::decrypt_v1_master_key_with_index(header, raw_key_old)?;
     drop(master_key);
 
     if keyslots.len() == 1 {

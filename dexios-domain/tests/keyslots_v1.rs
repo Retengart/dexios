@@ -1,11 +1,12 @@
 use core::header::common::{
     CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN, Salt,
 };
-use core::header::v1::{KeyslotKdf, V1Header, V1Keyslot, V1Keyslots};
+use core::header::v1::{KeyslotKdf, V1Header, V1Keyslot};
 use core::header::{HeaderReadError, ParsedHeader, read_header};
 use core::kdf::Kdf;
 use core::primitives::{WrappingKey, gen_keyslot_nonce, gen_salt};
 use core::protected::Protected;
+use core::stream::V1PayloadStream;
 use dexios_domain::{decrypt, encrypt, key};
 use std::cell::RefCell;
 use std::fs::{self, File};
@@ -86,6 +87,19 @@ fn mark_keyslot_unsupported_argon2id_file(path: &Path, index: usize) {
     fs::write(path, bytes).expect("write unsupported KDF fixture");
 }
 
+fn mutate_slot_nonce_file(path: &Path, index: usize) {
+    let mut bytes = fs::read(path).expect("read encrypted fixture");
+    let offset = HEADER_STATIC_LEN + (index * KEYSLOT_LEN) + 20;
+    bytes[offset] ^= 0x01;
+    fs::write(path, bytes).expect("write mutated keyslot nonce fixture");
+}
+
+fn mutate_payload_nonce_file(path: &Path) {
+    let mut bytes = fs::read(path).expect("read encrypted fixture");
+    bytes[16] ^= 0x01;
+    fs::write(path, bytes).expect("write mutated payload nonce fixture");
+}
+
 fn write_unsupported_format_fixture(path: &Path) {
     fs::write(path, [0xDE, 0x01, 0, 0, 0, 0, 0, 0, 0, 0])
         .expect("write unsupported format fixture");
@@ -112,6 +126,14 @@ fn read_v1_header_from_path(path: &Path) -> V1Header {
     payload.header().clone()
 }
 
+fn read_v1_header_from_cursor(encrypted: &RefCell<Cursor<Vec<u8>>>) -> V1Header {
+    let mut handle = encrypted.borrow_mut();
+    handle.rewind().expect("rewind before header read");
+    let parsed = read_header(&mut *handle).expect("read V1 header");
+    let ParsedHeader::V1(payload) = parsed;
+    payload.header().clone()
+}
+
 fn keyslot_kdfs(encrypted: &RefCell<Cursor<Vec<u8>>>) -> Vec<KeyslotKdf> {
     let mut handle = encrypted.borrow_mut();
     handle.rewind().expect("rewind before header read");
@@ -123,14 +145,6 @@ fn keyslot_kdfs(encrypted: &RefCell<Cursor<Vec<u8>>>) -> Vec<KeyslotKdf> {
         .iter()
         .map(|keyslot| keyslot.kdf())
         .collect()
-}
-
-fn keyslots(encrypted: &RefCell<Cursor<Vec<u8>>>) -> core::header::v1::V1Keyslots {
-    let mut handle = encrypted.borrow_mut();
-    handle.rewind().expect("rewind before header read");
-    let parsed = read_header(&mut *handle).expect("read V1 header");
-    let ParsedHeader::V1(payload) = parsed;
-    payload.header().keyslots_collection().clone()
 }
 
 #[test]
@@ -266,16 +280,25 @@ fn append_synthetic_second_keyslot(
     let mut keyslots = header.keyslots_collection().clone();
 
     let (master_key, _) =
-        key::decrypt_v1_master_key_with_index(&keyslots, Protected::new(old_key.to_vec()))
+        key::decrypt_v1_master_key_with_index(header, Protected::new(old_key.to_vec()))
             .expect("decrypt existing master key");
     let salt = Salt::new(gen_salt());
     let nonce = gen_keyslot_nonce();
     let wrapping_key = Kdf::Blake3Balloon
         .derive(&Protected::new(new_key.to_vec()), &salt.to_kdf_salt())
         .expect("derive synthetic wrapping key");
-    let encrypted_master_key =
-        core::cipher::wrap_v1_master_key(WrappingKey::from(wrapping_key), &master_key, &nonce)
-            .expect("wrap synthetic master key");
+    let physical_index = keyslots.len();
+    let placeholder_keyslot = V1Keyslot::new(Kdf::Blake3Balloon, [0u8; 48], nonce, salt);
+    let slot_wrapping_aad = header
+        .slot_wrapping_aad(physical_index, &placeholder_keyslot)
+        .expect("synthetic slot wrapping aad");
+    let encrypted_master_key = core::cipher::wrap_v1_master_key(
+        WrappingKey::from(wrapping_key),
+        &master_key,
+        &nonce,
+        &slot_wrapping_aad,
+    )
+    .expect("wrap synthetic master key");
     keyslots
         .push(V1Keyslot::new(
             Kdf::Blake3Balloon,
@@ -390,10 +413,11 @@ fn decrypt_v1_master_key_tries_later_supported_keyslot_without_raw_key_clone_con
 
     append_synthetic_second_keyslot(&encrypted, b"old-pass", b"new-pass");
 
-    let keyslots = keyslots(&encrypted);
-    let (_master_key, index) =
-        key::decrypt_v1_master_key_with_index(&keyslots, Protected::new(b"new-pass".to_vec()))
-            .expect("later supported keyslot should decrypt");
+    let (_master_key, index) = key::decrypt_v1_master_key_with_index(
+        &read_v1_header_from_cursor(&encrypted),
+        Protected::new(b"new-pass".to_vec()),
+    )
+    .expect("later supported keyslot should decrypt");
 
     assert_eq!(
         index.get(),
@@ -409,9 +433,10 @@ fn unsupported_kdf_wins_when_no_supported_keyslot_decrypts() {
     append_synthetic_second_keyslot(&encrypted, b"old-pass", b"new-pass");
     mark_keyslot_unsupported_argon2id(&encrypted, 0);
 
-    let keyslots = keyslots(&encrypted);
-    let decrypt =
-        key::decrypt_v1_master_key_with_index(&keyslots, Protected::new(b"wrong-pass".to_vec()));
+    let decrypt = key::decrypt_v1_master_key_with_index(
+        &read_v1_header_from_cursor(&encrypted),
+        Protected::new(b"wrong-pass".to_vec()),
+    );
 
     assert!(matches!(
         decrypt,
@@ -545,6 +570,48 @@ fn wrong_key_current_v1_fixture_rejects_verification_and_decrypt() {
 }
 
 #[test]
+fn mutating_initial_keyslot_nonce_breaks_keyslot_unwrap_authentication() {
+    let (_dir, encrypted_path) = encrypted_v1_file("slot-nonce-auth");
+
+    mutate_slot_nonce_file(&encrypted_path, 0);
+
+    assert!(matches!(
+        verify_file(&encrypted_path, b"old-pass"),
+        Err(key::Error::IncorrectKey)
+    ));
+    assert!(matches!(
+        decrypt_file(&encrypted_path, b"old-pass"),
+        Err(decrypt::Error::DecryptMasterKey)
+    ));
+}
+
+#[test]
+fn mutating_payload_nonce_breaks_payload_authentication_with_proven_master_key() {
+    let (_dir, encrypted_path) = encrypted_v1_file("payload-nonce-auth");
+    let original_header = read_v1_header_from_path(&encrypted_path);
+    let (master_key, _) = key::decrypt_v1_master_key_with_index(
+        &original_header,
+        Protected::new(b"old-pass".to_vec()),
+    )
+    .expect("old key must unwrap original master key before payload nonce mutation");
+
+    mutate_payload_nonce_file(&encrypted_path);
+    let mutated = fs::read(&encrypted_path).expect("read mutated encrypted fixture");
+    let mut reader = Cursor::new(mutated);
+    let parsed = read_header(&mut reader).expect("mutated canonical header remains parseable");
+    let ParsedHeader::V1(payload) = parsed;
+    let mut plaintext = Vec::new();
+
+    let result = V1PayloadStream::decrypt_file(master_key, &payload, &mut reader, &mut plaintext);
+
+    assert!(
+        result.is_err(),
+        "payload nonce participates in stream AAD/nonce authentication"
+    );
+    assert!(plaintext.is_empty());
+}
+
+#[test]
 fn key_change_failure_preserves_original_header() {
     let encrypted = encrypted_v1_fixture();
     let temp_dir = tempfile::tempdir().expect("temp dir");
@@ -566,9 +633,8 @@ fn key_change_commits_replacement_header_that_only_new_key_can_use() {
     let (_dir, encrypted_path) = encrypted_v1_file("change-new-key");
     let original = fs::read(&encrypted_path).expect("read original fixture");
     let original_header = read_v1_header_from_path(&encrypted_path);
-    let original_keyslots = original_header.keyslots_collection().clone();
     let (old_master_key, old_index) = key::decrypt_v1_master_key_with_index(
-        &original_keyslots,
+        &original_header,
         Protected::new(b"old-pass".to_vec()),
     )
     .expect("old key must unwrap original master key");
@@ -610,12 +676,9 @@ fn key_change_commits_replacement_header_that_only_new_key_can_use() {
     assert_eq!(serialized.len(), HEADER_LEN);
     let reparsed =
         V1Header::deserialize(&mut Cursor::new(serialized)).expect("reparse changed header");
-    let changed_keyslots: V1Keyslots = reparsed.keyslots_collection().clone();
-    let (new_master_key, new_index) = key::decrypt_v1_master_key_with_index(
-        &changed_keyslots,
-        Protected::new(b"new-pass".to_vec()),
-    )
-    .expect("new key must unwrap replacement master key");
+    let (new_master_key, new_index) =
+        key::decrypt_v1_master_key_with_index(&reparsed, Protected::new(b"new-pass".to_vec()))
+            .expect("new key must unwrap replacement master key");
     assert_eq!(
         new_index.get(),
         old_index.get(),
@@ -686,9 +749,8 @@ fn key_delete_removes_only_old_key_proven_slot_and_preserves_payload() {
     let (_dir, encrypted_path) = two_keyslot_v1_file("delete-proven-slot", b"new-pass");
     let original = fs::read(&encrypted_path).expect("read original fixture");
     let original_header = read_v1_header_from_path(&encrypted_path);
-    let original_keyslots = original_header.keyslots_collection().clone();
     let (_master_key, proven_index) = key::decrypt_v1_master_key_with_index(
-        &original_keyslots,
+        &original_header,
         Protected::new(b"old-pass".to_vec()),
     )
     .expect("old key must prove a slot before delete");
