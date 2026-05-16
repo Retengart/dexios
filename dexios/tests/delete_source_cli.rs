@@ -5,10 +5,15 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use core::header::common::HEADER_LEN;
+use core::primitives::BLOCK_SIZE;
 use zip::write::SimpleFileOptions;
 
 const PASSWORD: &str = "12345678";
 const DEXIOS_SUBCOMMANDS_RS: &str = include_str!("../src/subcommands.rs");
+const STREAM_TAG_LEN: usize = 16;
+const TRUNCATED_CANONICAL_V1_PREFIX: &[u8] = b"DXIO\x00\x01CV1\x00";
+const RETIRED_CURRENT_V1_PREFIX: &[u8] = b"DXIO\x00\x01\x01\x00\x07\x07";
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 
 struct TestDir {
@@ -64,6 +69,17 @@ fn write_zip_with_entries(path: &Path, entries: &[(&str, &[u8])]) {
     }
 
     zip_writer.finish().unwrap();
+}
+
+fn multichunk_plaintext() -> Vec<u8> {
+    (0..(BLOCK_SIZE * 3 + 37))
+        .map(|index| (index % 251) as u8)
+        .collect()
+}
+
+fn corrupt_final_chunk(bytes: &mut [u8]) {
+    let final_offset = HEADER_LEN + (3 * (BLOCK_SIZE + STREAM_TAG_LEN));
+    bytes[final_offset] ^= 0x40;
 }
 
 fn assert_source_contains(source_name: &str, source: &str, needle: &str) {
@@ -242,6 +258,96 @@ fn decrypt_delete_input_removes_encrypted_input_after_success() {
 }
 
 #[test]
+fn decrypt_delete_input_preserves_source_and_output_on_final_auth_failure() {
+    let test_dir = TestDir::new("delete-input-decrypt-final-auth-fail");
+    let input = test_dir.path().join("plain.txt");
+    let encrypted = test_dir.path().join("plain.enc");
+    let output = test_dir.path().join("plain.out");
+    fs::write(&input, multichunk_plaintext()).unwrap();
+
+    let encrypt_cmd = run_cli(
+        test_dir.path(),
+        &["encrypt", "-f", "plain.txt", "plain.enc"],
+    );
+    assert!(
+        encrypt_cmd.status.success(),
+        "encrypt failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&encrypt_cmd.stdout),
+        String::from_utf8_lossy(&encrypt_cmd.stderr)
+    );
+    let mut encrypted_bytes = fs::read(&encrypted).unwrap();
+    corrupt_final_chunk(&mut encrypted_bytes);
+    fs::write(&encrypted, encrypted_bytes).unwrap();
+    fs::write(&output, b"existing output").unwrap();
+
+    let decrypt_cmd = run_cli(
+        test_dir.path(),
+        &["decrypt", "-f", "--delete-input", "plain.enc", "plain.out"],
+    );
+
+    assert!(
+        !decrypt_cmd.status.success(),
+        "decrypt unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&decrypt_cmd.stdout),
+        String::from_utf8_lossy(&decrypt_cmd.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&decrypt_cmd.stderr).contains("Authentication failed"),
+        "stderr={}",
+        String::from_utf8_lossy(&decrypt_cmd.stderr)
+    );
+    assert!(encrypted.exists());
+    assert_eq!(fs::read(&output).unwrap(), b"existing output");
+}
+
+#[test]
+fn decrypt_delete_input_preserves_source_on_malformed_and_retired_v1_rejection() {
+    let test_dir = TestDir::new("delete-input-decrypt-format-fail");
+    fs::write(
+        test_dir.path().join("malformed.enc"),
+        TRUNCATED_CANONICAL_V1_PREFIX,
+    )
+    .unwrap();
+    fs::write(
+        test_dir.path().join("retired-current-v1.enc"),
+        RETIRED_CURRENT_V1_PREFIX,
+    )
+    .unwrap();
+
+    for (input, output, expected_stderr) in [
+        (
+            "malformed.enc",
+            "malformed.out",
+            "Malformed Dexios encrypted data",
+        ),
+        (
+            "retired-current-v1.enc",
+            "retired-current-v1.out",
+            "Unsupported Dexios format",
+        ),
+    ] {
+        let output_cmd = run_cli(
+            test_dir.path(),
+            &["decrypt", "-f", "--delete-input", input, output],
+        );
+
+        assert!(
+            !output_cmd.status.success(),
+            "{input} unexpectedly decrypted: stdout={}\nstderr={}",
+            String::from_utf8_lossy(&output_cmd.stdout),
+            String::from_utf8_lossy(&output_cmd.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output_cmd.stderr).contains(expected_stderr),
+            "{input} stderr did not contain {expected_stderr:?}: {}",
+            String::from_utf8_lossy(&output_cmd.stderr)
+        );
+        assert!(test_dir.path().join(input).exists());
+        assert!(!test_dir.path().join(output).exists());
+    }
+}
+
+#[test]
 fn unpack_delete_input_removes_encrypted_archive_after_success() {
     let test_dir = TestDir::new("delete-input-unpack");
     let plain_zip = test_dir.path().join("plain.zip");
@@ -283,6 +389,56 @@ fn unpack_delete_input_removes_encrypted_archive_after_success() {
         fs::read_to_string(output_dir.join("payload/file.txt")).unwrap(),
         "top secret"
     );
+}
+
+#[test]
+fn unpack_delete_input_preserves_archive_on_archive_validation_failure() {
+    let test_dir = TestDir::new("delete-input-unpack-validation-fail");
+    let plain_zip = test_dir.path().join("plain.zip");
+    let encrypted = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+
+    write_zip_with_entries(
+        &plain_zip,
+        &[("../escape.txt", b"escape"), ("safe.txt", b"safe")],
+    );
+    let encrypt_cmd = run_cli(
+        test_dir.path(),
+        &[
+            "encrypt",
+            "-f",
+            plain_zip.to_str().unwrap(),
+            encrypted.to_str().unwrap(),
+        ],
+    );
+    assert!(encrypt_cmd.status.success());
+    let original_archive = fs::read(&encrypted).unwrap();
+
+    let unpack_cmd = run_cli(
+        test_dir.path(),
+        &[
+            "unpack",
+            "-f",
+            "--delete-input",
+            encrypted.to_str().unwrap(),
+            output_dir.to_str().unwrap(),
+        ],
+    );
+
+    assert!(
+        !unpack_cmd.status.success(),
+        "unpack unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&unpack_cmd.stdout),
+        String::from_utf8_lossy(&unpack_cmd.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&unpack_cmd.stderr).contains("Unsafe archive path"),
+        "stderr={}",
+        String::from_utf8_lossy(&unpack_cmd.stderr)
+    );
+    assert_eq!(fs::read(&encrypted).unwrap(), original_archive);
+    assert!(!output_dir.join("safe.txt").exists());
+    assert!(!test_dir.path().join("escape.txt").exists());
 }
 
 #[test]
