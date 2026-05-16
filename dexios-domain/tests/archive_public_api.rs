@@ -1,8 +1,6 @@
-use std::fs;
-use std::path::Path;
-
 const CORE_PAYLOAD: &str = include_str!("../../dexios-core/src/payload.rs");
 const CORE_HEADER_V1: &str = include_str!("../../dexios-core/src/header/v1.rs");
+const DOMAIN_ARCHIVE: &str = include_str!("../src/archive.rs");
 const DOMAIN_PACK: &str = include_str!("../src/pack.rs");
 const DOMAIN_UNPACK: &str = include_str!("../src/unpack.rs");
 const CLI_STATES: &str = include_str!("../../dexios/src/global/states.rs");
@@ -18,12 +16,7 @@ struct Source<'a> {
     text: &'a str,
 }
 
-fn archive_source_text() -> String {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/archive.rs");
-    fs::read_to_string(path).unwrap_or_default()
-}
-
-fn domain_archive_sources(archive: &str) -> Vec<Source<'_>> {
+fn domain_archive_sources() -> Vec<Source<'static>> {
     vec![
         Source {
             path: "dexios-domain/src/pack.rs",
@@ -35,7 +28,7 @@ fn domain_archive_sources(archive: &str) -> Vec<Source<'_>> {
         },
         Source {
             path: "dexios-domain/src/archive.rs",
-            text: archive,
+            text: DOMAIN_ARCHIVE,
         },
     ]
 }
@@ -71,8 +64,7 @@ fn cli_archive_sources() -> Vec<Source<'static>> {
 
 #[test]
 fn d01_domain_archive_contracts_do_not_expose_zip_crate_api_types() {
-    let archive = archive_source_text();
-    let violations = collect_violations(&domain_archive_sources(&archive), |source| {
+    let violations = collect_violations(&domain_archive_sources(), |source| {
         source
             .text
             .lines()
@@ -97,8 +89,7 @@ fn d01_domain_archive_contracts_do_not_expose_zip_crate_api_types() {
 
 #[test]
 fn d03_public_archive_policy_has_no_stored_or_no_compression_variant() {
-    let archive = archive_source_text();
-    let violations = collect_violations(&domain_archive_sources(&archive), |source| {
+    let violations = collect_violations(&domain_archive_sources(), |source| {
         source
             .text
             .lines()
@@ -123,8 +114,7 @@ fn d03_public_archive_policy_has_no_stored_or_no_compression_variant() {
 
 #[test]
 fn d05_public_archive_contract_has_no_zip_metadata_knobs() {
-    let archive = archive_source_text();
-    let violations = collect_violations(&domain_archive_sources(&archive), |source| {
+    let violations = collect_violations(&domain_archive_sources(), |source| {
         source
             .text
             .lines()
@@ -424,10 +414,8 @@ fn phase4_archive_boundary_rejects_phase5_dxar_extraction_surface() {
         "archive API gate must reject CLI flags for DXAR extraction before Phase 5"
     );
 
-    let violations = collect_violations(
-        &domain_archive_sources(&archive_source_text()),
-        phase5_archive_surface_violations,
-    );
+    let violations =
+        collect_violations(&domain_archive_sources(), phase5_archive_surface_violations);
     assert_no_violations(violations);
 
     let violations = collect_violations(&cli_archive_sources(), phase5_archive_surface_violations);
