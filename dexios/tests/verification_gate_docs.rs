@@ -1745,7 +1745,11 @@ fn phase04_archive_boundary_gates_are_source_gated() {
         "pub struct ArchivePolicy",
         "Self::Zstd",
     ] {
-        assert_contains("dexios-domain/src/archive.rs", DEXIOS_DOMAIN_ARCHIVE_RS, required);
+        assert_contains(
+            "dexios-domain/src/archive.rs",
+            DEXIOS_DOMAIN_ARCHIVE_RS,
+            required,
+        );
     }
 
     for forbidden in [
@@ -1758,7 +1762,11 @@ fn phase04_archive_boundary_gates_are_source_gated() {
     ] {
         assert_not_contains("dexios/src/cli.rs", DEXIOS_CLI_RS, forbidden);
         assert_not_contains("dexios/src/subcommands/pack.rs", DEXIOS_PACK_RS, forbidden);
-        assert_not_contains("dexios/src/subcommands/unpack.rs", DEXIOS_UNPACK_RS, forbidden);
+        assert_not_contains(
+            "dexios/src/subcommands/unpack.rs",
+            DEXIOS_UNPACK_RS,
+            forbidden,
+        );
     }
 
     assert_non_comment_line_count(

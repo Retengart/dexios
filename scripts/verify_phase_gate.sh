@@ -47,6 +47,7 @@ run verify_no_unsafe_crate_roots
 run cargo fmt --all --check
 run cargo clippy --workspace --all-targets --all-features --no-deps
 run cargo test -p dexios-domain --test workflow_public_api --all-features --release
+run cargo test -p dexios-domain --test archive_public_api --release
 run cargo test -p dexios --test verification_gate_docs --release
 run cargo test --workspace --all-features --release --verbose
 run bash scripts/verify_assurance_replay.sh

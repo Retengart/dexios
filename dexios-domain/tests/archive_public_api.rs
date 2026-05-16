@@ -461,7 +461,10 @@ fn payload_kind_and_framing_bytes_stay_core_owned_not_cli_duplicated() {
         "CLI source gate must reject payload kind/framing duplication"
     );
 
-    let violations = collect_violations(&cli_archive_sources(), payload_contract_duplication_violations);
+    let violations = collect_violations(
+        &cli_archive_sources(),
+        payload_contract_duplication_violations,
+    );
     assert_no_violations(violations);
 }
 
@@ -644,12 +647,79 @@ fn formatted_archive_error_control_flow_violations(source: Source<'_>) -> Vec<St
         .collect()
 }
 
-fn phase5_archive_surface_violations(_source: Source<'_>) -> Vec<String> {
-    Vec::new()
+fn phase5_archive_surface_violations(source: Source<'_>) -> Vec<String> {
+    source
+        .text
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| {
+            let trimmed = line.trim_start();
+            let compact = line.split_whitespace().collect::<String>();
+            let lower = compact.to_ascii_lowercase();
+            let public_symbol = trimmed.starts_with("pub ") || trimmed.starts_with("pub(crate) ");
+            let cli_flag = lower.contains("arg::new(\"dxar")
+                || lower.contains(".long(\"dxar")
+                || lower.contains("arg::new(\"manifest")
+                || lower.contains(".long(\"manifest");
+            let phase5_archive_symbol = [
+                "dxar",
+                "manifestfirst",
+                "manifest_first",
+                "manifest-first",
+                "manifestarchive",
+                "manifestpayload",
+                "archivemanifest",
+                "archivebodyframe",
+            ]
+            .into_iter()
+            .any(|symbol| lower.contains(symbol));
+
+            if (public_symbol || cli_flag) && phase5_archive_symbol {
+                Some(violation(
+                    source.path,
+                    index,
+                    "Phase 4 must not expose Phase 5 DXAR extraction surface",
+                ))
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
-fn payload_contract_duplication_violations(_source: Source<'_>) -> Vec<String> {
-    Vec::new()
+fn payload_contract_duplication_violations(source: Source<'_>) -> Vec<String> {
+    source
+        .text
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| {
+            let compact = line.split_whitespace().collect::<String>();
+            let duplicates_payload_contract = [
+                "PayloadKind",
+                "PayloadFramingProfile",
+                "PAYLOAD_KIND",
+                "PAYLOAD_FRAMING",
+                "RawFile",
+                "ManifestArchive",
+                "RawLe31",
+                "ManifestFirst",
+                "DXAR",
+                "DXBF",
+            ]
+            .into_iter()
+            .any(|symbol| compact.contains(symbol));
+
+            if duplicates_payload_contract {
+                Some(violation(
+                    source.path,
+                    index,
+                    "CLI must not duplicate core-owned payload kind/framing contract",
+                ))
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 fn violation(path: &str, index: usize, message: &str) -> String {
