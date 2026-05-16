@@ -367,18 +367,19 @@ fn incorrect_key_and_unsupported_workflow_messages_stay_terse() {
     assert_no_default_source_chain(&wrong_key_stderr);
 
     fs::write(test_dir.path().join("old.key"), CORRECT_PASSWORD).unwrap();
-    let add_output = run_cli(
+    let delete_output = run_cli(
         test_dir.path(),
         CORRECT_PASSWORD,
-        &["key", "add", "--keyfile-old", "old.key", "plain.enc"],
+        &["key", "del", "--keyfile", "old.key", "plain.enc"],
     );
-    assert!(!add_output.status.success());
-    let add_stderr = stderr(&add_output);
+    assert!(!delete_output.status.success());
+    let delete_stderr = stderr(&delete_output);
     assert!(
-        add_stderr.contains("Cannot add a V1 keyslot"),
-        "stderr did not expose the unsupported workflow class: {add_stderr}"
+        delete_stderr.contains("Cannot remove the final V1 keyslot"),
+        "stderr did not expose the unsupported workflow class: {delete_stderr}"
     );
-    assert!(!add_stderr.contains(CORRECT_PASSWORD));
+    assert!(!delete_stderr.contains(CORRECT_PASSWORD));
+    assert_no_default_source_chain(&delete_stderr);
 }
 
 #[test]
