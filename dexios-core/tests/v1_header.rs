@@ -582,6 +582,12 @@ fn parser_table_rejects_canonical_v1_malformed_metadata_by_variant() {
     unsupported_payload_kind[11] = 0x7F;
     let mut unsupported_payload_framing = canonical.clone();
     unsupported_payload_framing[12] = 0x7F;
+    let mut raw_kind_manifest_framing = canonical.clone();
+    raw_kind_manifest_framing[11] = PayloadKind::RawFile.to_byte();
+    raw_kind_manifest_framing[12] = PayloadFramingProfile::ManifestFirst.to_byte();
+    let mut manifest_kind_raw_framing = canonical.clone();
+    manifest_kind_raw_framing[11] = PayloadKind::ManifestArchive.to_byte();
+    manifest_kind_raw_framing[12] = PayloadFramingProfile::RawLe31.to_byte();
     let mut unsupported_kdf_profile = canonical.clone();
     unsupported_kdf_profile[HEADER_STATIC_LEN + 2] = 0x7F;
     let mut unsupported_kdf_param_profile = canonical.clone();
@@ -623,6 +629,16 @@ fn parser_table_rejects_canonical_v1_malformed_metadata_by_variant() {
             "unsupported_payload_framing",
             unsupported_payload_framing,
             |error| matches!(error, HeaderReadError::InvalidPayloadFraming(0x7F)),
+        ),
+        (
+            "raw_kind_manifest_framing",
+            raw_kind_manifest_framing,
+            |error| matches!(error, HeaderReadError::InvalidPayloadFraming(0x02)),
+        ),
+        (
+            "manifest_kind_raw_framing",
+            manifest_kind_raw_framing,
+            |error| matches!(error, HeaderReadError::InvalidPayloadFraming(0x01)),
         ),
         (
             "unsupported_kdf_profile",

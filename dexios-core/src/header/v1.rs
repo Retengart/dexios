@@ -516,6 +516,11 @@ impl V1Header {
             .map_err(|_| HeaderReadError::InvalidPayloadKind(bytes[11]))?;
         let payload_framing = PayloadFramingProfile::try_from_byte(bytes[12])
             .map_err(|_| HeaderReadError::InvalidPayloadFraming(bytes[12]))?;
+        match (payload_kind, payload_framing) {
+            (PayloadKind::RawFile, PayloadFramingProfile::RawLe31)
+            | (PayloadKind::ManifestArchive, PayloadFramingProfile::ManifestFirst) => {}
+            _ => return Err(HeaderReadError::InvalidPayloadFraming(bytes[12])),
+        }
         if bytes[13] != BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID {
             return Err(HeaderReadError::InvalidKdfParamProfile(bytes[13]));
         }
