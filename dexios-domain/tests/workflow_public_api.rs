@@ -44,6 +44,10 @@ struct Source<'a> {
 fn domain_workflow_sources() -> Vec<Source<'static>> {
     vec![
         Source {
+            path: "dexios-domain/src/workflow_error.rs",
+            text: DOMAIN_WORKFLOW_ERROR,
+        },
+        Source {
             path: "dexios-domain/src/encrypt.rs",
             text: DOMAIN_ENCRYPT,
         },
@@ -52,8 +56,16 @@ fn domain_workflow_sources() -> Vec<Source<'static>> {
             text: DOMAIN_DECRYPT,
         },
         Source {
+            path: "dexios-domain/src/pack.rs",
+            text: DOMAIN_PACK,
+        },
+        Source {
             path: "dexios-domain/src/unpack.rs",
             text: DOMAIN_UNPACK,
+        },
+        Source {
+            path: "dexios-domain/src/header.rs",
+            text: DOMAIN_HEADER,
         },
         Source {
             path: "dexios-domain/src/header/dump.rs",
@@ -66,6 +78,10 @@ fn domain_workflow_sources() -> Vec<Source<'static>> {
         Source {
             path: "dexios-domain/src/header/restore.rs",
             text: DOMAIN_HEADER_RESTORE,
+        },
+        Source {
+            path: "dexios-domain/src/key.rs",
+            text: DOMAIN_KEY,
         },
         Source {
             path: "dexios-domain/src/key/add.rs",
@@ -89,12 +105,24 @@ fn domain_workflow_sources() -> Vec<Source<'static>> {
 fn cli_adapter_sources() -> Vec<Source<'static>> {
     vec![
         Source {
+            path: "dexios/src/main.rs",
+            text: CLI_MAIN,
+        },
+        Source {
+            path: "dexios/src/subcommands.rs",
+            text: CLI_SUBCOMMANDS,
+        },
+        Source {
             path: "dexios/src/subcommands/encrypt.rs",
             text: CLI_ENCRYPT,
         },
         Source {
             path: "dexios/src/subcommands/decrypt.rs",
             text: CLI_DECRYPT,
+        },
+        Source {
+            path: "dexios/src/subcommands/pack.rs",
+            text: CLI_PACK,
         },
         Source {
             path: "dexios/src/subcommands/unpack.rs",
@@ -141,6 +169,34 @@ fn d05_policy_sources() -> Vec<Source<'static>> {
         Source {
             path: "dexios-domain/src/storage/identity.rs",
             text: STORAGE_IDENTITY,
+        },
+        Source {
+            path: "dexios-domain/src/storage/transaction.rs",
+            text: STORAGE_TRANSACTION,
+        },
+        Source {
+            path: "dexios-domain/src/storage/temp.rs",
+            text: STORAGE_TEMP,
+        },
+        Source {
+            path: "dexios-domain/src/storage/cleanup.rs",
+            text: STORAGE_CLEANUP,
+        },
+    ]);
+    sources
+}
+
+fn phase04_migration_sources() -> Vec<Source<'static>> {
+    let mut sources = domain_workflow_sources();
+    sources.extend(cli_adapter_sources());
+    sources.extend([
+        Source {
+            path: "dexios-domain/src/storage/mod.rs",
+            text: STORAGE_MOD,
+        },
+        Source {
+            path: "dexios-domain/src/storage/test_support.rs",
+            text: STORAGE_TEST_SUPPORT,
         },
         Source {
             path: "dexios-domain/src/storage/transaction.rs",
@@ -519,6 +575,14 @@ fn d05_escape_hatch_violations(source: Source<'_>) -> Vec<String> {
             ));
         }
 
+        if !test_context.is_test_only() && is_failure_injection_trigger(trimmed) {
+            violations.push(violation(
+                source.path,
+                index,
+                "D-05 failure injection must not be exposed through production env or CLI triggers",
+            ));
+        }
+
         test_context.update_after_line(trimmed);
     }
 
@@ -677,6 +741,21 @@ fn is_public_failure_hook_declaration(trimmed: &str) -> bool {
 
 fn is_test_support_export(trimmed: &str) -> bool {
     trimmed.starts_with("pub mod test_support") || trimmed.starts_with("pub use test_support")
+}
+
+fn is_failure_injection_trigger(trimmed: &str) -> bool {
+    let compact = trimmed.split_whitespace().collect::<String>();
+    let lower = compact.to_ascii_lowercase();
+    let has_failure_word = ["fail", "failure", "hook", "test-support", "test_support"]
+        .into_iter()
+        .any(|word| lower.contains(word));
+    let reads_env = lower.contains("std::env::var(")
+        || lower.contains("std::env::var_os(")
+        || lower.contains("env::var(")
+        || lower.contains("env::var_os(");
+    let adds_cli_trigger = lower.contains("arg::new(\"") || lower.contains(".long(\"");
+
+    has_failure_word && (reads_env || adds_cli_trigger)
 }
 
 fn is_fixture_or_helper_name(name: &str) -> bool {
@@ -947,6 +1026,8 @@ fn test_support_escape_hatches_are_scoped_and_named_by_d05() {
 
     assert_d05_test_support_escape_hatches(&d05_policy_sources())
         .expect("D-05 source and test-support placement");
+    assert_d05_test_support_escape_hatches(&phase04_migration_sources())
+        .expect("Phase 4 migration sources keep failure injection test-scoped");
 }
 
 #[test]

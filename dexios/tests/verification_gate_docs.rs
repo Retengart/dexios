@@ -1710,7 +1710,12 @@ fn phase04_failure_hook_and_workflow_boundary_gates_are_source_gated() {
         "run cargo test -p dexios-domain --test workflow_public_api --all-features --release",
         "run cargo test -p dexios --test verification_gate_docs --release",
     ] {
-        assert_non_comment_line_count("scripts/verify_phase_gate.sh", VERIFY_PHASE_GATE, command, 1);
+        assert_non_comment_line_count(
+            "scripts/verify_phase_gate.sh",
+            VERIFY_PHASE_GATE,
+            command,
+            1,
+        );
     }
 }
 
