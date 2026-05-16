@@ -10,7 +10,7 @@ use core::header::v1::V1Header;
 use core::header::{HeaderReadError, ParsedHeader, ParsedV1Payload, read_header};
 use core::primitives::MasterKey;
 use core::protected::Protected;
-use core::stream::{StreamError, V1PayloadStream};
+use core::stream::{StreamError, V1FinalAuth, V1PayloadStream};
 
 use crate::key::decrypt_v1_master_key_with_index;
 use crate::storage::identity::{
@@ -187,12 +187,13 @@ where
     }
 
     let master_key = decrypt_master_key(&payload, req.raw_key)?;
-    decrypt_payload_with_master_key(
+    let _final_auth = decrypt_payload_with_master_key(
         &payload,
         req.reader,
         &mut *req.writer.borrow_mut(),
         master_key,
-    )
+    )?;
+    Ok(())
 }
 
 pub fn execute(intent: DecryptIntent) -> Result<CommitReceipt, Error> {
@@ -243,7 +244,7 @@ where
     let master_key = decrypt_master_key(&payload, raw_key)?;
     let mut transaction =
         StagedOutputTransaction::new(output_target).map_err(Error::Transaction)?;
-    transaction
+    let final_auth = transaction
         .with_writer_result(|writer| {
             decrypt_payload_with_master_key(&payload, reader, writer, master_key)
         })
@@ -251,7 +252,7 @@ where
             StagedWriteError::Operation(error) => error,
             StagedWriteError::Transaction(error) => map_decrypt_transaction_error(error),
         })?;
-    transaction.commit().map_err(Error::Transaction)
+    commit_after_final_auth(transaction, final_auth)
 }
 
 fn read_v1_payload<R>(
@@ -308,15 +309,20 @@ fn decrypt_payload_with_master_key<R, W>(
     reader: &RefCell<R>,
     writer: &mut W,
     master_key: MasterKey,
-) -> Result<(), Error>
+) -> Result<V1FinalAuth, Error>
 where
     R: Read + Seek,
     W: Write + Seek,
 {
     V1PayloadStream::decrypt_file(master_key, payload, &mut *reader.borrow_mut(), &mut *writer)
-        .map_err(map_stream_error)?;
+        .map_err(map_stream_error)
+}
 
-    Ok(())
+fn commit_after_final_auth(
+    transaction: StagedOutputTransaction,
+    _final_auth: V1FinalAuth,
+) -> Result<CommitReceipt, Error> {
+    transaction.commit().map_err(Error::Transaction)
 }
 
 fn map_header_read_error(error: HeaderReadError) -> Error {

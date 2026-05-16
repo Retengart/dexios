@@ -77,6 +77,11 @@ fn read_up_to_full(reader: &mut impl Read, buffer: &mut [u8]) -> Result<usize, S
 
 pub struct V1PayloadStream;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct V1FinalAuth {
+    _private: (),
+}
+
 impl V1PayloadStream {
     pub fn encrypt_file(
         master_key: MasterKey,
@@ -88,13 +93,13 @@ impl V1PayloadStream {
     }
 
     /// Decrypts into `writer` as uncommitted scratch; callers must only commit
-    /// the plaintext after this function returns `Ok(())`.
+    /// the plaintext after this function returns a `V1FinalAuth` receipt.
     pub fn decrypt_file(
         master_key: MasterKey,
         payload: &ParsedV1Payload,
         reader: &mut impl Read,
         writer: &mut impl Write,
-    ) -> Result<(), StreamError> {
+    ) -> Result<V1FinalAuth, StreamError> {
         V1PayloadDecryptor::new(master_key, payload)?.decrypt_file(reader, writer)
     }
 }
@@ -352,7 +357,7 @@ impl V1PayloadDecryptor {
         mut self,
         reader: &mut impl Read,
         writer: &mut impl Write,
-    ) -> Result<(), StreamError> {
+    ) -> Result<V1FinalAuth, StreamError> {
         #[cfg(feature = "visual")]
         let pb = crate::visual::create_spinner();
 
@@ -409,7 +414,7 @@ impl V1PayloadDecryptor {
         #[cfg(feature = "visual")]
         pb.finish_and_clear();
 
-        Ok(())
+        Ok(V1FinalAuth { _private: () })
     }
 }
 

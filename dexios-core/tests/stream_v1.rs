@@ -6,7 +6,8 @@ use dexios_core::header::{ParsedHeader, ParsedV1Payload};
 use dexios_core::kdf::Kdf;
 use dexios_core::primitives::{BLOCK_SIZE, MasterKey};
 use dexios_core::stream::{
-    StreamError, V1PayloadDecryptor, V1PayloadEncryptingWriter, V1PayloadEncryptor, V1PayloadStream,
+    StreamError, V1FinalAuth, V1PayloadDecryptor, V1PayloadEncryptingWriter, V1PayloadEncryptor,
+    V1PayloadStream,
 };
 
 const STREAM_TAG_LEN: usize = 16;
@@ -129,7 +130,7 @@ fn decrypt_file_with(
     master_key: MasterKey,
     payload: &ParsedV1Payload,
     ciphertext: Vec<u8>,
-) -> (Result<(), StreamError>, Vec<u8>) {
+) -> (Result<V1FinalAuth, StreamError>, Vec<u8>) {
     let mut scratch = Vec::new();
     let result = V1PayloadStream::decrypt_file(
         master_key,
