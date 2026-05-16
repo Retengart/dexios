@@ -44,6 +44,8 @@ pub fn cleanup_after_commit(
 ) -> std::result::Result<(), CleanupAfterCommitError> {
     // Central ordinary delete-after-success cleanup gate.
     // Source gate: cleanup is blocked after partial commit.
+    // TransactionError::PartialCommit only carries PartialCommitReceipt evidence,
+    // which cannot satisfy the CommitReceipt argument required here.
     // Source gate: HashVerification::Failed means requested hash did not succeed.
     // Source gate: changed cleanup identity blocks cleanup.
     // CleanupReceipt::from_paths records cleanup target identity before deletion.
