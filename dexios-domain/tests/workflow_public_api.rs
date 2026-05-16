@@ -518,6 +518,7 @@ fn cli_raw_request_constructor_violations(source: Source<'_>) -> Vec<String> {
 
 fn formatted_error_control_flow_violations(source: Source<'_>) -> Vec<String> {
     let mut violations = Vec::new();
+    let mut formatted_error_bindings = Vec::new();
 
     for (index, line) in source.text.lines().enumerate() {
         let compact = line.split_whitespace().collect::<String>();
@@ -536,9 +537,44 @@ fn formatted_error_control_flow_violations(source: Source<'_>) -> Vec<String> {
                 "workflow control flow inspects formatted error text",
             ));
         }
+
+        if let Some(binding) = formatted_error_binding_name(&compact) {
+            formatted_error_bindings.push(binding);
+        }
+
+        for binding in &formatted_error_bindings {
+            if compact.contains(&format!("{binding}.contains(")) {
+                violations.push(violation(
+                    source.path,
+                    index,
+                    "workflow control flow inspects formatted error text through an intermediate binding",
+                ));
+            }
+        }
     }
 
     violations
+}
+
+fn formatted_error_binding_name(compact: &str) -> Option<String> {
+    let rhs_is_formatted_error = compact.contains("=error.to_string()")
+        || compact.contains("=err.to_string()")
+        || (compact.contains("=format!(")
+            && (compact.contains("{error") || compact.contains("{err")));
+    if !rhs_is_formatted_error {
+        return None;
+    }
+
+    let binding = compact
+        .strip_prefix("letmut")
+        .or_else(|| compact.strip_prefix("let"))?;
+    let (name, _) = binding.split_once('=')?;
+    let name = name.split_once(':').map_or(name, |(name, _)| name);
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
 }
 
 fn d05_escape_hatch_violations(source: Source<'_>) -> Vec<String> {
@@ -903,6 +939,15 @@ fn formatted_error_control_flow_rejects_string_inspection() {
         Source {
             path: "synthetic/contains-to-string.rs",
             text: "if message.contains(error.to_string().as_str()) { return Ok(()); }",
+        },
+        Source {
+            path: "synthetic/indirect-rendered-error.rs",
+            text: r#"
+                let rendered = error.to_string();
+                if rendered.contains("unsupported") {
+                    return Ok(());
+                }
+            "#,
         },
     ];
 
