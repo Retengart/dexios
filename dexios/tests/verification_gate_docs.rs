@@ -51,6 +51,7 @@ const DEXIOS_CORE_PROTECTED_RS: &str = include_str!("../../dexios-core/src/prote
 const DEXIOS_DOMAIN_LIB_RS: &str = include_str!("../../dexios-domain/src/lib.rs");
 const DEXIOS_DOMAIN_WORKFLOW_ERROR_RS: &str =
     include_str!("../../dexios-domain/src/workflow_error.rs");
+const DEXIOS_DOMAIN_ARCHIVE_RS: &str = include_str!("../../dexios-domain/src/archive.rs");
 const DEXIOS_DOMAIN_PACK_RS: &str = include_str!("../../dexios-domain/src/pack.rs");
 const DEXIOS_DOMAIN_UNPACK_RS: &str = include_str!("../../dexios-domain/src/unpack.rs");
 const DEXIOS_DOMAIN_STORAGE_RS: &str = include_str!("../../dexios-domain/src/storage/mod.rs");
@@ -62,8 +63,11 @@ const DEXIOS_DOMAIN_WORKFLOW_ERROR_TESTS: &str =
     include_str!("../../dexios-domain/tests/workflow_errors.rs");
 const DEXIOS_DOMAIN_WORKFLOW_PUBLIC_API_TESTS: &str =
     include_str!("../../dexios-domain/tests/workflow_public_api.rs");
+const DEXIOS_DOMAIN_ARCHIVE_PUBLIC_API_TESTS: &str =
+    include_str!("../../dexios-domain/tests/archive_public_api.rs");
 const DEXIOS_WORKFLOW_ERROR_CLI_TESTS: &str = include_str!("workflow_error_cli.rs");
 const DEXIOS_SUBCOMMANDS_RS: &str = include_str!("../src/subcommands.rs");
+const DEXIOS_PACK_RS: &str = include_str!("../src/subcommands/pack.rs");
 const AUDIT_WORKFLOW: &str = include_str!("../../.github/workflows/audit.yml");
 const DOCS_WORKFLOW: &str = include_str!("../../.github/workflows/docs.yml");
 const DEXIOS_TESTS_WORKFLOW: &str = include_str!("../../.github/workflows/dexios-tests.yml");
@@ -1717,6 +1721,52 @@ fn phase04_failure_hook_and_workflow_boundary_gates_are_source_gated() {
             1,
         );
     }
+}
+
+#[test]
+fn phase04_archive_boundary_gates_are_source_gated() {
+    for required in [
+        "phase4_archive_boundary_rejects_phase5_dxar_extraction_surface",
+        "payload_kind_and_framing_bytes_stay_core_owned_not_cli_duplicated",
+        "phase5_archive_surface_violations",
+        "payload_contract_duplication_violations",
+        "public_line_exposes_zip_type",
+        "public_line_exposes_zip_metadata_knob",
+    ] {
+        assert_contains(
+            "dexios-domain/tests/archive_public_api.rs",
+            DEXIOS_DOMAIN_ARCHIVE_PUBLIC_API_TESTS,
+            required,
+        );
+    }
+
+    for required in [
+        "pub enum ArchiveCompression",
+        "pub struct ArchivePolicy",
+        "Self::Zstd",
+    ] {
+        assert_contains("dexios-domain/src/archive.rs", DEXIOS_DOMAIN_ARCHIVE_RS, required);
+    }
+
+    for forbidden in [
+        "pub fn extract_dxar",
+        "pub struct DxarExtractor",
+        "Arg::new(\"dxar\")",
+        ".long(\"dxar\")",
+        "PayloadKind::ManifestArchive",
+        "PayloadFramingProfile::ManifestFirst",
+    ] {
+        assert_not_contains("dexios/src/cli.rs", DEXIOS_CLI_RS, forbidden);
+        assert_not_contains("dexios/src/subcommands/pack.rs", DEXIOS_PACK_RS, forbidden);
+        assert_not_contains("dexios/src/subcommands/unpack.rs", DEXIOS_UNPACK_RS, forbidden);
+    }
+
+    assert_non_comment_line_count(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "run cargo test -p dexios-domain --test archive_public_api --release",
+        1,
+    );
 }
 
 #[test]

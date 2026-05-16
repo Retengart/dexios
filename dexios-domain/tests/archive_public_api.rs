@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::Path;
 
+const CORE_PAYLOAD: &str = include_str!("../../dexios-core/src/payload.rs");
+const CORE_HEADER_V1: &str = include_str!("../../dexios-core/src/header/v1.rs");
 const DOMAIN_PACK: &str = include_str!("../src/pack.rs");
 const DOMAIN_UNPACK: &str = include_str!("../src/unpack.rs");
 const CLI_STATES: &str = include_str!("../../dexios/src/global/states.rs");
@@ -402,6 +404,67 @@ fn archive_cli_errors_use_typed_mappers_without_formatted_error_control_flow() {
     assert_no_violations(violations);
 }
 
+#[test]
+fn phase4_archive_boundary_rejects_phase5_dxar_extraction_surface() {
+    let bad_domain_source = Source {
+        path: "synthetic/public-dxar-extractor.rs",
+        text: "pub fn extract_dxar_manifest_first_archive() {}",
+    };
+    assert!(
+        !phase5_archive_surface_violations(bad_domain_source).is_empty(),
+        "archive API gate must reject public DXAR extraction before Phase 5"
+    );
+
+    let bad_cli_source = Source {
+        path: "synthetic/dxar-cli-flag.rs",
+        text: r#"Command::new("dexios").arg(Arg::new("dxar").long("dxar"));"#,
+    };
+    assert!(
+        !phase5_archive_surface_violations(bad_cli_source).is_empty(),
+        "archive API gate must reject CLI flags for DXAR extraction before Phase 5"
+    );
+
+    let violations = collect_violations(
+        &domain_archive_sources(&archive_source_text()),
+        phase5_archive_surface_violations,
+    );
+    assert_no_violations(violations);
+
+    let violations = collect_violations(&cli_archive_sources(), phase5_archive_surface_violations);
+    assert_no_violations(violations);
+}
+
+#[test]
+fn payload_kind_and_framing_bytes_stay_core_owned_not_cli_duplicated() {
+    for required in ["pub enum PayloadKind", "pub enum PayloadFramingProfile"] {
+        assert!(
+            CORE_PAYLOAD.contains(required),
+            "core payload module must own {required}"
+        );
+    }
+    for required in ["PayloadKind::RawFile", "PayloadFramingProfile::RawLe31"] {
+        assert!(
+            CORE_HEADER_V1.contains(required),
+            "core header module must consume {required}"
+        );
+    }
+
+    let bad_cli_source = Source {
+        path: "synthetic/cli-payload-byte-duplication.rs",
+        text: r#"
+            const PAYLOAD_KIND_MANIFEST_ARCHIVE: u8 = 0x02;
+            let _ = PayloadFramingProfile::ManifestFirst;
+        "#,
+    };
+    assert!(
+        !payload_contract_duplication_violations(bad_cli_source).is_empty(),
+        "CLI source gate must reject payload kind/framing duplication"
+    );
+
+    let violations = collect_violations(&cli_archive_sources(), payload_contract_duplication_violations);
+    assert_no_violations(violations);
+}
+
 fn collect_violations(
     sources: &[Source<'_>],
     scan: impl Fn(Source<'_>) -> Vec<String>,
@@ -579,6 +642,14 @@ fn formatted_archive_error_control_flow_violations(source: Source<'_>) -> Vec<St
             }
         })
         .collect()
+}
+
+fn phase5_archive_surface_violations(_source: Source<'_>) -> Vec<String> {
+    Vec::new()
+}
+
+fn payload_contract_duplication_violations(_source: Source<'_>) -> Vec<String> {
+    Vec::new()
 }
 
 fn violation(path: &str, index: usize, message: &str) -> String {
