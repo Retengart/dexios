@@ -17,6 +17,7 @@ use zip::write::SimpleFileOptions;
 
 const CORRECT_PASSWORD: &str = "correct-password";
 const WRONG_PASSWORD: &str = "wrong-password";
+const MAIN_SOURCE: &str = include_str!("../src/main.rs");
 const ERRORS_SOURCE: &str = include_str!("../src/subcommands/errors.rs");
 const SUBCOMMANDS_SOURCE: &str = include_str!("../src/subcommands.rs");
 const ENCRYPT_SOURCE: &str = include_str!("../src/subcommands/encrypt.rs");
@@ -82,6 +83,21 @@ fn assert_no_default_source_chain(stderr: &str) {
         assert!(
             !stderr.contains(forbidden),
             "normal CLI stderr must stay terse and omit source-chain text: {stderr}"
+        );
+    }
+}
+
+fn assert_no_default_debug_rendering(stderr: &str) {
+    for forbidden in [
+        "Error:",
+        "TransactionError::",
+        "WorkflowErrorClass::",
+        "DecryptData",
+        "Debug",
+    ] {
+        assert!(
+            !stderr.contains(forbidden),
+            "normal CLI stderr must render only the sanitized Display message: {stderr}"
         );
     }
 }
@@ -213,6 +229,55 @@ fn cli_workflow_errors_are_routed_through_mapping_helpers() {
     assert!(KEY_SOURCE.contains("map_key_error"));
     assert!(!ERRORS_SOURCE.contains("to_string()"));
     assert!(!ERRORS_SOURCE.contains("contains("));
+}
+
+#[test]
+fn main_uses_display_only_error_boundary_for_workflow_failures() {
+    assert!(
+        MAIN_SOURCE.contains("fn run() -> Result<()>"),
+        "main.rs should keep dispatch in a private run() that returns Result"
+    );
+    assert!(
+        MAIN_SOURCE.contains("eprintln!(\"{error}\")"),
+        "main.rs should render normal workflow errors with Display only"
+    );
+    assert!(
+        MAIN_SOURCE.contains("std::process::exit(1)"),
+        "main.rs should exit non-zero after rendering Display-only stderr"
+    );
+    assert!(
+        !MAIN_SOURCE.contains("fn main() -> Result<()>"),
+        "main() must not return Result because default error reporting is outside CLI control"
+    );
+    assert!(!MAIN_SOURCE.contains("{error:#}"));
+    assert!(!MAIN_SOURCE.contains("{error:?}"));
+    assert!(!MAIN_SOURCE.contains(".chain()"));
+    assert!(!MAIN_SOURCE.contains(".source()"));
+}
+
+#[test]
+fn wrong_key_decrypt_default_stderr_is_display_only() {
+    let test_dir = TestDir::new("workflow-error-display-only");
+    encrypt_fixture(&test_dir);
+
+    let wrong_key_output = run_cli(
+        test_dir.path(),
+        WRONG_PASSWORD,
+        &["decrypt", "--force", "plain.enc", "plain.out"],
+    );
+    assert!(!wrong_key_output.status.success());
+    let wrong_key_stderr = stderr(&wrong_key_output);
+    assert_eq!(
+        wrong_key_stderr,
+        "Authentication failed\n",
+        "default workflow stderr should be the sanitized Display message only"
+    );
+    assert_no_default_source_chain(&wrong_key_stderr);
+    assert_no_default_debug_rendering(&wrong_key_stderr);
+    assert!(!wrong_key_stderr.contains(WRONG_PASSWORD));
+    assert!(!wrong_key_stderr.contains(CORRECT_PASSWORD));
+    assert!(!wrong_key_stderr.contains("keyslot"));
+    assert!(!wrong_key_stderr.contains("master key"));
 }
 
 #[test]
