@@ -1,10 +1,10 @@
 use std::fs;
+use std::error::Error as _;
 #[cfg(feature = "test-support")]
 use std::io;
 use std::path::{Path, PathBuf};
 
-#[cfg(feature = "test-support")]
-use dexios_domain::storage::cleanup::CleanupTarget;
+use dexios_domain::storage::cleanup::{CleanupFailure, CleanupTarget};
 use dexios_domain::storage::cleanup::{
     CleanupGateError, CleanupReceipt, CleanupTargetIdentity, HashVerification, PostCommitSuccess,
 };
@@ -113,6 +113,12 @@ fn cleanup_receipt_changed_target_identity_is_reported_and_replacement_file_is_n
     );
     assert_eq!(fs::read(&committed).unwrap(), b"committed output");
     assert_eq!(fs::read(&target).unwrap(), b"replacement source");
+    assert_eq!(result.failures.len(), 1);
+    assert_eq!(result.failures[0].target.path, target);
+    assert!(
+        result.failures[0].source().is_some(),
+        "changed cleanup identity must retain diagnostic source evidence"
+    );
 }
 
 #[test]
@@ -139,6 +145,12 @@ fn cleanup_receipt_changed_target_kind_is_reported_and_replacement_directory_is_
     assert_eq!(
         fs::read(target.join("replacement.txt")).unwrap(),
         b"replacement directory"
+    );
+    assert_eq!(result.failures.len(), 1);
+    assert_eq!(result.failures[0].target.path, target);
+    assert!(
+        result.failures[0].source().is_some(),
+        "changed cleanup kind must retain diagnostic source evidence"
     );
 }
 
@@ -233,8 +245,24 @@ fn cleanup_receipt_reports_partial_failure() {
     assert_eq!(result.failures.len(), 1);
     assert_eq!(result.failures[0].target.path, injected_failure);
     assert_eq!(result.failures[0].error, io::ErrorKind::Other);
+    let source = result.failures[0]
+        .source()
+        .and_then(|source| source.downcast_ref::<io::Error>())
+        .expect("injected cleanup failure must preserve owned io::Error source");
+    assert_eq!(source.kind(), io::ErrorKind::Other);
     assert!(injected_failure.exists());
     assert!(!deleted.exists());
+}
+
+#[test]
+fn cleanup_failure_source_free_synthetic_case_has_no_source() {
+    let failure = CleanupFailure::without_source(
+        CleanupTarget::file(PathBuf::from("source.txt")),
+        std::io::ErrorKind::PermissionDenied,
+    );
+
+    assert_eq!(failure.error, std::io::ErrorKind::PermissionDenied);
+    assert!(failure.source().is_none());
 }
 
 #[test]
