@@ -2,12 +2,12 @@ use std::io;
 use std::path::PathBuf;
 
 use core::header::common::HeaderReadError;
-use dexios_domain::{header, key};
 use dexios_domain::storage::identity::{IdentityError, PathRole};
 use dexios_domain::storage::transaction::{
     CommittedArtifact, PartialCommitReceipt, TransactionError,
 };
 use dexios_domain::workflow_error::WorkflowErrorClass;
+use dexios_domain::{header, key};
 
 fn path(name: &str) -> PathBuf {
     PathBuf::from(name)
@@ -41,10 +41,7 @@ fn assert_no_source<E>(error: &E, label: &str)
 where
     E: std::error::Error + ?Sized,
 {
-    assert!(
-        error.source().is_none(),
-        "{label} must remain source-free"
-    );
+    assert!(error.source().is_none(), "{label} must remain source-free");
 }
 
 #[test]
@@ -167,9 +164,7 @@ fn header_operation_error_classes_are_typed_not_display_derived() {
 #[test]
 fn header_and_key_errors_forward_safe_diagnostic_sources() {
     let malformed_header =
-        header::Error::MalformedV1Header(HeaderReadError::InvalidCanonicalDiscriminator(
-            *b"BAD!",
-        ));
+        header::Error::MalformedV1Header(HeaderReadError::InvalidCanonicalDiscriminator(*b"BAD!"));
     assert_eq!(
         malformed_header.workflow_class(),
         WorkflowErrorClass::MalformedFormat
@@ -192,6 +187,15 @@ fn header_and_key_errors_forward_safe_diagnostic_sources() {
     );
     assert_has_source(&header_transaction, "header transaction wrapper");
 
+    let header_read_io = header::Error::from(HeaderReadError::Io(io::Error::from(
+        io::ErrorKind::PermissionDenied,
+    )));
+    assert_eq!(
+        header_read_io.workflow_class(),
+        WorkflowErrorClass::IoFailure
+    );
+    assert_has_source(&header_read_io, "header parser IO wrapper");
+
     let key_malformed =
         key::Error::MalformedV1Header(HeaderReadError::InvalidKdfParamProfile(0xFF));
     assert_eq!(
@@ -200,9 +204,9 @@ fn header_and_key_errors_forward_safe_diagnostic_sources() {
     );
     assert_has_source(&key_malformed, "key malformed V1 wrapper");
 
-    let key_identity = key::Error::PathIdentity(IdentityError::from_io_error(
-        io::Error::from(io::ErrorKind::PermissionDenied),
-    ));
+    let key_identity = key::Error::PathIdentity(IdentityError::from_io_error(io::Error::from(
+        io::ErrorKind::PermissionDenied,
+    )));
     assert_eq!(key_identity.workflow_class(), WorkflowErrorClass::IoFailure);
     assert_has_source(&key_identity, "key path identity wrapper");
 
@@ -212,6 +216,11 @@ fn header_and_key_errors_forward_safe_diagnostic_sources() {
         WorkflowErrorClass::IoFailure
     );
     assert_has_source(&key_transaction, "key transaction wrapper");
+
+    let key_read_io =
+        key::Error::ReadIoWithSource(io::Error::from(io::ErrorKind::PermissionDenied));
+    assert_eq!(key_read_io.workflow_class(), WorkflowErrorClass::IoFailure);
+    assert_has_source(&key_read_io, "key parser IO wrapper");
 }
 
 #[test]
@@ -231,6 +240,9 @@ fn header_and_key_unsupported_or_auth_failures_stay_source_free() {
     assert_no_source(&key_unsupported_kdf, "key unsupported KDF tag");
 
     let key_incorrect = key::Error::IncorrectKey;
-    assert_eq!(key_incorrect.workflow_class(), WorkflowErrorClass::IncorrectKey);
+    assert_eq!(
+        key_incorrect.workflow_class(),
+        WorkflowErrorClass::IncorrectKey
+    );
     assert_no_source(&key_incorrect, "key incorrect-key authentication failure");
 }

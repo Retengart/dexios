@@ -137,7 +137,9 @@ pub fn map_header_error(error: domain::header::Error) -> anyhow::Error {
         domain::header::Error::InvalidFile | domain::header::Error::HeaderSizeParse => {
             anyhow!("Malformed Dexios header or payload")
         }
-        domain::header::Error::Read | domain::header::Error::ReadIo => {
+        domain::header::Error::Read
+        | domain::header::Error::ReadIo
+        | domain::header::Error::ReadIoWithSource(_) => {
             anyhow!("I/O failure while reading header data")
         }
         domain::header::Error::Write | domain::header::Error::WriteIo => {
@@ -198,7 +200,9 @@ pub fn map_key_error(error: domain::key::Error) -> anyhow::Error {
         domain::key::Error::HeaderSizeParse | domain::key::Error::HeaderDeserialize => {
             anyhow!("Malformed Dexios V1 header")
         }
-        domain::key::Error::ReadIo => anyhow!("I/O failure while reading key workflow target"),
+        domain::key::Error::ReadIo | domain::key::Error::ReadIoWithSource(_) => {
+            anyhow!("I/O failure while reading key workflow target")
+        }
         domain::key::Error::KeyHash => anyhow!("Unable to derive key"),
         domain::key::Error::HeaderWrite | domain::key::Error::Seek => {
             anyhow!("I/O failure while updating keyslots")

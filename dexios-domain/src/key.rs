@@ -35,6 +35,7 @@ pub enum Error {
     RetiredV1Layout,
     MalformedV1Header(HeaderReadError),
     ReadIo,
+    ReadIoWithSource(std::io::Error),
     HeaderWrite,
     Seek,
     PathIdentity(IdentityError),
@@ -57,7 +58,9 @@ impl Error {
             | Self::Unsupported => WorkflowErrorClass::UnsupportedFormat,
             Self::UnsupportedKdf(_) | Self::KeyHash => WorkflowErrorClass::KdfFailure,
             Self::IncorrectKey => WorkflowErrorClass::IncorrectKey,
-            Self::HeaderWrite | Self::Seek | Self::ReadIo => WorkflowErrorClass::IoFailure,
+            Self::HeaderWrite | Self::Seek | Self::ReadIo | Self::ReadIoWithSource(_) => {
+                WorkflowErrorClass::IoFailure
+            }
             Self::PathIdentity(error) => crate::workflow_error::classify_identity_error(error),
             Self::Transaction(error) => crate::workflow_error::classify_transaction_error(error),
             Self::TooManyKeyslots
@@ -84,7 +87,9 @@ impl std::fmt::Display for Error {
             }
             Error::RetiredV1Layout => f.write_str("Retired Dexios V1 header layout"),
             Error::MalformedV1Header(error) => write!(f, "Malformed Dexios V1 header: {error}"),
-            Error::ReadIo => f.write_str("Unable to read key workflow target"),
+            Error::ReadIo | Error::ReadIoWithSource(_) => {
+                f.write_str("Unable to read key workflow target")
+            }
             Error::PathIdentity(error) => write!(f, "{error}"),
             Error::Transaction(error) => write!(f, "{error}"),
             Error::CannotRemoveFinalV1Keyslot => f.write_str("Cannot remove the final V1 keyslot"),
@@ -201,11 +206,38 @@ pub(crate) fn decrypt_v1_master_key_at_index(
     .map_err(|_| Error::IncorrectKey)
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::MalformedV1Header(error) => Some(error),
+            Self::ReadIoWithSource(error) => Some(error),
+            Self::PathIdentity(error) => Some(error),
+            Self::Transaction(error) => Some(error),
+            Self::HeaderSizeParse
+            | Self::Unsupported
+            | Self::UnsupportedKdf(_)
+            | Self::IncorrectKey
+            | Self::MasterKeyEncrypt
+            | Self::TooManyKeyslots
+            | Self::KeyHash
+            | Self::CipherInit
+            | Self::HeaderDeserialize
+            | Self::InvalidMagic(_)
+            | Self::UnsupportedFormat(_)
+            | Self::UnsupportedVersion(_)
+            | Self::RetiredV1Layout
+            | Self::ReadIo
+            | Self::HeaderWrite
+            | Self::Seek
+            | Self::CannotRemoveFinalV1Keyslot
+            | Self::CannotAddV1KeyslotWithoutReencrypt => None,
+        }
+    }
+}
 
 pub(crate) fn map_header_read_error(error: HeaderReadError) -> Error {
     match error {
-        HeaderReadError::Io(_) => Error::ReadIo,
+        HeaderReadError::Io(error) => Error::ReadIoWithSource(error),
         HeaderReadError::InvalidMagic(magic) => Error::InvalidMagic(magic),
         HeaderReadError::UnsupportedFormat(prefix) => Error::UnsupportedFormat(prefix),
         HeaderReadError::UnsupportedVersion(version) => Error::UnsupportedVersion(version),

@@ -24,6 +24,7 @@ pub enum Error {
     Read,
     WriteIo,
     ReadIo,
+    ReadIoWithSource(std::io::Error),
     HeaderSizeParse,
     Rewind,
     ShortDetachedHeader { actual_len: usize },
@@ -52,9 +53,12 @@ impl Error {
             | Self::UnsupportedVersion(_)
             | Self::RetiredV1Layout => WorkflowErrorClass::UnsupportedFormat,
             Self::UnsupportedRestore => WorkflowErrorClass::UnsupportedWorkflow,
-            Self::Write | Self::Read | Self::WriteIo | Self::ReadIo | Self::Rewind => {
-                WorkflowErrorClass::IoFailure
-            }
+            Self::Write
+            | Self::Read
+            | Self::WriteIo
+            | Self::ReadIo
+            | Self::ReadIoWithSource(_)
+            | Self::Rewind => WorkflowErrorClass::IoFailure,
             Self::PathIdentity(error) => classify_identity_error(error),
             Self::Transaction(error) => classify_transaction_error(error),
         }
@@ -65,9 +69,9 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Error::{
             HeaderSizeParse, InvalidFile, InvalidMagic, MalformedV1Header, MissingPayload,
-            PathIdentity, Read, ReadIo, RetiredV1Layout, Rewind, ShortDetachedHeader,
-            TargetNotStripped, TargetTooShort, TrailingDetachedHeader, Transaction,
-            UnsupportedFormat, UnsupportedRestore, UnsupportedVersion, Write, WriteIo,
+            PathIdentity, Read, ReadIo, ReadIoWithSource, RetiredV1Layout, Rewind,
+            ShortDetachedHeader, TargetNotStripped, TargetTooShort, TrailingDetachedHeader,
+            Transaction, UnsupportedFormat, UnsupportedRestore, UnsupportedVersion, Write, WriteIo,
         };
         match self {
             UnsupportedRestore => f.write_str("The provided request is unsupported with this file. It maybe isn't an encrypted file, or it was encrypted in detached mode."),
@@ -84,7 +88,7 @@ impl std::fmt::Display for Error {
             Write => f.write_str("Unable to write the data."),
             Read => f.write_str("Unable to read the data."),
             WriteIo => f.write_str("Unable to write header data."),
-            ReadIo => f.write_str("Unable to read header data."),
+            ReadIo | ReadIoWithSource(_) => f.write_str("Unable to read header data."),
             Rewind => f.write_str("Unable to rewind the stream."),
             HeaderSizeParse => f.write_str("Unable to parse the size of the header."),
             ShortDetachedHeader { actual_len } => {
@@ -106,12 +110,38 @@ impl std::fmt::Display for Error {
     }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::MalformedV1Header(error) => Some(error),
+            Self::ReadIoWithSource(error) => Some(error),
+            Self::PathIdentity(error) => Some(error),
+            Self::Transaction(error) => Some(error),
+            Self::UnsupportedRestore
+            | Self::InvalidFile
+            | Self::InvalidMagic(_)
+            | Self::UnsupportedFormat(_)
+            | Self::UnsupportedVersion(_)
+            | Self::RetiredV1Layout
+            | Self::Write
+            | Self::Read
+            | Self::WriteIo
+            | Self::ReadIo
+            | Self::HeaderSizeParse
+            | Self::Rewind
+            | Self::ShortDetachedHeader { .. }
+            | Self::TrailingDetachedHeader { .. }
+            | Self::MissingPayload { .. }
+            | Self::TargetTooShort { .. }
+            | Self::TargetNotStripped => None,
+        }
+    }
+}
 
 impl From<HeaderReadError> for Error {
     fn from(error: HeaderReadError) -> Self {
         match error {
-            HeaderReadError::Io(_) => Self::ReadIo,
+            HeaderReadError::Io(error) => Self::ReadIoWithSource(error),
             HeaderReadError::InvalidMagic(magic) => Self::InvalidMagic(magic),
             HeaderReadError::UnsupportedFormat(prefix) => Self::UnsupportedFormat(prefix),
             HeaderReadError::UnsupportedVersion(version) => Self::UnsupportedVersion(version),
