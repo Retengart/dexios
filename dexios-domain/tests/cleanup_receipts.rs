@@ -1,5 +1,5 @@
-use std::fs;
 use std::error::Error as _;
+use std::fs;
 #[cfg(feature = "test-support")]
 use std::io;
 use std::path::{Path, PathBuf};

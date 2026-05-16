@@ -252,10 +252,10 @@ fn resource_pressure_helpers_detect_storage_full_source_chains() {
 
 #[test]
 fn cleanup_failures_have_typed_workflow_classification() {
-    let failure = CleanupFailure {
-        target: CleanupTarget::file(path("source.txt")),
-        error: io::ErrorKind::PermissionDenied,
-    };
+    let failure = CleanupFailure::without_source(
+        CleanupTarget::file(path("source.txt")),
+        io::ErrorKind::PermissionDenied,
+    );
     let result = CleanupResult {
         deleted: Vec::new(),
         failures: vec![failure],

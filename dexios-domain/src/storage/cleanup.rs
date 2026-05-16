@@ -1,3 +1,4 @@
+use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -87,13 +88,62 @@ impl CleanupTarget {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CleanupFailure {
     pub target: CleanupTarget,
     pub error: io::ErrorKind,
+    source: Option<io::Error>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+impl CleanupFailure {
+    #[must_use]
+    pub fn without_source(target: CleanupTarget, error: io::ErrorKind) -> Self {
+        Self {
+            target,
+            error,
+            source: None,
+        }
+    }
+
+    fn from_source(target: CleanupTarget, source: io::Error) -> Self {
+        let error = source.kind();
+        Self {
+            target,
+            error,
+            source: Some(source),
+        }
+    }
+}
+
+impl fmt::Debug for CleanupFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CleanupFailure")
+            .field("target", &self.target)
+            .field("error", &self.error)
+            .field("has_source", &self.source.is_some())
+            .finish()
+    }
+}
+
+impl fmt::Display for CleanupFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "cleanup failed for {} ({:?})",
+            self.target.path.display(),
+            self.error
+        )
+    }
+}
+
+impl std::error::Error for CleanupFailure {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source
+            .as_ref()
+            .map(|source| source as &(dyn std::error::Error + 'static))
+    }
+}
+
+#[derive(Debug, Default)]
 pub struct CleanupResult {
     pub deleted: Vec<CleanupTarget>,
     pub failures: Vec<CleanupFailure>,
@@ -145,21 +195,23 @@ impl CleanupReceipt {
         let mut injected_cleanup_failure = false;
 
         for target in self.targets.iter().cloned() {
-            let should_inject_failure =
-                !injected_cleanup_failure && hooks.check(FailurePoint::Cleanup).is_err();
-            let delete_result = if should_inject_failure {
-                injected_cleanup_failure = true;
-                Err(io::Error::from(io::ErrorKind::Other))
+            let delete_result = if !injected_cleanup_failure {
+                match hooks.check(FailurePoint::Cleanup) {
+                    Ok(()) => delete_target(&target),
+                    Err(source) => {
+                        injected_cleanup_failure = true;
+                        Err(io::Error::other(source))
+                    }
+                }
             } else {
                 delete_target(&target)
             };
 
             match delete_result {
                 Ok(()) => result.deleted.push(target),
-                Err(error) => result.failures.push(CleanupFailure {
-                    target,
-                    error: error.kind(),
-                }),
+                Err(error) => result
+                    .failures
+                    .push(CleanupFailure::from_source(target, error)),
             }
         }
 
@@ -208,8 +260,8 @@ pub enum CleanupGateError {
     HashNotVerified,
 }
 
-impl std::fmt::Display for CleanupGateError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for CleanupGateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::CommitNotAuthorized => f.write_str("commit receipt is not cleanup-authorized"),
             Self::HashNotVerified => f.write_str("requested hash did not succeed"),
