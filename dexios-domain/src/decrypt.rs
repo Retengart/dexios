@@ -28,16 +28,20 @@ pub enum Error {
     InitializeChiphers,
     InitializeStreams,
     DeserializeHeader,
+    DeserializeHeaderWithSource(HeaderReadError),
     InvalidMagic([u8; 4]),
     UnsupportedFormat([u8; 2]),
     UnsupportedVersion([u8; 2]),
     RetiredV1Layout,
     ReadEncryptedData,
+    ReadEncryptedDataWithSource(io::Error),
     DecryptMasterKey,
     UnsupportedKdf([u8; 2]),
     DecryptData,
     WriteData,
+    WriteDataWithSource(io::Error),
     RewindDataReader,
+    RewindDataReaderWithSource(io::Error),
     PathIdentity(IdentityError),
     Transaction(TransactionError),
 }
@@ -46,14 +50,19 @@ impl Error {
     #[must_use]
     pub fn workflow_class(&self) -> WorkflowErrorClass {
         match self {
-            Self::DeserializeHeader => WorkflowErrorClass::MalformedFormat,
+            Self::DeserializeHeader | Self::DeserializeHeaderWithSource(_) => {
+                WorkflowErrorClass::MalformedFormat
+            }
             Self::InvalidMagic(_)
             | Self::UnsupportedFormat(_)
             | Self::UnsupportedVersion(_)
             | Self::RetiredV1Layout => WorkflowErrorClass::UnsupportedFormat,
-            Self::ReadEncryptedData | Self::WriteData | Self::RewindDataReader => {
-                WorkflowErrorClass::IoFailure
-            }
+            Self::ReadEncryptedData
+            | Self::ReadEncryptedDataWithSource(_)
+            | Self::WriteData
+            | Self::WriteDataWithSource(_)
+            | Self::RewindDataReader
+            | Self::RewindDataReaderWithSource(_) => WorkflowErrorClass::IoFailure,
             Self::DecryptMasterKey => WorkflowErrorClass::IncorrectKey,
             Self::UnsupportedKdf(_) => WorkflowErrorClass::KdfFailure,
             Self::DecryptData => WorkflowErrorClass::AuthenticationFailure,
@@ -69,7 +78,9 @@ impl std::fmt::Display for Error {
         match self {
             Error::InitializeChiphers => f.write_str("Cannot initialize chiphers"),
             Error::InitializeStreams => f.write_str("Cannot initialize streams"),
-            Error::DeserializeHeader => f.write_str("Cannot deserialize header"),
+            Error::DeserializeHeader | Error::DeserializeHeaderWithSource(_) => {
+                f.write_str("Cannot deserialize header")
+            }
             Error::InvalidMagic(magic) => write!(f, "Invalid Dexios header magic: {magic:02X?}"),
             Error::UnsupportedFormat(prefix) => {
                 write!(f, "Unsupported Dexios header format: {prefix:02X?}")
@@ -78,12 +89,16 @@ impl std::fmt::Display for Error {
                 write!(f, "Unsupported Dexios header version: {version:02X?}")
             }
             Error::RetiredV1Layout => f.write_str("Retired Dexios V1 header layout"),
-            Error::ReadEncryptedData => f.write_str("Unable to read encrypted data"),
+            Error::ReadEncryptedData | Error::ReadEncryptedDataWithSource(_) => {
+                f.write_str("Unable to read encrypted data")
+            }
             Error::DecryptMasterKey => f.write_str("Cannot decrypt master key"),
             Error::UnsupportedKdf(tag) => write!(f, "Unsupported keyslot KDF tag: {tag:02X?}"),
             Error::DecryptData => f.write_str("Unable to decrypt data"),
-            Error::WriteData => f.write_str("Unable to write data"),
-            Error::RewindDataReader => f.write_str("Unable to rewind the reader"),
+            Error::WriteData | Error::WriteDataWithSource(_) => f.write_str("Unable to write data"),
+            Error::RewindDataReader | Error::RewindDataReaderWithSource(_) => {
+                f.write_str("Unable to rewind the reader")
+            }
             Error::PathIdentity(error) => write!(f, "{error}"),
             Error::Transaction(error) => write!(f, "{error}"),
         }
@@ -93,6 +108,10 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::DeserializeHeaderWithSource(error) => Some(error),
+            Self::ReadEncryptedDataWithSource(error)
+            | Self::WriteDataWithSource(error)
+            | Self::RewindDataReaderWithSource(error) => Some(error),
             Self::PathIdentity(error) => Some(error),
             Self::Transaction(error) => Some(error),
             _ => None,
@@ -205,12 +224,13 @@ pub fn execute(intent: DecryptIntent) -> Result<CommitReceipt, Error> {
         on_decrypted_header,
     } = intent;
 
-    let reader =
-        RefCell::new(File::open(input_target.target_path()).map_err(|_| Error::ReadEncryptedData)?);
+    let reader = RefCell::new(
+        File::open(input_target.target_path()).map_err(Error::ReadEncryptedDataWithSource)?,
+    );
     let header_reader = detached_header_target
         .map(|target| File::open(target.target_path()).map(RefCell::new))
         .transpose()
-        .map_err(|_| Error::ReadEncryptedData)?;
+        .map_err(Error::ReadEncryptedDataWithSource)?;
 
     execute_transactional_target(
         header_reader.as_ref(),
@@ -272,7 +292,7 @@ where
         let needs_rewind = match reader.borrow_mut().read_exact(&mut header_bytes) {
             Ok(()) => !header_bytes.into_iter().all(|b| b == 0),
             Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => true,
-            Err(_) => return Err(Error::ReadEncryptedData),
+            Err(error) => return Err(Error::ReadEncryptedDataWithSource(error)),
         };
 
         if needs_rewind {
@@ -280,7 +300,7 @@ where
             reader
                 .borrow_mut()
                 .rewind()
-                .map_err(|_| Error::RewindDataReader)?;
+                .map_err(Error::RewindDataReaderWithSource)?;
         }
 
         Ok(payload)
@@ -327,12 +347,12 @@ fn commit_after_final_auth(
 
 fn map_header_read_error(error: HeaderReadError) -> Error {
     match error {
-        HeaderReadError::Io(_) => Error::ReadEncryptedData,
+        HeaderReadError::Io(error) => Error::ReadEncryptedDataWithSource(error),
         HeaderReadError::InvalidMagic(magic) => Error::InvalidMagic(magic),
         HeaderReadError::UnsupportedFormat(prefix) => Error::UnsupportedFormat(prefix),
         HeaderReadError::UnsupportedVersion(version) => Error::UnsupportedVersion(version),
         HeaderReadError::RetiredV1Layout => Error::RetiredV1Layout,
-        HeaderReadError::InvalidCanonicalDiscriminator(_)
+        error @ (HeaderReadError::InvalidCanonicalDiscriminator(_)
         | HeaderReadError::InvalidPayloadKind(_)
         | HeaderReadError::InvalidPayloadFraming(_)
         | HeaderReadError::InvalidKdfProfile(_)
@@ -348,25 +368,22 @@ fn map_header_read_error(error: HeaderReadError) -> Error {
         | HeaderReadError::InvalidEncryptedMasterKeyLength(_)
         | HeaderReadError::NonZeroReservedBytes
         | HeaderReadError::NonZeroActiveKeyslotPadding(_)
-        | HeaderReadError::NonZeroInactiveKeyslotPadding(_) => Error::DeserializeHeader,
+        | HeaderReadError::NonZeroInactiveKeyslotPadding(_)) => {
+            Error::DeserializeHeaderWithSource(error)
+        }
     }
 }
 
 fn map_decrypt_transaction_error(error: TransactionError) -> Error {
-    match error {
-        TransactionError::Write { .. }
-        | TransactionError::Flush { .. }
-        | TransactionError::Sync { .. } => Error::WriteData,
-        error => Error::Transaction(error),
-    }
+    Error::Transaction(error)
 }
 
 fn map_stream_error(error: StreamError) -> Error {
     match error {
         StreamError::InvalidNonceLength(_) => Error::InitializeStreams,
         StreamError::CipherInit => Error::InitializeChiphers,
-        StreamError::Read(_) => Error::ReadEncryptedData,
-        StreamError::Write(_) | StreamError::Flush(_) => Error::WriteData,
+        StreamError::Read(error) => Error::ReadEncryptedDataWithSource(error),
+        StreamError::Write(error) | StreamError::Flush(error) => Error::WriteDataWithSource(error),
         StreamError::Authentication
         | StreamError::TruncatedCiphertext
         | StreamError::MissingFinalBlock
@@ -498,8 +515,12 @@ mod tests {
         let error = execute_transactional_target(None, &reader, output_target, raw_key, None)
             .expect_err("payload read failure must be reported");
 
-        assert!(matches!(error, Error::ReadEncryptedData));
+        assert!(matches!(error, Error::ReadEncryptedDataWithSource(_)));
         assert_eq!(error.workflow_class(), WorkflowErrorClass::IoFailure);
+        assert!(
+            std::error::Error::source(&error).is_some(),
+            "payload read failure must preserve source"
+        );
         assert!(
             !output_path.exists(),
             "failed transactional decrypt must not publish plaintext"
@@ -603,17 +624,17 @@ mod tests {
             ),
             (
                 StreamError::Read(io::Error::other("read")),
-                Error::ReadEncryptedData,
+                Error::ReadEncryptedDataWithSource(io::Error::other("read")),
                 WorkflowErrorClass::IoFailure,
             ),
             (
                 StreamError::Write(io::Error::other("write")),
-                Error::WriteData,
+                Error::WriteDataWithSource(io::Error::other("write")),
                 WorkflowErrorClass::IoFailure,
             ),
             (
                 StreamError::Flush(io::Error::other("flush")),
-                Error::WriteData,
+                Error::WriteDataWithSource(io::Error::other("flush")),
                 WorkflowErrorClass::IoFailure,
             ),
             (

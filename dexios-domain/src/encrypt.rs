@@ -17,7 +17,8 @@ use crate::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
 };
 use crate::storage::transaction::{
-    CommitReceipt, LinkedOutputTransaction, StagedOutputTransaction, TransactionError,
+    CommitReceipt, LinkedOutputTransaction, StagedOutputTransaction, StagedWriteError,
+    TransactionError,
 };
 use crate::utils::{gen_master_key, gen_salt};
 use crate::workflow_error::{
@@ -27,11 +28,15 @@ use crate::workflow_error::{
 #[derive(Debug)]
 pub enum Error {
     OpenInput,
+    OpenInputWithSource(io::Error),
     ResetCursorPosition,
+    ResetCursorPositionWithSource(io::Error),
     HashKey,
     EncryptMasterKey,
     EncryptFile,
+    EncryptFileWithSource(io::Error),
     WriteHeader,
+    WriteHeaderWithSource(io::Error),
     InitializeStreams,
     InitializeChiphers,
     PathIdentity(IdentityError),
@@ -42,9 +47,14 @@ impl Error {
     #[must_use]
     pub fn workflow_class(&self) -> WorkflowErrorClass {
         match self {
-            Self::OpenInput | Self::ResetCursorPosition | Self::EncryptFile | Self::WriteHeader => {
-                WorkflowErrorClass::IoFailure
-            }
+            Self::OpenInput
+            | Self::OpenInputWithSource(_)
+            | Self::ResetCursorPosition
+            | Self::ResetCursorPositionWithSource(_)
+            | Self::EncryptFile
+            | Self::EncryptFileWithSource(_)
+            | Self::WriteHeader
+            | Self::WriteHeaderWithSource(_) => WorkflowErrorClass::IoFailure,
             Self::HashKey => WorkflowErrorClass::KdfFailure,
             Self::PathIdentity(error) => classify_identity_error(error),
             Self::Transaction(error) => classify_transaction_error(error),
@@ -58,12 +68,20 @@ impl Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::OpenInput => f.write_str("Cannot open input file"),
-            Error::ResetCursorPosition => f.write_str("Unable to reset cursor position"),
+            Error::OpenInput | Error::OpenInputWithSource(_) => {
+                f.write_str("Cannot open input file")
+            }
+            Error::ResetCursorPosition | Error::ResetCursorPositionWithSource(_) => {
+                f.write_str("Unable to reset cursor position")
+            }
             Error::HashKey => f.write_str("Cannot hash raw key"),
             Error::EncryptMasterKey => f.write_str("Cannot encrypt master key"),
-            Error::EncryptFile => f.write_str("Cannot encrypt file"),
-            Error::WriteHeader => f.write_str("Cannot write header"),
+            Error::EncryptFile | Error::EncryptFileWithSource(_) => {
+                f.write_str("Cannot encrypt file")
+            }
+            Error::WriteHeader | Error::WriteHeaderWithSource(_) => {
+                f.write_str("Cannot write header")
+            }
             Error::InitializeStreams => f.write_str("Cannot initialize streams"),
             Error::InitializeChiphers => f.write_str("Cannot initialize chiphers"),
             Error::PathIdentity(error) => write!(f, "{error}"),
@@ -75,6 +93,10 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::OpenInputWithSource(error)
+            | Self::ResetCursorPositionWithSource(error)
+            | Self::EncryptFileWithSource(error)
+            | Self::WriteHeaderWithSource(error) => Some(error),
             Self::PathIdentity(error) => Some(error),
             Self::Transaction(error) => Some(error),
             _ => None,
@@ -179,24 +201,24 @@ where
     writer
         .borrow_mut()
         .rewind()
-        .map_err(|_| Error::ResetCursorPosition)?;
+        .map_err(Error::ResetCursorPositionWithSource)?;
 
     match header_writer {
         None => {
             writer
                 .borrow_mut()
                 .write_all(&header_bytes)
-                .map_err(|_| Error::WriteHeader)?;
+                .map_err(Error::WriteHeaderWithSource)?;
         }
         Some(header_writer) => {
             header_writer
                 .borrow_mut()
                 .rewind()
-                .map_err(|_| Error::ResetCursorPosition)?;
+                .map_err(Error::ResetCursorPositionWithSource)?;
             header_writer
                 .borrow_mut()
                 .write_all(&header_bytes)
-                .map_err(|_| Error::WriteHeader)?;
+                .map_err(Error::WriteHeaderWithSource)?;
         }
     }
 
@@ -218,10 +240,10 @@ where
     match header_writer {
         None => writer
             .write_all(&header_bytes)
-            .map_err(|_| Error::WriteHeader)?,
+            .map_err(Error::WriteHeaderWithSource)?,
         Some(header_writer) => header_writer
             .write_all(&header_bytes)
-            .map_err(|_| Error::WriteHeader)?,
+            .map_err(Error::WriteHeaderWithSource)?,
     }
 
     V1PayloadEncryptingWriter::new(master_key, &header, writer).map_err(map_stream_error)
@@ -243,7 +265,7 @@ pub fn execute(intent: EncryptIntent) -> Result<CommitReceipt, Error> {
         kdf,
     } = intent;
     let reader =
-        RefCell::new(File::open(input_target.target_path()).map_err(|_| Error::OpenInput)?);
+        RefCell::new(File::open(input_target.target_path()).map_err(Error::OpenInputWithSource)?);
 
     execute_transactional_targets(&reader, output_target, header_target, raw_key, kdf)
 }
@@ -283,11 +305,8 @@ where
         transaction
             .staged_output_mut(output_index)
             .ok_or(Error::EncryptFile)?
-            .with_writer(|writer| {
-                encrypt_payload(reader, writer, master_key, &header)
-                    .map_err(|_| io::Error::other("encrypt payload"))
-            })
-            .map_err(map_encrypt_transaction_error)?;
+            .with_writer_result(|writer| encrypt_payload(reader, writer, master_key, &header))
+            .map_err(map_encrypt_staged_write_error)?;
 
         transaction.commit_all().map_err(Error::Transaction)
     } else {
@@ -297,11 +316,8 @@ where
             .write_all(&header_bytes)
             .map_err(map_header_transaction_error)?;
         transaction
-            .with_writer(|writer| {
-                encrypt_payload(reader, writer, master_key, &header)
-                    .map_err(|_| io::Error::other("encrypt payload"))
-            })
-            .map_err(map_encrypt_transaction_error)?;
+            .with_writer_result(|writer| encrypt_payload(reader, writer, master_key, &header))
+            .map_err(map_encrypt_staged_write_error)?;
         transaction.commit().map_err(Error::Transaction)
     }
 }
@@ -359,10 +375,12 @@ where
     W: Write + Seek,
 {
     let mut reader = reader.borrow_mut();
-    reader.rewind().map_err(|_| Error::ResetCursorPosition)?;
+    reader
+        .rewind()
+        .map_err(Error::ResetCursorPositionWithSource)?;
 
     V1PayloadStream::encrypt_file(master_key, header, &mut *reader, &mut *writer)
-        .map_err(|_| Error::EncryptFile)?;
+        .map_err(map_stream_error)?;
 
     Ok(())
 }
@@ -371,10 +389,10 @@ fn map_stream_error(error: StreamError) -> Error {
     match error {
         StreamError::InvalidNonceLength(_) => Error::InitializeStreams,
         StreamError::CipherInit => Error::InitializeChiphers,
-        StreamError::Write(_)
-        | StreamError::Flush(_)
-        | StreamError::Read(_)
-        | StreamError::Authentication
+        StreamError::Write(error) | StreamError::Flush(error) | StreamError::Read(error) => {
+            Error::EncryptFileWithSource(error)
+        }
+        StreamError::Authentication
         | StreamError::TruncatedCiphertext
         | StreamError::MissingFinalBlock
         | StreamError::FinalBlockAuthentication => Error::EncryptFile,
@@ -382,16 +400,17 @@ fn map_stream_error(error: StreamError) -> Error {
 }
 
 fn map_header_transaction_error(error: TransactionError) -> Error {
-    match error {
-        TransactionError::Write { .. } => Error::WriteHeader,
-        error => Error::Transaction(error),
-    }
+    Error::Transaction(error)
 }
 
 fn map_encrypt_transaction_error(error: TransactionError) -> Error {
+    Error::Transaction(error)
+}
+
+fn map_encrypt_staged_write_error(error: StagedWriteError<Error>) -> Error {
     match error {
-        TransactionError::Write { .. } => Error::EncryptFile,
-        error => Error::Transaction(error),
+        StagedWriteError::Operation(error) => error,
+        StagedWriteError::Transaction(error) => map_encrypt_transaction_error(error),
     }
 }
 

@@ -471,7 +471,7 @@ fn decrypt_intent_maps_wrong_key_unsupported_kdf_and_header_format_errors() {
     let malformed_result = decrypt::execute(malformed);
     assert!(matches!(
         malformed_result,
-        Err(decrypt::Error::DeserializeHeader)
+        Err(decrypt::Error::DeserializeHeaderWithSource(_))
     ));
     assert_eq!(
         malformed_result.unwrap_err().workflow_class(),
