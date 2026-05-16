@@ -155,7 +155,7 @@ impl V1Keyslot {
         bytes.extend_from_slice(self.encrypted_master_key.as_bytes());
         bytes.extend_from_slice(self.nonce.as_bytes());
         bytes.extend_from_slice(self.salt.as_bytes());
-        bytes.extend_from_slice(&[0u8; 6]);
+        bytes.extend_from_slice(&[0u8; KEYSLOT_LEN - 90]);
     }
 
     fn deserialize(slot_bytes: &[u8]) -> Result<Self, HeaderReadError> {
@@ -343,7 +343,7 @@ impl V1Header {
             let start = HEADER_STATIC_LEN + (index * KEYSLOT_LEN);
             let end = start + KEYSLOT_LEN;
             let keyslot = V1Keyslot::deserialize(&bytes[start..end])?;
-            if bytes[(start + 90)..end] != [0u8; 6] {
+            if bytes[(start + 90)..end] != [0u8; KEYSLOT_LEN - 90] {
                 return Err(HeaderReadError::NonZeroActiveKeyslotPadding(index));
             }
             keyslots.push(keyslot);

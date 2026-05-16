@@ -70,7 +70,7 @@ fn write_legacy_header_fixture(output_path: &Path) {
 }
 
 fn write_malformed_v1_header_fixture(output_path: &Path) {
-    let mut bytes = [0u8; 416];
+    let mut bytes = vec![0u8; HEADER_LEN];
     bytes[0..4].copy_from_slice(b"DXIO");
     bytes[4..6].copy_from_slice(&[0x00, 0x01]);
     bytes[7] = 1;

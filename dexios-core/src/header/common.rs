@@ -1,12 +1,18 @@
 use std::fmt::{Display, Formatter};
 
-pub const HEADER_LEN: usize = 416;
-pub const HEADER_STATIC_LEN: usize = 32;
-pub const KEYSLOT_LEN: usize = 96;
+pub const CANONICAL_HEADER_LEN: usize = 512;
+pub const CANONICAL_HEADER_STATIC_LEN: usize = 64;
+pub const CANONICAL_KEYSLOT_LEN: usize = 112;
 pub const MAX_KEYSLOTS: usize = 4;
+pub const RETIRED_CURRENT_V1_HEADER_LEN: usize = 416;
+
+pub const HEADER_LEN: usize = CANONICAL_HEADER_LEN;
+pub const HEADER_STATIC_LEN: usize = CANONICAL_HEADER_STATIC_LEN;
+pub const KEYSLOT_LEN: usize = CANONICAL_KEYSLOT_LEN;
 
 pub const MAGIC: [u8; 4] = *b"DXIO";
 pub const VERSION_V1: [u8; 2] = [0x00, 0x01];
+pub const CANONICAL_V1_DISCRIMINATOR: [u8; 4] = *b"CV1\0";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PayloadNonce([u8; 20]);
@@ -89,15 +95,15 @@ impl Salt {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct V1HeaderAad([u8; HEADER_STATIC_LEN]);
+pub struct V1HeaderAad([u8; CANONICAL_HEADER_STATIC_LEN]);
 
 impl V1HeaderAad {
-    pub(crate) const fn from_static_header_bytes(bytes: [u8; HEADER_STATIC_LEN]) -> Self {
+    pub(crate) const fn from_static_header_bytes(bytes: [u8; CANONICAL_HEADER_STATIC_LEN]) -> Self {
         Self(bytes)
     }
 
     #[must_use]
-    pub const fn as_bytes(&self) -> &[u8; HEADER_STATIC_LEN] {
+    pub const fn as_bytes(&self) -> &[u8; CANONICAL_HEADER_STATIC_LEN] {
         &self.0
     }
 }
@@ -108,6 +114,14 @@ pub enum HeaderReadError {
     InvalidMagic([u8; 4]),
     UnsupportedFormat([u8; 2]),
     UnsupportedVersion([u8; 2]),
+    RetiredV1Layout,
+    InvalidCanonicalDiscriminator([u8; 4]),
+    InvalidPayloadKind(u8),
+    InvalidPayloadFraming(u8),
+    InvalidKdfProfile(u8),
+    InvalidKdfParamProfile(u8),
+    InvalidSlotState { index: usize, state: u8 },
+    InvalidPhysicalSlotIndex { expected: usize, actual: u8 },
     TruncatedHeader,
     InvalidKeyslotCount(u8),
     InvalidKeyslotTag([u8; 2]),
@@ -130,6 +144,34 @@ impl Display for HeaderReadError {
             }
             Self::UnsupportedVersion(version) => {
                 write!(f, "unsupported V1 header version bytes: {version:02X?}")
+            }
+            Self::RetiredV1Layout => f.write_str("retired current V1 header layout"),
+            Self::InvalidCanonicalDiscriminator(discriminator) => {
+                write!(
+                    f,
+                    "invalid canonical V1 discriminator: {discriminator:02X?}"
+                )
+            }
+            Self::InvalidPayloadKind(kind) => {
+                write!(f, "invalid canonical V1 payload kind: {kind}")
+            }
+            Self::InvalidPayloadFraming(framing) => {
+                write!(f, "invalid canonical V1 payload framing: {framing}")
+            }
+            Self::InvalidKdfProfile(profile) => {
+                write!(f, "invalid canonical V1 KDF profile: {profile}")
+            }
+            Self::InvalidKdfParamProfile(profile) => {
+                write!(f, "invalid canonical V1 KDF parameter profile: {profile}")
+            }
+            Self::InvalidSlotState { index, state } => {
+                write!(f, "invalid canonical V1 slot {index} state: {state}")
+            }
+            Self::InvalidPhysicalSlotIndex { expected, actual } => {
+                write!(
+                    f,
+                    "invalid canonical V1 physical slot index: expected {expected}, got {actual}"
+                )
             }
             Self::TruncatedHeader => f.write_str("truncated V1 header"),
             Self::InvalidKeyslotCount(count) => write!(f, "invalid V1 keyslot count: {count}"),

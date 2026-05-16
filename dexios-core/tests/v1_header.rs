@@ -1,5 +1,6 @@
 use dexios_core::header::common::{
-    HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN, KeyslotNonce, PayloadNonce, Salt as HeaderSalt,
+    CANONICAL_HEADER_LEN, CANONICAL_HEADER_STATIC_LEN, HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN,
+    KeyslotNonce, PayloadNonce, Salt as HeaderSalt,
 };
 use dexios_core::header::v1::{EncryptedMasterKey, KeyslotKdf, V1Header, V1Keyslot, V1Keyslots};
 use dexios_core::header::{HeaderReadError, ParsedHeader, ParsedV1Payload};
@@ -62,11 +63,11 @@ fn decode_hex_fixture(path: &str) -> Vec<u8> {
 }
 
 #[test]
-fn serializes_v1_header_to_416_bytes() {
+fn serializes_v1_header_to_canonical_length() {
     let header = support::sample_v1_header();
     let bytes = header.serialize().unwrap();
 
-    assert_eq!(bytes.len(), 416);
+    assert_eq!(bytes.len(), CANONICAL_HEADER_LEN);
 }
 
 #[test]
@@ -266,7 +267,7 @@ fn deserialize_roundtrip_preserves_payload_nonce_and_keyslots() {
         header.payload_nonce().as_bytes()
     );
     assert_eq!(parsed.header().keyslots().len(), 1);
-    assert_eq!(parsed.aad().as_bytes().len(), 32);
+    assert_eq!(parsed.aad().as_bytes().len(), CANONICAL_HEADER_STATIC_LEN);
 }
 
 #[test]
@@ -276,28 +277,28 @@ fn serializes_sample_v1_header_to_exact_bytes() {
 
     let mut expected = vec![
         0x44, 0x58, 0x49, 0x4F, 0x00, 0x01, 0x01, 0x00, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-        7, 7, 7, 7, 7, 7, 0, 0, 0, 0, 0xDF, 0x01,
+        7, 7, 7, 7, 7, 7,
     ];
+    expected.extend_from_slice(&[0u8; 36]);
+    expected.extend_from_slice(&[0xDF, 0x01]);
     expected.extend_from_slice(&[11u8; 48]);
     expected.extend_from_slice(&[13u8; 24]);
     expected.extend_from_slice(&[17u8; 16]);
-    expected.extend_from_slice(&[0u8; 6]);
-    expected.extend_from_slice(&[0u8; 288]);
+    expected.extend_from_slice(&[0u8; 22]);
+    expected.extend_from_slice(&[0u8; KEYSLOT_LEN * 3]);
 
     assert_eq!(bytes, expected);
 }
 
 #[test]
-fn fixture_v1_valid_single_keyslot_roundtrips() {
+fn fixture_v1_valid_single_keyslot_is_not_canonical_length() {
     let path = fixture_path("v1_valid_single_keyslot.hex");
     let original_bytes = decode_hex_fixture(&path);
-    let parsed =
-        dexios_core::header::read_header(&mut std::io::Cursor::new(&original_bytes)).unwrap();
 
-    let ParsedHeader::V1(parsed) = parsed;
-    assert_eq!(parsed.header().keyslots().len(), 1);
-    assert_eq!(parsed.aad().as_bytes().len(), 32);
-    assert_eq!(parsed.header().serialize().unwrap(), original_bytes);
+    let error = dexios_core::header::read_header(&mut std::io::Cursor::new(&original_bytes))
+        .expect_err("old current V1 fixture is shorter than canonical V1");
+
+    assert!(matches!(error, HeaderReadError::TruncatedHeader));
 }
 
 #[test]
@@ -305,26 +306,26 @@ fn fixture_v1_malformed_reserved_byte_is_rejected() {
     let path = fixture_path("v1_malformed_reserved_byte.hex");
     let bytes = decode_hex_fixture(&path);
     let error = dexios_core::header::read_header(&mut std::io::Cursor::new(&bytes))
-        .expect_err("non-zero reserved byte fixture should fail");
+        .expect_err("old current V1 malformed fixture is shorter than canonical V1");
 
-    assert!(matches!(error, HeaderReadError::NonZeroReservedBytes));
+    assert!(matches!(error, HeaderReadError::TruncatedHeader));
 }
 
 #[test]
 fn creates_exact_aad_bytes_for_sample_v1_header() {
     let header = support::sample_v1_header();
 
-    assert_eq!(
-        header.aad().as_bytes(),
-        &[
-            0x44, 0x58, 0x49, 0x4F, 0x00, 0x01, 0x01, 0x00, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-            7, 7, 7, 7, 7, 7, 7, 0, 0, 0, 0,
-        ]
-    );
+    let mut expected = [0u8; CANONICAL_HEADER_STATIC_LEN];
+    expected[0..4].copy_from_slice(b"DXIO");
+    expected[4..6].copy_from_slice(&[0x00, 0x01]);
+    expected[6] = 0x01;
+    expected[8..28].copy_from_slice(&[7u8; 20]);
+
+    assert_eq!(header.aad().as_bytes(), &expected);
 }
 
 #[test]
-fn detached_v1_header_bytes_are_exactly_416_bytes() {
+fn detached_v1_header_bytes_are_exactly_canonical_length() {
     let header = support::sample_v1_header();
     let bytes = header.serialize().unwrap();
     assert_eq!(bytes.len(), HEADER_LEN);

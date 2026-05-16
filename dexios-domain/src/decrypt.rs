@@ -324,7 +324,15 @@ fn map_header_read_error(error: HeaderReadError) -> Error {
         HeaderReadError::InvalidMagic(magic) => Error::InvalidMagic(magic),
         HeaderReadError::UnsupportedFormat(prefix) => Error::UnsupportedFormat(prefix),
         HeaderReadError::UnsupportedVersion(version) => Error::UnsupportedVersion(version),
-        HeaderReadError::TruncatedHeader
+        HeaderReadError::RetiredV1Layout
+        | HeaderReadError::InvalidCanonicalDiscriminator(_)
+        | HeaderReadError::InvalidPayloadKind(_)
+        | HeaderReadError::InvalidPayloadFraming(_)
+        | HeaderReadError::InvalidKdfProfile(_)
+        | HeaderReadError::InvalidKdfParamProfile(_)
+        | HeaderReadError::InvalidSlotState { .. }
+        | HeaderReadError::InvalidPhysicalSlotIndex { .. }
+        | HeaderReadError::TruncatedHeader
         | HeaderReadError::InvalidKeyslotCount(_)
         | HeaderReadError::InvalidKeyslotTag(_)
         | HeaderReadError::InvalidPayloadNonceLength(_)
