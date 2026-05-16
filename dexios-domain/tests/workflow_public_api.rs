@@ -1,11 +1,15 @@
 const DOMAIN_CARGO_TOML: &str = include_str!("../Cargo.toml");
 
+const DOMAIN_WORKFLOW_ERROR: &str = include_str!("../src/workflow_error.rs");
 const DOMAIN_ENCRYPT: &str = include_str!("../src/encrypt.rs");
 const DOMAIN_DECRYPT: &str = include_str!("../src/decrypt.rs");
+const DOMAIN_PACK: &str = include_str!("../src/pack.rs");
 const DOMAIN_UNPACK: &str = include_str!("../src/unpack.rs");
+const DOMAIN_HEADER: &str = include_str!("../src/header.rs");
 const DOMAIN_HEADER_DUMP: &str = include_str!("../src/header/dump.rs");
 const DOMAIN_HEADER_STRIP: &str = include_str!("../src/header/strip.rs");
 const DOMAIN_HEADER_RESTORE: &str = include_str!("../src/header/restore.rs");
+const DOMAIN_KEY: &str = include_str!("../src/key.rs");
 const DOMAIN_KEY_ADD: &str = include_str!("../src/key/add.rs");
 const DOMAIN_KEY_CHANGE: &str = include_str!("../src/key/change.rs");
 const DOMAIN_KEY_DELETE: &str = include_str!("../src/key/delete.rs");
@@ -17,8 +21,11 @@ const STORAGE_TRANSACTION: &str = include_str!("../src/storage/transaction.rs");
 const STORAGE_TEMP: &str = include_str!("../src/storage/temp.rs");
 const STORAGE_CLEANUP: &str = include_str!("../src/storage/cleanup.rs");
 
+const CLI_MAIN: &str = include_str!("../../dexios/src/main.rs");
+const CLI_SUBCOMMANDS: &str = include_str!("../../dexios/src/subcommands.rs");
 const CLI_ENCRYPT: &str = include_str!("../../dexios/src/subcommands/encrypt.rs");
 const CLI_DECRYPT: &str = include_str!("../../dexios/src/subcommands/decrypt.rs");
+const CLI_PACK: &str = include_str!("../../dexios/src/subcommands/pack.rs");
 const CLI_UNPACK: &str = include_str!("../../dexios/src/subcommands/unpack.rs");
 const CLI_HEADER: &str = include_str!("../../dexios/src/subcommands/header.rs");
 const CLI_KEY: &str = include_str!("../../dexios/src/subcommands/key.rs");
@@ -834,6 +841,40 @@ fn formatted_error_control_flow_rejects_string_inspection() {
 }
 
 #[test]
+fn phase04_source_gates_cover_all_migration_boundary_sources() {
+    let domain_paths: Vec<_> = domain_workflow_sources()
+        .iter()
+        .map(|source| source.path)
+        .collect();
+    for expected in [
+        "dexios-domain/src/workflow_error.rs",
+        "dexios-domain/src/pack.rs",
+        "dexios-domain/src/header.rs",
+        "dexios-domain/src/key.rs",
+    ] {
+        assert!(
+            domain_paths.contains(&expected),
+            "workflow_public_api must scan {expected}"
+        );
+    }
+
+    let cli_paths: Vec<_> = cli_adapter_sources()
+        .iter()
+        .map(|source| source.path)
+        .collect();
+    for expected in [
+        "dexios/src/main.rs",
+        "dexios/src/subcommands.rs",
+        "dexios/src/subcommands/pack.rs",
+    ] {
+        assert!(
+            cli_paths.contains(&expected),
+            "workflow_public_api must scan {expected}"
+        );
+    }
+}
+
+#[test]
 fn test_support_escape_hatches_are_scoped_and_named_by_d05() {
     let bad_manifest = r#"
         [features]
@@ -861,6 +902,14 @@ fn test_support_escape_hatches_are_scoped_and_named_by_d05() {
         Source {
             path: "synthetic/unscoped-test-support.rs",
             text: "pub mod test_support;",
+        },
+        Source {
+            path: "synthetic/env-failure-hook.rs",
+            text: r#"let _ = std::env::var("DEXIOS_FAIL_POINT");"#,
+        },
+        Source {
+            path: "synthetic/cli-failure-hook.rs",
+            text: r#"Command::new("dexios").arg(Arg::new("fail-on").long("fail-on"));"#,
         },
     ];
 

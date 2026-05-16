@@ -49,6 +49,8 @@ const DEXIOS_CORE_LIB_RS: &str = include_str!("../../dexios-core/src/lib.rs");
 const DEXIOS_CORE_KEY_RS: &str = include_str!("../../dexios-core/src/key.rs");
 const DEXIOS_CORE_PROTECTED_RS: &str = include_str!("../../dexios-core/src/protected.rs");
 const DEXIOS_DOMAIN_LIB_RS: &str = include_str!("../../dexios-domain/src/lib.rs");
+const DEXIOS_DOMAIN_WORKFLOW_ERROR_RS: &str =
+    include_str!("../../dexios-domain/src/workflow_error.rs");
 const DEXIOS_DOMAIN_PACK_RS: &str = include_str!("../../dexios-domain/src/pack.rs");
 const DEXIOS_DOMAIN_UNPACK_RS: &str = include_str!("../../dexios-domain/src/unpack.rs");
 const DEXIOS_DOMAIN_STORAGE_RS: &str = include_str!("../../dexios-domain/src/storage/mod.rs");
@@ -58,7 +60,10 @@ const DEXIOS_DOMAIN_TRANSACTION_RS: &str =
 const DEXIOS_DOMAIN_TEMP_RS: &str = include_str!("../../dexios-domain/src/storage/temp.rs");
 const DEXIOS_DOMAIN_WORKFLOW_ERROR_TESTS: &str =
     include_str!("../../dexios-domain/tests/workflow_errors.rs");
+const DEXIOS_DOMAIN_WORKFLOW_PUBLIC_API_TESTS: &str =
+    include_str!("../../dexios-domain/tests/workflow_public_api.rs");
 const DEXIOS_WORKFLOW_ERROR_CLI_TESTS: &str = include_str!("workflow_error_cli.rs");
+const DEXIOS_SUBCOMMANDS_RS: &str = include_str!("../src/subcommands.rs");
 const AUDIT_WORKFLOW: &str = include_str!("../../.github/workflows/audit.yml");
 const DOCS_WORKFLOW: &str = include_str!("../../.github/workflows/docs.yml");
 const DEXIOS_TESTS_WORKFLOW: &str = include_str!("../../.github/workflows/dexios-tests.yml");
@@ -1633,6 +1638,79 @@ fn phase10_domain_api_and_error_cleanup_is_source_gated() {
             DEXIOS_WORKFLOW_ERROR_CLI_TESTS,
             required,
         );
+    }
+}
+
+#[test]
+fn phase04_failure_hook_and_workflow_boundary_gates_are_source_gated() {
+    for required in [
+        "WorkflowErrorClass::CleanupFailure",
+        "WorkflowErrorClass::ResourcePressure",
+        "classify_cleanup_failure",
+        "classify_cleanup_result",
+    ] {
+        assert_contains(
+            "dexios-domain/src/workflow_error.rs",
+            DEXIOS_DOMAIN_WORKFLOW_ERROR_RS,
+            required,
+        );
+    }
+
+    for required in [
+        "source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>",
+        "FailureHooks::none()",
+        "#[cfg(any(test, feature = \"test-support\"))]",
+        "pub fn run_with_failure_hooks",
+        "pub enum HashVerification",
+        "pub struct PostCommitSuccess",
+    ] {
+        assert_contains(
+            "dexios-domain/src/storage/cleanup.rs",
+            DEXIOS_DOMAIN_CLEANUP_RS,
+            required,
+        );
+    }
+
+    for required in [
+        "WorkflowErrorClass::CleanupFailure",
+        "WorkflowErrorClass::ResourcePressure",
+        "eprintln!(\"{error}\")",
+        "CleanupAfterCommitError",
+        "PostCommitSuccess::from_commit_and_hash",
+        "HashVerification::Failed",
+    ] {
+        assert_corpus_contains(
+            "Phase 4 CLI workflow boundary corpus",
+            &[
+                ("dexios/src/main.rs", DEXIOS_MAIN_RS),
+                ("dexios/src/subcommands.rs", DEXIOS_SUBCOMMANDS_RS),
+                (
+                    "dexios/src/subcommands/errors.rs",
+                    DEXIOS_SUBCOMMAND_ERRORS_RS,
+                ),
+            ],
+            required,
+        );
+    }
+
+    for required in [
+        "phase04_source_gates_cover_all_migration_boundary_sources",
+        "DEXIOS_FAIL_POINT",
+        "fail-on",
+        "formatted_error_control_flow_rejects_string_inspection",
+    ] {
+        assert_contains(
+            "dexios-domain/tests/workflow_public_api.rs",
+            DEXIOS_DOMAIN_WORKFLOW_PUBLIC_API_TESTS,
+            required,
+        );
+    }
+
+    for command in [
+        "run cargo test -p dexios-domain --test workflow_public_api --all-features --release",
+        "run cargo test -p dexios --test verification_gate_docs --release",
+    ] {
+        assert_non_comment_line_count("scripts/verify_phase_gate.sh", VERIFY_PHASE_GATE, command, 1);
     }
 }
 
