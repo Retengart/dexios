@@ -56,6 +56,23 @@ fn protected_key(secret: &[u8]) -> Protected<Vec<u8>> {
     Protected::new(secret.to_vec())
 }
 
+fn assert_has_source<E>(error: &E, label: &str)
+where
+    E: std::error::Error + ?Sized,
+{
+    assert!(
+        error.source().is_some(),
+        "{label} must preserve a diagnostic source"
+    );
+}
+
+fn assert_no_source<E>(error: &E, label: &str)
+where
+    E: std::error::Error + ?Sized,
+{
+    assert!(error.source().is_none(), "{label} must remain source-free");
+}
+
 fn encrypted_fixture(test_dir: &TestDir, name: &str) -> PathBuf {
     let plain = test_dir.path().join(format!("{name}.txt"));
     let encrypted = test_dir.path().join(format!("{name}.enc"));
@@ -289,10 +306,64 @@ fn decrypt_final_auth_failure_preserves_final_output_after_staged_plaintext_exis
         error.workflow_class(),
         WorkflowErrorClass::AuthenticationFailure
     );
+    assert_no_source(&error, "final-authentication failure");
     assert_eq!(
         fs::read(&output).unwrap(),
         sentinel.as_slice(),
         "final output decrypt target must remain unchanged until V1FinalAuth exists"
+    );
+}
+
+#[test]
+fn decrypt_open_and_parser_failures_preserve_diagnostic_sources() {
+    let test_dir = TestDir::new("decrypt-source-chain");
+    let encrypted = encrypted_fixture(&test_dir, "open-source");
+    let output = test_dir.path().join("open-source.out");
+    let intent = decrypt::DecryptIntent::new(
+        &encrypted,
+        &output,
+        OverwritePolicy::CreateNew,
+        None::<&Path>,
+        protected_key(CORRECT_PASSWORD),
+        None,
+    )
+    .expect("build decrypt intent before removing input");
+    fs::remove_file(&encrypted).expect("remove validated input");
+
+    let open_error = decrypt::execute(intent).expect_err("removed input must fail open");
+    assert_eq!(open_error.workflow_class(), WorkflowErrorClass::IoFailure);
+    assert_has_source(&open_error, "decrypt open input failure");
+    assert!(
+        !output.exists(),
+        "failed decrypt open must not publish plaintext output"
+    );
+
+    let malformed_input = test_dir.path().join("malformed-source.enc");
+    let mut malformed_bytes = b"DXIO\x00\x01".to_vec();
+    malformed_bytes.extend_from_slice(&CANONICAL_V1_DISCRIMINATOR);
+    malformed_bytes.extend_from_slice(b"short");
+    fs::write(&malformed_input, malformed_bytes).unwrap();
+    let malformed_output = test_dir.path().join("malformed-source.out");
+    let malformed = decrypt::DecryptIntent::new(
+        &malformed_input,
+        &malformed_output,
+        OverwritePolicy::CreateNew,
+        None::<&Path>,
+        protected_key(CORRECT_PASSWORD),
+        None,
+    )
+    .expect("build malformed decrypt intent");
+
+    let malformed_error =
+        decrypt::execute(malformed).expect_err("malformed header must fail parsing");
+    assert_eq!(
+        malformed_error.workflow_class(),
+        WorkflowErrorClass::MalformedFormat
+    );
+    assert_has_source(&malformed_error, "decrypt malformed header parser failure");
+    assert!(
+        !malformed_output.exists(),
+        "malformed decrypt must not publish plaintext output"
     );
 }
 

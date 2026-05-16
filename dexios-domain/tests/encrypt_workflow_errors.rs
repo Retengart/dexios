@@ -69,6 +69,23 @@ fn protected_key() -> Protected<Vec<u8>> {
     Protected::new(b"correct-password".to_vec())
 }
 
+fn assert_has_source<E>(error: &E, label: &str)
+where
+    E: std::error::Error + ?Sized,
+{
+    assert!(
+        error.source().is_some(),
+        "{label} must preserve a diagnostic source"
+    );
+}
+
+fn assert_no_source<E>(error: &E, label: &str)
+where
+    E: std::error::Error + ?Sized,
+{
+    assert!(error.source().is_none(), "{label} must remain source-free");
+}
+
 #[test]
 fn encrypt_intent_rejects_aliased_input_output_before_mutation() {
     let test_dir = TestDir::new("alias-input-output");
@@ -193,4 +210,62 @@ fn encrypt_error_classification_keeps_actionable_failure_classes() {
         transaction_commit.workflow_class(),
         WorkflowErrorClass::TransactionCommitFailure
     );
+}
+
+#[test]
+fn encrypt_open_and_stream_failures_preserve_diagnostic_sources() {
+    let test_dir = TestDir::new("encrypt-source-chain");
+    let plain = test_dir.path().join("plain.txt");
+    let output = test_dir.path().join("plain.enc");
+    fs::write(&plain, b"plain text").unwrap();
+    let intent = encrypt::EncryptIntent::new(
+        &plain,
+        &output,
+        OverwritePolicy::CreateNew,
+        None,
+        protected_key(),
+        Kdf::Blake3Balloon,
+    )
+    .expect("build encrypt intent before removing input");
+    fs::remove_file(&plain).expect("remove validated input");
+
+    let open_error = encrypt::execute(intent).expect_err("removed input must fail open");
+    assert_eq!(open_error.workflow_class(), WorkflowErrorClass::IoFailure);
+    assert_has_source(&open_error, "encrypt open input failure");
+    assert!(
+        !output.exists(),
+        "failed encrypt open must not publish ciphertext output"
+    );
+
+    let directory_input = test_dir.path().join("directory-input");
+    fs::create_dir(&directory_input).unwrap();
+    let directory_output = test_dir.path().join("directory.enc");
+    let intent = encrypt::EncryptIntent::new(
+        &directory_input,
+        &directory_output,
+        OverwritePolicy::CreateNew,
+        None,
+        protected_key(),
+        Kdf::Blake3Balloon,
+    )
+    .expect("build encrypt intent for existing directory input");
+
+    let stream_error = encrypt::execute(intent).expect_err("directory input must fail stream read");
+    assert_eq!(stream_error.workflow_class(), WorkflowErrorClass::IoFailure);
+    assert_has_source(&stream_error, "encrypt stream read failure");
+    assert!(
+        !directory_output.exists(),
+        "failed encrypt stream read must not publish ciphertext output"
+    );
+}
+
+#[test]
+fn encrypt_secret_and_crypto_failures_stay_source_free() {
+    let hash = encrypt::Error::HashKey;
+    assert_eq!(hash.workflow_class(), WorkflowErrorClass::KdfFailure);
+    assert_no_source(&hash, "encrypt KDF failure");
+
+    let master_key = encrypt::Error::EncryptMasterKey;
+    assert_eq!(master_key.workflow_class(), WorkflowErrorClass::Other);
+    assert_no_source(&master_key, "encrypt master-key wrapping failure");
 }
