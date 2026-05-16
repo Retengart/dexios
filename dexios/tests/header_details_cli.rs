@@ -5,7 +5,9 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use core::header::common::{HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN, MAGIC};
+use core::header::common::{
+    CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN, MAGIC,
+};
 use core::header::{ParsedHeader, read_header};
 use domain::encrypt;
 
@@ -73,17 +75,23 @@ fn write_malformed_v1_header_fixture(output_path: &Path) {
     let mut bytes = vec![0u8; HEADER_LEN];
     bytes[0..4].copy_from_slice(b"DXIO");
     bytes[4..6].copy_from_slice(&[0x00, 0x01]);
-    bytes[7] = 1;
+    bytes[6..10].copy_from_slice(&CANONICAL_V1_DISCRIMINATOR);
+    bytes[10] = 0x01;
+    bytes[11] = 0x01;
+    bytes[12] = 0x01;
+    bytes[13] = 0x01;
+    bytes[14] = 0x04;
+    bytes[15] = 1;
 
     let mut file = File::create(output_path).unwrap();
     file.write_all(&bytes).unwrap();
     file.flush().unwrap();
 }
 
-fn mark_keyslot_unsupported_argon2id(path: &Path, index: usize) {
+fn mark_keyslot_unsupported_kdf_profile(path: &Path, index: usize) {
     let mut bytes = fs::read(path).unwrap();
     let offset = HEADER_STATIC_LEN + (index * KEYSLOT_LEN);
-    bytes[offset..offset + 2].copy_from_slice(&[0xDF, 0x02]);
+    bytes[offset + 2] = 0x02;
     fs::write(path, bytes).unwrap();
 }
 
@@ -184,13 +192,13 @@ fn header_details_reports_supported_blake3_balloon_keyslot() {
 }
 
 #[test]
-fn header_details_marks_historical_argon2id_keyslot_unsupported() {
-    let test_dir = TestDir::new("header-details-argon2id");
+fn header_details_rejects_unsupported_kdf_profile() {
+    let test_dir = TestDir::new("header-details-unsupported-kdf");
     let plain = test_dir.path().join("plain.txt");
     let encrypted = test_dir.path().join("plain.enc");
     fs::write(&plain, b"top secret").unwrap();
     encrypt_fixture(&plain, &encrypted);
-    mark_keyslot_unsupported_argon2id(&encrypted, 0);
+    mark_keyslot_unsupported_kdf_profile(&encrypted, 0);
 
     let output = run_cli(
         test_dir.path(),
@@ -198,32 +206,28 @@ fn header_details_marks_historical_argon2id_keyslot_unsupported() {
     );
 
     assert!(
-        output.status.success(),
-        "header details failed for historical KDF tag: stdout={}\nstderr={}",
+        !output.status.success(),
+        "header details unexpectedly accepted unsupported KDF profile: stdout={}\nstderr={}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stdout.contains("Argon2id"),
-        "header details did not identify historical Argon2id tag: stdout={stdout}"
-    );
-    assert!(
-        stdout.contains("unsupported") || stdout.contains("historical"),
-        "historical Argon2id tag was not marked unsupported/historical: stdout={stdout}"
+        stderr.contains("invalid canonical V1 KDF profile"),
+        "header details did not reject unsupported KDF profile: stderr={stderr}"
     );
 }
 
 #[test]
-fn detached_header_current_v1_fixture_keeps_header_separate() {
-    let test_dir = TestDir::new("detached-header-current-v1");
+fn detached_header_canonical_v1_fixture_keeps_header_separate() {
+    let test_dir = TestDir::new("detached-header-canonical-v1");
     let plain = test_dir.path().join("plain.txt");
     let encrypted = test_dir.path().join("plain.enc");
     let header = test_dir.path().join("plain.hdr");
     fs::write(&plain, b"top secret").unwrap();
 
-    // Manifest fixture: detached-header-current-v1.
+    // Manifest fixture: detached-header-canonical-v1.
     let output = run_cli(
         test_dir.path(),
         &[

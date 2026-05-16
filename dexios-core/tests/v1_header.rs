@@ -1,8 +1,8 @@
 use dexios_core::header::common::{
-    CANONICAL_HEADER_LEN, CANONICAL_HEADER_STATIC_LEN, HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN,
-    KeyslotNonce, PayloadNonce, Salt as HeaderSalt,
+    CANONICAL_HEADER_LEN, CANONICAL_HEADER_STATIC_LEN, CANONICAL_V1_DISCRIMINATOR, HEADER_LEN,
+    HEADER_STATIC_LEN, KEYSLOT_LEN, KeyslotNonce, PayloadNonce, Salt as HeaderSalt,
 };
-use dexios_core::header::v1::{EncryptedMasterKey, KeyslotKdf, V1Header, V1Keyslot, V1Keyslots};
+use dexios_core::header::v1::{EncryptedMasterKey, V1Header, V1Keyslot, V1Keyslots};
 use dexios_core::header::{HeaderReadError, ParsedHeader, ParsedV1Payload};
 use dexios_core::kdf::{Kdf, Salt};
 use dexios_core::primitives::{MasterKey, WrappingKey};
@@ -275,16 +275,18 @@ fn serializes_sample_v1_header_to_exact_bytes() {
     let header = support::sample_v1_header();
     let bytes = header.serialize().unwrap();
 
-    let mut expected = vec![
-        0x44, 0x58, 0x49, 0x4F, 0x00, 0x01, 0x01, 0x00, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-        7, 7, 7, 7, 7, 7,
-    ];
-    expected.extend_from_slice(&[0u8; 36]);
-    expected.extend_from_slice(&[0xDF, 0x01]);
-    expected.extend_from_slice(&[11u8; 48]);
-    expected.extend_from_slice(&[13u8; 24]);
+    let mut expected = Vec::with_capacity(CANONICAL_HEADER_LEN);
+    expected.extend_from_slice(b"DXIO");
+    expected.extend_from_slice(&[0x00, 0x01]);
+    expected.extend_from_slice(&CANONICAL_V1_DISCRIMINATOR);
+    expected.extend_from_slice(&[0x01, 0x01, 0x01, 0x01, 0x04, 0x00]);
+    expected.extend_from_slice(&[7u8; 20]);
+    expected.extend_from_slice(&[0u8; 28]);
+    expected.extend_from_slice(&[0x01, 0x00, 0x01, 0x01]);
     expected.extend_from_slice(&[17u8; 16]);
-    expected.extend_from_slice(&[0u8; 22]);
+    expected.extend_from_slice(&[13u8; 24]);
+    expected.extend_from_slice(&[11u8; 48]);
+    expected.extend_from_slice(&[0u8; 20]);
     expected.extend_from_slice(&[0u8; KEYSLOT_LEN * 3]);
 
     assert_eq!(bytes, expected);
@@ -296,9 +298,9 @@ fn fixture_v1_valid_single_keyslot_is_not_canonical_length() {
     let original_bytes = decode_hex_fixture(&path);
 
     let error = dexios_core::header::read_header(&mut std::io::Cursor::new(&original_bytes))
-        .expect_err("old current V1 fixture is shorter than canonical V1");
+        .expect_err("old current V1 fixture is retired from the normal parser");
 
-    assert!(matches!(error, HeaderReadError::TruncatedHeader));
+    assert!(matches!(error, HeaderReadError::RetiredV1Layout));
 }
 
 #[test]
@@ -306,9 +308,9 @@ fn fixture_v1_malformed_reserved_byte_is_rejected() {
     let path = fixture_path("v1_malformed_reserved_byte.hex");
     let bytes = decode_hex_fixture(&path);
     let error = dexios_core::header::read_header(&mut std::io::Cursor::new(&bytes))
-        .expect_err("old current V1 malformed fixture is shorter than canonical V1");
+        .expect_err("old current V1 malformed fixture is retired from the normal parser");
 
-    assert!(matches!(error, HeaderReadError::TruncatedHeader));
+    assert!(matches!(error, HeaderReadError::RetiredV1Layout));
 }
 
 #[test]
@@ -318,8 +320,13 @@ fn creates_exact_aad_bytes_for_sample_v1_header() {
     let mut expected = [0u8; CANONICAL_HEADER_STATIC_LEN];
     expected[0..4].copy_from_slice(b"DXIO");
     expected[4..6].copy_from_slice(&[0x00, 0x01]);
-    expected[6] = 0x01;
-    expected[8..28].copy_from_slice(&[7u8; 20]);
+    expected[6..10].copy_from_slice(&CANONICAL_V1_DISCRIMINATOR);
+    expected[10] = 0x01;
+    expected[11] = 0x01;
+    expected[12] = 0x01;
+    expected[13] = 0x01;
+    expected[14] = 0x04;
+    expected[16..36].copy_from_slice(&[7u8; 20]);
 
     assert_eq!(header.aad().as_bytes(), &expected);
 }
@@ -390,10 +397,10 @@ fn read_header_rejects_truncated_header() {
 #[test]
 fn v1_header_rejects_keyslot_count_above_max() {
     let mut bytes = support::sample_v1_header().serialize().unwrap();
-    bytes[6] = 5;
+    bytes[14] = 5;
 
     let error = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
-        .expect_err("over-capacity keyslot count should fail");
+        .expect_err("invalid canonical slot capacity should fail");
 
     assert!(matches!(
         error,
@@ -404,30 +411,26 @@ fn v1_header_rejects_keyslot_count_above_max() {
 #[test]
 fn v1_header_rejects_invalid_kdf_tag() {
     let mut bytes = support::sample_v1_header().serialize().unwrap();
-    bytes[HEADER_STATIC_LEN..HEADER_STATIC_LEN + 2].copy_from_slice(&[0xAA, 0xBB]);
+    bytes[HEADER_STATIC_LEN + 2] = 0xAA;
 
     let error = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
-        .expect_err("invalid KDF tag should fail");
+        .expect_err("invalid KDF profile should fail");
 
     assert!(matches!(
         error,
-        dexios_core::header::HeaderReadError::InvalidKeyslotTag([0xAA, 0xBB])
+        dexios_core::header::HeaderReadError::InvalidKdfProfile(0xAA)
     ));
 }
 
 #[test]
-fn v1_header_preserves_historical_argon2id_tag_as_unsupported() {
+fn v1_header_rejects_historical_argon2id_profile_as_unsupported_metadata() {
     let mut bytes = support::sample_v1_header().serialize().unwrap();
-    bytes[HEADER_STATIC_LEN..HEADER_STATIC_LEN + 2].copy_from_slice(&[0xDF, 0x02]);
+    bytes[HEADER_STATIC_LEN + 2] = 0x02;
 
-    let parsed = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
-        .expect("historical Argon2id tag remains structurally recognized");
+    let error = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
+        .expect_err("historical Argon2id profile is unsupported canonical metadata");
 
-    let ParsedHeader::V1(parsed) = parsed;
-    assert_eq!(
-        parsed.header().keyslots()[0].kdf(),
-        KeyslotKdf::UnsupportedArgon2id
-    );
+    assert!(matches!(error, HeaderReadError::InvalidKdfProfile(0x02)));
 }
 
 #[test]
@@ -443,15 +446,15 @@ fn new_keyslot_constructor_uses_supported_kdf_selector() {
     let bytes = header.serialize().unwrap();
 
     assert_eq!(
-        &bytes[HEADER_STATIC_LEN..HEADER_STATIC_LEN + 2],
-        &[0xDF, 0x01]
+        &bytes[HEADER_STATIC_LEN..HEADER_STATIC_LEN + 4],
+        &[0x01, 0x00, 0x01, 0x01]
     );
 }
 
 #[test]
 fn v1_header_rejects_active_keyslot_padding() {
     let mut bytes = support::sample_v1_header().serialize().unwrap();
-    bytes[HEADER_STATIC_LEN + 90] = 1;
+    bytes[HEADER_STATIC_LEN + 92] = 1;
 
     let error = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
         .expect_err("active keyslot padding should fail");
@@ -465,7 +468,7 @@ fn v1_header_rejects_active_keyslot_padding() {
 #[test]
 fn v1_header_rejects_inactive_keyslot_bytes() {
     let mut bytes = support::sample_v1_header().serialize().unwrap();
-    bytes[HEADER_STATIC_LEN + KEYSLOT_LEN] = 1;
+    bytes[HEADER_STATIC_LEN + KEYSLOT_LEN + 2] = 1;
 
     let error = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
         .expect_err("non-zero inactive keyslot bytes should fail");
@@ -479,7 +482,7 @@ fn v1_header_rejects_inactive_keyslot_bytes() {
 #[test]
 fn v1_header_rejects_nonzero_reserved_bytes() {
     let mut bytes = support::sample_v1_header().serialize().unwrap();
-    bytes[7] = 1;
+    bytes[15] = 1;
 
     let error = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
         .expect_err("non-zero reserved byte should fail");

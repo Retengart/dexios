@@ -3,7 +3,7 @@ pub mod v1;
 
 pub use common::{HeaderReadError, HeaderWriteError, PayloadNonce, V1HeaderAad};
 
-use common::{HEADER_LEN, MAGIC, VERSION_V1};
+use common::{CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, MAGIC, VERSION_V1};
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
@@ -41,7 +41,7 @@ impl ParsedV1Payload {
 }
 
 pub fn read_header(reader: &mut impl std::io::Read) -> Result<ParsedHeader, HeaderReadError> {
-    let mut prefix = [0u8; 6];
+    let mut prefix = [0u8; 10];
     reader.read_exact(&mut prefix)?;
 
     let format_prefix = [prefix[0], prefix[1]];
@@ -64,9 +64,20 @@ pub fn read_header(reader: &mut impl std::io::Read) -> Result<ParsedHeader, Head
         return Err(HeaderReadError::UnsupportedVersion(version));
     }
 
+    let mut discriminator = [0u8; 4];
+    discriminator.copy_from_slice(&prefix[6..10]);
+    if discriminator != CANONICAL_V1_DISCRIMINATOR {
+        if discriminator[0] == b'C' {
+            return Err(HeaderReadError::InvalidCanonicalDiscriminator(
+                discriminator,
+            ));
+        }
+        return Err(HeaderReadError::RetiredV1Layout);
+    }
+
     let mut bytes = [0u8; HEADER_LEN];
-    bytes[..6].copy_from_slice(&prefix);
-    reader.read_exact(&mut bytes[6..])?;
+    bytes[..10].copy_from_slice(&prefix);
+    reader.read_exact(&mut bytes[10..])?;
 
     let header = v1::V1Header::deserialize_bytes(bytes)?;
     let aad = header.aad();
