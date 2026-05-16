@@ -6,12 +6,18 @@ use std::path::PathBuf;
 use core::header::common::HeaderReadError;
 use dexios_domain::archive::{ArchiveLimitError, ArchiveLimitKind};
 use dexios_domain::storage;
+use dexios_domain::storage::cleanup::{CleanupFailure, CleanupResult, CleanupTarget};
 use dexios_domain::storage::identity::{IdentityError, PathRole};
 use dexios_domain::storage::transaction::{
     CommittedArtifact, PartialCommitReceipt, TransactionError,
 };
 use dexios_domain::workflow_error::WorkflowErrorClass;
 use dexios_domain::{decrypt, encrypt, header, key, pack, unpack};
+
+const DOMAIN_WORKFLOW_ERROR_SOURCE: &str = include_str!("../src/workflow_error.rs");
+const DOMAIN_PACK_SOURCE: &str = include_str!("../src/pack.rs");
+const DOMAIN_UNPACK_SOURCE: &str = include_str!("../src/unpack.rs");
+const CLI_ERROR_MAPPER_SOURCE: &str = include_str!("../../dexios/src/subcommands/errors.rs");
 
 fn path(name: &str) -> PathBuf {
     PathBuf::from(name)
@@ -86,6 +92,8 @@ fn workflow_error_class_lists_required_phase5_categories() {
         WorkflowErrorClass::IoFailure,
         WorkflowErrorClass::OverwriteDenied,
         WorkflowErrorClass::TransactionCommitFailure,
+        WorkflowErrorClass::CleanupFailure,
+        WorkflowErrorClass::ResourcePressure,
         WorkflowErrorClass::UnsupportedWorkflow,
         WorkflowErrorClass::IncorrectKey,
     ];
@@ -207,18 +215,24 @@ fn resource_pressure_helpers_detect_storage_full_source_chains() {
     assert!(transaction_error.is_resource_pressure());
 
     let pack_error = pack::Error::Transaction(transaction_error);
-    assert_eq!(pack_error.workflow_class(), WorkflowErrorClass::IoFailure);
+    assert_eq!(
+        pack_error.workflow_class(),
+        WorkflowErrorClass::ResourcePressure
+    );
     assert!(pack_error.is_resource_pressure());
 
     let pack_temp_error = pack::Error::WriteDataWithSource(storage_full());
     assert_eq!(
         pack_temp_error.workflow_class(),
-        WorkflowErrorClass::IoFailure
+        WorkflowErrorClass::ResourcePressure
     );
     assert!(pack_temp_error.is_resource_pressure());
 
     let unpack_error = unpack::Error::Storage(storage::Error::CreateFileWithSource(storage_full()));
-    assert_eq!(unpack_error.workflow_class(), WorkflowErrorClass::IoFailure);
+    assert_eq!(
+        unpack_error.workflow_class(),
+        WorkflowErrorClass::ResourcePressure
+    );
     assert!(unpack_error.is_resource_pressure());
 
     let unpack_commit_error = unpack::Error::Transaction(TransactionError::Persist {
@@ -227,9 +241,57 @@ fn resource_pressure_helpers_detect_storage_full_source_chains() {
     });
     assert_eq!(
         unpack_commit_error.workflow_class(),
-        WorkflowErrorClass::TransactionCommitFailure
+        WorkflowErrorClass::ResourcePressure
     );
     assert!(unpack_commit_error.is_resource_pressure());
+}
+
+#[test]
+fn cleanup_failures_have_typed_workflow_classification() {
+    let failure = CleanupFailure {
+        target: CleanupTarget::file(path("source.txt")),
+        error: io::ErrorKind::PermissionDenied,
+    };
+    let result = CleanupResult {
+        deleted: Vec::new(),
+        failures: vec![failure],
+    };
+
+    assert_eq!(
+        dexios_domain::workflow_error::classify_cleanup_failure(&result.failures[0]),
+        WorkflowErrorClass::CleanupFailure
+    );
+    assert_eq!(
+        dexios_domain::workflow_error::classify_cleanup_result(&result),
+        WorkflowErrorClass::CleanupFailure
+    );
+}
+
+#[test]
+fn workflow_and_cli_classification_do_not_use_formatted_error_substrings() {
+    let sources = [
+        ("workflow_error.rs", DOMAIN_WORKFLOW_ERROR_SOURCE),
+        ("pack.rs", DOMAIN_PACK_SOURCE),
+        ("unpack.rs", DOMAIN_UNPACK_SOURCE),
+        ("subcommands/errors.rs", CLI_ERROR_MAPPER_SOURCE),
+    ];
+    let forbidden = [
+        ".to_string().contains(",
+        "format!(\"{",
+        "format!(\"{err",
+        "format!(\"{error",
+        ".contains(error.to_string",
+        ".contains(err.to_string",
+    ];
+
+    for (path, source) in sources {
+        for pattern in forbidden {
+            assert!(
+                !source.contains(pattern),
+                "{path} must not classify workflow errors via formatted-error substring pattern {pattern:?}"
+            );
+        }
+    }
 }
 
 #[test]
