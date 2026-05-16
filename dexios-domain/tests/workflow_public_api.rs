@@ -518,9 +518,21 @@ fn cli_raw_request_constructor_violations(source: Source<'_>) -> Vec<String> {
 
 fn formatted_error_control_flow_violations(source: Source<'_>) -> Vec<String> {
     let mut violations = Vec::new();
-    let mut formatted_error_bindings = Vec::new();
+    let mut formatted_error_bindings: Vec<(String, usize)> = Vec::new();
+    let mut test_context = TestContext::new(source.path);
+    let mut brace_depth = 0usize;
 
     for (index, line) in source.text.lines().enumerate() {
+        let trimmed = line.trim_start();
+        test_context.update_before_line(trimmed);
+        formatted_error_bindings.retain(|(_, depth)| *depth <= brace_depth);
+
+        if test_context.is_test_only() {
+            test_context.update_after_line(trimmed);
+            brace_depth = apply_brace_delta(brace_depth, trimmed);
+            continue;
+        }
+
         let compact = line.split_whitespace().collect::<String>();
         let inspects_formatted_error = compact.contains(".to_string().contains(")
             || (compact.contains("format!(") && compact.contains(").contains("))
@@ -539,10 +551,10 @@ fn formatted_error_control_flow_violations(source: Source<'_>) -> Vec<String> {
         }
 
         if let Some(binding) = formatted_error_binding_name(&compact) {
-            formatted_error_bindings.push(binding);
+            formatted_error_bindings.push((binding, brace_depth));
         }
 
-        for binding in &formatted_error_bindings {
+        for (binding, _) in &formatted_error_bindings {
             if compact.contains(&format!("{binding}.contains(")) {
                 violations.push(violation(
                     source.path,
@@ -551,6 +563,9 @@ fn formatted_error_control_flow_violations(source: Source<'_>) -> Vec<String> {
                 ));
             }
         }
+
+        test_context.update_after_line(trimmed);
+        brace_depth = apply_brace_delta(brace_depth, trimmed);
     }
 
     violations
@@ -735,6 +750,15 @@ fn brace_delta(line: &str) -> isize {
     let opens = line.chars().filter(|ch| *ch == '{').count() as isize;
     let closes = line.chars().filter(|ch| *ch == '}').count() as isize;
     opens - closes
+}
+
+fn apply_brace_delta(depth: usize, line: &str) -> usize {
+    let delta = brace_delta(line);
+    if delta.is_negative() {
+        depth.saturating_sub(delta.unsigned_abs())
+    } else {
+        depth.saturating_add(delta as usize)
+    }
 }
 
 fn declaration_name(trimmed: &str) -> Option<&str> {
@@ -955,6 +979,45 @@ fn formatted_error_control_flow_rejects_string_inspection() {
         assert!(
             assert_no_formatted_error_control_flow(&[source]).is_err(),
             "formatted-error control-flow gate must reject {}",
+            source.path
+        );
+    }
+
+    let allowed_sources = [
+        Source {
+            path: "synthetic/unrelated-rebinding.rs",
+            text: r#"
+                fn render_error(error: WorkflowError) -> String {
+                    let rendered = error.to_string();
+                    rendered
+                }
+
+                fn classify_message(message: &str) -> bool {
+                    let rendered = message.trim();
+                    rendered.contains("unsupported")
+                }
+            "#,
+        },
+        Source {
+            path: "synthetic/cfg-test-message-assertion.rs",
+            text: r#"
+                #[cfg(test)]
+                mod tests {
+                    #[test]
+                    fn reports_unsupported_error() {
+                        let error = build_error();
+                        let rendered = error.to_string();
+                        assert!(rendered.contains("unsupported"));
+                    }
+                }
+            "#,
+        },
+    ];
+
+    for source in allowed_sources {
+        assert!(
+            assert_no_formatted_error_control_flow(&[source]).is_ok(),
+            "formatted-error control-flow gate must allow {}",
             source.path
         );
     }
