@@ -4,7 +4,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use super::test_support::{FailureHooks, FailurePoint};
+use super::test_support::{FailureError, FailureHooks, FailurePoint};
 use super::transaction::CleanupAuthorizedReceipt;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -91,7 +91,7 @@ impl CleanupTarget {
 pub struct CleanupFailure {
     pub target: CleanupTarget,
     pub error: io::ErrorKind,
-    source: Option<io::Error>,
+    source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
 }
 
 impl CleanupFailure {
@@ -109,7 +109,15 @@ impl CleanupFailure {
         Self {
             target,
             error,
-            source: Some(source),
+            source: Some(Box::new(source)),
+        }
+    }
+
+    fn from_failure_hook(target: CleanupTarget, source: FailureError) -> Self {
+        Self {
+            target,
+            error: io::ErrorKind::Other,
+            source: Some(Box::new(source)),
         }
     }
 }
@@ -139,7 +147,7 @@ impl std::error::Error for CleanupFailure {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         self.source
             .as_ref()
-            .map(|source| source as &(dyn std::error::Error + 'static))
+            .map(|source| source.as_ref() as &(dyn std::error::Error + 'static))
     }
 }
 
@@ -195,19 +203,20 @@ impl CleanupReceipt {
         let mut injected_cleanup_failure = false;
 
         for target in self.targets.iter().cloned() {
-            let delete_result = if !injected_cleanup_failure {
+            if !injected_cleanup_failure {
                 match hooks.check(FailurePoint::Cleanup) {
-                    Ok(()) => delete_target(&target),
+                    Ok(()) => {}
                     Err(source) => {
                         injected_cleanup_failure = true;
-                        Err(io::Error::other(source))
+                        result
+                            .failures
+                            .push(CleanupFailure::from_failure_hook(target, source));
+                        continue;
                     }
                 }
-            } else {
-                delete_target(&target)
-            };
+            }
 
-            match delete_result {
+            match delete_target(&target) {
                 Ok(()) => result.deleted.push(target),
                 Err(error) => result
                     .failures

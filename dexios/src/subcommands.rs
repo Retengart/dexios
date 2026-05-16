@@ -1,5 +1,7 @@
 use anyhow::Result;
 use clap::ArgMatches;
+use std::fmt;
+use std::io;
 use std::path::Path;
 
 // this is called from main.rs
@@ -12,7 +14,8 @@ use crate::global::{
     states::{HashMode, Key, KeyParams},
 };
 use domain::storage::cleanup::{
-    CleanupReceipt, CleanupResult, HashVerification, PostCommitSuccess,
+    CleanupFailure, CleanupGateError, CleanupReceipt, CleanupResult, HashVerification,
+    PostCommitSuccess,
 };
 use domain::storage::transaction::CommitReceipt;
 
@@ -38,36 +41,74 @@ pub fn cleanup_after_commit(
     paths: &[String],
     commit_receipt: &CommitReceipt,
     hash_verification: HashVerification,
-) -> Result<()> {
+) -> std::result::Result<(), CleanupAfterCommitError> {
     // Central ordinary delete-after-success cleanup gate.
     // Source gate: cleanup is blocked after partial commit.
     // Source gate: HashVerification::Failed means requested hash did not succeed.
     // Source gate: changed cleanup identity blocks cleanup.
     // CleanupReceipt::from_paths records cleanup target identity before deletion.
     let cleanup_receipt =
-        CleanupReceipt::from_paths(paths.iter().map(|path| Path::new(path.as_str())))?;
-    let proof = PostCommitSuccess::from_commit_and_hash(commit_receipt, hash_verification)?;
+        CleanupReceipt::from_paths(paths.iter().map(|path| Path::new(path.as_str())))
+            .map_err(CleanupAfterCommitError::CaptureTargets)?;
+    let proof = PostCommitSuccess::from_commit_and_hash(commit_receipt, hash_verification)
+        .map_err(CleanupAfterCommitError::Gate)?;
     let result = cleanup_receipt.run(&proof);
     ensure_cleanup_succeeded(result)
 }
 
-fn ensure_cleanup_succeeded(result: CleanupResult) -> Result<()> {
+fn ensure_cleanup_succeeded(
+    result: CleanupResult,
+) -> std::result::Result<(), CleanupAfterCommitError> {
     if result.is_success() {
         return Ok(());
     }
 
-    let failures = result
-        .failures
-        .iter()
-        .map(|failure| format!("{} ({:?})", failure.target.path.display(), failure.error))
-        .collect::<Vec<_>>()
-        .join(", ");
+    // Source gate: typed cleanup evidence stays attached for maintainer diagnostics.
+    if !result.failures.is_empty() {
+        return Err(CleanupAfterCommitError::CleanupFailed(result));
+    }
 
-    Err(anyhow::anyhow!(
-        "cleanup failed after output commit; committed outputs were not rolled back; deleted {} target(s), failed to delete: {}",
-        result.deleted.len(),
-        failures
-    ))
+    Ok(())
+}
+
+#[derive(Debug)]
+pub enum CleanupAfterCommitError {
+    CaptureTargets(io::Error),
+    Gate(CleanupGateError),
+    CleanupFailed(CleanupResult),
+}
+
+impl fmt::Display for CleanupAfterCommitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::CaptureTargets(_) => {
+                f.write_str("Unable to prepare delete-after-success cleanup")
+            }
+            Self::Gate(CleanupGateError::CommitNotAuthorized) => {
+                f.write_str("Output commit was not cleanup-authorized; source was not deleted")
+            }
+            Self::Gate(CleanupGateError::HashNotVerified) => {
+                f.write_str("Requested hash did not succeed; source was not deleted")
+            }
+            Self::CleanupFailed(_) => {
+                f.write_str("Cleanup failed after output commit; committed outputs remain in place")
+            }
+        }
+    }
+}
+
+impl std::error::Error for CleanupAfterCommitError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::CaptureTargets(error) => Some(error),
+            Self::Gate(error) => Some(error),
+            Self::CleanupFailed(result) => result
+                .failures
+                .iter()
+                .next()
+                .map(|failure: &CleanupFailure| failure as &(dyn std::error::Error + 'static)),
+        }
+    }
 }
 
 pub fn encrypt(sub_matches: &ArgMatches) -> Result<()> {

@@ -245,15 +245,11 @@ fn cleanup_receipt_reports_partial_failure() {
     assert_eq!(result.failures.len(), 1);
     assert_eq!(result.failures[0].target.path, injected_failure);
     assert_eq!(result.failures[0].error, io::ErrorKind::Other);
-    let source = result.failures[0]
-        .source()
-        .and_then(|source| source.downcast_ref::<io::Error>())
-        .expect("injected cleanup failure must preserve owned io::Error source");
-    assert_eq!(source.kind(), io::ErrorKind::Other);
-    let hook_source = source
+    let hook_source = result.failures[0]
         .source()
         .and_then(|source| source.downcast_ref::<FailureError>())
         .expect("cleanup failure source must retain the typed failure hook");
+    assert_eq!(result.failures[0].error, io::ErrorKind::Other);
     assert_eq!(hook_source.point(), FailurePoint::Cleanup);
     assert!(injected_failure.exists());
     assert!(!deleted.exists());
