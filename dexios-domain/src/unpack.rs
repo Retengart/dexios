@@ -22,7 +22,7 @@ use crate::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
 };
 use crate::storage::transaction::{
-    CommitReceipt, LinkedOutputTransaction, StagedWriteError, TransactionError,
+    CommitReceipt, CommittedArtifact, LinkedOutputTransaction, StagedWriteError, TransactionError,
 };
 use crate::storage::{self, Storage};
 use crate::workflow_error::{
@@ -204,7 +204,7 @@ struct ExtractionEntity {
 }
 
 enum ExtractionKind {
-    Directory,
+    Directory(ResolvedTarget),
     File(ResolvedTarget),
 }
 
@@ -336,9 +336,12 @@ where
         .finish()
         .map_err(decrypt::map_stream_error)
         .map_err(Error::Decrypt)?;
-    revalidate_file_targets(&stor, &output_dir, &entities)?;
-    create_selected_directories_after_final_auth(&stor, &entities)?;
-    transaction.commit_all().map_err(Error::Transaction)
+    revalidate_extraction_targets(&stor, &output_dir, &entities)?;
+    let directory_artifacts =
+        create_selected_directories_after_final_auth(&stor, &output_dir, &entities)?;
+    let mut receipt = transaction.commit_all().map_err(Error::Transaction)?;
+    receipt.artifacts.extend(directory_artifacts);
+    Ok(receipt)
 }
 
 fn stage_manifest_extraction<R: Read>(
@@ -468,7 +471,11 @@ fn prepare_manifest_extraction_entities(
             .map_err(map_storage_path_error)?;
 
         let kind = if archive_entry_kind == ArchiveEntryKind::Directory {
-            ExtractionKind::Directory
+            let overwrite_policy = overwrite_policy_for_extracted_directory(&full_path)?;
+            let target = identity_graph
+                .add_output(&full_path, PathRole::Output, overwrite_policy)
+                .map_err(map_identity_error)?;
+            ExtractionKind::Directory(target)
         } else {
             let overwrite_policy = overwrite_policy_for_extracted_file(&full_path)?;
             let target = identity_graph
@@ -571,32 +578,43 @@ fn drain_trailing_plaintext_to_final_auth<R: Read>(reader: &mut R) -> Result<(),
 
 fn create_selected_directories_after_final_auth(
     stor: &storage::FileStorage,
+    output_dir: &Path,
     entities: &[ExtractionEntity],
-) -> Result<(), Error> {
+) -> Result<Vec<CommittedArtifact>, Error> {
+    let mut artifacts = Vec::new();
     for entity in entities
         .iter()
-        .filter(|entity| matches!(entity.kind, ExtractionKind::Directory))
+        .filter(|entity| matches!(entity.kind, ExtractionKind::Directory(_)))
     {
-        stor.create_dir_all(&entity.full_path)
-            .map_err(Error::Storage)?;
+        let ExtractionKind::Directory(target) = &entity.kind else {
+            unreachable!();
+        };
+        stor.revalidate_unpack_directory_target(output_dir, &entity.relative_path, target)
+            .map_err(map_storage_path_error)?;
+        stor.create_unpack_dir_all(output_dir, &entity.relative_path)
+            .map_err(map_storage_path_error)?;
+        artifacts.push(CommittedArtifact {
+            role: target.role(),
+            path: entity.full_path.clone(),
+        });
     }
-    Ok(())
+    Ok(artifacts)
 }
 
-fn revalidate_file_targets(
+fn revalidate_extraction_targets(
     stor: &storage::FileStorage,
     output_dir: &Path,
     entities: &[ExtractionEntity],
 ) -> Result<(), Error> {
-    for entity in entities
-        .iter()
-        .filter(|entity| matches!(entity.kind, ExtractionKind::File(_)))
-    {
-        let ExtractionKind::File(target) = &entity.kind else {
-            unreachable!();
-        };
-        stor.revalidate_unpack_target(output_dir, &entity.relative_path, target)
-            .map_err(map_storage_path_error)?;
+    for entity in entities {
+        match &entity.kind {
+            ExtractionKind::Directory(target) => stor
+                .revalidate_unpack_directory_target(output_dir, &entity.relative_path, target)
+                .map_err(map_storage_path_error)?,
+            ExtractionKind::File(target) => stor
+                .revalidate_unpack_target(output_dir, &entity.relative_path, target)
+                .map_err(map_storage_path_error)?,
+        }
     }
     Ok(())
 }
@@ -680,6 +698,18 @@ fn overwrite_policy_for_extracted_file(path: &Path) -> Result<OverwritePolicy, E
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.is_dir() => Err(Error::UnsafeOutputPath(path.to_path_buf())),
         Ok(_) => Ok(OverwritePolicy::ReplaceAtCommit),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(OverwritePolicy::CreateNew),
+        Err(_) => Err(Error::Storage(storage::Error::FileAccess)),
+    }
+}
+
+fn overwrite_policy_for_extracted_directory(path: &Path) -> Result<OverwritePolicy, Error> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() || metadata.is_file() => {
+            Err(Error::UnsafeOutputPath(path.to_path_buf()))
+        }
+        Ok(metadata) if metadata.is_dir() => Ok(OverwritePolicy::ReplaceAtCommit),
+        Ok(_) => Err(Error::UnsafeOutputPath(path.to_path_buf())),
         Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(OverwritePolicy::CreateNew),
         Err(_) => Err(Error::Storage(storage::Error::FileAccess)),
     }

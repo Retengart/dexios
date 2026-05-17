@@ -348,6 +348,21 @@ fn should_unpack_archive_without_explicit_directory_entries() {
 }
 
 #[test]
+fn unpack_directory_only_archive_returns_directory_commit_receipt() {
+    let test_dir = TestDir::new("unpack-directory-only");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+
+    write_manifest_archive_with_entries(&encrypted_archive, &[("empty-dir/", b"")]);
+
+    let receipt = unpack_archive(&encrypted_archive, &output_dir, None).unwrap();
+
+    assert!(output_dir.join("empty-dir").is_dir());
+    assert_eq!(receipt.artifacts.len(), 1);
+    assert_eq!(receipt.artifacts[0].path, output_dir.join("empty-dir"));
+}
+
+#[test]
 fn should_unpack_exact_block_manifest_payload() {
     let test_dir = TestDir::new("unpack-exact-block");
     let encrypted_archive = test_dir.path().join("archive.enc");
@@ -859,6 +874,39 @@ fn unpack_revalidation_failure_does_not_create_selected_directory_entries() {
         "selected directory entries must not become visible before final revalidation"
     );
     assert!(!outside_dir.join("secret.txt").exists());
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn unpack_revalidates_directory_entry_prefix_created_after_validation() {
+    let test_dir = TestDir::new("unpack-toctou-dir-entry");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let outside_dir = test_dir.path().join("outside");
+    let output_dir = test_dir.path().join("out");
+
+    fs::create_dir_all(&outside_dir).unwrap();
+    write_manifest_archive_with_entries(&encrypted_archive, &[("payload/created/", b"")]);
+
+    let result = unpack_archive(
+        &encrypted_archive,
+        &output_dir,
+        Some(Box::new({
+            let output_dir = output_dir.clone();
+            let outside_dir = outside_dir.clone();
+            move |path| {
+                if path.ends_with("payload/created") {
+                    symlink_dir(&outside_dir, &output_dir.join("payload"));
+                }
+                Ok(true)
+            }
+        })),
+    );
+
+    assert!(
+        matches!(result, Err(unpack::Error::UnsafeOutputPath(_))),
+        "expected unsafe output path error, got {result:?}"
+    );
+    assert!(!outside_dir.join("created").exists());
 }
 
 #[cfg(unix)]

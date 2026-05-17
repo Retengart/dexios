@@ -405,6 +405,26 @@ fn unpack_cli_delete_input_removes_archive_after_success() {
 }
 
 #[test]
+fn unpack_cli_delete_input_accepts_directory_only_archive() {
+    let test_dir = TestDir::new("unpack-cli-delete-input-directory-only");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+
+    write_manifest_archive_with_entries(&encrypted_archive, &[("empty-dir/", b"")]);
+
+    let output = run_unpack_with_args(&encrypted_archive, &output_dir, &["--delete-input"]);
+
+    assert!(
+        output.status.success(),
+        "unpack failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!encrypted_archive.exists());
+    assert!(output_dir.join("empty-dir").is_dir());
+}
+
+#[test]
 fn unpack_cli_delete_input_rejects_archive_entry_that_aliases_input() {
     let test_dir = TestDir::new("unpack-cli-delete-input-alias");
     let encrypted_archive = test_dir.path().join("archive.enc");

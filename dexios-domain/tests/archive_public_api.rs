@@ -237,7 +237,7 @@ fn phase05_manifest_archive_normal_path_stays_private_and_zip_free() {
         "stage_manifest_extraction",
         "drain_trailing_plaintext_to_final_auth",
         ".finish()",
-        "revalidate_file_targets",
+        "revalidate_extraction_targets",
         "create_selected_directories_after_final_auth",
         "commit_all",
     ] {

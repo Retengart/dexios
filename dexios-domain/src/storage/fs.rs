@@ -42,6 +42,67 @@ impl FileStorage {
             Err(err) => Err(Error::FileAccessWithSource(err)),
         }
     }
+
+    pub fn revalidate_unpack_directory_target<P: AsRef<Path>>(
+        &self,
+        root: P,
+        relative: &Path,
+        expected_target: &ResolvedTarget,
+    ) -> Result<(), Error> {
+        let root = root.as_ref();
+        reject_mutated_root(root)?;
+
+        let full_path = self.resolve_unpack_path(root, relative)?;
+        if full_path != expected_target.original_path() {
+            return Err(Error::UnsafePath(full_path));
+        }
+
+        match std_fs::symlink_metadata(&full_path) {
+            Ok(meta) if meta.file_type().is_symlink() || meta.is_file() => {
+                Err(Error::UnsafePath(full_path))
+            }
+            Ok(meta) if meta.is_dir() && expected_target.exists() => Ok(()),
+            Ok(meta) if meta.is_dir() => Err(Error::UnsafePath(full_path)),
+            Ok(_) => Err(Error::UnsafePath(full_path)),
+            Err(err) if err.kind() == io::ErrorKind::NotFound && expected_target.exists() => {
+                Err(Error::UnsafePath(full_path))
+            }
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(Error::FileAccessWithSource(err)),
+        }
+    }
+
+    pub fn create_unpack_dir_all<P: AsRef<Path>>(
+        &self,
+        root: P,
+        relative: &Path,
+    ) -> Result<PathBuf, Error> {
+        let root = root.as_ref();
+        reject_mutated_root(root)?;
+
+        let full_path = root.join(relative);
+        let mut current = root.to_path_buf();
+        for component in relative.components() {
+            let Component::Normal(part) = component else {
+                return Err(Error::UnsafePath(full_path));
+            };
+            current.push(part);
+
+            match std_fs::symlink_metadata(&current) {
+                Ok(meta) if meta.file_type().is_symlink() || meta.is_file() => {
+                    return Err(Error::UnsafePath(full_path));
+                }
+                Ok(meta) if meta.is_dir() => {}
+                Ok(_) => return Err(Error::UnsafePath(full_path)),
+                Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                    std_fs::create_dir(&current).map_err(Error::CreateDirWithSource)?;
+                }
+                Err(err) => return Err(Error::FileAccessWithSource(err)),
+            }
+        }
+
+        Ok(full_path)
+    }
 }
 
 fn reject_mutated_root(root: &Path) -> Result<(), Error> {
