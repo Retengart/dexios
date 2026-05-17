@@ -1,13 +1,13 @@
-//! This contains the logic for decrypting a packed zip archive and extracting
+//! This contains the logic for decrypting a packed manifest archive and extracting
 //! each file to the target directory.
 //!
 //! This is known as "unpacking" within Dexios.
 //!
-//! unpack-side plaintext temporary ZIP exposure remains: unpack keeps the
-//! seekable temp ZIP so metadata validation, duplicate detection, selection,
-//! path revalidation, and staged commits all happen before final outputs commit.
+//! unpack-side plaintext exposure is scoped to selected staged file bodies:
+//! manifest metadata is validated before selected body staging, and final
+//! outputs commit only after stream final authentication.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs;
@@ -21,97 +21,26 @@ use crate::decrypt;
 use crate::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
 };
-use crate::storage::transaction::{CommitReceipt, LinkedOutputTransaction, TransactionError};
+use crate::storage::transaction::{
+    CommitReceipt, LinkedOutputTransaction, StagedWriteError, TransactionError,
+};
 use crate::storage::{self, Storage};
 use crate::workflow_error::{
     WorkflowErrorClass, classify_identity_error, classify_storage_error, classify_transaction_error,
 };
+use core::payload::{
+    ArchiveBodyFrameHeader, ArchiveManifest, ManifestEntryKind, PayloadError,
+    PayloadFramingProfile, PayloadKind,
+};
 use core::protected::Protected;
-
-trait TempArtifactLike {
-    fn with_reader<T, E>(&self, f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>) -> Result<T, E>;
-    fn with_writer<T, E>(&self, f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>)
-    -> Result<T, E>;
-}
-
-trait ReadSeek: Read + Seek {}
-impl<T: Read + Seek + ?Sized> ReadSeek for T {}
-
-trait WriteSeek: Write + Seek {}
-impl<T: Write + Seek + ?Sized> WriteSeek for T {}
-
-impl TempArtifactLike for storage::TempArtifact {
-    fn with_reader<T, E>(&self, f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>) -> Result<T, E> {
-        storage::TempArtifact::with_reader(self, |file| f(file))
-    }
-
-    fn with_writer<T, E>(
-        &self,
-        f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>,
-    ) -> Result<T, E> {
-        storage::TempArtifact::with_writer(self, |file| f(file))
-    }
-}
-
-struct ResourcePressureTrackingWriter<'a> {
-    inner: &'a mut dyn WriteSeek,
-    resource_pressure: &'a Cell<Option<io::ErrorKind>>,
-}
-
-impl<'a> ResourcePressureTrackingWriter<'a> {
-    fn new(
-        inner: &'a mut dyn WriteSeek,
-        resource_pressure: &'a Cell<Option<io::ErrorKind>>,
-    ) -> Self {
-        Self {
-            inner,
-            resource_pressure,
-        }
-    }
-
-    fn record(&self, error: &io::Error) {
-        if let Some(kind) = storage::resource_pressure_kind_in_error_chain(error) {
-            self.resource_pressure.set(Some(kind));
-        }
-    }
-}
-
-impl Write for ResourcePressureTrackingWriter<'_> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let result = self.inner.write(buf);
-        if let Err(error) = &result {
-            self.record(error);
-        }
-        result
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        let result = self.inner.flush();
-        if let Err(error) = &result {
-            self.record(error);
-        }
-        result
-    }
-}
-
-impl Seek for ResourcePressureTrackingWriter<'_> {
-    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
-        let result = self.inner.seek(pos);
-        if let Err(error) = &result {
-            self.record(error);
-        }
-        result
-    }
-}
+use core::stream::{StreamError, V1PayloadDecryptingReader};
 
 #[derive(Debug)]
 pub enum Error {
     WriteData,
     WriteDataWithSource(io::Error),
     OpenArchive,
-    OpenArchiveWithSource(zip::result::ZipError),
-    OpenArchivedFile,
-    OpenArchivedFileWithSource(zip::result::ZipError),
+    ArchivePayload(PayloadError),
     ResetCursorPosition,
     ResetCursorPositionWithSource(io::Error),
     UnsafeOutputPath(PathBuf),
@@ -128,12 +57,8 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::WriteData | Error::WriteDataWithSource(_) => f.write_str("Unable to write data"),
-            Error::OpenArchive | Error::OpenArchiveWithSource(_) => {
-                f.write_str("Unable to open archive")
-            }
-            Error::OpenArchivedFile | Error::OpenArchivedFileWithSource(_) => {
-                f.write_str("Unable to open archived file")
-            }
+            Error::OpenArchive => f.write_str("Unable to open archive"),
+            Error::ArchivePayload(inner) => write!(f, "Archive payload error: {inner}"),
             Error::ResetCursorPosition | Error::ResetCursorPositionWithSource(_) => {
                 f.write_str("Unable to reset cursor position")
             }
@@ -163,9 +88,7 @@ impl std::error::Error for Error {
             Self::WriteDataWithSource(error) | Self::ResetCursorPositionWithSource(error) => {
                 Some(error)
             }
-            Self::OpenArchiveWithSource(error) | Self::OpenArchivedFileWithSource(error) => {
-                Some(error)
-            }
+            Self::ArchivePayload(error) => Some(error),
             Self::ArchiveLimit(error) => Some(error),
             Self::Storage(error) => Some(error),
             Self::PathIdentity(error) => Some(error),
@@ -185,10 +108,8 @@ impl Error {
             Self::UnsafeOutputPath(_) | Self::DuplicateOutputPath(_) | Self::ArchiveLimit(_) => {
                 WorkflowErrorClass::UnsafePath
             }
-            Self::OpenArchive
-            | Self::OpenArchiveWithSource(_)
-            | Self::OpenArchivedFile
-            | Self::OpenArchivedFileWithSource(_) => WorkflowErrorClass::MalformedFormat,
+            Self::ArchivePayload(error) => classify_payload_error(error),
+            Self::OpenArchive => WorkflowErrorClass::MalformedFormat,
             Self::Decrypt(error) => error.workflow_class(),
             Self::Storage(error) => classify_storage_error(error),
             Self::PathIdentity(error) => classify_identity_error(error),
@@ -203,6 +124,16 @@ impl Error {
     #[must_use]
     pub fn is_resource_pressure(&self) -> bool {
         storage::error_chain_contains_resource_pressure(self)
+    }
+}
+
+fn classify_payload_error(error: &PayloadError) -> WorkflowErrorClass {
+    match error {
+        PayloadError::ManifestEntryCountLimitExceeded { .. }
+        | PayloadError::NormalizedPathLimitExceeded { .. } => WorkflowErrorClass::UnsafePath,
+        PayloadError::BodyFrameLimitExceeded { .. } => WorkflowErrorClass::ResourcePressure,
+        PayloadError::Io(_) => WorkflowErrorClass::IoFailure,
+        _ => WorkflowErrorClass::MalformedFormat,
     }
 }
 
@@ -360,85 +291,140 @@ pub fn execute(intent: UnpackIntent) -> Result<CommitReceipt, Error> {
     };
 
     let stor = Arc::new(storage::FileStorage);
-    execute_with_temp_artifact(stor, req, || {
-        storage::FileStorage
-            .create_temp_artifact()
-            .map_err(Error::Storage)
-    })
+    execute_manifest_archive(stor, req)
 }
 
-fn execute_with_temp_artifact<R, T, F>(
+fn execute_manifest_archive<R>(
     stor: Arc<storage::FileStorage>,
     req: HandleRequest<'_, R>,
-    temp_factory: F,
 ) -> Result<CommitReceipt, Error>
 where
     R: Read + Seek,
-    T: TempArtifactLike,
-    F: FnOnce() -> Result<T, Error>,
 {
-    // 1. Create temp zip archive.
-    let tmp_file = temp_factory()?;
+    let payload =
+        decrypt::read_v1_payload(req.header_reader, req.reader).map_err(Error::Decrypt)?;
+    if let Some(on_decrypted_header) = req.on_decrypted_header {
+        on_decrypted_header(payload.header());
+    }
+    if payload.header().payload_kind() != PayloadKind::ManifestArchive
+        || payload.header().payload_framing() != PayloadFramingProfile::ManifestFirst
+    {
+        return Err(Error::OpenArchive);
+    }
 
-    // 2. Decrypt input file to temp zip archive.
-    tmp_file.with_writer(|tmp_writer| {
-        tmp_writer.rewind().map_err(|source| {
-            Error::Storage(storage::Error::OpenFileWithSource {
-                mode: storage::FileMode::Write,
-                source,
-            })
-        })?;
-        let resource_pressure = Cell::new(None);
-        let writer = RefCell::new(ResourcePressureTrackingWriter::new(
-            tmp_writer,
-            &resource_pressure,
-        ));
-        let result = decrypt::execute_handles(decrypt::HandleRequest {
-            header_reader: req.header_reader,
-            reader: req.reader,
-            writer: &writer,
-            raw_key: req.raw_key,
-            on_decrypted_header: req.on_decrypted_header,
-        });
-        match (result, resource_pressure.get()) {
-            (Ok(()), _) => Ok(()),
-            (Err(decrypt::Error::WriteData), Some(kind)) => {
-                Err(Error::WriteDataWithSource(io::Error::from(kind)))
-            }
-            (Err(error), _) => Err(Error::Decrypt(error)),
-        }
-    })?;
+    let master_key = decrypt::decrypt_master_key(&payload, req.raw_key).map_err(Error::Decrypt)?;
+    let mut encrypted_reader = req.reader.borrow_mut();
+    let mut plaintext_reader =
+        V1PayloadDecryptingReader::new(master_key, &payload, &mut *encrypted_reader)
+            .map_err(decrypt::map_stream_error)
+            .map_err(Error::Decrypt)?;
 
-    // 3. Recover files from temp archive.
-    let receipt = tmp_file.with_reader(|tmp_reader| {
-        tmp_reader
-            .rewind()
-            .map_err(Error::ResetCursorPositionWithSource)?;
-        let mut archive = zip::ZipArchive::new(tmp_reader).map_err(Error::OpenArchiveWithSource)?;
+    let (output_dir, entities, transaction) = stage_manifest_extraction(
+        &stor,
+        &mut plaintext_reader,
+        &req.output_dir_path,
+        &req.input_path,
+        req.detached_header_path.as_deref(),
+        req.on_zip_file.as_ref(),
+    )?;
+    if let Some(on_archive_info) = req.on_archive_info {
+        on_archive_info(entities.len());
+    }
 
-        let (output_dir, entities) = prepare_extraction_entities(
-            &stor,
-            &mut archive,
-            &req.output_dir_path,
-            &req.input_path,
-            req.detached_header_path.as_deref(),
-            req.on_zip_file.as_ref(),
-        )?;
-        if let Some(on_archive_info) = req.on_archive_info {
-            on_archive_info(entities.len());
-        }
-
-        stage_and_commit_extraction(&stor, &mut archive, &output_dir, &entities)
-    })?;
-
-    drop(tmp_file);
-
-    Ok(receipt)
+    drain_trailing_plaintext_to_final_auth(&mut plaintext_reader)?;
+    let _final_auth = plaintext_reader
+        .finish()
+        .map_err(decrypt::map_stream_error)
+        .map_err(Error::Decrypt)?;
+    revalidate_file_targets(&stor, &output_dir, &entities)?;
+    create_selected_directories_after_final_auth(&stor, &entities)?;
+    transaction.commit_all().map_err(Error::Transaction)
 }
 
-fn prepare_extraction_entities<R: Read + Seek>(
+fn stage_manifest_extraction<R: Read>(
     stor: &storage::FileStorage,
-    archive: &mut zip::ZipArchive<R>,
+    plaintext_reader: &mut R,
+    output_dir_path: &Path,
+    input_path: &Path,
+    detached_header_path: Option<&Path>,
+    on_zip_file: Option<&OnZipFileFn>,
+) -> Result<(PathBuf, Vec<ExtractionEntity>, LinkedOutputTransaction), Error> {
+    let manifest = ArchiveManifest::read_from(plaintext_reader).map_err(map_payload_error)?;
+    let (output_dir, entities) = prepare_manifest_extraction_entities(
+        stor,
+        &manifest,
+        output_dir_path,
+        input_path,
+        detached_header_path,
+        on_zip_file,
+    )?;
+    let mut file_entities_by_index = BTreeMap::new();
+    for entity in &entities {
+        if matches!(entity.kind, ExtractionKind::File(_)) {
+            file_entities_by_index.insert(entity.archive_index, entity);
+        }
+    }
+
+    let mut transaction = LinkedOutputTransaction::new();
+    for (index, entry) in manifest.entries().iter().enumerate() {
+        if entry.kind() != ManifestEntryKind::File {
+            continue;
+        }
+        let expected_index = u32::try_from(index).expect("manifest entry count is bounded");
+        let frame_header = read_manifest_body_frame_header(plaintext_reader, expected_index)?;
+        if frame_header.entry_index() != expected_index {
+            return Err(Error::ArchivePayload(
+                PayloadError::BodyFrameOrderMismatch {
+                    expected: expected_index,
+                    actual: frame_header.entry_index(),
+                },
+            ));
+        }
+        let expected_body_len = entry
+            .body_len()
+            .expect("file manifest entry has body length");
+        if frame_header.body_len() != expected_body_len {
+            return Err(Error::ArchivePayload(
+                PayloadError::BodyFrameLengthMismatch {
+                    expected: expected_body_len,
+                    actual: frame_header.body_len(),
+                },
+            ));
+        }
+
+        if let Some(entity) = file_entities_by_index.get(&index) {
+            stage_manifest_file_body(
+                stor,
+                plaintext_reader,
+                &output_dir,
+                &mut transaction,
+                entity,
+                frame_header.body_len(),
+            )?;
+        } else {
+            drain_manifest_body(plaintext_reader, frame_header.body_len())?;
+        }
+    }
+
+    Ok((output_dir, entities, transaction))
+}
+
+fn read_manifest_body_frame_header<R: Read>(
+    plaintext_reader: &mut R,
+    expected_index: u32,
+) -> Result<ArchiveBodyFrameHeader, Error> {
+    match ArchiveBodyFrameHeader::read_from(plaintext_reader) {
+        Ok(header) => Ok(header),
+        Err(PayloadError::TruncatedManifest) => Err(Error::ArchivePayload(
+            PayloadError::MissingBodyFrame(expected_index),
+        )),
+        Err(error) => Err(map_payload_error(error)),
+    }
+}
+
+fn prepare_manifest_extraction_entities(
+    stor: &storage::FileStorage,
+    manifest: &ArchiveManifest,
     output_dir_path: &Path,
     input_path: &Path,
     detached_header_path: Option<&Path>,
@@ -449,7 +435,7 @@ fn prepare_extraction_entities<R: Read + Seek>(
         .map_err(map_storage_path_error)?;
     let limits = ArchiveLimits::default();
     limits
-        .check_entry_count(archive.len())
+        .check_entry_count(manifest.entries().len())
         .map_err(Error::ArchiveLimit)?;
     let mut identity_graph = PathIdentityGraph::new();
     identity_graph
@@ -466,19 +452,14 @@ fn prepare_extraction_entities<R: Read + Seek>(
 
     let mut scanned_entries = Vec::new();
     let mut archive_paths = ArchivePathTree::default();
-    for i in 0..archive.len() {
-        let zip_file = archive.by_index(i).map_err(Error::OpenArchiveWithSource)?;
-        let Some(path) = zip_file.enclosed_name() else {
-            return Err(Error::UnsafeOutputPath(PathBuf::from(zip_file.name())));
-        };
-        let path = normalize_archive_path(&path)?;
+    for (index, entry) in manifest.entries().iter().enumerate() {
+        let path = manifest_entry_path(entry.normalized_path())?;
         limits
             .check_normalized_path(&path)
             .map_err(Error::ArchiveLimit)?;
-        let archive_entry_kind = if zip_file.is_dir() {
-            ArchiveEntryKind::Directory
-        } else {
-            ArchiveEntryKind::File
+        let archive_entry_kind = match entry.kind() {
+            ManifestEntryKind::Directory => ArchiveEntryKind::Directory,
+            ManifestEntryKind::File => ArchiveEntryKind::File,
         };
         archive_paths.insert(&path, archive_entry_kind)?;
 
@@ -499,7 +480,7 @@ fn prepare_extraction_entities<R: Read + Seek>(
         scanned_entries.push(ScannedEntry {
             full_path,
             relative_path: path,
-            archive_index: i,
+            archive_index: index,
             kind,
         });
     }
@@ -524,36 +505,13 @@ fn prepare_extraction_entities<R: Read + Seek>(
     Ok((output_dir, entities))
 }
 
-fn stage_and_commit_extraction<R: Read + Seek>(
+fn stage_manifest_file_body<R: Read>(
     stor: &storage::FileStorage,
-    archive: &mut zip::ZipArchive<R>,
-    output_dir: &Path,
-    entities: &[ExtractionEntity],
-) -> Result<CommitReceipt, Error> {
-    entities
-        .iter()
-        .filter(|entity| matches!(entity.kind, ExtractionKind::Directory))
-        .map(|entity| entity.full_path.as_path())
-        .chain(std::iter::once(output_dir))
-        .try_for_each(|full_path| stor.create_dir_all(full_path).map_err(Error::Storage))?;
-
-    let mut transaction = LinkedOutputTransaction::new();
-    for entity in entities
-        .iter()
-        .filter(|entity| matches!(entity.kind, ExtractionKind::File(_)))
-    {
-        stage_extracted_file(stor, archive, output_dir, &mut transaction, entity)?;
-    }
-
-    transaction.commit_all().map_err(Error::Transaction)
-}
-
-fn stage_extracted_file<R: Read + Seek>(
-    stor: &storage::FileStorage,
-    archive: &mut zip::ZipArchive<R>,
+    plaintext_reader: &mut R,
     output_dir: &Path,
     transaction: &mut LinkedOutputTransaction,
     entity: &ExtractionEntity,
+    body_len: u64,
 ) -> Result<(), Error> {
     let ExtractionKind::File(target) = &entity.kind else {
         unreachable!();
@@ -573,12 +531,149 @@ fn stage_extracted_file<R: Read + Seek>(
                 source: None,
             })
         })?;
-    let mut zip_file = archive
-        .by_index(entity.archive_index)
-        .map_err(Error::OpenArchivedFileWithSource)?;
+
     staged
-        .with_writer(|writer| io::copy(&mut zip_file, writer).map(|_| ()))
-        .map_err(Error::Transaction)
+        .with_writer_result(|writer| copy_manifest_body(plaintext_reader, writer, body_len))
+        .map_err(map_manifest_staged_write_error)
+}
+
+fn copy_manifest_body<R: Read, W: Write>(
+    reader: &mut R,
+    writer: &mut W,
+    body_len: u64,
+) -> Result<(), io::Error> {
+    let copied = io::copy(&mut reader.take(body_len), writer)?;
+    if copied != body_len {
+        return Err(io::Error::other(PayloadError::TruncatedManifest));
+    }
+    Ok(())
+}
+
+fn drain_manifest_body<R: Read>(reader: &mut R, body_len: u64) -> Result<(), Error> {
+    let copied =
+        io::copy(&mut reader.take(body_len), &mut io::sink()).map_err(map_body_io_error)?;
+    if copied != body_len {
+        return Err(Error::ArchivePayload(PayloadError::TruncatedManifest));
+    }
+    Ok(())
+}
+
+fn drain_trailing_plaintext_to_final_auth<R: Read>(reader: &mut R) -> Result<(), Error> {
+    let trailing = io::copy(reader, &mut io::sink()).map_err(map_body_io_error)?;
+    if trailing == 0 {
+        return Ok(());
+    }
+
+    Err(Error::ArchivePayload(PayloadError::TrailingBytes(
+        usize::try_from(trailing).unwrap_or(usize::MAX),
+    )))
+}
+
+fn create_selected_directories_after_final_auth(
+    stor: &storage::FileStorage,
+    entities: &[ExtractionEntity],
+) -> Result<(), Error> {
+    for entity in entities
+        .iter()
+        .filter(|entity| matches!(entity.kind, ExtractionKind::Directory))
+    {
+        stor.create_dir_all(&entity.full_path)
+            .map_err(Error::Storage)?;
+    }
+    Ok(())
+}
+
+fn revalidate_file_targets(
+    stor: &storage::FileStorage,
+    output_dir: &Path,
+    entities: &[ExtractionEntity],
+) -> Result<(), Error> {
+    for entity in entities
+        .iter()
+        .filter(|entity| matches!(entity.kind, ExtractionKind::File(_)))
+    {
+        let ExtractionKind::File(target) = &entity.kind else {
+            unreachable!();
+        };
+        stor.revalidate_unpack_target(output_dir, &entity.relative_path, target)
+            .map_err(map_storage_path_error)?;
+    }
+    Ok(())
+}
+
+fn manifest_entry_path(normalized_path: &[u8]) -> Result<PathBuf, Error> {
+    let normalized = std::str::from_utf8(normalized_path)
+        .map_err(|_| Error::UnsafeOutputPath(PathBuf::from("<non-utf8>")))?;
+    let mut path = PathBuf::new();
+    for part in normalized.split('/') {
+        if part.is_empty() || part == "." || part == ".." {
+            return Err(Error::UnsafeOutputPath(PathBuf::from(normalized)));
+        }
+        path.push(part);
+    }
+    normalize_archive_path(&path)
+}
+
+fn map_payload_error(error: PayloadError) -> Error {
+    match error {
+        PayloadError::Io(error) => map_body_io_error(error),
+        error => Error::ArchivePayload(error),
+    }
+}
+
+fn map_manifest_staged_write_error(error: StagedWriteError<io::Error>) -> Error {
+    match error {
+        StagedWriteError::Operation(error) => map_body_io_error(error),
+        StagedWriteError::Transaction(error) => map_manifest_staged_transaction_error(error),
+    }
+}
+
+fn map_manifest_staged_transaction_error(error: TransactionError) -> Error {
+    match error {
+        TransactionError::Write {
+            path,
+            source: Some(source),
+        } => {
+            let kind = source.kind();
+            let message = source.to_string();
+            match source.into_inner() {
+                Some(inner) => map_staged_inner_error(path, inner),
+                None => Error::Transaction(TransactionError::Write {
+                    path,
+                    source: Some(io::Error::new(kind, message)),
+                }),
+            }
+        }
+        error => Error::Transaction(error),
+    }
+}
+
+fn map_staged_inner_error(path: PathBuf, inner: Box<dyn std::error::Error + Send + Sync>) -> Error {
+    match inner.downcast::<StreamError>() {
+        Ok(stream_error) => Error::Decrypt(decrypt::map_stream_error(*stream_error)),
+        Err(inner) => match inner.downcast::<PayloadError>() {
+            Ok(payload_error) => Error::ArchivePayload(*payload_error),
+            Err(inner) => Error::Transaction(TransactionError::Write {
+                path,
+                source: Some(io::Error::other(inner)),
+            }),
+        },
+    }
+}
+
+fn map_body_io_error(error: io::Error) -> Error {
+    let kind = error.kind();
+    let message = error.to_string();
+    match error.into_inner() {
+        Some(inner) => match inner.downcast::<StreamError>() {
+            Ok(stream_error) => Error::Decrypt(decrypt::map_stream_error(*stream_error)),
+            Err(inner) => match inner.downcast::<PayloadError>() {
+                Ok(payload_error) => Error::ArchivePayload(*payload_error),
+                Err(inner) => Error::ArchivePayload(PayloadError::Io(io::Error::other(inner))),
+            },
+        },
+        None => Error::ArchivePayload(PayloadError::Io(io::Error::new(kind, message))),
+    }
 }
 
 fn overwrite_policy_for_extracted_file(path: &Path) -> Result<OverwritePolicy, Error> {
@@ -626,263 +721,5 @@ fn map_identity_error(err: IdentityError) -> Error {
     match err {
         IdentityError::UnsafePath(path) => Error::UnsafeOutputPath(path),
         other => Error::PathIdentity(other),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::cell::Cell;
-    use std::fs::File;
-    use std::io::{Cursor, Write};
-    use std::rc::Rc;
-    use std::sync::Arc;
-
-    use core::kdf::Kdf;
-    use core::protected::Protected;
-    use zip::write::SimpleFileOptions;
-
-    use crate::encrypt;
-    use crate::encrypt::tests::PASSWORD;
-    use crate::storage::{FileStorage, Storage};
-
-    struct TestDir {
-        _dir: tempfile::TempDir,
-        path: PathBuf,
-    }
-
-    impl TestDir {
-        fn new(prefix: &str) -> Self {
-            let dir = tempfile::Builder::new()
-                .prefix(&format!("dexios-unpack-{prefix}-"))
-                .tempdir()
-                .unwrap();
-            let path = fs::canonicalize(dir.path()).unwrap();
-            Self { _dir: dir, path }
-        }
-
-        fn path(&self) -> &Path {
-            &self.path
-        }
-    }
-
-    struct DropTrackingTempArtifact {
-        cursor: RefCell<Cursor<Vec<u8>>>,
-        dropped: Rc<Cell<bool>>,
-    }
-
-    impl DropTrackingTempArtifact {
-        fn new(dropped: Rc<Cell<bool>>) -> Self {
-            Self {
-                cursor: RefCell::new(Cursor::new(Vec::new())),
-                dropped,
-            }
-        }
-    }
-
-    impl Drop for DropTrackingTempArtifact {
-        fn drop(&mut self) {
-            self.dropped.set(true);
-        }
-    }
-
-    impl TempArtifactLike for DropTrackingTempArtifact {
-        fn with_reader<T, E>(
-            &self,
-            f: impl FnOnce(&mut dyn ReadSeek) -> Result<T, E>,
-        ) -> Result<T, E> {
-            f(&mut *self.cursor.borrow_mut())
-        }
-
-        fn with_writer<T, E>(
-            &self,
-            f: impl FnOnce(&mut dyn WriteSeek) -> Result<T, E>,
-        ) -> Result<T, E> {
-            f(&mut *self.cursor.borrow_mut())
-        }
-    }
-
-    fn write_zip_with_entries(path: &Path, entries: &[(&str, &[u8])]) {
-        let file = File::create(path).unwrap();
-        let mut zip_writer = zip::ZipWriter::new(file);
-        let options = SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored)
-            .large_file(true)
-            .unix_permissions(0o755);
-
-        for (name, body) in entries {
-            zip_writer.start_file(*name, options).unwrap();
-            zip_writer.write_all(body).unwrap();
-        }
-
-        zip_writer.finish().unwrap();
-    }
-
-    fn write_bar_zip(path: &Path) {
-        write_zip_with_entries(
-            path,
-            &[
-                ("bar/.hello.txt", b"hello"),
-                ("bar/world.txt", b"world"),
-                ("bar/.foo/world.txt", b"world"),
-            ],
-        );
-    }
-
-    fn encrypt_zip(input_path: &Path, output_path: &Path, header_path: Option<&Path>) {
-        let input = RefCell::new(File::open(input_path).unwrap());
-        let output = RefCell::new(File::create(output_path).unwrap());
-        let header = header_path.map(|path| RefCell::new(File::create(path).unwrap()));
-
-        encrypt::execute_handles(encrypt::HandleRequest {
-            reader: &input,
-            writer: &output,
-            header_writer: header.as_ref(),
-            raw_key: Protected::new(PASSWORD.to_vec()),
-            kdf: Kdf::Blake3Balloon,
-        })
-        .unwrap();
-
-        output.borrow_mut().flush().unwrap();
-        if let Some(header) = header {
-            header.borrow_mut().flush().unwrap();
-        }
-    }
-
-    fn assert_text(path: &Path, expected: &str) {
-        assert_eq!(fs::read_to_string(path).unwrap(), expected);
-    }
-
-    #[test]
-    fn unpack_arch_04_d16_temp_cleanup_on_validation_failure_drops_plaintext_temp_artifact() {
-        let test_dir = TestDir::new("temp-cleanup-validation");
-        let plain_zip = test_dir.path().join("plain.zip");
-        let encrypted_archive = test_dir.path().join("archive.enc");
-        let output_dir = test_dir.path().join("out");
-        let dropped = Rc::new(Cell::new(false));
-        let dropped_for_factory = Rc::clone(&dropped);
-
-        write_zip_with_entries(
-            &plain_zip,
-            &[("../escape.txt", b"escape"), ("safe.txt", b"safe")],
-        );
-        encrypt_zip(&plain_zip, &encrypted_archive, None);
-
-        let stor = Arc::new(FileStorage);
-        let archive = stor.read_file(&encrypted_archive).unwrap();
-        let req = HandleRequest {
-            reader: archive.try_reader().unwrap(),
-            header_reader: None,
-            input_path: encrypted_archive,
-            detached_header_path: None,
-            raw_key: Protected::new(PASSWORD.to_vec()),
-            output_dir_path: output_dir.clone(),
-            on_decrypted_header: None,
-            on_archive_info: None,
-            on_zip_file: None,
-        };
-
-        let result = execute_with_temp_artifact(stor, req, || {
-            Ok(DropTrackingTempArtifact::new(dropped_for_factory))
-        });
-
-        assert!(matches!(result, Err(Error::UnsafeOutputPath(_))));
-        assert!(dropped.get(), "plaintext temp artifact should be dropped");
-        assert!(!output_dir.join("safe.txt").exists());
-    }
-
-    #[test]
-    fn should_unpack_encrypted_archive_with_embedded_header() {
-        let test_dir = TestDir::new("embedded");
-        let plain_zip = test_dir.path().join("plain.zip");
-        let encrypted_archive = test_dir.path().join("archive.enc");
-        let output_dir = test_dir.path().join("out");
-
-        write_bar_zip(&plain_zip);
-        encrypt_zip(&plain_zip, &encrypted_archive, None);
-
-        let stor = Arc::new(FileStorage);
-        let archive = stor.read_file(&encrypted_archive).unwrap();
-        let intent = UnpackIntent::new(
-            archive,
-            None,
-            output_dir.clone(),
-            Protected::new(PASSWORD.to_vec()),
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-
-        let receipt = execute(intent).unwrap();
-
-        assert_eq!(receipt.artifacts.len(), 3);
-        assert_text(&output_dir.join("bar/.hello.txt"), "hello");
-        assert_text(&output_dir.join("bar/world.txt"), "world");
-        assert_text(&output_dir.join("bar/.foo/world.txt"), "world");
-    }
-
-    #[test]
-    fn should_unpack_encrypted_archive_with_detached_header() {
-        let test_dir = TestDir::new("detached");
-        let plain_zip = test_dir.path().join("plain.zip");
-        let encrypted_archive = test_dir.path().join("archive-detached.enc");
-        let detached_header = test_dir.path().join("archive.hdr");
-        let output_dir = test_dir.path().join("out-detached");
-
-        write_bar_zip(&plain_zip);
-        encrypt_zip(&plain_zip, &encrypted_archive, Some(&detached_header));
-
-        let stor = Arc::new(FileStorage);
-        let archive = stor.read_file(&encrypted_archive).unwrap();
-        let header = stor.read_file(&detached_header).unwrap();
-        let intent = UnpackIntent::new(
-            archive,
-            Some(header),
-            output_dir.clone(),
-            Protected::new(PASSWORD.to_vec()),
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-
-        let receipt = execute(intent).unwrap();
-
-        assert_eq!(receipt.artifacts.len(), 3);
-        assert_text(&output_dir.join("bar/.hello.txt"), "hello");
-        assert_text(&output_dir.join("bar/world.txt"), "world");
-        assert_text(&output_dir.join("bar/.foo/world.txt"), "world");
-    }
-
-    #[test]
-    fn should_unpack_current_generated_archive_fixture() {
-        let test_dir = TestDir::new("current-fixture");
-        let plain_zip = test_dir.path().join("plain.zip");
-        let encrypted_archive = test_dir.path().join("archive.enc");
-        let output_dir = test_dir.path().join("archive-out");
-
-        write_bar_zip(&plain_zip);
-        encrypt_zip(&plain_zip, &encrypted_archive, None);
-
-        let stor = Arc::new(FileStorage);
-        let archive = stor.read_file(&encrypted_archive).unwrap();
-        let intent = UnpackIntent::new(
-            archive,
-            None,
-            output_dir.clone(),
-            Protected::new(PASSWORD.to_vec()),
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-
-        let receipt = execute(intent).unwrap();
-
-        assert_eq!(receipt.artifacts.len(), 3);
-        assert_text(&output_dir.join("bar/.hello.txt"), "hello");
-        assert_text(&output_dir.join("bar/world.txt"), "world");
-        assert_text(&output_dir.join("bar/.foo/world.txt"), "world");
     }
 }

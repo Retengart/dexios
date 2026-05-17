@@ -182,6 +182,7 @@ impl DecryptIntent {
     }
 }
 
+#[cfg(test)]
 pub(crate) struct HandleRequest<'a, R, W>
 where
     R: Read + Seek,
@@ -194,6 +195,7 @@ where
     pub(crate) on_decrypted_header: Option<OnDecryptedHeaderFn>,
 }
 
+#[cfg(test)]
 pub(crate) fn execute_handles<R, W>(req: HandleRequest<'_, R, W>) -> Result<(), Error>
 where
     R: Read + Seek,
@@ -275,7 +277,7 @@ where
     commit_after_final_auth(transaction, final_auth)
 }
 
-fn read_v1_payload<R>(
+pub(crate) fn read_v1_payload<R>(
     header_reader: Option<&RefCell<R>>,
     reader: &RefCell<R>,
 ) -> Result<ParsedV1Payload, Error>
@@ -311,7 +313,7 @@ where
     }
 }
 
-fn decrypt_master_key(
+pub(crate) fn decrypt_master_key(
     payload: &ParsedV1Payload,
     raw_key: Protected<Vec<u8>>,
 ) -> Result<MasterKey, Error> {
@@ -378,7 +380,7 @@ fn map_decrypt_transaction_error(error: TransactionError) -> Error {
     Error::Transaction(error)
 }
 
-fn map_stream_error(error: StreamError) -> Error {
+pub(crate) fn map_stream_error(error: StreamError) -> Error {
     match error {
         StreamError::InvalidNonceLength(_) => Error::InitializeStreams,
         StreamError::CipherInit => Error::InitializeChiphers,
