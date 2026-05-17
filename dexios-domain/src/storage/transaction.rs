@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::path::PathBuf;
 use std::{fmt, io};
 
@@ -226,6 +227,21 @@ impl LinkedOutputTransaction {
                 source: Some(source),
             }
         })?;
+        self.staged.push(staged);
+        Ok(self.staged.len() - 1)
+    }
+
+    pub fn stage_in(
+        &mut self,
+        target: ResolvedTarget,
+        staging_parent: &Path,
+    ) -> Result<usize, TransactionError> {
+        let path = target.target_path().to_path_buf();
+        let staged = NamedStagedOutput::with_staging_parent(target, staging_parent, self.hooks)
+            .map_err(|source| TransactionError::Write {
+                path,
+                source: Some(source),
+            })?;
         self.staged.push(staged);
         Ok(self.staged.len() - 1)
     }

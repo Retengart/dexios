@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::fs as std_fs;
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::Error;
 use super::identity::{OverwritePolicy, ResolvedTarget};
@@ -53,6 +53,7 @@ impl TempArtifact {
 pub struct NamedStagedOutput {
     target: ResolvedTarget,
     file: Option<tempfile::NamedTempFile>,
+    create_parent_on_persist: bool,
     wrote: bool,
     flushed: bool,
     synced: bool,
@@ -69,6 +70,24 @@ impl NamedStagedOutput {
         Ok(Self {
             target,
             file: Some(file),
+            create_parent_on_persist: false,
+            wrote: false,
+            flushed: false,
+            synced: false,
+            hooks,
+        })
+    }
+
+    pub(super) fn with_staging_parent(
+        target: ResolvedTarget,
+        staging_parent: &Path,
+        hooks: FailureHooks,
+    ) -> io::Result<Self> {
+        let file = tempfile::NamedTempFile::new_in(staging_parent)?;
+        Ok(Self {
+            target,
+            file: Some(file),
+            create_parent_on_persist: true,
             wrote: false,
             flushed: false,
             synced: false,
@@ -214,6 +233,10 @@ impl NamedStagedOutput {
             source: None,
         })?;
 
+        if self.create_parent_on_persist {
+            create_target_parent(&path)?;
+        }
+
         match self.target.overwrite_policy() {
             Some(OverwritePolicy::CreateNew) => file.persist_noclobber(&path),
             Some(OverwritePolicy::ReplaceAtCommit) => file.persist(&path),
@@ -238,4 +261,14 @@ impl NamedStagedOutput {
             }
         }
     }
+}
+
+fn create_target_parent(path: &Path) -> Result<(), TransactionError> {
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    std_fs::create_dir_all(parent).map_err(|source| TransactionError::Persist {
+        path: PathBuf::from(path),
+        source: Some(source),
+    })
 }

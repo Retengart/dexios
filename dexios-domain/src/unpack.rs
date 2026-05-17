@@ -562,15 +562,8 @@ fn stage_extracted_file<R: Read + Seek>(
     stor.revalidate_unpack_target(output_dir, &entity.relative_path, target)
         .map_err(map_storage_path_error)?;
 
-    if let Some(parent_dir) = entity.full_path.parent() {
-        stor.create_dir_all(parent_dir).map_err(Error::Storage)?;
-    }
-
-    stor.revalidate_unpack_target(output_dir, &entity.relative_path, target)
-        .map_err(map_storage_path_error)?;
-
     let transaction_index = transaction
-        .stage(target.clone())
+        .stage_in(target.clone(), output_dir)
         .map_err(Error::Transaction)?;
     let staged = transaction
         .staged_output_mut(transaction_index)

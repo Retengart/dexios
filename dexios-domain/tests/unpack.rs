@@ -574,6 +574,51 @@ fn unpack_revalidation_failure_preserves_existing_outputs() {
     assert!(!outside_dir.join("secret.txt").exists());
 }
 
+#[cfg(any(unix, windows))]
+#[test]
+fn unpack_revalidation_failure_does_not_create_new_nested_output_parent() {
+    let test_dir = TestDir::new("unpack-toctou-no-new-parent");
+    let plain_zip = test_dir.path().join("plain.zip");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let outside_dir = test_dir.path().join("outside");
+    let output_dir = test_dir.path().join("out");
+
+    fs::create_dir_all(&outside_dir).unwrap();
+    write_zip_with_entries(
+        &plain_zip,
+        &[
+            ("safe/nested.txt", b"candidate"),
+            ("payload/secret.txt", b"top secret"),
+        ],
+    );
+    encrypt_archive(&plain_zip, &encrypted_archive);
+
+    let result = unpack_archive(
+        &encrypted_archive,
+        &output_dir,
+        Some(Box::new({
+            let output_dir = output_dir.clone();
+            let outside_dir = outside_dir.clone();
+            move |path| {
+                if path.ends_with("payload/secret.txt") {
+                    symlink_dir(&outside_dir, &output_dir.join("payload"));
+                }
+                Ok(true)
+            }
+        })),
+    );
+
+    assert!(
+        matches!(result, Err(unpack::Error::UnsafeOutputPath(_))),
+        "expected unsafe output path error, got {result:?}"
+    );
+    assert!(
+        !output_dir.join("safe").exists(),
+        "new nested output parent must not become visible before extraction commit"
+    );
+    assert!(!outside_dir.join("secret.txt").exists());
+}
+
 #[cfg(unix)]
 fn symlink_dir(src: &Path, dst: &Path) {
     std::os::unix::fs::symlink(src, dst).unwrap();
