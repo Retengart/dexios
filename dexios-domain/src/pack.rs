@@ -828,15 +828,12 @@ fn map_encrypt_output_resource_pressure(
                 crate::encrypt::Error::EncryptFile
                 | crate::encrypt::Error::WriteHeader
                 | crate::encrypt::Error::ResetCursorPosition,
-            ),
+            )
+            | Error::FinishArchiveWithSource(_)
+            | Error::WriteDataWithSource(_)
+            | Error::ArchivePayload(PayloadError::Io(_)),
             Some(kind),
         ) => Error::WriteDataWithSource(io::Error::from(kind)),
-        (Error::FinishArchiveWithSource(_) | Error::WriteDataWithSource(_), Some(kind)) => {
-            Error::WriteDataWithSource(io::Error::from(kind))
-        }
-        (Error::ArchivePayload(PayloadError::Io(_)), Some(kind)) => {
-            Error::WriteDataWithSource(io::Error::from(kind))
-        }
         _ => error,
     }
 }

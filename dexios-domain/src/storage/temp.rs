@@ -53,11 +53,17 @@ impl TempArtifact {
 pub struct NamedStagedOutput {
     target: ResolvedTarget,
     file: Option<tempfile::NamedTempFile>,
-    create_parent_on_persist: bool,
+    parent_creation: ParentCreation,
     wrote: bool,
     flushed: bool,
     synced: bool,
     hooks: FailureHooks,
+}
+
+#[derive(Clone, Copy)]
+enum ParentCreation {
+    Existing,
+    OnPersist,
 }
 
 impl NamedStagedOutput {
@@ -70,7 +76,7 @@ impl NamedStagedOutput {
         Ok(Self {
             target,
             file: Some(file),
-            create_parent_on_persist: false,
+            parent_creation: ParentCreation::Existing,
             wrote: false,
             flushed: false,
             synced: false,
@@ -87,7 +93,7 @@ impl NamedStagedOutput {
         Ok(Self {
             target,
             file: Some(file),
-            create_parent_on_persist: true,
+            parent_creation: ParentCreation::OnPersist,
             wrote: false,
             flushed: false,
             synced: false,
@@ -233,7 +239,7 @@ impl NamedStagedOutput {
             source: None,
         })?;
 
-        if self.create_parent_on_persist {
+        if matches!(self.parent_creation, ParentCreation::OnPersist) {
             create_target_parent(&path)?;
         }
 
