@@ -165,8 +165,17 @@ fn d03_cli_exposes_no_stored_or_no_compression_selector() {
 #[test]
 fn d02_d04_pack_source_keeps_private_zstd_offline_archive_boundary() {
     assert!(
-        DOMAIN_PACK.contains("zip::CompressionMethod::Zstd"),
-        "D-02 private ZIP writer setup should map the Dexios default policy to Zstd"
+        DOMAIN_PACK.contains("begin_v1_manifest_archive_writer"),
+        "ARCH-01 pack must write through the manifest archive V1 writer"
+    );
+    assert!(
+        DOMAIN_PACK.contains("ArchiveManifest") && DOMAIN_PACK.contains("ArchiveBodyFrameHeader"),
+        "ARCH-01 pack must use Dexios-owned manifest-first payload framing"
+    );
+    assert!(
+        !DOMAIN_PACK.contains("zip::CompressionMethod")
+            && !DOMAIN_PACK.contains("ZipWriter::new_stream"),
+        "ARCH-05 canonical pack must not depend on normal-path ZIP writer setup"
     );
     assert!(
         DOMAIN_PACK.contains("offline") && DOMAIN_PACK.contains("at-rest"),

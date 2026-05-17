@@ -1,5 +1,5 @@
 //! This contains the logic for traversing one or more directories, placing
-//! their files into a zip archive streamed directly through V1 encryption.
+//! their files into a manifest-first archive streamed directly through V1 encryption.
 //!
 //! This is known as "packing" within Dexios.
 //!
@@ -15,11 +15,11 @@ use std::path::{Component, Path, PathBuf};
 use std::rc::Rc;
 
 use core::kdf::Kdf;
+use core::payload::{ArchiveBodyFrameHeader, ArchiveManifest, ManifestEntry, PayloadError};
 use core::primitives::BLOCK_SIZE;
 use core::protected::Protected;
-use zip::write::SimpleFileOptions;
 
-use crate::archive::{ArchiveCompression, ArchiveLimitError, ArchiveLimits, ArchivePolicy};
+use crate::archive::{ArchiveLimitError, ArchiveLimits, ArchivePolicy};
 use crate::storage::Storage;
 use crate::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
@@ -51,6 +51,7 @@ pub enum Error {
     Transaction(TransactionError),
     TransactionWriter,
     ArchiveLimit(ArchiveLimitError),
+    ArchivePayload(PayloadError),
     ArchiveRootName,
     ReadSource,
     ReadSourceWithSource(crate::storage::Error),
@@ -80,6 +81,7 @@ impl std::fmt::Display for Error {
             Error::Transaction(inner) => write!(f, "Pack transaction failed: {inner}"),
             Error::TransactionWriter => f.write_str("Unable to release staged pack writers"),
             Error::ArchiveLimit(inner) => write!(f, "Archive limit error: {inner}"),
+            Error::ArchivePayload(inner) => write!(f, "Archive payload error: {inner}"),
             Error::ArchiveRootName => f.write_str("Unable to derive archive root names"),
             Error::ReadSource | Error::ReadSourceWithSource(_) => {
                 f.write_str("Unable to read pack source")
@@ -104,6 +106,7 @@ impl std::error::Error for Error {
             Self::Encrypt(error) => Some(error),
             Self::PathIdentity(error) => Some(error),
             Self::Transaction(error) => Some(error),
+            Self::ArchivePayload(error) => Some(error),
             Self::ArchiveLimit(error) => Some(error),
             _ => None,
         }
@@ -119,6 +122,7 @@ impl Error {
             Self::Encrypt(error) => error.workflow_class(),
             Self::PathIdentity(error) => classify_identity_error(error),
             Self::ArchiveLimit(_) | Self::ArchiveRootName => WorkflowErrorClass::UnsafePath,
+            Self::ArchivePayload(error) => classify_payload_error(error),
             Self::CreateArchive
             | Self::CreateArchiveWithSource(_)
             | Self::CreateArchiveIoWithSource(_)
@@ -143,6 +147,16 @@ impl Error {
     #[must_use]
     pub fn is_resource_pressure(&self) -> bool {
         crate::storage::error_chain_contains_resource_pressure(self)
+    }
+}
+
+fn classify_payload_error(error: &PayloadError) -> WorkflowErrorClass {
+    match error {
+        PayloadError::ManifestEntryCountLimitExceeded { .. }
+        | PayloadError::NormalizedPathLimitExceeded { .. } => WorkflowErrorClass::UnsafePath,
+        PayloadError::BodyFrameLimitExceeded { .. } => WorkflowErrorClass::ResourcePressure,
+        PayloadError::Io(_) => WorkflowErrorClass::IoFailure,
+        _ => WorkflowErrorClass::MalformedFormat,
     }
 }
 
@@ -347,17 +361,19 @@ where
     SRW: Read + Write + Seek,
     W: Write,
 {
-    // pack-side plaintext temporary ZIP exposure reduced: ZIP bytes stream
-    // directly into the V1 payload writer for the staged output.
+    let _archive_policy = req.archive_policy;
     let mut output_writer = req.writer.borrow_mut();
     let encrypting_writer = match req.header_writer {
-        None => {
-            crate::encrypt::begin_v1_payload_writer(&mut *output_writer, None, req.raw_key, req.kdf)
-                .map_err(Error::Encrypt)?
-        }
+        None => crate::encrypt::begin_v1_manifest_archive_writer(
+            &mut *output_writer,
+            None,
+            req.raw_key,
+            req.kdf,
+        )
+        .map_err(Error::Encrypt)?,
         Some(header_writer) => {
             let mut header_writer = header_writer.borrow_mut();
-            crate::encrypt::begin_v1_payload_writer(
+            crate::encrypt::begin_v1_manifest_archive_writer(
                 &mut *output_writer,
                 Some(&mut *header_writer),
                 req.raw_key,
@@ -366,58 +382,129 @@ where
             .map_err(Error::Encrypt)?
         }
     };
-    let mut zip_writer = zip::ZipWriter::new_stream(encrypting_writer);
 
-    let options = SimpleFileOptions::default()
-        .compression_method(zip_compression_method(req.archive_policy))
-        .large_file(true)
-        .unix_permissions(0o755);
+    let mut manifest_entries = Vec::with_capacity(req.entries.len());
+    for entry in &req.entries {
+        manifest_entries.push(manifest_entry_for(entry)?);
+    }
+    let manifest = ArchiveManifest::new(manifest_entries).map_err(Error::ArchivePayload)?;
+    let mut encrypting_writer = encrypting_writer;
+    manifest
+        .write_to(&mut encrypting_writer)
+        .map_err(Error::ArchivePayload)?;
 
-    req.entries.into_iter().try_for_each(|entry| {
+    for (index, entry) in req.entries.iter().enumerate() {
         if entry.source.is_dir() {
-            zip_writer
-                .add_directory_from_path(&entry.archive_path, options)
-                .map_err(Error::AddDirToArchiveWithSource)?;
-        } else {
-            zip_writer
-                .start_file_from_path(&entry.archive_path, options)
-                .map_err(Error::AddFileToArchiveWithSource)?;
-
-            let mut reader = entry
-                .source
-                .try_reader()
-                .map_err(Error::ReadDataStorageWithSource)?
-                .borrow_mut();
-            let mut buffer = vec![0u8; BLOCK_SIZE].into_boxed_slice();
-            loop {
-                let read_count = reader
-                    .read(&mut buffer)
-                    .map_err(Error::ReadDataWithSource)?;
-                zip_writer
-                    .write_all(&buffer[..read_count])
-                    .map_err(Error::WriteDataWithSource)?;
-                if read_count != BLOCK_SIZE {
-                    break;
-                }
-            }
+            continue;
         }
 
-        Ok::<(), Error>(())
-    })?;
+        let body_len = entry_body_len(entry)?;
+        let frame_header = ArchiveBodyFrameHeader::new(
+            u32::try_from(index).expect("manifest entry count is bounded"),
+            body_len,
+        )
+        .map_err(Error::ArchivePayload)?;
+        frame_header
+            .write_to(&mut encrypting_writer)
+            .map_err(Error::ArchivePayload)?;
+        write_archive_body(entry, body_len, &mut encrypting_writer)?;
+    }
 
-    let encrypting_writer = zip_writer
-        .finish()
-        .map_err(Error::FinishArchiveWithSource)?
-        .into_inner();
     crate::encrypt::finish_v1_payload_writer(encrypting_writer)
         .map(|_| ())
         .map_err(Error::Encrypt)
 }
 
-fn zip_compression_method(policy: ArchivePolicy) -> zip::CompressionMethod {
-    match policy.compression() {
-        ArchiveCompression::Zstd => zip::CompressionMethod::Zstd,
+fn manifest_entry_for<RW>(entry: &ArchiveSourceEntry<RW>) -> Result<ManifestEntry, Error>
+where
+    RW: Read + Write + Seek,
+{
+    let normalized_path = normalized_archive_path_bytes(&entry.archive_path)?;
+    if entry.source.is_dir() {
+        ManifestEntry::directory(normalized_path).map_err(Error::ArchivePayload)
+    } else {
+        let body_len = entry_body_len(entry)?;
+        ManifestEntry::file(normalized_path, body_len).map_err(Error::ArchivePayload)
     }
+}
+
+fn entry_body_len<RW>(entry: &ArchiveSourceEntry<RW>) -> Result<u64, Error>
+where
+    RW: Read + Write + Seek,
+{
+    let mut reader = entry
+        .source
+        .try_reader()
+        .map_err(Error::ReadDataStorageWithSource)?
+        .borrow_mut();
+    let current = reader
+        .stream_position()
+        .map_err(Error::ReadDataWithSource)?;
+    let end = reader
+        .seek(SeekFrom::End(0))
+        .map_err(Error::ReadDataWithSource)?;
+    reader
+        .seek(SeekFrom::Start(current))
+        .map_err(Error::ReadDataWithSource)?;
+    Ok(end)
+}
+
+fn write_archive_body<RW, W>(
+    entry: &ArchiveSourceEntry<RW>,
+    body_len: u64,
+    writer: &mut W,
+) -> Result<(), Error>
+where
+    RW: Read + Write + Seek,
+    W: Write,
+{
+    let mut reader = entry
+        .source
+        .try_reader()
+        .map_err(Error::ReadDataStorageWithSource)?
+        .borrow_mut();
+    reader.rewind().map_err(Error::ReadDataWithSource)?;
+
+    let mut remaining = body_len;
+    let mut buffer = vec![0u8; BLOCK_SIZE].into_boxed_slice();
+    while remaining > 0 {
+        let limit = usize::try_from(remaining.min(BLOCK_SIZE as u64))
+            .expect("bounded read size fits in usize");
+        let read_count = reader
+            .read(&mut buffer[..limit])
+            .map_err(Error::ReadDataWithSource)?;
+        if read_count == 0 {
+            return Err(Error::ReadData);
+        }
+        writer
+            .write_all(&buffer[..read_count])
+            .map_err(Error::WriteDataWithSource)?;
+        remaining -= u64::try_from(read_count).expect("usize read count fits in u64");
+    }
+
+    Ok(())
+}
+
+fn normalized_archive_path_bytes(path: &Path) -> Result<Vec<u8>, Error> {
+    let mut parts = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(part) => {
+                let part = part.to_str().ok_or(Error::ArchiveRootName)?;
+                parts.push(part);
+            }
+            Component::CurDir => {}
+            Component::Prefix(_) | Component::RootDir | Component::ParentDir => {
+                return Err(Error::ArchiveRootName);
+            }
+        }
+    }
+
+    if parts.is_empty() {
+        return Err(Error::ArchiveRootName);
+    }
+
+    Ok(parts.join("/").into_bytes())
 }
 
 fn materialize_archive_entries(
@@ -745,6 +832,9 @@ fn map_encrypt_output_resource_pressure(
             Some(kind),
         ) => Error::WriteDataWithSource(io::Error::from(kind)),
         (Error::FinishArchiveWithSource(_) | Error::WriteDataWithSource(_), Some(kind)) => {
+            Error::WriteDataWithSource(io::Error::from(kind))
+        }
+        (Error::ArchivePayload(PayloadError::Io(_)), Some(kind)) => {
             Error::WriteDataWithSource(io::Error::from(kind))
         }
         _ => error,

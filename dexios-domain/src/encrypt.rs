@@ -25,6 +25,12 @@ use crate::workflow_error::{
     WorkflowErrorClass, classify_identity_error, classify_transaction_error,
 };
 
+#[derive(Clone, Copy)]
+enum V1PayloadProfile {
+    RawFile,
+    ManifestArchive,
+}
+
 #[derive(Debug)]
 pub enum Error {
     OpenInput,
@@ -225,7 +231,7 @@ where
     encrypt_payload(reader, &mut *writer.borrow_mut(), master_key, &header)
 }
 
-pub(crate) fn begin_v1_payload_writer<'a, W>(
+pub(crate) fn begin_v1_manifest_archive_writer<'a, W>(
     writer: &'a mut W,
     header_writer: Option<&mut dyn Write>,
     raw_key: Protected<Vec<u8>>,
@@ -234,7 +240,20 @@ pub(crate) fn begin_v1_payload_writer<'a, W>(
 where
     W: Write,
 {
-    let (header, master_key) = build_v1_encryption_state(raw_key, kdf)?;
+    let (header, master_key) =
+        build_v1_encryption_state_for(raw_key, kdf, V1PayloadProfile::ManifestArchive)?;
+    begin_v1_payload_writer_with_header(writer, header_writer, &header, master_key)
+}
+
+fn begin_v1_payload_writer_with_header<'a, W>(
+    writer: &'a mut W,
+    header_writer: Option<&mut dyn Write>,
+    header: &V1Header,
+    master_key: MasterKey,
+) -> Result<V1PayloadEncryptingWriter<&'a mut W>, Error>
+where
+    W: Write,
+{
     let header_bytes = header.serialize().map_err(|_| Error::WriteHeader)?;
 
     match header_writer {
@@ -246,7 +265,7 @@ where
             .map_err(Error::WriteHeaderWithSource)?,
     }
 
-    V1PayloadEncryptingWriter::new(master_key, &header, writer).map_err(map_stream_error)
+    V1PayloadEncryptingWriter::new(master_key, header, writer).map_err(map_stream_error)
 }
 
 pub(crate) fn finish_v1_payload_writer<W>(writer: V1PayloadEncryptingWriter<W>) -> Result<W, Error>
@@ -326,6 +345,14 @@ fn build_v1_encryption_state(
     raw_key: Protected<Vec<u8>>,
     kdf: Kdf,
 ) -> Result<(V1Header, MasterKey), Error> {
+    build_v1_encryption_state_for(raw_key, kdf, V1PayloadProfile::RawFile)
+}
+
+fn build_v1_encryption_state_for(
+    raw_key: Protected<Vec<u8>>,
+    kdf: Kdf,
+    payload_profile: V1PayloadProfile,
+) -> Result<(V1Header, MasterKey), Error> {
     let salt_bytes = gen_salt();
     let header_salt = Salt::new(salt_bytes);
     let kdf_salt = header_salt.to_kdf_salt();
@@ -339,8 +366,11 @@ fn build_v1_encryption_state(
     let master_key_nonce = gen_keyslot_nonce();
     let payload_nonce = gen_payload_nonce();
     let placeholder_keyslot = V1Keyslot::new(kdf, [0u8; 48], master_key_nonce, header_salt);
-    let placeholder_header = V1Header::new(payload_nonce, V1Keyslots::single(placeholder_keyslot))
-        .map_err(|_| Error::WriteHeader)?;
+    let placeholder_header = build_v1_header_for(
+        payload_profile,
+        payload_nonce,
+        V1Keyslots::single(placeholder_keyslot),
+    )?;
     let slot_wrapping_aad = placeholder_header
         .slot_wrapping_aad(0, &placeholder_keyslot)
         .map_err(|_| Error::WriteHeader)?;
@@ -358,10 +388,23 @@ fn build_v1_encryption_state(
         master_key_nonce,
         header_salt,
     );
-    let header = V1Header::new(payload_nonce, V1Keyslots::single(keyslot))
-        .map_err(|_| Error::WriteHeader)?;
+    let header = build_v1_header_for(payload_profile, payload_nonce, V1Keyslots::single(keyslot))?;
 
     Ok((header, master_key))
+}
+
+fn build_v1_header_for(
+    payload_profile: V1PayloadProfile,
+    payload_nonce: core::header::common::PayloadNonce,
+    keyslots: V1Keyslots,
+) -> Result<V1Header, Error> {
+    match payload_profile {
+        V1PayloadProfile::RawFile => V1Header::new(payload_nonce, keyslots),
+        V1PayloadProfile::ManifestArchive => {
+            V1Header::new_manifest_archive(payload_nonce, keyslots)
+        }
+    }
+    .map_err(|_| Error::WriteHeader)
 }
 
 fn encrypt_payload<R, W>(

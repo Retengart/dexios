@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use core::header::{ParsedHeader, read_header};
 use core::kdf::Kdf;
+use core::payload::{ManifestEntryKind, ManifestFirstPayload, PayloadFramingProfile, PayloadKind};
 use core::protected::Protected;
 use dexios_domain::archive::{ArchiveLimitKind, ArchivePolicy};
 use dexios_domain::decrypt;
@@ -24,16 +25,21 @@ fn create_source_dir(root: &Path) -> PathBuf {
 #[test]
 fn pack_streaming_source_gate_removes_plaintext_temp_zip_creation() {
     assert!(
-        DOMAIN_PACK_RS.contains("zip::ZipWriter::new_stream"),
-        "PERF-03 pack must stream ZIP bytes into the encrypted output writer"
+        DOMAIN_PACK_RS.contains("begin_v1_manifest_archive_writer"),
+        "ARCH-01 pack must use the manifest archive encrypted writer"
     );
     assert!(
-        DOMAIN_PACK_RS.contains("pack-side plaintext temporary ZIP exposure reduced"),
-        "PERF-03 pack source must state the implemented exposure outcome"
+        DOMAIN_PACK_RS.contains("ArchiveManifest")
+            && DOMAIN_PACK_RS.contains("ArchiveBodyFrameHeader"),
+        "ARCH-01 pack must write Dexios manifest-first payload framing"
+    );
+    assert!(
+        !DOMAIN_PACK_RS.contains("zip::ZipWriter::new_stream"),
+        "ARCH-01 pack must not write canonical archives through a normal ZIP writer"
     );
     assert!(
         !DOMAIN_PACK_RS.contains("create_temp_artifact"),
-        "PERF-03 pack execution must not create a plaintext temporary ZIP artifact"
+        "ARCH-01 pack execution must not create a plaintext temporary archive artifact"
     );
 }
 
@@ -68,8 +74,11 @@ fn pack_intent(
     )
 }
 
-fn decrypted_archive_entry_names(archive_path: &Path, header_path: Option<&Path>) -> Vec<String> {
-    let decrypted_path = archive_path.with_extension("zip");
+fn decrypted_manifest_archive(
+    archive_path: &Path,
+    header_path: Option<&Path>,
+) -> ManifestFirstPayload {
+    let decrypted_path = archive_path.with_extension("dxar");
     let decrypt_intent = decrypt::DecryptIntent::new(
         archive_path,
         &decrypted_path,
@@ -82,9 +91,24 @@ fn decrypted_archive_entry_names(archive_path: &Path, header_path: Option<&Path>
     decrypt::execute(decrypt_intent).unwrap();
 
     let bytes = fs::read(decrypted_path).unwrap();
-    let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
-    let mut names = (0..zip.len())
-        .map(|i| zip.by_index(i).unwrap().name().to_string())
+    ManifestFirstPayload::parse(&bytes).unwrap()
+}
+
+fn decrypted_archive_entry_names(archive_path: &Path, header_path: Option<&Path>) -> Vec<String> {
+    let payload = decrypted_manifest_archive(archive_path, header_path);
+    let mut names = payload
+        .manifest()
+        .entries()
+        .iter()
+        .map(|entry| {
+            let mut name = std::str::from_utf8(entry.normalized_path())
+                .unwrap()
+                .to_string();
+            if entry.kind() == ManifestEntryKind::Directory {
+                name.push('/');
+            }
+            name
+        })
         .collect::<Vec<_>>();
     names.sort();
     names
@@ -164,25 +188,16 @@ fn pack_writes_relative_archive_paths() {
     let parsed = read_header(&mut Cursor::new(&output_bytes)).unwrap();
     let ParsedHeader::V1(payload) = parsed;
     assert_eq!(payload.header().keyslots().len(), 1);
+    assert_eq!(
+        payload.header().payload_kind(),
+        PayloadKind::ManifestArchive
+    );
+    assert_eq!(
+        payload.header().payload_framing(),
+        PayloadFramingProfile::ManifestFirst
+    );
 
-    let decrypted_path = root.path().join("archive.zip");
-    let decrypt_intent = decrypt::DecryptIntent::new(
-        &output_path,
-        &decrypted_path,
-        OverwritePolicy::CreateNew,
-        None::<&Path>,
-        Protected::new(PASSWORD.to_vec()),
-        None,
-    )
-    .unwrap();
-    decrypt::execute(decrypt_intent).unwrap();
-
-    let bytes = fs::read(decrypted_path).unwrap();
-    let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
-    let mut names = (0..zip.len())
-        .map(|i| zip.by_index(i).unwrap().name().to_string())
-        .collect::<Vec<_>>();
-    names.sort();
+    let names = decrypted_archive_entry_names(&output_path, None);
 
     assert_eq!(
         names,
