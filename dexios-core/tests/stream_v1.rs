@@ -5,14 +5,14 @@ use dexios_core::header::v1::{V1Header, V1Keyslot, V1Keyslots};
 use dexios_core::header::{ParsedHeader, ParsedV1Payload};
 use dexios_core::kdf::Kdf;
 use dexios_core::payload::{
-    ArchiveBodyFrame, ArchiveManifest, MANIFEST_MAGIC, MAX_BODY_FRAME_LEN,
+    ArchiveBodyFrame, ArchiveBodyFrameHeader, ArchiveManifest, MANIFEST_MAGIC, MAX_BODY_FRAME_LEN,
     MAX_MANIFEST_ENTRY_COUNT, MAX_NORMALIZED_PATH_BYTES, ManifestEntry, ManifestFirstPayload,
     PayloadError, PayloadFramingProfile, PayloadKind,
 };
 use dexios_core::primitives::{BLOCK_SIZE, MasterKey};
 use dexios_core::stream::{
-    StreamError, V1FinalAuth, V1PayloadDecryptor, V1PayloadEncryptingWriter, V1PayloadEncryptor,
-    V1PayloadStream,
+    StreamError, V1FinalAuth, V1PayloadDecryptingReader, V1PayloadDecryptor,
+    V1PayloadEncryptingWriter, V1PayloadEncryptor, V1PayloadStream,
 };
 
 const STREAM_TAG_LEN: usize = 16;
@@ -257,6 +257,99 @@ fn v1_decrypt_file_returns_v1_final_auth_receipt() {
 }
 
 #[test]
+fn decrypting_reader_returns_final_auth_only_after_authenticated_eof() {
+    let header = support::sample_v1_header();
+    let payload = support::parsed_payload_for(&header);
+    let plaintext = plaintext_spanning_normal_chunks();
+    let ciphertext = flatten_chunks(&encrypt_chunks(&header, &plaintext));
+
+    let mut reader =
+        V1PayloadDecryptingReader::new(support::master_key(), &payload, Cursor::new(ciphertext))
+            .expect("create decrypting reader");
+    let mut prefix = [0u8; 31];
+    reader
+        .read_exact(&mut prefix)
+        .expect("read plaintext prefix");
+
+    let early_finish = reader
+        .finish()
+        .expect_err("final auth before EOF must fail");
+    assert!(matches!(early_finish, StreamError::MissingFinalBlock));
+}
+
+#[test]
+fn decrypting_reader_roundtrips_to_same_plaintext_as_file_api() {
+    let header = support::sample_v1_header();
+    let payload = support::parsed_payload_for(&header);
+    let plaintext = plaintext_spanning_normal_chunks();
+    let ciphertext = flatten_chunks(&encrypt_chunks(&header, &plaintext));
+
+    let mut reader = V1PayloadDecryptingReader::new(
+        support::master_key(),
+        &payload,
+        ShortRead::new(Cursor::new(ciphertext), 257),
+    )
+    .expect("create decrypting reader");
+    let mut decrypted = Vec::new();
+    reader
+        .read_to_end(&mut decrypted)
+        .expect("read decrypting reader to EOF");
+    let _final_auth: V1FinalAuth = reader.finish().expect("finish after authenticated EOF");
+
+    assert_eq!(decrypted, plaintext);
+}
+
+#[test]
+fn decrypting_reader_rejects_tampered_final_chunk_without_receipt() {
+    let header = support::sample_v1_header();
+    let payload = support::parsed_payload_for(&header);
+    let plaintext = plaintext_spanning_normal_chunks();
+    let mut chunks = encrypt_chunks(&header, &plaintext);
+    chunks.last_mut().expect("final chunk")[0] ^= 0x11;
+    let mut reader = V1PayloadDecryptingReader::new(
+        support::master_key(),
+        &payload,
+        Cursor::new(flatten_chunks(&chunks)),
+    )
+    .expect("create decrypting reader");
+
+    let mut scratch = Vec::new();
+    let error = reader
+        .read_to_end(&mut scratch)
+        .expect_err("tampered final chunk must fail");
+    let stream_error = error
+        .get_ref()
+        .and_then(|error| error.downcast_ref::<StreamError>())
+        .expect("io error carries stream error");
+    assert!(matches!(
+        stream_error,
+        StreamError::FinalBlockAuthentication
+    ));
+}
+
+#[test]
+fn decrypting_reader_rejects_truncation_without_receipt() {
+    let header = support::sample_v1_header();
+    let payload = support::parsed_payload_for(&header);
+    let plaintext = exact_two_block_plaintext();
+    let mut ciphertext = flatten_chunks(&encrypt_chunks(&header, &plaintext));
+    ciphertext.pop().expect("ciphertext has a byte to truncate");
+    let mut reader =
+        V1PayloadDecryptingReader::new(support::master_key(), &payload, Cursor::new(ciphertext))
+            .expect("create decrypting reader");
+
+    let mut scratch = Vec::new();
+    let error = reader
+        .read_to_end(&mut scratch)
+        .expect_err("truncated ciphertext must fail");
+    let stream_error = error
+        .get_ref()
+        .and_then(|error| error.downcast_ref::<StreamError>())
+        .expect("io error carries stream error");
+    assert!(matches!(stream_error, StreamError::TruncatedCiphertext));
+}
+
+#[test]
 fn manifest_first_frames_serialize_and_parse_deterministically() {
     let payload = sample_manifest_first_payload();
     let encoded = payload
@@ -278,6 +371,47 @@ fn manifest_first_frames_serialize_and_parse_deterministically() {
         2,
         "manifest-first body frames remain tied to manifest entry indexes"
     );
+}
+
+#[test]
+fn manifest_first_streaming_helpers_roundtrip_manifest_and_body_headers() {
+    let payload = sample_manifest_first_payload();
+    let mut manifest_bytes = Vec::new();
+    payload
+        .manifest()
+        .write_to(&mut manifest_bytes)
+        .expect("write manifest");
+
+    let parsed_manifest =
+        ArchiveManifest::read_from(&mut Cursor::new(&manifest_bytes)).expect("read manifest");
+    assert_eq!(&parsed_manifest, payload.manifest());
+
+    let frame_header = ArchiveBodyFrameHeader::new(1, 5).expect("bounded body frame header");
+    let mut frame_bytes = Vec::new();
+    frame_header
+        .write_to(&mut frame_bytes)
+        .expect("write body frame header");
+    let parsed_header =
+        ArchiveBodyFrameHeader::read_from(&mut Cursor::new(frame_bytes)).expect("read header");
+
+    assert_eq!(parsed_header.entry_index(), 1);
+    assert_eq!(parsed_header.body_len(), 5);
+}
+
+#[test]
+fn manifest_first_streaming_helpers_reject_invalid_body_magic_and_limits() {
+    let mut invalid_magic = Vec::new();
+    invalid_magic.extend_from_slice(b"BAD!");
+    invalid_magic.extend_from_slice(&0u32.to_le_bytes());
+    invalid_magic.extend_from_slice(&0u64.to_le_bytes());
+
+    let error = ArchiveBodyFrameHeader::read_from(&mut Cursor::new(invalid_magic))
+        .expect_err("invalid body frame magic must fail");
+    assert!(matches!(error, PayloadError::InvalidBodyFrameMagic(_)));
+
+    let error = ArchiveBodyFrameHeader::new(0, MAX_BODY_FRAME_LEN + 1)
+        .expect_err("over-limit body frame header must fail");
+    assert!(matches!(error, PayloadError::BodyFrameLimitExceeded { .. }));
 }
 
 #[test]

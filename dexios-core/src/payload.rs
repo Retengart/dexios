@@ -1,6 +1,7 @@
 //! Canonical V1 payload kind and Dexios-owned archive framing primitives.
 
 use std::fmt::{Display, Formatter};
+use std::io::{self, Read, Write};
 
 pub const MANIFEST_MAGIC: [u8; 4] = *b"DXAR";
 const BODY_FRAME_MAGIC: [u8; 4] = *b"DXBF";
@@ -53,8 +54,9 @@ impl PayloadFramingProfile {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub enum PayloadError {
+    Io(io::Error),
     UnsupportedPayloadKind(u8),
     UnsupportedPayloadFramingProfile(u8),
     UnsupportedManifestVersion(u16),
@@ -75,9 +77,98 @@ pub enum PayloadError {
     TrailingBytes(usize),
 }
 
+impl PartialEq for PayloadError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Io(left), Self::Io(right)) => {
+                left.kind() == right.kind() && left.to_string() == right.to_string()
+            }
+            (Self::UnsupportedPayloadKind(left), Self::UnsupportedPayloadKind(right)) => {
+                left == right
+            }
+            (
+                Self::UnsupportedPayloadFramingProfile(left),
+                Self::UnsupportedPayloadFramingProfile(right),
+            ) => left == right,
+            (Self::UnsupportedManifestVersion(left), Self::UnsupportedManifestVersion(right)) => {
+                left == right
+            }
+            (Self::InvalidManifestMagic(left), Self::InvalidManifestMagic(right)) => left == right,
+            (Self::InvalidBodyFrameMagic(left), Self::InvalidBodyFrameMagic(right)) => {
+                left == right
+            }
+            (Self::InvalidEntryKind(left), Self::InvalidEntryKind(right)) => left == right,
+            (Self::EmptyNormalizedPath, Self::EmptyNormalizedPath) => true,
+            (
+                Self::ManifestEntryCountLimitExceeded {
+                    limit: left_limit,
+                    actual: left_actual,
+                },
+                Self::ManifestEntryCountLimitExceeded {
+                    limit: right_limit,
+                    actual: right_actual,
+                },
+            ) => left_limit == right_limit && left_actual == right_actual,
+            (
+                Self::NormalizedPathLimitExceeded {
+                    limit: left_limit,
+                    actual: left_actual,
+                },
+                Self::NormalizedPathLimitExceeded {
+                    limit: right_limit,
+                    actual: right_actual,
+                },
+            ) => left_limit == right_limit && left_actual == right_actual,
+            (
+                Self::BodyFrameLimitExceeded {
+                    limit: left_limit,
+                    actual: left_actual,
+                },
+                Self::BodyFrameLimitExceeded {
+                    limit: right_limit,
+                    actual: right_actual,
+                },
+            ) => left_limit == right_limit && left_actual == right_actual,
+            (Self::MissingBodyLength, Self::MissingBodyLength) => true,
+            (
+                Self::UnexpectedBodyFrameForDirectory(left),
+                Self::UnexpectedBodyFrameForDirectory(right),
+            ) => left == right,
+            (Self::DuplicateBodyFrame(left), Self::DuplicateBodyFrame(right)) => left == right,
+            (Self::MissingBodyFrame(left), Self::MissingBodyFrame(right)) => left == right,
+            (
+                Self::BodyFrameOrderMismatch {
+                    expected: left_expected,
+                    actual: left_actual,
+                },
+                Self::BodyFrameOrderMismatch {
+                    expected: right_expected,
+                    actual: right_actual,
+                },
+            ) => left_expected == right_expected && left_actual == right_actual,
+            (
+                Self::BodyFrameLengthMismatch {
+                    expected: left_expected,
+                    actual: left_actual,
+                },
+                Self::BodyFrameLengthMismatch {
+                    expected: right_expected,
+                    actual: right_actual,
+                },
+            ) => left_expected == right_expected && left_actual == right_actual,
+            (Self::TruncatedManifest, Self::TruncatedManifest) => true,
+            (Self::TrailingBytes(left), Self::TrailingBytes(right)) => left == right,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for PayloadError {}
+
 impl Display for PayloadError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Io(error) => write!(f, "manifest-first payload IO failed: {error}"),
             Self::UnsupportedPayloadKind(byte) => {
                 write!(f, "unsupported canonical V1 payload kind: {byte}")
             }
@@ -139,7 +230,14 @@ impl Display for PayloadError {
     }
 }
 
-impl std::error::Error for PayloadError {}
+impl std::error::Error for PayloadError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(error) => Some(error),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -249,6 +347,84 @@ impl ArchiveManifest {
     pub fn entries(&self) -> &[ManifestEntry] {
         &self.entries
     }
+
+    pub fn write_to(&self, writer: &mut impl Write) -> Result<(), PayloadError> {
+        writer
+            .write_all(&MANIFEST_MAGIC)
+            .map_err(map_payload_io_error)?;
+        writer
+            .write_all(&MANIFEST_VERSION.to_le_bytes())
+            .map_err(map_payload_io_error)?;
+        writer
+            .write_all(
+                &u32::try_from(self.entries.len())
+                    .expect("manifest entry count is bounded")
+                    .to_le_bytes(),
+            )
+            .map_err(map_payload_io_error)?;
+
+        for entry in &self.entries {
+            writer
+                .write_all(&[entry.kind as u8])
+                .map_err(map_payload_io_error)?;
+            writer
+                .write_all(
+                    &u16::try_from(entry.normalized_path.len())
+                        .expect("normalized path length is bounded")
+                        .to_le_bytes(),
+                )
+                .map_err(map_payload_io_error)?;
+            if let Some(body_len) = entry.body_len {
+                writer
+                    .write_all(&body_len.to_le_bytes())
+                    .map_err(map_payload_io_error)?;
+            }
+            writer
+                .write_all(&entry.normalized_path)
+                .map_err(map_payload_io_error)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn read_from(reader: &mut impl Read) -> Result<Self, PayloadError> {
+        let magic = read_array_from::<4>(reader)?;
+        if magic != MANIFEST_MAGIC {
+            return Err(PayloadError::InvalidManifestMagic(magic));
+        }
+        let version = read_u16_from(reader)?;
+        if version != MANIFEST_VERSION {
+            return Err(PayloadError::UnsupportedManifestVersion(version));
+        }
+        let entry_count = read_u32_from(reader)?;
+        if entry_count > MAX_MANIFEST_ENTRY_COUNT {
+            return Err(PayloadError::ManifestEntryCountLimitExceeded {
+                limit: MAX_MANIFEST_ENTRY_COUNT,
+                actual: entry_count,
+            });
+        }
+
+        let mut entries = Vec::with_capacity(entry_count as usize);
+        for _ in 0..entry_count {
+            let kind = ManifestEntryKind::try_from_byte(read_u8_from(reader)?)?;
+            let path_len = usize::from(read_u16_from(reader)?);
+            let body_len = if kind == ManifestEntryKind::File {
+                Some(read_u64_from(reader)?)
+            } else {
+                None
+            };
+            let path = read_vec_from(reader, path_len)?;
+            let entry = ManifestEntry {
+                kind,
+                normalized_path: path,
+                body_len,
+            };
+            entry.validate()?;
+            entries.push(entry);
+        }
+
+        Self::new(entries)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -280,6 +456,54 @@ impl ArchiveBodyFrame {
     #[must_use]
     pub fn body_len(&self) -> u64 {
         u64::try_from(self.body.len()).expect("usize body length fits in u64")
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ArchiveBodyFrameHeader {
+    entry_index: u32,
+    body_len: u64,
+}
+
+impl ArchiveBodyFrameHeader {
+    pub fn new(entry_index: u32, body_len: u64) -> Result<Self, PayloadError> {
+        validate_body_len(body_len)?;
+        Ok(Self {
+            entry_index,
+            body_len,
+        })
+    }
+
+    #[must_use]
+    pub const fn entry_index(&self) -> u32 {
+        self.entry_index
+    }
+
+    #[must_use]
+    pub const fn body_len(&self) -> u64 {
+        self.body_len
+    }
+
+    pub fn write_to(&self, writer: &mut impl Write) -> Result<(), PayloadError> {
+        writer
+            .write_all(&BODY_FRAME_MAGIC)
+            .map_err(map_payload_io_error)?;
+        writer
+            .write_all(&self.entry_index.to_le_bytes())
+            .map_err(map_payload_io_error)?;
+        writer
+            .write_all(&self.body_len.to_le_bytes())
+            .map_err(map_payload_io_error)
+    }
+
+    pub fn read_from(reader: &mut impl Read) -> Result<Self, PayloadError> {
+        let magic = read_array_from::<4>(reader)?;
+        if magic != BODY_FRAME_MAGIC {
+            return Err(PayloadError::InvalidBodyFrameMagic(magic));
+        }
+        let entry_index = read_u32_from(reader)?;
+        let body_len = read_u64_from(reader)?;
+        Self::new(entry_index, body_len)
     }
 }
 
@@ -315,26 +539,7 @@ impl ManifestFirstPayload {
         validate_body_frames(&self.manifest, &self.body_frames)?;
 
         let mut bytes = Vec::new();
-        bytes.extend_from_slice(&MANIFEST_MAGIC);
-        bytes.extend_from_slice(&MANIFEST_VERSION.to_le_bytes());
-        bytes.extend_from_slice(
-            &u32::try_from(self.manifest.entries.len())
-                .expect("manifest entry count is bounded")
-                .to_le_bytes(),
-        );
-
-        for entry in &self.manifest.entries {
-            bytes.push(entry.kind as u8);
-            bytes.extend_from_slice(
-                &u16::try_from(entry.normalized_path.len())
-                    .expect("normalized path length is bounded")
-                    .to_le_bytes(),
-            );
-            if let Some(body_len) = entry.body_len {
-                bytes.extend_from_slice(&body_len.to_le_bytes());
-            }
-            bytes.extend_from_slice(&entry.normalized_path);
-        }
+        self.manifest.write_to(&mut bytes)?;
 
         for (index, entry) in self.manifest.entries.iter().enumerate() {
             if entry.kind != ManifestEntryKind::File {
@@ -342,9 +547,8 @@ impl ManifestFirstPayload {
             }
             let index = u32::try_from(index).expect("manifest entry count is bounded");
             let frame = body_frame_for(&self.body_frames, index)?;
-            bytes.extend_from_slice(&BODY_FRAME_MAGIC);
-            bytes.extend_from_slice(&frame.entry_index.to_le_bytes());
-            bytes.extend_from_slice(&frame.body_len().to_le_bytes());
+            ArchiveBodyFrameHeader::new(frame.entry_index, frame.body_len())?
+                .write_to(&mut bytes)?;
             bytes.extend_from_slice(&frame.body);
         }
 
@@ -352,62 +556,23 @@ impl ManifestFirstPayload {
     }
 
     pub fn parse(bytes: &[u8]) -> Result<Self, PayloadError> {
-        let mut offset = 0;
-        let magic = read_array::<4>(bytes, &mut offset)?;
-        if magic != MANIFEST_MAGIC {
-            return Err(PayloadError::InvalidManifestMagic(magic));
-        }
-        let version = read_u16(bytes, &mut offset)?;
-        if version != MANIFEST_VERSION {
-            return Err(PayloadError::UnsupportedManifestVersion(version));
-        }
-        let entry_count = read_u32(bytes, &mut offset)?;
-        if entry_count > MAX_MANIFEST_ENTRY_COUNT {
-            return Err(PayloadError::ManifestEntryCountLimitExceeded {
-                limit: MAX_MANIFEST_ENTRY_COUNT,
-                actual: entry_count,
-            });
-        }
-
-        let mut entries = Vec::with_capacity(entry_count as usize);
-        for _ in 0..entry_count {
-            let kind = ManifestEntryKind::try_from_byte(read_u8(bytes, &mut offset)?)?;
-            let path_len = usize::from(read_u16(bytes, &mut offset)?);
-            let body_len = if kind == ManifestEntryKind::File {
-                Some(read_u64(bytes, &mut offset)?)
-            } else {
-                None
-            };
-            let path = read_bytes(bytes, &mut offset, path_len)?.to_vec();
-            let entry = ManifestEntry {
-                kind,
-                normalized_path: path,
-                body_len,
-            };
-            entry.validate()?;
-            entries.push(entry);
-        }
-
-        let manifest = ArchiveManifest::new(entries)?;
+        let mut reader = io::Cursor::new(bytes);
+        let manifest = ArchiveManifest::read_from(&mut reader)?;
         let mut body_frames = Vec::new();
         for (expected_index, entry) in manifest.entries.iter().enumerate() {
             if entry.kind != ManifestEntryKind::File {
                 continue;
             }
             let expected_index = u32::try_from(expected_index).expect("entry count is bounded");
-            let magic = read_array::<4>(bytes, &mut offset)?;
-            if magic != BODY_FRAME_MAGIC {
-                return Err(PayloadError::InvalidBodyFrameMagic(magic));
-            }
-            let actual_index = read_u32(bytes, &mut offset)?;
+            let header = ArchiveBodyFrameHeader::read_from(&mut reader)?;
+            let actual_index = header.entry_index();
             if actual_index != expected_index {
                 return Err(PayloadError::BodyFrameOrderMismatch {
                     expected: expected_index,
                     actual: actual_index,
                 });
             }
-            let body_len = read_u64(bytes, &mut offset)?;
-            validate_body_len(body_len)?;
+            let body_len = header.body_len();
             if Some(body_len) != entry.body_len {
                 return Err(PayloadError::BodyFrameLengthMismatch {
                     expected: entry.body_len.expect("file entry has body length"),
@@ -419,18 +584,28 @@ impl ManifestFirstPayload {
                     limit: MAX_BODY_FRAME_LEN,
                     actual: body_len,
                 })?;
-            let body = read_bytes(bytes, &mut offset, body_len)?.to_vec();
+            let body = read_vec_from(&mut reader, body_len)?;
             body_frames.push(ArchiveBodyFrame {
                 entry_index: actual_index,
                 body,
             });
         }
 
+        let offset =
+            usize::try_from(reader.position()).expect("cursor position for in-memory payload fits");
         if offset != bytes.len() {
             return Err(PayloadError::TrailingBytes(bytes.len() - offset));
         }
 
         Self::new(manifest, body_frames)
+    }
+}
+
+fn map_payload_io_error(error: io::Error) -> PayloadError {
+    if error.kind() == io::ErrorKind::UnexpectedEof {
+        PayloadError::TruncatedManifest
+    } else {
+        PayloadError::Io(error)
     }
 }
 
@@ -498,43 +673,34 @@ fn body_frame_for(
         .ok_or(PayloadError::MissingBodyFrame(index))
 }
 
-fn read_u8(bytes: &[u8], offset: &mut usize) -> Result<u8, PayloadError> {
-    let value = *bytes.get(*offset).ok_or(PayloadError::TruncatedManifest)?;
-    *offset += 1;
-    Ok(value)
+fn read_u8_from(reader: &mut impl Read) -> Result<u8, PayloadError> {
+    Ok(read_array_from::<1>(reader)?[0])
 }
 
-fn read_u16(bytes: &[u8], offset: &mut usize) -> Result<u16, PayloadError> {
-    Ok(u16::from_le_bytes(read_array(bytes, offset)?))
+fn read_u16_from(reader: &mut impl Read) -> Result<u16, PayloadError> {
+    Ok(u16::from_le_bytes(read_array_from(reader)?))
 }
 
-fn read_u32(bytes: &[u8], offset: &mut usize) -> Result<u32, PayloadError> {
-    Ok(u32::from_le_bytes(read_array(bytes, offset)?))
+fn read_u32_from(reader: &mut impl Read) -> Result<u32, PayloadError> {
+    Ok(u32::from_le_bytes(read_array_from(reader)?))
 }
 
-fn read_u64(bytes: &[u8], offset: &mut usize) -> Result<u64, PayloadError> {
-    Ok(u64::from_le_bytes(read_array(bytes, offset)?))
+fn read_u64_from(reader: &mut impl Read) -> Result<u64, PayloadError> {
+    Ok(u64::from_le_bytes(read_array_from(reader)?))
 }
 
-fn read_array<const N: usize>(bytes: &[u8], offset: &mut usize) -> Result<[u8; N], PayloadError> {
-    let slice = read_bytes(bytes, offset, N)?;
-    let mut array = [0u8; N];
-    array.copy_from_slice(slice);
-    Ok(array)
+fn read_array_from<const N: usize>(reader: &mut impl Read) -> Result<[u8; N], PayloadError> {
+    let mut bytes = [0u8; N];
+    reader
+        .read_exact(&mut bytes)
+        .map_err(map_payload_io_error)?;
+    Ok(bytes)
 }
 
-fn read_bytes<'a>(
-    bytes: &'a [u8],
-    offset: &mut usize,
-    len: usize,
-) -> Result<&'a [u8], PayloadError> {
-    let end = offset
-        .checked_add(len)
-        .ok_or(PayloadError::TruncatedManifest)?;
-    if end > bytes.len() {
-        return Err(PayloadError::TruncatedManifest);
-    }
-    let slice = &bytes[*offset..end];
-    *offset = end;
-    Ok(slice)
+fn read_vec_from(reader: &mut impl Read, len: usize) -> Result<Vec<u8>, PayloadError> {
+    let mut bytes = vec![0u8; len];
+    reader
+        .read_exact(&mut bytes)
+        .map_err(map_payload_io_error)?;
+    Ok(bytes)
 }

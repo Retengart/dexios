@@ -308,6 +308,104 @@ impl<W: Write> Drop for V1PayloadEncryptingWriter<W> {
     }
 }
 
+pub struct V1PayloadDecryptingReader<R: Read> {
+    decryptor: Option<V1PayloadDecryptor>,
+    reader: R,
+    ciphertext_buffer: Box<[u8]>,
+    plaintext_buffer: Vec<u8>,
+    plaintext_offset: usize,
+    final_auth: Option<V1FinalAuth>,
+}
+
+impl<R: Read> V1PayloadDecryptingReader<R> {
+    pub fn new(
+        master_key: MasterKey,
+        payload: &ParsedV1Payload,
+        reader: R,
+    ) -> Result<Self, StreamError> {
+        Ok(Self {
+            decryptor: Some(V1PayloadDecryptor::new(master_key, payload)?),
+            reader,
+            ciphertext_buffer: vec![0u8; BLOCK_SIZE + 16].into_boxed_slice(),
+            plaintext_buffer: Vec::new(),
+            plaintext_offset: 0,
+            final_auth: None,
+        })
+    }
+
+    pub fn finish(self) -> Result<V1FinalAuth, StreamError> {
+        if self.plaintext_offset != self.plaintext_buffer.len() {
+            return Err(StreamError::MissingFinalBlock);
+        }
+        self.final_auth.ok_or(StreamError::MissingFinalBlock)
+    }
+
+    fn fill_plaintext(&mut self) -> Result<(), StreamError> {
+        if self.final_auth.is_some() {
+            return Ok(());
+        }
+
+        let read_count = read_up_to_full(&mut self.reader, &mut self.ciphertext_buffer)?;
+        if read_count == 0 {
+            return Err(StreamError::MissingFinalBlock);
+        }
+
+        let plaintext = if read_count == BLOCK_SIZE + 16 {
+            self.decryptor
+                .as_mut()
+                .expect("unfinished decrypting reader has decryptor")
+                .decrypt_next(&self.ciphertext_buffer)?
+        } else {
+            let decryptor = self
+                .decryptor
+                .take()
+                .expect("unfinished decrypting reader has decryptor");
+            let plaintext = decryptor.decrypt_last(&self.ciphertext_buffer[..read_count])?;
+            self.final_auth = Some(V1FinalAuth { _private: () });
+            plaintext
+        };
+
+        self.plaintext_buffer = plaintext;
+        self.plaintext_offset = 0;
+        Ok(())
+    }
+}
+
+impl<R: Read> Read for V1PayloadDecryptingReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
+        if self.plaintext_offset == self.plaintext_buffer.len() {
+            self.plaintext_buffer.zeroize();
+            self.plaintext_buffer.clear();
+            self.plaintext_offset = 0;
+            self.fill_plaintext().map_err(io::Error::other)?;
+        }
+
+        if self.plaintext_offset == self.plaintext_buffer.len() && self.final_auth.is_some() {
+            return Ok(0);
+        }
+
+        let available = self.plaintext_buffer.len() - self.plaintext_offset;
+        let take = available.min(buf.len());
+        buf[..take].copy_from_slice(
+            &self.plaintext_buffer[self.plaintext_offset..self.plaintext_offset + take],
+        );
+        self.plaintext_offset += take;
+        Ok(take)
+    }
+}
+
+impl<R: Read> Drop for V1PayloadDecryptingReader<R> {
+    fn drop(&mut self) {
+        self.ciphertext_buffer.zeroize();
+        self.plaintext_buffer.zeroize();
+        self.plaintext_offset = 0;
+    }
+}
+
 fn stream_error_to_io(error: StreamError) -> io::Error {
     match error {
         StreamError::Write(error) | StreamError::Flush(error) => error,

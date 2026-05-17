@@ -403,6 +403,18 @@ impl V1Header {
         })
     }
 
+    pub fn new_manifest_archive(
+        payload_nonce: PayloadNonce,
+        keyslots: V1Keyslots,
+    ) -> Result<Self, HeaderWriteError> {
+        Ok(Self {
+            payload_nonce,
+            payload_kind: PayloadKind::ManifestArchive,
+            payload_framing: PayloadFramingProfile::ManifestFirst,
+            keyslots,
+        })
+    }
+
     #[must_use]
     pub const fn payload_nonce(&self) -> &PayloadNonce {
         &self.payload_nonce

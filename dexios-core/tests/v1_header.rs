@@ -349,6 +349,35 @@ fn shared_payload_kind_and_framing_roundtrip_through_header_bytes() {
 }
 
 #[test]
+fn new_manifest_archive_constructor_sets_canonical_payload_metadata() {
+    let raw_header = support::sample_v1_header();
+    let header = V1Header::new_manifest_archive(
+        PayloadNonce::new([9u8; 20]),
+        raw_header.keyslots_collection().clone(),
+    )
+    .expect("manifest archive header");
+    let bytes = header.serialize().expect("serialize manifest header");
+
+    assert_eq!(header.payload_kind(), PayloadKind::ManifestArchive);
+    assert_eq!(
+        header.payload_framing(),
+        PayloadFramingProfile::ManifestFirst
+    );
+    assert_eq!(bytes[11], PayloadKind::ManifestArchive.to_byte());
+    assert_eq!(bytes[12], PayloadFramingProfile::ManifestFirst.to_byte());
+
+    let ParsedHeader::V1(parsed) =
+        dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
+            .expect("manifest archive header parses");
+
+    assert_eq!(parsed.header().payload_kind(), PayloadKind::ManifestArchive);
+    assert_eq!(
+        parsed.header().payload_framing(),
+        PayloadFramingProfile::ManifestFirst
+    );
+}
+
+#[test]
 fn read_header_returns_v1_payload_with_header_and_matching_aad() {
     let header = support::sample_v1_header();
     let bytes = header.serialize().unwrap();
