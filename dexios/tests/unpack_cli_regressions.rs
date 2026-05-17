@@ -1,16 +1,20 @@
-use std::fs::{self, File};
-use std::io::Write;
+use std::fs;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use core::header::common::HEADER_LEN;
+use core::cipher::wrap_v1_master_key;
+use core::header::common::{HEADER_LEN, KeyslotNonce, PayloadNonce, Salt as HeaderSalt};
+use core::header::v1::{V1Header, V1Keyslot, V1Keyslots};
 use core::kdf::Kdf;
-use core::primitives::BLOCK_SIZE;
+use core::payload::{
+    ArchiveBodyFrame, ArchiveBodyFrameHeader, ArchiveManifest, ManifestEntry, ManifestFirstPayload,
+};
+use core::primitives::{BLOCK_SIZE, MasterKey, WrappingKey};
 use core::protected::Protected;
-use domain::encrypt;
-use zip::write::SimpleFileOptions;
+use core::stream::V1PayloadStream;
 
 const PASSWORD: &str = "12345678";
 const STREAM_TAG_LEN: usize = 16;
@@ -69,33 +73,112 @@ fn run_unpack(input: &Path, output: &Path) -> std::process::Output {
     run_unpack_with_args(input, output, &[])
 }
 
-fn write_zip_with_entries(path: &Path, entries: &[(&str, &[u8])]) {
-    let file = File::create(path).unwrap();
-    let mut zip_writer = zip::ZipWriter::new(file);
-    let options = SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Stored)
-        .large_file(true)
-        .unix_permissions(0o755);
-
-    for (name, body) in entries {
-        zip_writer.start_file(*name, options).unwrap();
-        zip_writer.write_all(body).unwrap();
-    }
-
-    zip_writer.finish().unwrap();
+fn write_manifest_archive_with_entries(path: &Path, entries: &[(&str, &[u8])]) {
+    let (header, encrypted_payload) = encrypted_manifest_archive_bytes(entries);
+    let mut bytes = header;
+    bytes.extend_from_slice(&encrypted_payload);
+    fs::write(path, bytes).unwrap();
 }
 
-fn encrypt_archive(input_path: &Path, output_path: &Path) {
-    let intent = encrypt::EncryptIntent::new(
-        input_path,
-        output_path,
-        domain::storage::identity::OverwritePolicy::CreateNew,
-        None,
-        Protected::new(PASSWORD.as_bytes().to_vec()),
-        Kdf::Blake3Balloon,
+fn write_malformed_manifest_body_length_archive(path: &Path) {
+    let manifest =
+        ArchiveManifest::new(vec![ManifestEntry::file(b"safe.txt".to_vec(), 5).unwrap()]).unwrap();
+    let mut payload = Vec::new();
+    manifest.write_to(&mut payload).unwrap();
+    ArchiveBodyFrameHeader::new(0, 4)
+        .unwrap()
+        .write_to(&mut payload)
+        .unwrap();
+    payload.extend_from_slice(b"body");
+    write_encrypted_manifest_payload(path, payload);
+}
+
+fn encrypted_manifest_archive_bytes(entries: &[(&str, &[u8])]) -> (Vec<u8>, Vec<u8>) {
+    let mut manifest_entries = Vec::with_capacity(entries.len());
+    let mut body_frames = Vec::new();
+    for (index, (path, body)) in entries.iter().enumerate() {
+        let normalized_path = path.trim_end_matches('/').as_bytes().to_vec();
+        if path.ends_with('/') {
+            manifest_entries.push(ManifestEntry::directory(normalized_path).unwrap());
+        } else {
+            manifest_entries.push(
+                ManifestEntry::file(
+                    normalized_path,
+                    u64::try_from(body.len()).expect("test body length fits in u64"),
+                )
+                .unwrap(),
+            );
+            body_frames.push(
+                ArchiveBodyFrame::new(
+                    u32::try_from(index).expect("test entry index fits in u32"),
+                    body.to_vec(),
+                )
+                .unwrap(),
+            );
+        }
+    }
+
+    let payload =
+        ManifestFirstPayload::new(ArchiveManifest::new(manifest_entries).unwrap(), body_frames)
+            .unwrap()
+            .serialize()
+            .unwrap();
+    encrypted_manifest_payload_bytes(payload)
+}
+
+fn write_encrypted_manifest_payload(path: &Path, payload: Vec<u8>) {
+    let (header, encrypted_payload) = encrypted_manifest_payload_bytes(payload);
+    let mut bytes = header;
+    bytes.extend_from_slice(&encrypted_payload);
+    fs::write(path, bytes).unwrap();
+}
+
+fn encrypted_manifest_payload_bytes(payload: Vec<u8>) -> (Vec<u8>, Vec<u8>) {
+    let (header, master_key) = manifest_archive_header_and_master_key();
+    let mut encrypted_payload = Vec::new();
+    V1PayloadStream::encrypt_file(
+        master_key,
+        &header,
+        &mut Cursor::new(payload),
+        &mut encrypted_payload,
     )
     .unwrap();
-    encrypt::execute(intent).unwrap();
+
+    (header.serialize().unwrap(), encrypted_payload)
+}
+
+fn manifest_archive_header_and_master_key() -> (V1Header, MasterKey) {
+    let raw_key = Protected::new(PASSWORD.as_bytes().to_vec());
+    let header_salt = HeaderSalt::new([17u8; 16]);
+    let kdf_salt = header_salt.to_kdf_salt();
+    let wrapping_key = Kdf::Blake3Balloon.derive(&raw_key, &kdf_salt).unwrap();
+    let master_key = MasterKey::new([31u8; 32]);
+    let keyslot_nonce = KeyslotNonce::new([13u8; 24]);
+    let payload_nonce = PayloadNonce::new([7u8; 20]);
+    let placeholder_keyslot =
+        V1Keyslot::new(Kdf::Blake3Balloon, [0u8; 48], keyslot_nonce, header_salt);
+    let placeholder_header =
+        V1Header::new_manifest_archive(payload_nonce, V1Keyslots::single(placeholder_keyslot))
+            .unwrap();
+    let slot_wrapping_aad = placeholder_header
+        .slot_wrapping_aad(0, &placeholder_keyslot)
+        .unwrap();
+    let encrypted_master_key = wrap_v1_master_key(
+        WrappingKey::from(wrapping_key),
+        &master_key,
+        &keyslot_nonce,
+        &slot_wrapping_aad,
+    )
+    .unwrap();
+    let keyslot = V1Keyslot::new(
+        Kdf::Blake3Balloon,
+        *encrypted_master_key.as_bytes(),
+        keyslot_nonce,
+        header_salt,
+    );
+    let header =
+        V1Header::new_manifest_archive(payload_nonce, V1Keyslots::single(keyslot)).unwrap();
+    (header, master_key)
 }
 
 fn tamper_final_stream_chunk(path: &Path) {
@@ -129,13 +212,14 @@ fn unpack_cli_corrupted_archive_never_extracts_outputs() {
         ("final-tamper", tamper_final_stream_chunk as fn(&Path)),
         ("one-byte-truncation", truncate_stream as fn(&Path)),
     ] {
-        let plain_zip = test_dir.path().join(format!("{label}.zip"));
         let encrypted_archive = test_dir.path().join(format!("{label}.enc"));
         let output_dir = test_dir.path().join(format!("{label}-out"));
         let payload = vec![0xA5; BLOCK_SIZE + 37];
 
-        write_zip_with_entries(&plain_zip, &[("safe.txt", payload.as_slice())]);
-        encrypt_archive(&plain_zip, &encrypted_archive);
+        write_manifest_archive_with_entries(
+            &encrypted_archive,
+            &[("safe.txt", payload.as_slice())],
+        );
         corrupt(&encrypted_archive);
 
         let output = run_unpack(&encrypted_archive, &output_dir);
@@ -158,11 +242,34 @@ fn unpack_cli_corrupted_archive_never_extracts_outputs() {
     }
 }
 
+#[test]
+fn unpack_cli_malformed_manifest_body_frame_never_extracts_outputs() {
+    let test_dir = TestDir::new("unpack-cli-malformed-body-frame");
+    let encrypted_archive = test_dir.path().join("malformed.enc");
+    let output_dir = test_dir.path().join("out");
+
+    write_malformed_manifest_body_length_archive(&encrypted_archive);
+
+    let output = run_unpack(&encrypted_archive, &output_dir);
+
+    assert!(
+        !output.status.success(),
+        "malformed manifest CLI unpack unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Malformed archive data"),
+        "stderr should stay terse and typed: {stderr}"
+    );
+    assert!(!output_dir.join("safe.txt").exists());
+}
+
 #[cfg(any(unix, windows))]
 #[test]
 fn unpack_cli_rejects_symlinked_output_component() {
     let test_dir = TestDir::new("unpack-cli-symlink");
-    let plain_zip = test_dir.path().join("plain.zip");
     let encrypted_archive = test_dir.path().join("archive.enc");
     let outside_dir = test_dir.path().join("outside");
     let output_dir = test_dir.path().join("out");
@@ -171,8 +278,10 @@ fn unpack_cli_rejects_symlinked_output_component() {
     fs::create_dir_all(&output_dir).unwrap();
     symlink_dir(&outside_dir, &output_dir.join("payload"));
 
-    write_zip_with_entries(&plain_zip, &[("payload/secret.txt", b"top secret")]);
-    encrypt_archive(&plain_zip, &encrypted_archive);
+    write_manifest_archive_with_entries(
+        &encrypted_archive,
+        &[("payload/secret.txt", b"top secret")],
+    );
 
     let output = run_unpack(&encrypted_archive, &output_dir);
 
@@ -194,7 +303,6 @@ fn unpack_cli_rejects_symlinked_output_component() {
 #[test]
 fn unpack_cli_rejects_symlinked_output_prefix() {
     let test_dir = TestDir::new("unpack-cli-output-prefix");
-    let plain_zip = test_dir.path().join("plain.zip");
     let encrypted_archive = test_dir.path().join("archive.enc");
     let outside_dir = test_dir.path().join("outside");
     let output_prefix = test_dir.path().join("out-link");
@@ -203,8 +311,7 @@ fn unpack_cli_rejects_symlinked_output_prefix() {
     fs::create_dir_all(&outside_dir).unwrap();
     symlink_dir(&outside_dir, &output_prefix);
 
-    write_zip_with_entries(&plain_zip, &[("secret.txt", b"top secret")]);
-    encrypt_archive(&plain_zip, &encrypted_archive);
+    write_manifest_archive_with_entries(&encrypted_archive, &[("secret.txt", b"top secret")]);
 
     let output = run_unpack(&encrypted_archive, &output_dir);
 
@@ -225,18 +332,13 @@ fn unpack_cli_rejects_symlinked_output_prefix() {
 #[test]
 fn unpack_cli_rejects_duplicate_normalized_targets() {
     let test_dir = TestDir::new("unpack-cli-duplicate");
-    let plain_zip = test_dir.path().join("plain.zip");
     let encrypted_archive = test_dir.path().join("archive.enc");
     let output_dir = test_dir.path().join("out");
 
-    write_zip_with_entries(
-        &plain_zip,
-        &[
-            ("payload/../collision.txt", b"first"),
-            ("collision.txt", b"second"),
-        ],
+    write_manifest_archive_with_entries(
+        &encrypted_archive,
+        &[("collision.txt", b"first"), ("collision.txt", b"second")],
     );
-    encrypt_archive(&plain_zip, &encrypted_archive);
 
     let output = run_unpack(&encrypted_archive, &output_dir);
 
@@ -257,12 +359,10 @@ fn unpack_cli_rejects_duplicate_normalized_targets() {
 #[test]
 fn unpack_cli_rejects_file_prefix_collision() {
     let test_dir = TestDir::new("unpack-cli-prefix-collision");
-    let plain_zip = test_dir.path().join("plain.zip");
     let encrypted_archive = test_dir.path().join("archive.enc");
     let output_dir = test_dir.path().join("out");
 
-    write_zip_with_entries(&plain_zip, &[("a", b"file"), ("a/b", b"child")]);
-    encrypt_archive(&plain_zip, &encrypted_archive);
+    write_manifest_archive_with_entries(&encrypted_archive, &[("a", b"file"), ("a/b", b"child")]);
 
     let output = run_unpack(&encrypted_archive, &output_dir);
 
@@ -284,12 +384,10 @@ fn unpack_cli_rejects_file_prefix_collision() {
 #[test]
 fn unpack_cli_delete_input_removes_archive_after_success() {
     let test_dir = TestDir::new("unpack-cli-delete-input");
-    let plain_zip = test_dir.path().join("plain.zip");
     let encrypted_archive = test_dir.path().join("archive.enc");
     let output_dir = test_dir.path().join("out");
 
-    write_zip_with_entries(&plain_zip, &[("payload/file.txt", b"top secret")]);
-    encrypt_archive(&plain_zip, &encrypted_archive);
+    write_manifest_archive_with_entries(&encrypted_archive, &[("payload/file.txt", b"top secret")]);
 
     let output = run_unpack_with_args(&encrypted_archive, &output_dir, &["--delete-input"]);
 
@@ -309,11 +407,12 @@ fn unpack_cli_delete_input_removes_archive_after_success() {
 #[test]
 fn unpack_cli_delete_input_rejects_archive_entry_that_aliases_input() {
     let test_dir = TestDir::new("unpack-cli-delete-input-alias");
-    let plain_zip = test_dir.path().join("plain.zip");
     let encrypted_archive = test_dir.path().join("archive.enc");
 
-    write_zip_with_entries(&plain_zip, &[("archive.enc", b"plaintext replacement")]);
-    encrypt_archive(&plain_zip, &encrypted_archive);
+    write_manifest_archive_with_entries(
+        &encrypted_archive,
+        &[("archive.enc", b"plaintext replacement")],
+    );
     let original_archive = fs::read(&encrypted_archive).unwrap();
 
     let output = run_unpack_with_args(&encrypted_archive, test_dir.path(), &["--delete-input"]);
@@ -335,7 +434,6 @@ fn unpack_cli_delete_input_rejects_archive_entry_that_aliases_input() {
 #[test]
 fn unpack_delete_input_waits_for_extraction_commit_receipt() {
     let test_dir = TestDir::new("unpack-cli-delete-waits");
-    let plain_zip = test_dir.path().join("plain.zip");
     let encrypted_archive = test_dir.path().join("archive.enc");
     let output_dir = test_dir.path().join("out");
     let existing_file = output_dir.join("existing.txt");
@@ -343,14 +441,13 @@ fn unpack_delete_input_waits_for_extraction_commit_receipt() {
 
     fs::create_dir_all(&blocked_target).unwrap();
     fs::write(&existing_file, b"original contents").unwrap();
-    write_zip_with_entries(
-        &plain_zip,
+    write_manifest_archive_with_entries(
+        &encrypted_archive,
         &[
             ("existing.txt", b"candidate replacement"),
             ("blocked", b"cannot replace directory"),
         ],
     );
-    encrypt_archive(&plain_zip, &encrypted_archive);
 
     let output = run_unpack_with_args(&encrypted_archive, &output_dir, &["--delete-input"]);
 

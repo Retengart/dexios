@@ -212,6 +212,67 @@ fn d02_d04_pack_source_keeps_private_zstd_offline_archive_boundary() {
 }
 
 #[test]
+fn phase05_manifest_archive_normal_path_stays_private_and_zip_free() {
+    assert!(
+        DOMAIN_PACK.contains("begin_v1_manifest_archive_writer"),
+        "ARCH-01 pack must write through the manifest archive V1 writer"
+    );
+    assert!(
+        DOMAIN_PACK.contains("ArchiveManifest") && DOMAIN_PACK.contains("ArchiveBodyFrameHeader"),
+        "ARCH-01 pack must use Dexios-owned manifest-first payload framing"
+    );
+    assert!(
+        !DOMAIN_PACK.contains("ZipWriter::new_stream"),
+        "ARCH-05 canonical pack must not use ZIP writer setup"
+    );
+
+    let unpack_normal_path = source_section(
+        "dexios-domain/src/unpack.rs",
+        DOMAIN_UNPACK,
+        "fn execute_manifest_archive",
+        "fn stage_manifest_extraction",
+    );
+    for required in [
+        "V1PayloadDecryptingReader::new",
+        "stage_manifest_extraction",
+        "drain_trailing_plaintext_to_final_auth",
+        ".finish()",
+        "revalidate_file_targets",
+        "create_selected_directories_after_final_auth",
+        "commit_all",
+    ] {
+        assert!(
+            unpack_normal_path.contains(required),
+            "ARCH-01/ARCH-03 normal unpack path must contain {required:?}"
+        );
+    }
+    for forbidden in ["ZipArchive", "OpenArchiveWithSource", "_temp_factory()"] {
+        assert!(
+            !unpack_normal_path.contains(forbidden),
+            "ARCH-01 normal manifest unpack path must not contain {forbidden:?}"
+        );
+    }
+
+    let manifest_staging = source_section(
+        "dexios-domain/src/unpack.rs",
+        DOMAIN_UNPACK,
+        "fn stage_manifest_extraction",
+        "fn prepare_manifest_extraction_entities",
+    );
+    for required in [
+        "ArchiveManifest::read_from",
+        "ArchiveBodyFrameHeader::read_from",
+        "stage_manifest_file_body",
+        "drain_manifest_body",
+    ] {
+        assert!(
+            manifest_staging.contains(required),
+            "ARCH-02/ARCH-04 manifest staging must contain {required:?}"
+        );
+    }
+}
+
+#[test]
 fn d10_pack_execution_requires_validated_domain_intent() {
     assert!(
         DOMAIN_PACK.contains("pub struct PackIntent"),
@@ -470,6 +531,17 @@ fn collect_violations(
     scan: impl Fn(Source<'_>) -> Vec<String>,
 ) -> Vec<String> {
     sources.iter().copied().flat_map(scan).collect()
+}
+
+fn source_section<'a>(source_name: &str, source: &'a str, start: &str, end: &str) -> &'a str {
+    let start_index = source
+        .find(start)
+        .unwrap_or_else(|| panic!("{source_name} must contain section start {start:?}"));
+    let end_index = source[start_index..]
+        .find(end)
+        .map(|index| start_index + index)
+        .unwrap_or_else(|| panic!("{source_name} must contain section end {end:?}"));
+    &source[start_index..end_index]
 }
 
 fn assert_no_violations(violations: Vec<String>) {

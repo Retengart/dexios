@@ -46,8 +46,17 @@ require_tool mdbook "cargo install mdbook --locked"
 run verify_no_unsafe_crate_roots
 run cargo fmt --all --check
 run cargo clippy --workspace --all-targets --all-features --no-deps
+run cargo test -p dexios-core --test stream_v1 --release
+run cargo test -p dexios-core --test v1_header --release
+run cargo test -p dexios-domain --test pack_paths --release
+run cargo test -p dexios-domain --test unpack --release
 run cargo test -p dexios-domain --test workflow_public_api --all-features --release
 run cargo test -p dexios-domain --test archive_public_api --release
+run cargo test -p dexios-domain --test workflow_errors --all-features --release
+run cargo test -p dexios --test pack_cli_regressions --release
+run cargo test -p dexios --test unpack_cli_regressions --release
+run cargo test -p dexios --test delete_source_cli --release
+run cargo test -p dexios --test workflow_error_cli --release
 run cargo test -p dexios --test verification_gate_docs --release
 run cargo test --workspace --all-features --release --verbose
 run bash scripts/verify_assurance_replay.sh

@@ -1,13 +1,18 @@
-use std::fs::{self, File};
-use std::io::Write;
+use std::fs;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use core::header::common::HEADER_LEN;
-use core::primitives::BLOCK_SIZE;
-use zip::write::SimpleFileOptions;
+use core::cipher::wrap_v1_master_key;
+use core::header::common::{HEADER_LEN, KeyslotNonce, PayloadNonce, Salt as HeaderSalt};
+use core::header::v1::{V1Header, V1Keyslot, V1Keyslots};
+use core::kdf::Kdf;
+use core::payload::{ArchiveBodyFrame, ArchiveManifest, ManifestEntry, ManifestFirstPayload};
+use core::primitives::{BLOCK_SIZE, MasterKey, WrappingKey};
+use core::protected::Protected;
+use core::stream::V1PayloadStream;
 
 const PASSWORD: &str = "12345678";
 const DEXIOS_SUBCOMMANDS_RS: &str = include_str!("../src/subcommands.rs");
@@ -55,20 +60,88 @@ fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
     command.output().unwrap()
 }
 
-fn write_zip_with_entries(path: &Path, entries: &[(&str, &[u8])]) {
-    let file = File::create(path).unwrap();
-    let mut zip_writer = zip::ZipWriter::new(file);
-    let options = SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Stored)
-        .large_file(true)
-        .unix_permissions(0o755);
+fn write_manifest_archive_with_entries(path: &Path, entries: &[(&str, &[u8])]) {
+    let (header, encrypted_payload) = encrypted_manifest_archive_bytes(entries);
+    let mut bytes = header;
+    bytes.extend_from_slice(&encrypted_payload);
+    fs::write(path, bytes).unwrap();
+}
 
-    for (name, body) in entries {
-        zip_writer.start_file(*name, options).unwrap();
-        zip_writer.write_all(body).unwrap();
+fn encrypted_manifest_archive_bytes(entries: &[(&str, &[u8])]) -> (Vec<u8>, Vec<u8>) {
+    let mut manifest_entries = Vec::with_capacity(entries.len());
+    let mut body_frames = Vec::new();
+    for (index, (path, body)) in entries.iter().enumerate() {
+        let normalized_path = path.trim_end_matches('/').as_bytes().to_vec();
+        if path.ends_with('/') {
+            manifest_entries.push(ManifestEntry::directory(normalized_path).unwrap());
+        } else {
+            manifest_entries.push(
+                ManifestEntry::file(
+                    normalized_path,
+                    u64::try_from(body.len()).expect("test body length fits in u64"),
+                )
+                .unwrap(),
+            );
+            body_frames.push(
+                ArchiveBodyFrame::new(
+                    u32::try_from(index).expect("test entry index fits in u32"),
+                    body.to_vec(),
+                )
+                .unwrap(),
+            );
+        }
     }
 
-    zip_writer.finish().unwrap();
+    let payload =
+        ManifestFirstPayload::new(ArchiveManifest::new(manifest_entries).unwrap(), body_frames)
+            .unwrap()
+            .serialize()
+            .unwrap();
+    let (header, master_key) = manifest_archive_header_and_master_key();
+    let mut encrypted_payload = Vec::new();
+    V1PayloadStream::encrypt_file(
+        master_key,
+        &header,
+        &mut Cursor::new(payload),
+        &mut encrypted_payload,
+    )
+    .unwrap();
+
+    (header.serialize().unwrap(), encrypted_payload)
+}
+
+fn manifest_archive_header_and_master_key() -> (V1Header, MasterKey) {
+    let raw_key = Protected::new(PASSWORD.as_bytes().to_vec());
+    let header_salt = HeaderSalt::new([17u8; 16]);
+    let kdf_salt = header_salt.to_kdf_salt();
+    let wrapping_key = Kdf::Blake3Balloon.derive(&raw_key, &kdf_salt).unwrap();
+    let master_key = MasterKey::new([31u8; 32]);
+    let keyslot_nonce = KeyslotNonce::new([13u8; 24]);
+    let payload_nonce = PayloadNonce::new([7u8; 20]);
+    let placeholder_keyslot =
+        V1Keyslot::new(Kdf::Blake3Balloon, [0u8; 48], keyslot_nonce, header_salt);
+    let placeholder_header =
+        V1Header::new_manifest_archive(payload_nonce, V1Keyslots::single(placeholder_keyslot))
+            .unwrap();
+    let slot_wrapping_aad = placeholder_header
+        .slot_wrapping_aad(0, &placeholder_keyslot)
+        .unwrap();
+    let encrypted_master_key = wrap_v1_master_key(
+        WrappingKey::from(wrapping_key),
+        &master_key,
+        &keyslot_nonce,
+        &slot_wrapping_aad,
+    )
+    .unwrap();
+    let keyslot = V1Keyslot::new(
+        Kdf::Blake3Balloon,
+        *encrypted_master_key.as_bytes(),
+        keyslot_nonce,
+        header_salt,
+    );
+    let header =
+        V1Header::new_manifest_archive(payload_nonce, V1Keyslots::single(keyslot)).unwrap();
+    (header, master_key)
 }
 
 fn multichunk_plaintext() -> Vec<u8> {
@@ -350,22 +423,10 @@ fn decrypt_delete_input_preserves_source_on_malformed_and_retired_v1_rejection()
 #[test]
 fn unpack_delete_input_removes_encrypted_archive_after_success() {
     let test_dir = TestDir::new("delete-input-unpack");
-    let plain_zip = test_dir.path().join("plain.zip");
     let encrypted = test_dir.path().join("archive.enc");
     let output_dir = test_dir.path().join("out");
 
-    write_zip_with_entries(&plain_zip, &[("payload/file.txt", b"top secret")]);
-
-    let encrypt_cmd = run_cli(
-        test_dir.path(),
-        &[
-            "encrypt",
-            "-f",
-            plain_zip.to_str().unwrap(),
-            encrypted.to_str().unwrap(),
-        ],
-    );
-    assert!(encrypt_cmd.status.success());
+    write_manifest_archive_with_entries(&encrypted, &[("payload/file.txt", b"top secret")]);
 
     let unpack_cmd = run_cli(
         test_dir.path(),
@@ -394,24 +455,13 @@ fn unpack_delete_input_removes_encrypted_archive_after_success() {
 #[test]
 fn unpack_delete_input_preserves_archive_on_archive_validation_failure() {
     let test_dir = TestDir::new("delete-input-unpack-validation-fail");
-    let plain_zip = test_dir.path().join("plain.zip");
     let encrypted = test_dir.path().join("archive.enc");
     let output_dir = test_dir.path().join("out");
 
-    write_zip_with_entries(
-        &plain_zip,
+    write_manifest_archive_with_entries(
+        &encrypted,
         &[("../escape.txt", b"escape"), ("safe.txt", b"safe")],
     );
-    let encrypt_cmd = run_cli(
-        test_dir.path(),
-        &[
-            "encrypt",
-            "-f",
-            plain_zip.to_str().unwrap(),
-            encrypted.to_str().unwrap(),
-        ],
-    );
-    assert!(encrypt_cmd.status.success());
     let original_archive = fs::read(&encrypted).unwrap();
 
     let unpack_cmd = run_cli(

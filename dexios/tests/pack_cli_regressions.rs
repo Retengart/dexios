@@ -1,10 +1,10 @@
 use std::fs;
-use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use core::payload::{ManifestEntryKind, ManifestFirstPayload};
 use core::protected::Protected;
 use domain::decrypt;
 use domain::storage::identity::OverwritePolicy;
@@ -66,12 +66,12 @@ fn run_pack(
     command.arg(output_name).output().unwrap()
 }
 
-fn decrypt_archive_entry_names(archive_path: &Path, header_path: Option<&Path>) -> Vec<String> {
+fn decrypt_manifest_entry_names(archive_path: &Path, header_path: Option<&Path>) -> Vec<String> {
     let seq = NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);
     let decrypted_path = archive_path
         .parent()
         .unwrap()
-        .join(format!("decrypted-{seq}.zip"));
+        .join(format!("decrypted-{seq}.dxar"));
     let intent = decrypt::DecryptIntent::new(
         archive_path,
         &decrypted_path,
@@ -84,9 +84,20 @@ fn decrypt_archive_entry_names(archive_path: &Path, header_path: Option<&Path>) 
     decrypt::execute(intent).unwrap();
 
     let bytes = fs::read(decrypted_path).unwrap();
-    let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
-    let mut names = (0..zip.len())
-        .map(|index| zip.by_index(index).unwrap().name().to_string())
+    let payload = ManifestFirstPayload::parse(&bytes).unwrap();
+    let mut names = payload
+        .manifest()
+        .entries()
+        .iter()
+        .map(|entry| {
+            let mut name = std::str::from_utf8(entry.normalized_path())
+                .unwrap()
+                .to_string();
+            if entry.kind() == ManifestEntryKind::Directory {
+                name.push('/');
+            }
+            name
+        })
         .collect::<Vec<_>>();
     names.sort();
     names
@@ -170,7 +181,7 @@ fn pack_dot_input_uses_current_directory_name() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let names = decrypt_archive_entry_names(&archive_path, Some(&header_path));
+    let names = decrypt_manifest_entry_names(&archive_path, Some(&header_path));
 
     assert_eq!(
         names,
@@ -300,7 +311,7 @@ fn pack_duplicate_basenames_uses_unique_archive_roots() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let names = decrypt_archive_entry_names(&test_dir.path().join("archive.enc"), None);
+    let names = decrypt_manifest_entry_names(&test_dir.path().join("archive.enc"), None);
 
     assert_eq!(
         names,
@@ -334,7 +345,7 @@ fn pack_mixed_nested_roots_do_not_leak_current_directory_name() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let names = decrypt_archive_entry_names(&test_dir.path().join("archive.enc"), None);
+    let names = decrypt_manifest_entry_names(&test_dir.path().join("archive.enc"), None);
 
     assert_eq!(
         names,
@@ -400,8 +411,8 @@ fn pack_recursive_flag_matches_default_recursive_behavior() {
         String::from_utf8_lossy(&recursive_output.stderr)
     );
 
-    let default_names = decrypt_archive_entry_names(&default_archive, None);
-    let recursive_names = decrypt_archive_entry_names(&recursive_archive, None);
+    let default_names = decrypt_manifest_entry_names(&default_archive, None);
+    let recursive_names = decrypt_manifest_entry_names(&recursive_archive, None);
 
     assert_eq!(default_names, recursive_names);
     assert!(default_names.contains(&"source/nested/deeper/world.txt".to_string()));

@@ -28,13 +28,18 @@ const VERIFY_CLI_SURFACE: &str = include_str!("../../scripts/verify_cli_surface.
 const VERIFY_REPO_HYGIENE: &str = include_str!("../../scripts/verify_repo_hygiene.sh");
 const MEASURE_PERFORMANCE_GATE: &str = include_str!("../../scripts/measure_performance_gate.sh");
 const DEXIOS_CORE_STREAM_V1_TESTS: &str = include_str!("../../dexios-core/tests/stream_v1.rs");
+const DEXIOS_CORE_V1_HEADER_TESTS: &str = include_str!("../../dexios-core/tests/v1_header.rs");
 const DEXIOS_DOMAIN_DECRYPT_WORKFLOW_ERROR_TESTS: &str =
     include_str!("../../dexios-domain/tests/decrypt_workflow_errors.rs");
+const DEXIOS_DOMAIN_PACK_PATHS_TESTS: &str =
+    include_str!("../../dexios-domain/tests/pack_paths.rs");
 const DEXIOS_DOMAIN_UNPACK_TESTS: &str = include_str!("../../dexios-domain/tests/unpack.rs");
 const ARCHIVE_STREAMING_FEASIBILITY: &str =
     include_str!("../../dexios-domain/tests/archive_streaming_feasibility.rs");
+const DEXIOS_PACK_CLI_REGRESSION_TESTS: &str = include_str!("pack_cli_regressions.rs");
 const DEXIOS_DECRYPT_CLI_REGRESSION_TESTS: &str = include_str!("decrypt_cli_regressions.rs");
 const DEXIOS_UNPACK_CLI_REGRESSION_TESTS: &str = include_str!("unpack_cli_regressions.rs");
+const DEXIOS_DELETE_SOURCE_CLI_TESTS: &str = include_str!("delete_source_cli.rs");
 const DEXIOS_CORE_FIXTURE_MANIFEST: &str =
     include_str!("../../dexios-core/tests/testdata/fixture_manifest.toml");
 const DEXIOS_DOMAIN_FIXTURE_MANIFEST: &str =
@@ -630,9 +635,16 @@ fn archive_streaming_feasibility_rejects_direct_zip_extract() {
     }
 
     for required in [
+        "V1PayloadDecryptingReader::new",
+        "ArchiveManifest::read_from",
+        "ArchiveBodyFrameHeader::read_from",
         "LinkedOutputTransaction::new",
-        ".stage(",
-        ".with_writer(",
+        "stage_in",
+        ".with_writer_result(",
+        "drain_trailing_plaintext_to_final_auth",
+        ".finish()",
+        "revalidate_file_targets",
+        "create_selected_directories_after_final_auth",
         "commit_all",
         "revalidate_unpack_target",
     ] {
@@ -645,32 +657,45 @@ fn archive_streaming_feasibility_rejects_direct_zip_extract() {
     let commit_section = normalized_rust_production_section(
         "dexios-domain/src/unpack.rs",
         DEXIOS_DOMAIN_UNPACK_RS,
-        "fn stage_and_commit_extraction",
-        "fn stage_extracted_file",
+        "fn execute_manifest_archive",
+        "fn stage_manifest_extraction",
     );
     assert_normalized_section_order(
-        "dexios-domain/src/unpack.rs::stage_and_commit_extraction",
+        "dexios-domain/src/unpack.rs::execute_manifest_archive",
         &commit_section,
         &[
-            "LinkedOutputTransaction::new",
-            "stage_extracted_file",
+            "V1PayloadDecryptingReader::new",
+            "stage_manifest_extraction",
+            "drain_trailing_plaintext_to_final_auth",
+            ".finish()",
+            "revalidate_file_targets",
+            "create_selected_directories_after_final_auth",
             "commit_all",
         ],
+    );
+    assert_no_normalized_tokens_before(
+        "dexios-domain/src/unpack.rs::execute_manifest_archive",
+        &commit_section,
+        &["commit_all"],
+        normalized_section_order_indices(
+            "dexios-domain/src/unpack.rs::execute_manifest_archive",
+            &commit_section,
+            &[".finish()"],
+        )[0],
+        "final authentication",
     );
 
     let stage_section = normalized_rust_production_section(
         "dexios-domain/src/unpack.rs",
         DEXIOS_DOMAIN_UNPACK_RS,
-        "fn stage_extracted_file",
-        "fn overwrite_policy_for_extracted_file",
+        "fn stage_manifest_file_body",
+        "fn copy_manifest_body",
     );
     let stage_order = [
         "revalidate_unpack_target",
-        "create_dir_all",
-        "revalidate_unpack_target",
-        ".stage(",
+        "stage_in",
         "staged_output_mut",
-        ".with_writer(",
+        ".with_writer_result(",
     ];
     let stage_order_indices = normalized_section_order_indices(
         "dexios-domain/src/unpack.rs::stage_extracted_file",
@@ -678,11 +703,11 @@ fn archive_streaming_feasibility_rejects_direct_zip_extract() {
         &stage_order,
     );
     assert_no_normalized_tokens_before(
-        "dexios-domain/src/unpack.rs::stage_extracted_file",
+        "dexios-domain/src/unpack.rs::stage_manifest_file_body",
         &stage_section,
-        &[".stage(", "staged_output_mut", ".with_writer("],
-        stage_order_indices[2],
-        "the second target revalidation",
+        &["stage_in", "staged_output_mut", ".with_writer_result("],
+        stage_order_indices[0],
+        "target revalidation",
     );
 
     for required in [
@@ -1284,12 +1309,12 @@ fn phase12_performance_and_temp_exposure_contract_is_source_gated() {
     assert_contains(
         "dexios-domain/src/pack.rs",
         DEXIOS_DOMAIN_PACK_RS,
-        "pack-side plaintext temporary ZIP exposure reduced",
+        "manifest-first archive streamed directly through V1 encryption",
     );
     assert_contains(
         "dexios-domain/src/unpack.rs",
         DEXIOS_DOMAIN_UNPACK_RS,
-        "unpack-side plaintext temporary ZIP exposure remains",
+        "unpack-side plaintext exposure is scoped to selected staged file bodies",
     );
 
     for required in [
@@ -1775,6 +1800,146 @@ fn phase04_archive_boundary_gates_are_source_gated() {
         "run cargo test -p dexios-domain --test archive_public_api --release",
         1,
     );
+}
+
+#[test]
+fn phase05_manifest_archive_and_cli_gate_is_source_gated() {
+    let focused_commands = [
+        "run cargo test -p dexios-core --test stream_v1 --release",
+        "run cargo test -p dexios-core --test v1_header --release",
+        "run cargo test -p dexios-domain --test pack_paths --release",
+        "run cargo test -p dexios-domain --test unpack --release",
+        "run cargo test -p dexios-domain --test archive_public_api --release",
+        "run cargo test -p dexios-domain --test workflow_errors --all-features --release",
+        "run cargo test -p dexios --test pack_cli_regressions --release",
+        "run cargo test -p dexios --test unpack_cli_regressions --release",
+        "run cargo test -p dexios --test delete_source_cli --release",
+        "run cargo test -p dexios --test workflow_error_cli --release",
+        "run cargo test -p dexios --test verification_gate_docs --release",
+    ];
+    for command in focused_commands {
+        assert_non_comment_line_count(
+            "scripts/verify_phase_gate.sh",
+            VERIFY_PHASE_GATE,
+            command,
+            1,
+        );
+        assert_non_comment_line_occurs_before(
+            "scripts/verify_phase_gate.sh",
+            VERIFY_PHASE_GATE,
+            command,
+            "run cargo test --workspace --all-features --release --verbose",
+        );
+    }
+
+    for (source_name, source, required) in [
+        (
+            "dexios-core/tests/stream_v1.rs",
+            DEXIOS_CORE_STREAM_V1_TESTS,
+            "ManifestFirst",
+        ),
+        (
+            "dexios-core/tests/v1_header.rs",
+            DEXIOS_CORE_V1_HEADER_TESTS,
+            "ManifestArchive",
+        ),
+        (
+            "dexios-domain/tests/pack_paths.rs",
+            DEXIOS_DOMAIN_PACK_PATHS_TESTS,
+            "ManifestFirstPayload::parse",
+        ),
+        (
+            "dexios-domain/tests/unpack.rs",
+            DEXIOS_DOMAIN_UNPACK_TESTS,
+            "write_manifest_archive_with_entries",
+        ),
+        (
+            "dexios-domain/tests/archive_public_api.rs",
+            DEXIOS_DOMAIN_ARCHIVE_PUBLIC_API_TESTS,
+            "phase05_manifest_archive_normal_path_stays_private_and_zip_free",
+        ),
+        (
+            "dexios/tests/pack_cli_regressions.rs",
+            DEXIOS_PACK_CLI_REGRESSION_TESTS,
+            "ManifestFirstPayload::parse",
+        ),
+        (
+            "dexios/tests/unpack_cli_regressions.rs",
+            DEXIOS_UNPACK_CLI_REGRESSION_TESTS,
+            "write_manifest_archive_with_entries",
+        ),
+        (
+            "dexios/tests/delete_source_cli.rs",
+            DEXIOS_DELETE_SOURCE_CLI_TESTS,
+            "write_manifest_archive_with_entries",
+        ),
+        (
+            "dexios/tests/workflow_error_cli.rs",
+            DEXIOS_WORKFLOW_ERROR_CLI_TESTS,
+            "write_manifest_archive_with_entries",
+        ),
+    ] {
+        assert_contains(source_name, source, required);
+    }
+    assert_contains(
+        "dexios/tests/workflow_error_cli.rs",
+        DEXIOS_WORKFLOW_ERROR_CLI_TESTS,
+        "legacy raw archive payload must fail as a terse archive class",
+    );
+    assert_contains(
+        "dexios/tests/workflow_error_cli.rs",
+        DEXIOS_WORKFLOW_ERROR_CLI_TESTS,
+        "PayloadError",
+    );
+
+    for (source_name, source) in [
+        (
+            "dexios/tests/pack_cli_regressions.rs",
+            DEXIOS_PACK_CLI_REGRESSION_TESTS,
+        ),
+        (
+            "dexios/tests/unpack_cli_regressions.rs",
+            DEXIOS_UNPACK_CLI_REGRESSION_TESTS,
+        ),
+        (
+            "dexios/tests/delete_source_cli.rs",
+            DEXIOS_DELETE_SOURCE_CLI_TESTS,
+        ),
+        (
+            "dexios/tests/workflow_error_cli.rs",
+            DEXIOS_WORKFLOW_ERROR_CLI_TESTS,
+        ),
+    ] {
+        assert_not_contains(source_name, source, "write_zip_with_entries");
+        assert_not_contains(source_name, source, "ZipArchive::new");
+        assert_not_contains(source_name, source, "ZipWriter::new");
+    }
+
+    let normal_unpack = normalized_rust_production_section(
+        "dexios-domain/src/unpack.rs",
+        DEXIOS_DOMAIN_UNPACK_RS,
+        "fn execute_manifest_archive",
+        "fn stage_manifest_extraction",
+    );
+    assert_normalized_section_order(
+        "dexios-domain/src/unpack.rs::execute_manifest_archive",
+        &normal_unpack,
+        &[
+            "V1PayloadDecryptingReader::new",
+            "stage_manifest_extraction",
+            "drain_trailing_plaintext_to_final_auth",
+            ".finish()",
+            "revalidate_file_targets",
+            "create_selected_directories_after_final_auth",
+            "commit_all",
+        ],
+    );
+    for forbidden in ["ZipArchive", "OpenArchiveWithSource", "_temp_factory()"] {
+        assert!(
+            !normal_unpack.contains(&normalized_token(forbidden)),
+            "normal manifest unpack path must not contain {forbidden:?}"
+        );
+    }
 }
 
 #[test]

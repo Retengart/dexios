@@ -1,22 +1,24 @@
 use std::fs;
-use std::io::Write;
+use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use core::cipher::wrap_v1_master_key;
 use core::header::common::{
-    CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN,
-    RETIRED_CURRENT_V1_HEADER_LEN,
+    CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN, KeyslotNonce,
+    PayloadNonce, RETIRED_CURRENT_V1_HEADER_LEN, Salt as HeaderSalt,
 };
+use core::header::v1::{V1Header, V1Keyslot, V1Keyslots};
 use core::kdf::Kdf;
+use core::payload::{ArchiveBodyFrame, ArchiveManifest, ManifestEntry, ManifestFirstPayload};
+use core::primitives::{MasterKey, WrappingKey};
 use core::protected::Protected;
-use domain::encrypt;
-use domain::storage::identity::OverwritePolicy;
+use core::stream::V1PayloadStream;
 use domain::storage::identity::PathRole;
 use domain::storage::transaction::{CommittedArtifact, PartialCommitReceipt, TransactionError};
 use domain::workflow_error::WorkflowErrorClass;
-use zip::write::SimpleFileOptions;
 
 #[allow(dead_code)]
 #[path = "../src/subcommands/errors.rs"]
@@ -106,8 +108,12 @@ fn assert_no_default_debug_rendering(stderr: &str) {
         "Error:",
         "TransactionError::",
         "WorkflowErrorClass::",
+        "HeaderReadError",
+        "PayloadError",
         "DecryptData",
         "Debug",
+        "DXAR",
+        "DXBF",
     ] {
         assert!(
             !stderr.contains(forbidden),
@@ -132,33 +138,88 @@ fn encrypt_fixture(test_dir: &TestDir) {
     );
 }
 
-fn write_zip_with_entries(path: &Path, entries: &[(&str, &[u8])]) {
-    let file = fs::File::create(path).unwrap();
-    let mut zip_writer = zip::ZipWriter::new(file);
-    let options = SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Stored)
-        .large_file(true)
-        .unix_permissions(0o755);
-
-    for (name, body) in entries {
-        zip_writer.start_file(*name, options).unwrap();
-        zip_writer.write_all(body).unwrap();
-    }
-
-    zip_writer.finish().unwrap();
+fn write_manifest_archive_with_entries(path: &Path, entries: &[(&str, &[u8])]) {
+    let (header, encrypted_payload) = encrypted_manifest_archive_bytes(entries);
+    let mut bytes = header;
+    bytes.extend_from_slice(&encrypted_payload);
+    fs::write(path, bytes).unwrap();
 }
 
-fn encrypt_archive(input_path: &Path, output_path: &Path) {
-    let intent = encrypt::EncryptIntent::new(
-        input_path,
-        output_path,
-        OverwritePolicy::CreateNew,
-        None,
-        Protected::new(CORRECT_PASSWORD.as_bytes().to_vec()),
-        Kdf::Blake3Balloon,
+fn encrypted_manifest_archive_bytes(entries: &[(&str, &[u8])]) -> (Vec<u8>, Vec<u8>) {
+    let mut manifest_entries = Vec::with_capacity(entries.len());
+    let mut body_frames = Vec::new();
+    for (index, (path, body)) in entries.iter().enumerate() {
+        let normalized_path = path.trim_end_matches('/').as_bytes().to_vec();
+        if path.ends_with('/') {
+            manifest_entries.push(ManifestEntry::directory(normalized_path).unwrap());
+        } else {
+            manifest_entries.push(
+                ManifestEntry::file(
+                    normalized_path,
+                    u64::try_from(body.len()).expect("test body length fits in u64"),
+                )
+                .unwrap(),
+            );
+            body_frames.push(
+                ArchiveBodyFrame::new(
+                    u32::try_from(index).expect("test entry index fits in u32"),
+                    body.to_vec(),
+                )
+                .unwrap(),
+            );
+        }
+    }
+
+    let payload =
+        ManifestFirstPayload::new(ArchiveManifest::new(manifest_entries).unwrap(), body_frames)
+            .unwrap()
+            .serialize()
+            .unwrap();
+    let (header, master_key) = manifest_archive_header_and_master_key();
+    let mut encrypted_payload = Vec::new();
+    V1PayloadStream::encrypt_file(
+        master_key,
+        &header,
+        &mut Cursor::new(payload),
+        &mut encrypted_payload,
     )
     .unwrap();
-    encrypt::execute(intent).unwrap();
+
+    (header.serialize().unwrap(), encrypted_payload)
+}
+
+fn manifest_archive_header_and_master_key() -> (V1Header, MasterKey) {
+    let raw_key = Protected::new(CORRECT_PASSWORD.as_bytes().to_vec());
+    let header_salt = HeaderSalt::new([17u8; 16]);
+    let kdf_salt = header_salt.to_kdf_salt();
+    let wrapping_key = Kdf::Blake3Balloon.derive(&raw_key, &kdf_salt).unwrap();
+    let master_key = MasterKey::new([31u8; 32]);
+    let keyslot_nonce = KeyslotNonce::new([13u8; 24]);
+    let payload_nonce = PayloadNonce::new([7u8; 20]);
+    let placeholder_keyslot =
+        V1Keyslot::new(Kdf::Blake3Balloon, [0u8; 48], keyslot_nonce, header_salt);
+    let placeholder_header =
+        V1Header::new_manifest_archive(payload_nonce, V1Keyslots::single(placeholder_keyslot))
+            .unwrap();
+    let slot_wrapping_aad = placeholder_header
+        .slot_wrapping_aad(0, &placeholder_keyslot)
+        .unwrap();
+    let encrypted_master_key = wrap_v1_master_key(
+        WrappingKey::from(wrapping_key),
+        &master_key,
+        &keyslot_nonce,
+        &slot_wrapping_aad,
+    )
+    .unwrap();
+    let keyslot = V1Keyslot::new(
+        Kdf::Blake3Balloon,
+        *encrypted_master_key.as_bytes(),
+        keyslot_nonce,
+        header_salt,
+    );
+    let header =
+        V1Header::new_manifest_archive(payload_nonce, V1Keyslots::single(keyslot)).unwrap();
+    (header, master_key)
 }
 
 fn write_legacy_header(path: &Path) {
@@ -501,10 +562,8 @@ fn archive_pack_errors_use_typed_cli_mapping() {
 #[test]
 fn archive_unpack_errors_use_typed_cli_mapping() {
     let test_dir = TestDir::new("workflow-error-unpack");
-    let unsafe_zip = test_dir.path().join("unsafe.zip");
     let unsafe_archive = test_dir.path().join("unsafe.enc");
-    write_zip_with_entries(&unsafe_zip, &[("../escape.txt", b"escape")]);
-    encrypt_archive(&unsafe_zip, &unsafe_archive);
+    write_manifest_archive_with_entries(&unsafe_archive, &[("../escape.txt", b"escape")]);
 
     let unsafe_output = run_cli(
         test_dir.path(),
@@ -518,12 +577,11 @@ fn archive_unpack_errors_use_typed_cli_mapping() {
         "unsafe unpack did not expose typed unsafe path class: {unsafe_stderr}"
     );
     assert_no_default_source_chain(&unsafe_stderr);
+    assert_no_default_debug_rendering(&unsafe_stderr);
     assert!(!test_dir.path().join("escape.txt").exists());
 
-    let collision_zip = test_dir.path().join("collision.zip");
     let collision_archive = test_dir.path().join("collision.enc");
-    write_zip_with_entries(&collision_zip, &[("a", b"file"), ("a/b", b"child")]);
-    encrypt_archive(&collision_zip, &collision_archive);
+    write_manifest_archive_with_entries(&collision_archive, &[("a", b"file"), ("a/b", b"child")]);
 
     let collision_output = run_cli(
         test_dir.path(),
@@ -536,6 +594,40 @@ fn archive_unpack_errors_use_typed_cli_mapping() {
         collision_stderr.contains("Unsafe archive path"),
         "collision unpack did not expose typed unsafe path class: {collision_stderr}"
     );
+    assert_no_default_source_chain(&collision_stderr);
+    assert_no_default_debug_rendering(&collision_stderr);
+
+    fs::write(
+        test_dir.path().join("legacy.zip"),
+        b"PK\x03\x04legacy zip bytes",
+    )
+    .unwrap();
+    let legacy_encrypt_output = run_cli(
+        test_dir.path(),
+        CORRECT_PASSWORD,
+        &["encrypt", "--force", "legacy.zip", "legacy.enc"],
+    );
+    assert!(
+        legacy_encrypt_output.status.success(),
+        "legacy raw archive fixture failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&legacy_encrypt_output.stdout),
+        stderr(&legacy_encrypt_output)
+    );
+    let legacy_unpack_output = run_cli(
+        test_dir.path(),
+        CORRECT_PASSWORD,
+        &["unpack", "--force", "legacy.enc", "legacy-out"],
+    );
+    assert!(!legacy_unpack_output.status.success());
+    let legacy_stderr = stderr(&legacy_unpack_output);
+    assert!(
+        legacy_stderr.contains("Malformed archive data")
+            || legacy_stderr.contains("Unsupported archive format"),
+        "legacy raw archive payload must fail as a terse archive class: {legacy_stderr}"
+    );
+    assert_no_default_source_chain(&legacy_stderr);
+    assert_no_default_debug_rendering(&legacy_stderr);
+    assert!(!test_dir.path().join("legacy-out").exists());
 
     fs::create_dir_all(test_dir.path().join("packed-source")).unwrap();
     fs::write(
@@ -570,6 +662,7 @@ fn archive_unpack_errors_use_typed_cli_mapping() {
     assert!(!wrong_key_stderr.contains("keyslot"));
     assert!(!wrong_key_stderr.contains("master key"));
     assert_no_default_source_chain(&wrong_key_stderr);
+    assert_no_default_debug_rendering(&wrong_key_stderr);
 }
 
 #[test]
