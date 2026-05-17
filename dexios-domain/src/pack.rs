@@ -35,11 +35,8 @@ pub enum Error {
     CreateArchiveWithSource(crate::storage::Error),
     CreateArchiveIoWithSource(io::Error),
     AddDirToArchive,
-    AddDirToArchiveWithSource(zip::result::ZipError),
     AddFileToArchive,
-    AddFileToArchiveWithSource(zip::result::ZipError),
     FinishArchive,
-    FinishArchiveWithSource(zip::result::ZipError),
     FinishArchiveIoWithSource(io::Error),
     ReadData,
     ReadDataWithSource(io::Error),
@@ -63,15 +60,11 @@ impl std::fmt::Display for Error {
             Error::CreateArchive
             | Error::CreateArchiveWithSource(_)
             | Error::CreateArchiveIoWithSource(_) => f.write_str("Unable to create archive"),
-            Error::AddDirToArchive | Error::AddDirToArchiveWithSource(_) => {
-                f.write_str("Unable to add directory to archive")
+            Error::AddDirToArchive => f.write_str("Unable to add directory to archive"),
+            Error::AddFileToArchive => f.write_str("Unable to add file to archive"),
+            Error::FinishArchive | Error::FinishArchiveIoWithSource(_) => {
+                f.write_str("Unable to finish archive")
             }
-            Error::AddFileToArchive | Error::AddFileToArchiveWithSource(_) => {
-                f.write_str("Unable to add file to archive")
-            }
-            Error::FinishArchive
-            | Error::FinishArchiveWithSource(_)
-            | Error::FinishArchiveIoWithSource(_) => f.write_str("Unable to finish archive"),
             Error::ReadData
             | Error::ReadDataWithSource(_)
             | Error::ReadDataStorageWithSource(_) => f.write_str("Unable to read data"),
@@ -100,9 +93,6 @@ impl std::error::Error for Error {
             | Self::FinishArchiveIoWithSource(error)
             | Self::ReadDataWithSource(error)
             | Self::WriteDataWithSource(error) => Some(error),
-            Self::AddDirToArchiveWithSource(error)
-            | Self::AddFileToArchiveWithSource(error)
-            | Self::FinishArchiveWithSource(error) => Some(error),
             Self::Encrypt(error) => Some(error),
             Self::PathIdentity(error) => Some(error),
             Self::Transaction(error) => Some(error),
@@ -127,11 +117,8 @@ impl Error {
             | Self::CreateArchiveWithSource(_)
             | Self::CreateArchiveIoWithSource(_)
             | Self::AddDirToArchive
-            | Self::AddDirToArchiveWithSource(_)
             | Self::AddFileToArchive
-            | Self::AddFileToArchiveWithSource(_)
             | Self::FinishArchive
-            | Self::FinishArchiveWithSource(_)
             | Self::FinishArchiveIoWithSource(_)
             | Self::ReadData
             | Self::ReadDataWithSource(_)
@@ -829,7 +816,6 @@ fn map_encrypt_output_resource_pressure(
                 | crate::encrypt::Error::WriteHeader
                 | crate::encrypt::Error::ResetCursorPosition,
             )
-            | Error::FinishArchiveWithSource(_)
             | Error::WriteDataWithSource(_)
             | Error::ArchivePayload(PayloadError::Io(_)),
             Some(kind),

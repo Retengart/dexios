@@ -65,26 +65,32 @@ fn cli_archive_sources() -> Vec<Source<'static>> {
 #[test]
 fn d01_domain_archive_contracts_do_not_expose_zip_crate_api_types() {
     let violations = collect_violations(&domain_archive_sources(), |source| {
-        source
-            .text
-            .lines()
-            .enumerate()
-            .filter_map(|(index, line)| {
-                let trimmed = line.trim_start();
-                if public_line_exposes_zip_type(trimmed) {
-                    Some(violation(
-                        source.path,
-                        index,
-                        "D-01 public archive contracts must use Dexios-owned policy types, not zip crate API types",
-                    ))
-                } else {
-                    None
-                }
-            })
-            .collect()
+        public_archive_contract_violations(
+            source,
+            public_line_exposes_zip_type,
+            "D-01 public archive contracts must use Dexios-owned policy types, not zip crate API types",
+        )
     });
 
     assert_no_violations(violations);
+
+    let bad_public_enum = Source {
+        path: "synthetic/public-zip-error.rs",
+        text: r#"
+            pub enum Error {
+                Legacy(zip::result::ZipError),
+            }
+        "#,
+    };
+    assert!(
+        !public_archive_contract_violations(
+            bad_public_enum,
+            public_line_exposes_zip_type,
+            "D-01 public archive contracts must use Dexios-owned policy types, not zip crate API types",
+        )
+        .is_empty(),
+        "D-01 source gate must reject public enum variants carrying zip crate types"
+    );
 }
 
 #[test]
@@ -115,26 +121,54 @@ fn d03_public_archive_policy_has_no_stored_or_no_compression_variant() {
 #[test]
 fn d05_public_archive_contract_has_no_zip_metadata_knobs() {
     let violations = collect_violations(&domain_archive_sources(), |source| {
-        source
-            .text
-            .lines()
-            .enumerate()
-            .filter_map(|(index, line)| {
-                let trimmed = line.trim_start();
-                if public_line_exposes_zip_metadata_knob(trimmed) {
-                    Some(violation(
-                        source.path,
-                        index,
-                        "D-05 public archive metadata contract is path plus file/directory only",
-                    ))
-                } else {
-                    None
-                }
-            })
-            .collect()
+        public_archive_contract_violations(
+            source,
+            public_line_exposes_zip_metadata_knob,
+            "D-05 public archive metadata contract is path plus file/directory only",
+        )
     });
 
     assert_no_violations(violations);
+
+    let bad_public_enum = Source {
+        path: "synthetic/public-zip-metadata.rs",
+        text: r#"
+            pub enum ArchiveMetadata {
+                UnixPermissions,
+                LastModified,
+                Zip64,
+            }
+        "#,
+    };
+    assert!(
+        !public_archive_contract_violations(
+            bad_public_enum,
+            public_line_exposes_zip_metadata_knob,
+            "D-05 public archive metadata contract is path plus file/directory only",
+        )
+        .is_empty(),
+        "D-05 source gate must reject public archive metadata enum variants"
+    );
+
+    let private_implementation = Source {
+        path: "synthetic/private-implementation.rs",
+        text: r#"
+            // Compression with encryption is discussed in implementation comments.
+            fn inspect_private_path(path: &Path) {
+                let _ = fs::symlink_metadata(path);
+                let _ = crate::encrypt::Error::EncryptFile;
+            }
+        "#,
+    };
+    assert!(
+        public_archive_contract_violations(
+            private_implementation,
+            public_line_exposes_zip_metadata_knob,
+            "D-05 public archive metadata contract is path plus file/directory only",
+        )
+        .is_empty(),
+        "D-05 source gate must ignore comments and private implementation details"
+    );
 }
 
 #[test]
@@ -552,11 +586,65 @@ fn assert_no_violations(violations: Vec<String>) {
     );
 }
 
+fn public_archive_contract_violations(
+    source: Source<'_>,
+    exposes_forbidden_contract: fn(&str) -> bool,
+    message: &str,
+) -> Vec<String> {
+    let mut violations = Vec::new();
+    let mut brace_depth = 0isize;
+    let mut public_enum_depth = None;
+
+    for (index, line) in source.text.lines().enumerate() {
+        let trimmed = line.trim_start();
+        let public_contract_line = is_public_surface_line(trimmed) || public_enum_depth.is_some();
+        if public_contract_line
+            && !is_comment_or_blank(trimmed)
+            && exposes_forbidden_contract(trimmed)
+        {
+            violations.push(violation(source.path, index, message));
+        }
+
+        let starts_public_enum = starts_public_enum_block(trimmed) && line.contains('{');
+        brace_depth += brace_delta(line);
+
+        if starts_public_enum {
+            public_enum_depth = Some(brace_depth);
+        }
+        if let Some(depth) = public_enum_depth
+            && brace_depth < depth
+        {
+            public_enum_depth = None;
+        }
+    }
+
+    violations
+}
+
+fn is_public_surface_line(trimmed: &str) -> bool {
+    trimmed.starts_with("pub ") || trimmed.starts_with("pub(crate) ")
+}
+
+fn starts_public_enum_block(trimmed: &str) -> bool {
+    ["pub enum ", "pub(crate) enum "]
+        .into_iter()
+        .any(|prefix| trimmed.starts_with(prefix))
+}
+
+fn is_comment_or_blank(trimmed: &str) -> bool {
+    trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("#[")
+}
+
+fn brace_delta(line: &str) -> isize {
+    let opens = line.chars().filter(|character| *character == '{').count() as isize;
+    let closes = line.chars().filter(|character| *character == '}').count() as isize;
+    opens - closes
+}
+
 fn public_line_exposes_zip_type(trimmed: &str) -> bool {
-    trimmed.starts_with("pub ")
-        && (trimmed.contains("zip::")
-            || trimmed.contains("CompressionMethod")
-            || trimmed.contains("SimpleFileOptions"))
+    trimmed.contains("zip::")
+        || trimmed.contains("CompressionMethod")
+        || trimmed.contains("SimpleFileOptions")
 }
 
 fn public_stored_or_no_compression_policy(trimmed: &str) -> bool {
@@ -564,21 +652,24 @@ fn public_stored_or_no_compression_policy(trimmed: &str) -> bool {
 }
 
 fn public_line_exposes_zip_metadata_knob(trimmed: &str) -> bool {
-    trimmed.starts_with("pub ")
-        && [
-            "compression_level",
-            "SimpleFileOptions",
-            "unix_permissions",
-            "permissions",
-            "last_modified",
-            "timestamp",
-            "extra_field",
-            "alignment",
-            "zip64",
-            "encrypt",
-        ]
-        .iter()
-        .any(|pattern| trimmed.contains(pattern))
+    let normalized = trimmed
+        .chars()
+        .filter(|character| *character != '_')
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+    [
+        "compressionlevel",
+        "simplefileoptions",
+        "unixpermissions",
+        "permissions",
+        "lastmodified",
+        "timestamp",
+        "extrafield",
+        "alignment",
+        "zip64",
+    ]
+    .iter()
+    .any(|pattern| normalized.contains(pattern))
 }
 
 fn cli_exposes_compression_selector(compact: &str) -> bool {
