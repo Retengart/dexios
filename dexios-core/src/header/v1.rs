@@ -415,6 +415,20 @@ impl V1Header {
         })
     }
 
+    /// Rebuilds this header with a new keyslot table, preserving `payload_nonce`,
+    /// `payload_kind`, and `payload_framing` verbatim from `self`.
+    ///
+    /// Use this instead of `V1Header::new` for any key-operation that must not
+    /// corrupt the archive AAD.
+    pub fn with_keyslots(&self, keyslots: V1Keyslots) -> Result<Self, HeaderWriteError> {
+        Ok(Self {
+            payload_nonce: self.payload_nonce,
+            payload_kind: self.payload_kind,
+            payload_framing: self.payload_framing,
+            keyslots,
+        })
+    }
+
     #[must_use]
     pub const fn payload_nonce(&self) -> &PayloadNonce {
         &self.payload_nonce
