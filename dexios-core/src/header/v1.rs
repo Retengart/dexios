@@ -391,6 +391,7 @@ pub struct V1Header {
 }
 
 impl V1Header {
+    #[must_use = "constructing a V1Header and discarding it is a no-op on a security path"]
     pub fn new(
         payload_nonce: PayloadNonce,
         keyslots: V1Keyslots,
@@ -403,6 +404,7 @@ impl V1Header {
         })
     }
 
+    #[must_use = "constructing a V1Header and discarding it is a no-op on a security path"]
     pub fn new_manifest_archive(
         payload_nonce: PayloadNonce,
         keyslots: V1Keyslots,
@@ -420,6 +422,7 @@ impl V1Header {
     ///
     /// Use this instead of `V1Header::new` for any key-operation that must not
     /// corrupt the archive AAD.
+    #[must_use = "the rebuilt header must be written; discarding it leaves the original AAD profile in place"]
     pub fn with_keyslots(&self, keyslots: V1Keyslots) -> Result<Self, HeaderWriteError> {
         Ok(Self {
             payload_nonce: self.payload_nonce,

@@ -922,6 +922,16 @@ fn with_keyslots_preserves_manifest_archive_payload_metadata() {
         source.payload_nonce().as_bytes()
     );
     assert_eq!(rebuilt.keyslots()[0].encrypted_master_key(), &[22u8; 48]);
+    // AINT-01: the static header AAD is a pure function of payload_kind /
+    // payload_framing / payload_nonce, so a key rotation MUST leave it byte
+    // identical even though the keyslot table changed. Assert the guarantee
+    // directly rather than relying on the individual-field assertions above to
+    // imply it (closes the regression surface if aad() ever grows a new input).
+    assert_eq!(
+        rebuilt.aad().as_bytes(),
+        source.aad().as_bytes(),
+        "AINT-01: with_keyslots must preserve the archive AAD across key rotation"
+    );
 }
 
 #[test]
