@@ -52,7 +52,7 @@ impl CleanupTargetIdentity {
 
 impl CleanupTarget {
     #[must_use]
-    pub fn file(path: impl Into<PathBuf>) -> Self {
+    pub(crate) fn file(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
             kind: CleanupTargetKind::File,
@@ -63,7 +63,7 @@ impl CleanupTarget {
     }
 
     #[must_use]
-    pub fn directory(path: impl Into<PathBuf>) -> Self {
+    pub(crate) fn directory(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
             kind: CleanupTargetKind::Directory,
@@ -85,6 +85,21 @@ impl CleanupTarget {
             kind,
             identity,
         })
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl CleanupTarget {
+    #[must_use]
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn unchecked_file_for_test(path: impl Into<PathBuf>) -> Self {
+        Self {
+            path: path.into(),
+            kind: CleanupTargetKind::File,
+            identity: CleanupTargetIdentity::Unchecked {
+                source: "unchecked CleanupTarget::file constructor",
+            },
+        }
     }
 }
 
@@ -171,7 +186,7 @@ pub struct CleanupReceipt {
 
 impl CleanupReceipt {
     #[must_use]
-    pub fn new(targets: Vec<CleanupTarget>) -> Self {
+    pub(crate) fn new(targets: Vec<CleanupTarget>) -> Self {
         Self { targets }
     }
 
@@ -196,6 +211,12 @@ impl CleanupReceipt {
         hooks: FailureHooks,
     ) -> CleanupResult {
         self.run_with_hooks(*proof, hooks)
+    }
+
+    #[must_use]
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn unchecked_new_for_test(targets: Vec<CleanupTarget>) -> Self {
+        Self { targets }
     }
 
     fn run_with_hooks(&self, _proof: PostCommitSuccess, hooks: FailureHooks) -> CleanupResult {
