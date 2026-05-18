@@ -136,6 +136,31 @@ fn assert_not_contains(source_name: &str, source: &str, needle: &str) {
     );
 }
 
+fn assert_no_release_overclaim_patterns(source_name: &str, source: &str) {
+    let normalized = source.to_ascii_lowercase();
+    for forbidden in [
+        "guarantees bit-for-bit reproducibility",
+        "guarantees reproducible builds",
+        "guarantees sbom",
+        "guarantees sbom coverage",
+        "guarantees sbom protection",
+        "provides sbom coverage",
+        "provides sbom protection",
+        "sbom protects",
+        "prevents supply-chain attacks",
+        "prevents supply-chain compromise",
+        "prevents supply-chain tampering",
+        "proves completed verification",
+        "proves supply-chain integrity",
+        "signed artifacts are trusted",
+    ] {
+        assert!(
+            !normalized.contains(forbidden),
+            "{source_name} must not contain release overclaim pattern: {forbidden}"
+        );
+    }
+}
+
 fn assert_all_contains(source_name: &str, source: &str, needles: &[&str]) {
     for needle in needles {
         assert_contains(source_name, source, needle);
@@ -599,21 +624,32 @@ fn phase06_release_evidence_script_and_claims_are_source_gated() {
         "Cargo.lock SHA256",
     );
 
-    for forbidden in [
+    let release_evidence_corpus = format!(
+        "{GENERATE_RELEASE_MANIFEST}\n{SAFETY_CONTRACT}\n{INSTALLING_AND_BUILDING}\n{CHANGELOG}"
+    );
+    assert_not_contains(
+        "Phase 06 release evidence corpus",
+        &release_evidence_corpus,
         "git rev-list -n 1 \"$tag\"",
-        "guarantees bit-for-bit reproducibility",
-        "provides SBOM protection",
-        "prevents supply-chain attacks",
-        "proves completed verification",
-    ] {
-        assert_not_contains(
-            "Phase 06 release evidence corpus",
-            &format!(
-                "{GENERATE_RELEASE_MANIFEST}\n{SAFETY_CONTRACT}\n{INSTALLING_AND_BUILDING}\n{CHANGELOG}"
-            ),
-            forbidden,
+    );
+    assert_no_release_overclaim_patterns(
+        "Phase 06 release evidence corpus",
+        &release_evidence_corpus,
+    );
+}
+
+#[test]
+fn release_claim_gate_rejects_common_positive_overclaim_phrases() {
+    let result = std::panic::catch_unwind(|| {
+        assert_no_release_overclaim_patterns(
+            "synthetic release claim",
+            "Dexios guarantees SBOM coverage for release assets.",
         );
-    }
+    });
+    assert!(
+        result.is_err(),
+        "release claim source gate must reject positive SBOM overclaims"
+    );
 }
 
 #[test]
