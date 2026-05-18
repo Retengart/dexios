@@ -563,6 +563,8 @@ fn phase06_release_evidence_script_and_claims_are_source_gated() {
         "sha256",
         "rustc --version",
         "cargo --version",
+        "rustc -vV",
+        "target platform",
         "cargo metadata --format-version=1",
         "bash scripts/verify_phase_gate.sh",
         "--allow-dirty",

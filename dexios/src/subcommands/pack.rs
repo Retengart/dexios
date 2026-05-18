@@ -41,11 +41,8 @@ fn overwrite_policy_for(path: &Path) -> OverwritePolicy {
     }
 }
 
-// this first indexes the input directory
-// once it has the total number of files/folders, it creates a temporary zip file
-// it compresses all of the files into the temporary archive
-// once compressed, it encrypts the zip file
-// it drops/deletes the temporary archive afterwards; this is cleanup only, not a secure-erase guarantee
+// Packing is delegated to the domain layer, which writes a canonical
+// manifest-first archive payload through staged transaction semantics.
 pub fn execute(req: &Request) -> Result<()> {
     // 1. validate and prepare options
     if req.input_file.iter().any(|f| f == req.output_file) {

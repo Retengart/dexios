@@ -110,6 +110,22 @@ tool_version() {
     fi
 }
 
+target_platform() {
+    local rustc_verbose
+    if ! rustc_verbose="$(rustc -vV 2>/dev/null)"; then
+        printf 'rustc -vV unavailable'
+        return
+    fi
+
+    local host
+    host="$(printf '%s\n' "$rustc_verbose" | awk -F': ' '/^host: / { print $2; exit }')"
+    if [[ -n "$host" ]]; then
+        printf '%s' "$host"
+    else
+        printf 'unknown'
+    fi
+}
+
 tracked_dirty=clean
 if ! git diff --quiet || ! git diff --cached --quiet; then
     tracked_dirty=dirty
@@ -159,6 +175,7 @@ metadata_file="$(mktemp "${TMPDIR:-/tmp}/dexios-cargo-metadata.XXXXXX")"
 trap 'rm -f "$metadata_file"' EXIT
 cargo metadata --format-version=1 --locked >"$metadata_file"
 metadata_sha="$(sha256_file "$metadata_file")"
+target_platform_value="$(target_platform)"
 
 mkdir -p "$(dirname "$output")"
 
@@ -175,6 +192,10 @@ mkdir -p "$(dirname "$output")"
     printf -- '- `Cargo.lock` SHA256: `%s`\n' "$(sha256_file Cargo.lock)"
     printf -- '- Cargo metadata command: `cargo metadata --format-version=1 --locked`\n'
     printf -- '- Cargo metadata SHA256: `%s`\n\n' "$metadata_sha"
+
+    printf '## Target Platforms\n\n'
+    printf -- '- target platform: `%s`\n' "$target_platform_value"
+    printf -- '- target platform command: `rustc -vV`\n\n'
 
     printf '## Tool Versions\n\n'
     printf -- '- `rustc --version`: `%s`\n' "$(tool_version rustc rustc --version)"

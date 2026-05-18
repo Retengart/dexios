@@ -41,10 +41,8 @@ where
     Ok(true)
 }
 
-// this first decrypts the input file to a temporary zip file
-// it then unpacks that temporary zip file to the target directory
-// once finished, it drops/deletes the temporary file; this is cleanup only,
-// not a secure-erase guarantee
+// Unpacking is delegated to the domain layer, which validates the manifest,
+// stages selected file bodies, and commits only after final authentication.
 #[allow(clippy::module_name_repetitions)]
 #[allow(clippy::needless_pass_by_value)]
 pub fn unpack(
