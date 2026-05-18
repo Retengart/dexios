@@ -72,7 +72,8 @@
   limits.
 - Added `scripts/generate_release_manifest.sh` to record release candidate
   commit/tag evidence, tracked dirty state, `Cargo.lock` SHA256, Cargo metadata
-  evidence, tool versions, verification commands, and asset SHA256 hashes.
+  evidence, tool versions, the verification command contract, and asset SHA256
+  hashes.
 
 ### Documentation
 
@@ -86,7 +87,8 @@
   pack/unpack operation.
 - Documented the release manifest workflow and its non-claims: no bit-for-bit
   reproducibility, signing trust, SBOM completeness, SBOM protection,
-  supply-chain prevention, or runtime safety beyond the recorded checks.
+  supply-chain prevention, completed verification, or runtime safety beyond
+  separately completed gate results.
 - Documented the Phase 9 KDF feature policy, generated passphrase validation,
   focused KDF measurement workflow, and narrow secret-memory claim boundaries.
 - Documented the release-note trigger and local-only `local-notes/` boundary for

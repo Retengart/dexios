@@ -92,6 +92,7 @@ const REPAIRED_GATE_COMMANDS: &[&str] = &[
     "git diff --exit-code -- docs",
     "bash scripts/verify_repo_hygiene.sh",
     "git diff --check",
+    "bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --allow-dirty --asset target/release-lto/dexios",
 ];
 
 const ASSURANCE_REPLAY_COMMANDS: &[&str] = &[
@@ -530,6 +531,9 @@ fn release_notes_track_breaking_security_verification_and_docs_changes() {
 fn phase06_release_evidence_script_and_claims_are_source_gated() {
     for required in [
         "git rev-parse HEAD",
+        "refs/tags/$tag",
+        "git show-ref --verify --quiet",
+        "git rev-parse -q --verify",
         "Cargo.lock",
         "sha256",
         "rustc --version",
@@ -559,9 +563,10 @@ fn phase06_release_evidence_script_and_claims_are_source_gated() {
         "no full plaintext archive temporary file",
         "selected staged file bodies",
         "asset SHA256",
-        "bit-for-bit reproducibility",
-        "SBOM protection",
-        "supply-chain prevention",
+        "does not claim bit-for-bit reproducibility",
+        "SBOM completeness, SBOM protection, supply-chain prevention",
+        "completed verification",
+        "verification command contract",
     ] {
         assert_corpus_contains(
             "Phase 06 documentation and changelog corpus",
@@ -593,6 +598,22 @@ fn phase06_release_evidence_script_and_claims_are_source_gated() {
         ],
         "Cargo.lock SHA256",
     );
+
+    for forbidden in [
+        "git rev-list -n 1 \"$tag\"",
+        "guarantees bit-for-bit reproducibility",
+        "provides SBOM protection",
+        "prevents supply-chain attacks",
+        "proves completed verification",
+    ] {
+        assert_not_contains(
+            "Phase 06 release evidence corpus",
+            &format!(
+                "{GENERATE_RELEASE_MANIFEST}\n{SAFETY_CONTRACT}\n{INSTALLING_AND_BUILDING}\n{CHANGELOG}"
+            ),
+            forbidden,
+        );
+    }
 }
 
 #[test]
@@ -823,6 +844,12 @@ fn local_scripts_expose_the_full_maintainer_gate() {
         "scripts/verify_phase_gate.sh",
         VERIFY_PHASE_GATE,
         REPAIRED_GATE_COMMANDS,
+    );
+    assert_occurs_before(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "run git diff --check",
+        "run bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --allow-dirty --asset target/release-lto/dexios",
     );
 
     for required in [

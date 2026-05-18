@@ -64,8 +64,8 @@ run cargo audit --deny warnings
 run cargo deny check
 run cargo build -p dexios --profile release-lto
 run bash scripts/verify_cli_surface.sh
-run bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release-lto/dexios
 run mdbook build
 run git diff --exit-code -- docs
 run bash scripts/verify_repo_hygiene.sh
 run git diff --check
+run bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --allow-dirty --asset target/release-lto/dexios

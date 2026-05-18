@@ -12,12 +12,15 @@ Usage: scripts/generate_release_manifest.sh --output <path> [options]
 Options:
   --output <path>   Write the release manifest to this path.
   --asset <path>    Add an asset file and record its SHA256. May be repeated.
-  --tag <tag>       Require this tag to point at the current commit.
+  --tag <tag>       Require this git tag to point at the current commit.
   --allow-dirty     Allow tracked working tree changes for local dry runs.
   --help            Show this help.
 
 Without --allow-dirty, tracked working tree changes fail closed. Untracked files
 are ignored by the dirty check.
+
+The verification command section records the required command contract. It is
+not a pass/fail log for those commands.
 USAGE
 }
 
@@ -121,9 +124,13 @@ commit="$(git rev-parse HEAD)"
 short_commit="$(git rev-parse --short HEAD)"
 
 if [[ -n "$tag" ]]; then
-    tag_commit="$(git rev-list -n 1 "$tag" 2>/dev/null || true)"
-    [[ -n "$tag_commit" ]] || {
+    tag_ref="refs/tags/$tag"
+    if ! git show-ref --verify --quiet "$tag_ref"; then
         echo "Tag not found: $tag" >&2
+        exit 1
+    fi
+    tag_commit="$(git rev-parse -q --verify "${tag_ref}^{commit}")" || {
+        echo "Tag does not resolve to a commit: $tag" >&2
         exit 1
     }
     if [[ "$tag_commit" != "$commit" ]]; then
@@ -176,7 +183,8 @@ mkdir -p "$(dirname "$output")"
     printf -- '- `cargo deny --version`: `%s`\n' "$(tool_version cargo-deny cargo deny --version)"
     printf -- '- `mdbook --version`: `%s`\n\n' "$(tool_version mdbook mdbook --version)"
 
-    printf '## Verification Commands\n\n'
+    printf '## Verification Command Contract\n\n'
+    printf 'These commands are the required verification contract for this release candidate. This section records command names and does not prove that the commands completed successfully; use a completed gate log or current `bash scripts/verify_phase_gate.sh` run for pass/fail evidence.\n\n'
     printf -- '- `cargo fmt --all --check`\n'
     printf -- '- `cargo clippy --workspace --all-targets --all-features --no-deps`\n'
     printf -- '- `cargo test --workspace --all-features --release --verbose`\n'
@@ -213,7 +221,7 @@ mkdir -p "$(dirname "$output")"
     fi
 
     printf '## Claim Limits\n\n'
-    printf 'This manifest records local evidence for one release candidate. It does not claim bit-for-bit reproducibility, signing trust, SBOM completeness, SBOM protection, supply-chain prevention, or runtime safety beyond the verification commands actually run for this candidate.\n'
+    printf 'This manifest records local evidence for one release candidate. It does not claim bit-for-bit reproducibility, signing trust, SBOM completeness, SBOM protection, supply-chain prevention, completed verification, or runtime safety beyond separately completed gate results for this candidate.\n'
 } >"$output"
 
 printf 'Release manifest written to %s\n' "$output"

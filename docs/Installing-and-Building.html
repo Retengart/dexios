@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-83187c71.js";
+            window.path_to_searchindex_js = "searchindex-507dac85.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-532d5d21.js"></script>
@@ -219,6 +219,7 @@ mdbook build
 git diff --exit-code -- docs
 bash scripts/verify_repo_hygiene.sh
 git diff --check
+bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --allow-dirty --asset target/release-lto/dexios
 </code></pre>
 <p><code>mdbook build</code> writes the generated documentation site to <code>docs/</code> because
 <code>book.toml</code> sets <code>build-dir = "docs"</code>.</p>
@@ -246,12 +247,14 @@ tag to point at the current commit. <code>--allow-dirty</code> is only for local
 where the manifest must explicitly record that tracked changes were present.</p>
 <p>The manifest records commit and tag status, tracked dirty state, <code>Cargo.lock</code>
 SHA256, <code>cargo metadata --format-version=1 --locked</code> evidence, tool versions,
-verification commands, and asset SHA256 hashes. That evidence is intentionally
-narrow: it does not claim bit-for-bit reproducibility, signing trust, SBOM
-completeness, SBOM protection, supply-chain prevention, or runtime safety beyond
-the checks that were actually run. Future SBOM, signing, attestation, or
-reproducibility work needs its own trust model and verification command before
-public claims are made.</p>
+the verification command contract, and asset SHA256 hashes. The command contract
+is not a pass/fail log; use a completed gate log or current
+<code>bash scripts/verify_phase_gate.sh</code> run for pass/fail evidence. That evidence is
+intentionally narrow: it does not claim bit-for-bit reproducibility, signing
+trust, SBOM completeness, SBOM protection, supply-chain prevention, completed
+verification, or runtime safety beyond separately completed gate results. Future
+SBOM, signing, attestation, or reproducibility work needs its own trust model and
+verification command before public claims are made.</p>
 <p>The CLI binary is produced at:</p>
 <pre><code class="language-text">target/release/dexios
 </code></pre>

@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-83187c71.js";
+            window.path_to_searchindex_js = "searchindex-507dac85.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-532d5d21.js"></script>
@@ -265,6 +265,7 @@ mdbook build
 git diff --exit-code -- docs
 bash scripts/verify_repo_hygiene.sh
 git diff --check
+bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --allow-dirty --asset target/release-lto/dexios
 </code></pre>
 <p><code>mdbook build</code> writes the generated documentation site to <code>docs/</code> because
 <code>book.toml</code> sets <code>build-dir = "docs"</code>.</p>
@@ -292,12 +293,14 @@ tag to point at the current commit. <code>--allow-dirty</code> is only for local
 where the manifest must explicitly record that tracked changes were present.</p>
 <p>The manifest records commit and tag status, tracked dirty state, <code>Cargo.lock</code>
 SHA256, <code>cargo metadata --format-version=1 --locked</code> evidence, tool versions,
-verification commands, and asset SHA256 hashes. That evidence is intentionally
-narrow: it does not claim bit-for-bit reproducibility, signing trust, SBOM
-completeness, SBOM protection, supply-chain prevention, or runtime safety beyond
-the checks that were actually run. Future SBOM, signing, attestation, or
-reproducibility work needs its own trust model and verification command before
-public claims are made.</p>
+the verification command contract, and asset SHA256 hashes. The command contract
+is not a pass/fail log; use a completed gate log or current
+<code>bash scripts/verify_phase_gate.sh</code> run for pass/fail evidence. That evidence is
+intentionally narrow: it does not claim bit-for-bit reproducibility, signing
+trust, SBOM completeness, SBOM protection, supply-chain prevention, completed
+verification, or runtime safety beyond separately completed gate results. Future
+SBOM, signing, attestation, or reproducibility work needs its own trust model and
+verification command before public claims are made.</p>
 <p>The CLI binary is produced at:</p>
 <pre><code class="language-text">target/release/dexios
 </code></pre>
@@ -516,7 +519,7 @@ editable docs, generated docs, security policy, or historical specs disagree.</p
 <tr><td>header dump/strip/restore</td><td>Current source and owning tests are the authority.</td><td><code>dexios/src/subcommands/header.rs</code>; <code>dexios-domain/src/header/</code>; <code>dexios-domain/tests/header_restore.rs</code>; <code>dexios/tests/header_cli_regressions.rs</code>; <code>dexios/tests/workflow_error_cli.rs</code>; <code>book/src/dexios-core/Headers.md</code>; <code>book/src/</code> editable documentation source.</td><td><code>spec/specification-v1.pdf</code> is historical input; generated <code>docs/</code> is generated output.</td><td>Treat V1-only dump, strip, restore, exact detached-header length, header-only rejection, missing-payload rejection, stripped-target validation, and typed header workflow errors as current Phase 5 behavior.</td></tr>
 <tr><td>storage transactions and path identity</td><td>Current domain storage modules and real filesystem tests are the authority for Phase 4 final-output preservation, path identity, cleanup sequencing, Phase 10 storage test-support gating, and Phase 11 staged write ordering.</td><td><code>dexios-domain/src/storage/mod.rs</code>; <code>dexios-domain/src/storage/fs.rs</code>; <code>dexios-domain/src/storage/temp.rs</code>; <code>dexios-domain/src/storage/identity.rs</code>; <code>dexios-domain/src/storage/transaction.rs</code>; <code>dexios-domain/src/storage/cleanup.rs</code>; <code>dexios-domain/src/storage/test_support.rs</code>; <code>dexios-domain/tests/transactions.rs</code>; <code>dexios-domain/tests/path_identity.rs</code>; <code>dexios-domain/tests/cleanup_receipts.rs</code>; <code>dexios-domain/tests/workflow_public_api.rs</code>; <code>dexios/tests/storage_transactions_cli.rs</code>; <code>dexios/tests/delete_source_cli.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code>.</td><td>Historical direct-final-write behavior and generated docs do not override current source/tests.</td><td>Treat Phase 4 storage responsibilities as split by module: real filesystem storage, temporary artifacts, identity, transactions, cleanup receipts, and test failure hooks are separate maintainer evidence surfaces. Failure-hook entry points are test-support scoped; public receipt and identity evidence remains production API. Phase 11 adds the exact staged flush/sync/persist contract: same-directory temporary files, <code>File::sync_all</code> before persist, <code>tempfile::NamedTempFile::persist</code> or <code>persist_noclobber</code> for final placement, and no portable parent-directory durability claim.</td></tr>
 <tr><td>pack/unpack archive boundaries</td><td>Current source/tests plus editable docs are the authority for checked unpack construction, manifest-first archive payload behavior, plaintext staging exposure, minimal metadata preservation, and structural archive limits.</td><td><code>dexios-domain/src/archive.rs</code>; <code>dexios-domain/src/pack.rs</code>; <code>dexios-domain/src/unpack.rs</code>; <code>dexios-core/src/payload.rs</code>; <code>dexios-core/src/stream.rs</code>; <code>dexios/src/subcommands/unpack.rs</code>; <code>dexios-domain/tests/pack_paths.rs</code>; <code>dexios-domain/tests/unpack.rs</code>; <code>dexios-domain/tests/archive_public_api.rs</code>; <code>dexios-core/tests/stream_v1.rs</code>; <code>dexios/tests/pack_cli_regressions.rs</code>; <code>dexios/tests/unpack_cli_regressions.rs</code>; <code>book/src/technical-details/Directory-Packing.md</code>; <code>book/src/technical-details/Secure-Erase.md</code>; <code>book/src/</code> editable documentation source.</td><td><code>spec/specification-v1.pdf</code> contains older erase wording; generated <code>docs/</code> is generated output.</td><td>Treat <code>UnpackIntent</code> as the public checked unpack boundary. Current pack and unpack use Dexios-owned manifest-first <code>DXAR</code> archive framing plus ordered <code>DXBF</code> body frames. Normal operation no longer creates a full plaintext archive temporary file; the current archive workflow has no full plaintext archive temporary file. Unpack-side plaintext exposure is scoped to selected staged file bodies and ordinary filesystem temporary/staged files, not secure erase. ZIP crate bytes and types are not canonical format surface.</td></tr>
-<tr><td>release evidence and public safety claims</td><td><code>book/src/</code>, <code>CHANGELOG.md</code>, <code>scripts/verify_phase_gate.sh</code>, and <code>scripts/generate_release_manifest.sh</code> are the authority for release verification steps and public claim limits.</td><td><code>book/src/Safety-Contract.md</code>; <code>book/src/Installing-and-Building.md</code>; <code>CHANGELOG.md</code>; <code>scripts/verify_phase_gate.sh</code>; <code>scripts/generate_release_manifest.sh</code>; <code>dexios/tests/verification_gate_docs.rs</code>; Context7 <code>/rust-lang/mdbook</code>, <code>/websites/embarkstudios_github_io_cargo-deny</code>, and <code>/websites/doc_rust-lang_cargo</code> research.</td><td>Local <code>local-notes/</code> notes are not public release evidence; generated <code>docs/</code> is generated output.</td><td>Release evidence may record commit identity, dirty tracked-file state, <code>Cargo.lock</code> SHA256, tool versions, Cargo metadata, verification commands, and asset SHA256 hashes. It does not claim bit-for-bit reproducibility, signing trust, SBOM completeness, SBOM protection, supply-chain prevention, or runtime safety beyond the gates that were actually run.</td></tr>
+<tr><td>release evidence and public safety claims</td><td><code>book/src/</code>, <code>CHANGELOG.md</code>, <code>scripts/verify_phase_gate.sh</code>, and <code>scripts/generate_release_manifest.sh</code> are the authority for release verification steps and public claim limits.</td><td><code>book/src/Safety-Contract.md</code>; <code>book/src/Installing-and-Building.md</code>; <code>CHANGELOG.md</code>; <code>scripts/verify_phase_gate.sh</code>; <code>scripts/generate_release_manifest.sh</code>; <code>dexios/tests/verification_gate_docs.rs</code>; Context7 <code>/rust-lang/mdbook</code>, <code>/websites/embarkstudios_github_io_cargo-deny</code>, and <code>/websites/doc_rust-lang_cargo</code> research.</td><td>Local <code>local-notes/</code> notes are not public release evidence; generated <code>docs/</code> is generated output.</td><td>Release evidence may record commit identity, dirty tracked-file state, <code>Cargo.lock</code> SHA256, tool versions, Cargo metadata, the verification command contract, and asset SHA256 hashes. It does not claim bit-for-bit reproducibility, signing trust, SBOM completeness, SBOM protection, supply-chain prevention, completed verification, or runtime safety beyond separately completed gate results.</td></tr>
 <tr><td>delete-after-success and secure erase wording</td><td><code>book/src/technical-details/Secure-Erase.md</code> and current source/test behavior are current authority.</td><td><code>dexios-domain/src/storage/cleanup.rs</code>; <code>dexios-domain/tests/cleanup_receipts.rs</code>; <code>dexios/src/subcommands/encrypt.rs</code>; <code>dexios/src/subcommands/decrypt.rs</code>; <code>dexios/src/subcommands/unpack.rs</code>; <code>dexios/src/subcommands/pack.rs</code>; <code>dexios/tests/delete_source_cli.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code>; <code>book/src/</code> editable documentation source.</td><td>Old erase claims in historical material are not current product claims; generated <code>docs/</code> is generated output.</td><td>Describe deletion as ordinary delete-after-success only: cleanup runs after transaction commit and requested hash success, changed cleanup identity is reported as cleanup failure, committed outputs are not rolled back, and <code>remove_file</code> does not guarantee immediate physical deletion. Do not claim physical secure erase or sanitized plaintext temp artifacts.</td></tr>
 <tr><td>error taxonomy and rollback decisions</td><td>Current source plus typed-error, diagnostic source-chain, and CLI mapping tests are the authority.</td><td><code>dexios-domain/src/workflow_error.rs</code>; <code>dexios-domain/src/encrypt.rs</code>; <code>dexios-domain/src/decrypt.rs</code>; <code>dexios-domain/src/pack.rs</code>; <code>dexios-domain/src/unpack.rs</code>; <code>dexios-domain/src/header.rs</code>; <code>dexios-domain/src/key.rs</code>; <code>dexios-domain/src/storage/mod.rs</code>; <code>dexios-domain/src/storage/identity.rs</code>; <code>dexios-domain/src/storage/transaction.rs</code>; <code>dexios-domain/tests/workflow_errors.rs</code>; <code>dexios-domain/tests/workflow_public_api.rs</code>; <code>dexios/src/subcommands/errors.rs</code>; <code>dexios/tests/workflow_error_cli.rs</code>.</td><td>Historical docs and generated <code>docs/</code> may explain user-facing behavior but do not establish rollback correctness.</td><td>Treat <code>WorkflowErrorClass</code> as the typed CLI mapping boundary. Treat <code>std::error::Error::source()</code> chains as diagnostics only; they add maintainer/debug depth and are not printed by default CLI errors.</td></tr>
 <tr><td>security reporting policy</td><td><code>SECURITY.md</code> is the authority for reporting channels and supported versions.</td><td>Current repository policy and maintainer-facing security notes.</td><td>Generated <code>docs/</code> may copy policy text but does not override <code>SECURITY.md</code>.</td><td>Use <code>SECURITY.md</code> for vulnerability reporting claims; use source/tests/contracts for runtime safety behavior.</td></tr>
@@ -596,11 +599,11 @@ accepted.</p>
 <li><code>cargo deny check</code></li>
 <li><code>cargo build -p dexios --profile release-lto</code></li>
 <li><code>bash scripts/verify_cli_surface.sh</code></li>
-<li><code>bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release-lto/dexios</code></li>
 <li><code>mdbook build</code></li>
 <li><code>git diff --exit-code -- docs</code></li>
 <li><code>bash scripts/verify_repo_hygiene.sh</code></li>
 <li><code>git diff --check</code></li>
+<li><code>bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --allow-dirty --asset target/release-lto/dexios</code></li>
 </ul>
 <p>The gate fails before long-running checks if required tools are missing. Local
 setup remains explicit: install <code>cargo-audit</code> with
@@ -635,10 +638,12 @@ remain advisory evidence.</p>
 <p>Phase 6 release evidence records exactly what was checked for a release
 candidate. The release manifest is evidence, not a trust root: it records commit
 identity, tracked dirty state, <code>Cargo.lock</code> SHA256, tool versions, Cargo
-metadata, verification commands, and optional asset SHA256 hashes. It does not
-claim bit-for-bit reproducibility, signing trust, SBOM completeness, SBOM
-protection, supply-chain prevention, or any safety property not covered by the
-recorded checks.</p>
+metadata, the verification command contract, and optional asset SHA256 hashes.
+The command contract is not a pass/fail log; use a completed gate log or current
+<code>bash scripts/verify_phase_gate.sh</code> run for pass/fail evidence. The manifest
+does not claim bit-for-bit reproducibility, signing trust, SBOM completeness,
+SBOM protection, supply-chain prevention, completed verification, or any safety
+property not covered by separately completed gate results.</p>
 <p>Phase 9 closes with an additional KDF/passphrase/secret-memory gate:</p>
 <ul>
 <li><code>balloon-hash 0.4.0</code> keeps the <code>zeroize</code> feature and <code>blake3 = "=1.8.3"</code> stays pinned;</li>

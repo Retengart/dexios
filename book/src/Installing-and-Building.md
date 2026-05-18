@@ -72,6 +72,7 @@ mdbook build
 git diff --exit-code -- docs
 bash scripts/verify_repo_hygiene.sh
 git diff --check
+bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --allow-dirty --asset target/release-lto/dexios
 ```
 
 `mdbook build` writes the generated documentation site to `docs/` because
@@ -111,12 +112,14 @@ where the manifest must explicitly record that tracked changes were present.
 
 The manifest records commit and tag status, tracked dirty state, `Cargo.lock`
 SHA256, `cargo metadata --format-version=1 --locked` evidence, tool versions,
-verification commands, and asset SHA256 hashes. That evidence is intentionally
-narrow: it does not claim bit-for-bit reproducibility, signing trust, SBOM
-completeness, SBOM protection, supply-chain prevention, or runtime safety beyond
-the checks that were actually run. Future SBOM, signing, attestation, or
-reproducibility work needs its own trust model and verification command before
-public claims are made.
+the verification command contract, and asset SHA256 hashes. The command contract
+is not a pass/fail log; use a completed gate log or current
+`bash scripts/verify_phase_gate.sh` run for pass/fail evidence. That evidence is
+intentionally narrow: it does not claim bit-for-bit reproducibility, signing
+trust, SBOM completeness, SBOM protection, supply-chain prevention, completed
+verification, or runtime safety beyond separately completed gate results. Future
+SBOM, signing, attestation, or reproducibility work needs its own trust model and
+verification command before public claims are made.
 
 The CLI binary is produced at:
 
