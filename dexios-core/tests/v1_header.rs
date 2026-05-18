@@ -891,3 +891,47 @@ fn v1_primitives_reject_invalid_lengths() {
         Err(HeaderReadError::InvalidEncryptedMasterKeyLength(47))
     ));
 }
+
+#[test]
+fn with_keyslots_preserves_manifest_archive_payload_metadata() {
+    let source = V1Header::new_manifest_archive(
+        PayloadNonce::new([9u8; 20]),
+        V1Keyslots::single(V1Keyslot::new(
+            Kdf::Blake3Balloon,
+            [11u8; 48],
+            KeyslotNonce::new([13u8; 24]),
+            HeaderSalt::new([17u8; 16]),
+        )),
+    )
+    .expect("manifest archive source header");
+
+    let new_keyslots = V1Keyslots::single(V1Keyslot::new(
+        Kdf::Blake3Balloon,
+        [22u8; 48],
+        KeyslotNonce::new([23u8; 24]),
+        HeaderSalt::new([27u8; 16]),
+    ));
+    let rebuilt = source
+        .with_keyslots(new_keyslots)
+        .expect("with_keyslots must succeed");
+
+    assert_eq!(rebuilt.payload_kind(), PayloadKind::ManifestArchive);
+    assert_eq!(rebuilt.payload_framing(), PayloadFramingProfile::ManifestFirst);
+    assert_eq!(
+        rebuilt.payload_nonce().as_bytes(),
+        source.payload_nonce().as_bytes()
+    );
+    assert_eq!(rebuilt.keyslots()[0].encrypted_master_key(), &[22u8; 48]);
+}
+
+#[test]
+fn with_keyslots_preserves_raw_file_payload_metadata() {
+    let source = support::sample_v1_header(); // RawFile / RawLe31
+    let rebuilt = source
+        .with_keyslots(source.keyslots_collection().clone())
+        .expect("with_keyslots round-trip");
+
+    assert_eq!(rebuilt.payload_kind(), PayloadKind::RawFile);
+    assert_eq!(rebuilt.payload_framing(), PayloadFramingProfile::RawLe31);
+    assert_eq!(rebuilt, source); // PartialEq round-trip
+}
