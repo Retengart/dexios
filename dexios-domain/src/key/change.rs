@@ -124,8 +124,9 @@ fn changed_header(
     keyslots
         .replace(index, placeholder_keyslot)
         .map_err(|_| Error::HeaderWrite)?;
-    let replacement_context_header =
-        header.with_keyslots(keyslots.clone()).map_err(|_| Error::HeaderWrite)?;
+    let replacement_context_header = header
+        .with_keyslots(keyslots.clone())
+        .map_err(|_| Error::HeaderWrite)?;
 
     let encrypted_master_key = super::encrypt_master_key(
         &replacement_context_header,
@@ -144,8 +145,9 @@ fn changed_header(
         )
         .map_err(|_| Error::HeaderWrite)?;
 
-    let replacement_header =
-        header.with_keyslots(keyslots).map_err(|_| Error::HeaderWrite)?;
+    let replacement_header = header
+        .with_keyslots(keyslots)
+        .map_err(|_| Error::HeaderWrite)?;
     let (replacement_master_key, replacement_index) =
         super::decrypt_v1_master_key_with_index(&replacement_header, raw_key_new)?;
 

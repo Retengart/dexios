@@ -88,7 +88,9 @@ fn deleted_header(header: &V1Header, raw_key_old: Protected<Vec<u8>>) -> Result<
         .clear_physical_slot(index)
         .map_err(|_| Error::HeaderWrite)?;
 
-    V1Header::new(*header.payload_nonce(), keyslots).map_err(|_| Error::HeaderWrite)
+    header
+        .with_keyslots(keyslots)
+        .map_err(|_| Error::HeaderWrite)
 }
 
 fn parse_v1_header(bytes: &[u8]) -> Result<V1Header, Error> {

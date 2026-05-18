@@ -916,7 +916,10 @@ fn with_keyslots_preserves_manifest_archive_payload_metadata() {
         .expect("with_keyslots must succeed");
 
     assert_eq!(rebuilt.payload_kind(), PayloadKind::ManifestArchive);
-    assert_eq!(rebuilt.payload_framing(), PayloadFramingProfile::ManifestFirst);
+    assert_eq!(
+        rebuilt.payload_framing(),
+        PayloadFramingProfile::ManifestFirst
+    );
     assert_eq!(
         rebuilt.payload_nonce().as_bytes(),
         source.payload_nonce().as_bytes()
