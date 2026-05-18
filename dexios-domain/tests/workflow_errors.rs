@@ -278,7 +278,7 @@ fn resource_pressure_helpers_detect_storage_full_source_chains() {
 #[test]
 fn cleanup_failures_have_typed_workflow_classification() {
     let failure = CleanupFailure::without_source(
-        CleanupTarget::file(path("source.txt")),
+        CleanupTarget::unchecked_file_for_test(path("source.txt")),
         io::ErrorKind::PermissionDenied,
     );
     let result = CleanupResult {

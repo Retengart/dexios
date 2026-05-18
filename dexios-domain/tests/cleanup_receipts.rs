@@ -223,9 +223,9 @@ fn cleanup_receipt_reports_partial_failure() {
     fs::write(&injected_failure, b"source one").unwrap();
     fs::write(&deleted, b"source two").unwrap();
 
-    let cleanup_receipt = CleanupReceipt::new(vec![
-        CleanupTarget::file(&injected_failure),
-        CleanupTarget::file(&deleted),
+    let cleanup_receipt = CleanupReceipt::unchecked_new_for_test(vec![
+        CleanupTarget::unchecked_file_for_test(&injected_failure),
+        CleanupTarget::unchecked_file_for_test(&deleted),
     ]);
     assert!(
         cleanup_receipt.targets[0]
@@ -258,7 +258,7 @@ fn cleanup_receipt_reports_partial_failure() {
 #[test]
 fn cleanup_failure_source_free_synthetic_case_has_no_source() {
     let failure = CleanupFailure::without_source(
-        CleanupTarget::file(PathBuf::from("source.txt")),
+        CleanupTarget::unchecked_file_for_test(PathBuf::from("source.txt")),
         std::io::ErrorKind::PermissionDenied,
     );
 

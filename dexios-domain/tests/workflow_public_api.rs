@@ -380,6 +380,17 @@ fn assert_retained_public_storage_exports() {
             "D-07 cleanup evidence API must retain {expected}"
         );
     }
+
+    for sealed in [
+        "pub(crate) fn file(",
+        "pub(crate) fn directory(",
+        "pub(crate) fn new(targets:",
+    ] {
+        assert!(
+            STORAGE_CLEANUP.contains(sealed),
+            "APIS-03 cleanup constructor must be crate-sealed: {sealed}"
+        );
+    }
 }
 
 fn collect_violations(
