@@ -27,6 +27,7 @@ const VERIFY_ASSURANCE_REPLAY: &str = include_str!("../../scripts/verify_assuran
 const VERIFY_CLI_SURFACE: &str = include_str!("../../scripts/verify_cli_surface.sh");
 const VERIFY_REPO_HYGIENE: &str = include_str!("../../scripts/verify_repo_hygiene.sh");
 const MEASURE_PERFORMANCE_GATE: &str = include_str!("../../scripts/measure_performance_gate.sh");
+const GENERATE_RELEASE_MANIFEST: &str = include_str!("../../scripts/generate_release_manifest.sh");
 const DEXIOS_CORE_STREAM_V1_TESTS: &str = include_str!("../../dexios-core/tests/stream_v1.rs");
 const DEXIOS_CORE_V1_HEADER_TESTS: &str = include_str!("../../dexios-core/tests/v1_header.rs");
 const DEXIOS_DOMAIN_DECRYPT_WORKFLOW_ERROR_TESTS: &str =
@@ -316,6 +317,20 @@ fn assert_corpus_contains(corpus_name: &str, sources: &[(&str, &str)], needle: &
     );
 }
 
+fn assert_corpus_markdown_text_contains(corpus_name: &str, sources: &[(&str, &str)], needle: &str) {
+    assert!(
+        sources
+            .iter()
+            .any(|(_, source)| source.replace('`', "").contains(needle)),
+        "{corpus_name} must contain markdown text {needle:?} in one of: {}",
+        sources
+            .iter()
+            .map(|(source_name, _)| *source_name)
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+}
+
 fn assert_occurs_before(source_name: &str, source: &str, earlier: &str, later: &str) {
     let earlier_index = source
         .find(earlier)
@@ -509,6 +524,75 @@ fn release_notes_track_breaking_security_verification_and_docs_changes() {
     ] {
         assert_contains("CHANGELOG.md", CHANGELOG, required);
     }
+}
+
+#[test]
+fn phase06_release_evidence_script_and_claims_are_source_gated() {
+    for required in [
+        "git rev-parse HEAD",
+        "Cargo.lock",
+        "sha256",
+        "rustc --version",
+        "cargo --version",
+        "cargo metadata --format-version=1",
+        "bash scripts/verify_phase_gate.sh",
+        "--allow-dirty",
+        "--asset",
+        "--tag",
+    ] {
+        assert_contains(
+            "scripts/generate_release_manifest.sh",
+            GENERATE_RELEASE_MANIFEST,
+            required,
+        );
+    }
+    assert_not_contains(
+        "scripts/generate_release_manifest.sh",
+        GENERATE_RELEASE_MANIFEST,
+        "local-notes",
+    );
+
+    for required in [
+        "manifest-first archive payload",
+        "DXAR",
+        "DXBF",
+        "no full plaintext archive temporary file",
+        "selected staged file bodies",
+        "asset SHA256",
+        "bit-for-bit reproducibility",
+        "SBOM protection",
+        "supply-chain prevention",
+    ] {
+        assert_corpus_contains(
+            "Phase 06 documentation and changelog corpus",
+            &[
+                ("CHANGELOG.md", CHANGELOG),
+                ("book/src/Safety-Contract.md", SAFETY_CONTRACT),
+                (
+                    "scripts/generate_release_manifest.sh",
+                    GENERATE_RELEASE_MANIFEST,
+                ),
+                (
+                    "book/src/technical-details/Directory-Packing.md",
+                    DIRECTORY_PACKING,
+                ),
+                ("book/src/technical-details/Secure-Erase.md", SECURE_ERASE),
+            ],
+            required,
+        );
+    }
+    assert_corpus_markdown_text_contains(
+        "Phase 06 documentation and changelog corpus",
+        &[
+            ("CHANGELOG.md", CHANGELOG),
+            ("book/src/Safety-Contract.md", SAFETY_CONTRACT),
+            (
+                "scripts/generate_release_manifest.sh",
+                GENERATE_RELEASE_MANIFEST,
+            ),
+        ],
+        "Cargo.lock SHA256",
+    );
 }
 
 #[test]
@@ -936,8 +1020,8 @@ fn canonical_v1_docs_source_gate_catches_stream_and_payload_claims() {
 #[test]
 fn canonical_v1_docs_source_gate_catches_manifest_and_error_claims() {
     for required in [
-        "canonical V1 archive payload framing",
-        "Dexios-owned manifest-first `DXAR` framing",
+        "manifest-first archive payloads",
+        "DXAR",
         "ordered `DXBF` body frames",
         "structural limit checks",
         "body-frame length mismatch",
@@ -1275,6 +1359,11 @@ fn phase12_performance_and_temp_exposure_contract_is_source_gated() {
     for required in [
         "Phase 12 measured stream/archive/temp-space thresholds",
         "focused release gate",
+        "manifest-first archive payload",
+        "DXAR",
+        "DXBF",
+        "no longer creates a full plaintext archive temporary file",
+        "selected staged file bodies",
         "capacity pressure",
         "best-effort",
         "does not prove portable free space",
@@ -1283,9 +1372,12 @@ fn phase12_performance_and_temp_exposure_contract_is_source_gated() {
     }
 
     for required in [
-        "pack-side plaintext temporary ZIP exposure",
-        "unpack-side plaintext temporary ZIP exposure",
-        "ordinary temp-file cleanup",
+        "manifest-first archive payload",
+        "DXAR",
+        "DXBF",
+        "no longer creates a full plaintext archive temporary file",
+        "selected staged file bodies",
+        "ordinary filesystem cleanup",
         "capacity pressure",
         "does not prove portable free space",
     ] {
@@ -1322,8 +1414,9 @@ fn phase12_performance_and_temp_exposure_contract_is_source_gated() {
     for required in [
         "performance thresholds",
         "capacity-pressure reporting",
-        "pack-side plaintext temporary ZIP exposure",
-        "unpack-side plaintext temporary ZIP exposure remains",
+        "manifest-first archive payload",
+        "no full plaintext archive temporary file",
+        "selected staged file bodies",
     ] {
         assert_contains("CHANGELOG.md", CHANGELOG, required);
     }
@@ -1520,8 +1613,9 @@ fn phase10_domain_api_and_error_cleanup_is_source_gated() {
 
     for required in [
         "checked `UnpackIntent` state",
-        "plaintext temporary ZIP exposure",
-        "does not remove unpack-side plaintext temporary ZIP exposure",
+        "manifest-first archive payload",
+        "no longer creates a full plaintext archive temporary file",
+        "selected staged file bodies",
         "they do not prove that the host has enough free memory or disk space",
     ] {
         assert_contains(
@@ -2009,8 +2103,9 @@ fn phase11_filesystem_transaction_and_cleanup_contract_is_source_gated() {
         "no secure erase",
         "no physical sanitization",
         "no full power-failure proof",
-        "Pack-side plaintext temporary ZIP exposure was reduced in Phase 12",
-        "Unpack-side plaintext temporary ZIP exposure remains",
+        "manifest-first archive payload",
+        "no full plaintext archive temporary file",
+        "selected staged file bodies",
     ] {
         assert_corpus_contains("Phase 11 documentation corpus", &docs, required);
     }
@@ -2024,7 +2119,8 @@ fn phase11_filesystem_transaction_and_cleanup_contract_is_source_gated() {
         "no secure erase",
         "no physical sanitization",
         "no full power-failure proof",
-        "plaintext temporary ZIP exposure remains, not reduced in Phase 11",
+        "manifest-first archive payload",
+        "no full plaintext archive temporary file",
     ] {
         assert_contains("CHANGELOG.md", CHANGELOG, required);
     }
@@ -2037,8 +2133,9 @@ fn phase11_filesystem_transaction_and_cleanup_contract_is_source_gated() {
         "no secure erase",
         "no physical sanitization",
         "no full power-failure proof",
-        "Pack-side plaintext temporary ZIP exposure was reduced in Phase 12.",
-        "Unpack-side plaintext temporary ZIP exposure remains.",
+        "manifest-first archive payload",
+        "no full plaintext archive temporary file",
+        "selected staged file bodies",
     ] {
         assert_corpus_contains("generated Phase 11 docs", &generated_docs, required);
     }
@@ -2125,9 +2222,26 @@ fn archive_docs_do_not_reintroduce_removed_compression_selector() {
     ] {
         assert_not_contains(source_name, source, "--zstd");
         assert_not_contains(source_name, source, "Compression is optional");
-        assert_contains(source_name, source, "default Dexios archive");
-        assert_contains(source_name, source, "compression policy");
     }
+    let archive_docs = [
+        ("README.md", README),
+        ("dexios/README.md", CLI_README),
+        ("book/src/Usage-Examples.md", USAGE_EXAMPLES),
+        (
+            "book/src/technical-details/Directory-Packing.md",
+            DIRECTORY_PACKING,
+        ),
+    ];
+    assert_corpus_contains(
+        "archive documentation corpus",
+        &archive_docs,
+        "default Dexios archive",
+    );
+    assert_corpus_contains(
+        "archive documentation corpus",
+        &archive_docs,
+        "compression policy",
+    );
 }
 
 #[test]

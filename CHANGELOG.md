@@ -14,6 +14,9 @@
   failure-injection hooks are gated behind the non-default `test-support`
   feature, and typed domain errors preserve safe diagnostic source chains while
   CLI mapping stays class-based and terse.
+- Redesigned the canonical V1 archive payload as Dexios-owned manifest-first
+  `DXAR` framing with ordered `DXBF` body frames. ZIP bytes and ZIP crate types
+  are no longer part of the canonical archive format surface.
 
 ### Security
 
@@ -23,10 +26,12 @@
   evidence, cleanup identity is revalidated before ordinary delete-after-success
   cleanup, and delete-after-success remains blocked until complete commit and
   requested hash success.
-- Reduced pack-side plaintext temporary ZIP exposure by streaming ZIP archive
-  bytes directly into the V1 encrypted payload writer. Unpack-side plaintext
-  temporary ZIP exposure remains because unpack still needs a seekable archive
-  for full metadata validation before staged extraction commits.
+- Removed the normal full plaintext archive temporary file from pack/unpack
+  operation. Pack streams the manifest-first archive payload into V1 encryption;
+  unpack validates the manifest before staging selected file bodies and commits
+  only after final stream authentication. Plaintext exposure is still present in
+  selected staged file bodies and ordinary filesystem temporary/staged files;
+  Dexios does not claim secure erase or physical sanitization.
 - Enabled the `balloon-hash 0.4.0` `zeroize` feature and source-gated the
   BLAKE3-Balloon dependency policy while keeping `blake3 = "=1.8.3"` pinned.
 - Rejected explicit invalid generated passphrase counts such as `--auto=0`,
@@ -65,17 +70,23 @@
 - Added capacity-pressure reporting for pack and unpack when preserved IO
   sources expose storage pressure such as full storage, quota, or file-size
   limits.
+- Added `scripts/generate_release_manifest.sh` to record release candidate
+  commit/tag evidence, tracked dirty state, `Cargo.lock` SHA256, Cargo metadata
+  evidence, tool versions, verification commands, and asset SHA256 hashes.
 
 ### Documentation
 
 - Documented Phase 11 filesystem transaction and cleanup limits in the safety
   contract and mdBook technical notes, including ordinary delete-after-success
   cleanup, partial commit evidence, committed outputs are not rolled back, and
-  plaintext temporary ZIP exposure remains, not reduced in Phase 11.
-- Documented Phase 12 performance thresholds, capacity-pressure reporting,
-  pack-side plaintext temporary ZIP exposure reduction, and that unpack-side
-  plaintext temporary ZIP exposure remains.
-- Source-gated that unpack-side plaintext temporary ZIP exposure remains.
+  no secure erase or physical sanitization claims.
+- Documented Phase 12 performance thresholds and capacity-pressure reporting.
+- Documented the current manifest-first archive payload behavior and source-gated
+  that no full plaintext archive temporary file is created during normal
+  pack/unpack operation.
+- Documented the release manifest workflow and its non-claims: no bit-for-bit
+  reproducibility, signing trust, SBOM completeness, SBOM protection,
+  supply-chain prevention, or runtime safety beyond the recorded checks.
 - Documented the Phase 9 KDF feature policy, generated passphrase validation,
   focused KDF measurement workflow, and narrow secret-memory claim boundaries.
 - Documented the release-note trigger and local-only `local-notes/` boundary for

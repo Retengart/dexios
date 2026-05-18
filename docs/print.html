@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-2aa99cfa.js";
+            window.path_to_searchindex_js = "searchindex-83187c71.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-532d5d21.js"></script>
@@ -279,6 +279,25 @@ environment.</p>
 <p><code>scripts/measure_performance_gate.sh</code> is a focused release gate for KDF,
 stream, archive, and temp-space changes. It is not part of the default
 maintainer gate.</p>
+<h2 id="release-evidence-manifest"><a class="header" href="#release-evidence-manifest">Release Evidence Manifest</a></h2>
+<p>Release candidates can record the local evidence used for a build:</p>
+<pre><code class="language-bash">cargo build -p dexios --profile release-lto
+bash scripts/generate_release_manifest.sh \
+  --output target/release-evidence/release-manifest.md \
+  --asset target/release-lto/dexios
+</code></pre>
+<p>For release use, run the manifest command from a clean tracked working tree.
+Untracked local files are ignored by the dirty check. <code>--tag &lt;tag&gt;</code> requires the
+tag to point at the current commit. <code>--allow-dirty</code> is only for local dry runs
+where the manifest must explicitly record that tracked changes were present.</p>
+<p>The manifest records commit and tag status, tracked dirty state, <code>Cargo.lock</code>
+SHA256, <code>cargo metadata --format-version=1 --locked</code> evidence, tool versions,
+verification commands, and asset SHA256 hashes. That evidence is intentionally
+narrow: it does not claim bit-for-bit reproducibility, signing trust, SBOM
+completeness, SBOM protection, supply-chain prevention, or runtime safety beyond
+the checks that were actually run. Future SBOM, signing, attestation, or
+reproducibility work needs its own trust model and verification command before
+public claims are made.</p>
 <p>The CLI binary is produced at:</p>
 <pre><code class="language-text">target/release/dexios
 </code></pre>
@@ -472,7 +491,7 @@ assigned to a later phase.</p>
 <tr><td>STOR-002</td><td>Path identity</td><td>Input/output/header path aliases are rejected by domain-owned identity checks before final output handles open.</td><td>current</td><td>Current source and real filesystem tests</td><td><code>dexios-domain/src/storage/identity.rs</code>; <code>dexios-domain/tests/path_identity.rs</code>; <code>dexios/tests/encrypt_cli_regressions.rs::encrypt_rejects_same_file_alias_before_opening_output</code>; <code>dexios/tests/pack_cli_regressions.rs</code>; <code>dexios/tests/unpack_cli_regressions.rs</code>; <code>dexios/tests/storage_transactions_cli.rs</code></td><td>SAFE-01, STOR-03, STOR-06, VERI-01</td><td>Phase 4</td></tr>
 <tr><td>STOR-003</td><td>Filesystem transactions</td><td>Staged writes use same-directory temporary files and staged flush/sync/persist before final placement: <code>NamedStagedOutput::prepare_for_persist</code> requires a write, calls <code>flush</code>, calls <code>File::sync_all</code>, and only then uses <code>tempfile::NamedTempFile::persist</code> or <code>persist_noclobber</code> through <code>persist_prepared</code>. Linked commits prepare every staged artifact before any persist call. Partial commit evidence reports already committed artifacts and the failed artifact; committed outputs are not rolled back. Dexios does not claim portable parent-directory durability across every filesystem or platform, and this is no full power-failure proof.</td><td>current</td><td>Current source, source gates, and real filesystem tests</td><td><code>dexios-domain/src/storage/temp.rs</code>; <code>dexios-domain/src/storage/transaction.rs</code>; <code>dexios-domain/tests/transactions.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code>; <code>book/src/technical-details/Directory-Packing.md</code>; <code>book/src/technical-details/Secure-Erase.md</code></td><td>FS-01, FS-03, FS-04, FS-05</td><td>Phase 11</td></tr>
 <tr><td>STOR-004</td><td>Cleanup identity and deletion</td><td>Cleanup is ordinary delete-after-success cleanup after complete commit and requested hash success. Cleanup receipts capture a target identity snapshot, changed cleanup identity fails closed, and cleanup failures are reported after commit without reverting outputs. <code>remove_file</code> does not guarantee immediate physical deletion, and Dexios claims no secure erase and no physical sanitization.</td><td>current</td><td>Current source, source gates, and real filesystem tests</td><td><code>dexios-domain/src/storage/cleanup.rs</code>; <code>dexios-domain/tests/cleanup_receipts.rs</code>; <code>dexios/tests/delete_source_cli.rs</code>; <code>dexios/tests/storage_transactions_cli.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code>; <code>book/src/technical-details/Secure-Erase.md</code></td><td>FS-02, FS-04, FS-05</td><td>Phase 11</td></tr>
-<tr><td>ARCH-001</td><td>Archive boundaries</td><td>Current pack streams archive bytes directly into V1 encryption, current unpack temporary ZIP artifacts remain plaintext exposure, and canonical V1 reserves a Dexios-owned manifest-first payload framing contract with structural limits and ordered body frames rather than ZIP-as-format surface.</td><td>current</td><td>Current source, real filesystem tests, source gates, and editable docs</td><td><code>dexios-domain/src/archive.rs</code>; <code>dexios-domain/src/pack.rs</code>; <code>dexios-domain/src/unpack.rs</code>; <code>dexios-core/src/payload.rs</code>; <code>dexios-core/src/stream.rs</code>; <code>dexios-domain/tests/pack_paths.rs</code>; <code>dexios-domain/tests/unpack.rs</code>; <code>dexios-core/tests/stream_v1.rs</code>; <code>dexios/tests/pack_cli_regressions.rs</code>; <code>dexios/tests/unpack_cli_regressions.rs</code>; <code>book/src/technical-details/Directory-Packing.md</code>; <code>book/src/technical-details/Secure-Erase.md</code></td><td>FMT-01, STRM-04, ARCH-04, ARCH-05, PERF-03</td><td>Phase 3 / Phase 12</td></tr>
+<tr><td>ARCH-001</td><td>Archive boundaries</td><td>Current pack and unpack use Dexios-owned manifest-first archive payloads with <code>DXAR</code> manifests and ordered <code>DXBF</code> body frames. ZIP bytes and ZIP crate types are not canonical V1 archive surface. Normal operation no longer creates a full plaintext archive temporary file; the current archive workflow has no full plaintext archive temporary file. Unpack-side plaintext exposure is scoped to selected staged file bodies and ordinary filesystem temporary/staged files, without secure erase or capacity-preflight claims.</td><td>current</td><td>Current source, real filesystem tests, source gates, and editable docs</td><td><code>dexios-domain/src/archive.rs</code>; <code>dexios-domain/src/pack.rs</code>; <code>dexios-domain/src/unpack.rs</code>; <code>dexios-core/src/payload.rs</code>; <code>dexios-core/src/stream.rs</code>; <code>dexios-domain/tests/pack_paths.rs</code>; <code>dexios-domain/tests/unpack.rs</code>; <code>dexios-core/tests/stream_v1.rs</code>; <code>dexios/tests/pack_cli_regressions.rs</code>; <code>dexios/tests/unpack_cli_regressions.rs</code>; <code>book/src/technical-details/Directory-Packing.md</code>; <code>book/src/technical-details/Secure-Erase.md</code></td><td>FMT-01, STRM-04, ARCH-04, ARCH-05, PERF-03</td><td>Phase 5 / Phase 6</td></tr>
 <tr><td>ERR-001</td><td>Error handling</td><td>Parse, authentication, path, IO, unsupported workflow, unsafe path, and commit failures remain distinguishable enough for rollback and user data preservation in encrypt, decrypt, header, and key workflows.</td><td>current</td><td>Current source and tests</td><td><code>dexios-domain/src/workflow_error.rs</code>; <code>dexios-domain/tests/workflow_errors.rs</code>; <code>dexios-domain/tests/workflow_public_api.rs</code>; <code>dexios/src/subcommands/errors.rs</code>; <code>dexios/tests/workflow_error_cli.rs</code>; source gates in Phase 05 Plan 08</td><td>SAFE-01, ERR-01, ERR-02, ERR-03, ERR-04</td><td>Phase 5</td></tr>
 <tr><td>API-001</td><td>Domain API and diagnostics</td><td>Public unpack construction uses checked <code>UnpackIntent</code>, storage failure hooks are gated behind <code>test-support</code> outside the default production API, typed <code>WorkflowErrorClass</code> remains the CLI mapping boundary, and domain errors preserve safe diagnostic <code>source()</code> chains.</td><td>current</td><td>Current source, source gates, focused tests, and CLI tests</td><td><code>dexios-domain/src/unpack.rs</code>; <code>dexios/src/subcommands/unpack.rs</code>; <code>dexios-domain/src/storage/mod.rs</code>; <code>dexios-domain/src/storage/identity.rs</code>; <code>dexios-domain/src/storage/transaction.rs</code>; <code>dexios-domain/src/storage/temp.rs</code>; <code>dexios-domain/tests/workflow_public_api.rs</code>; <code>dexios-domain/tests/archive_public_api.rs</code>; <code>dexios-domain/tests/workflow_errors.rs</code>; <code>dexios-domain/tests/transactions.rs</code>; <code>dexios/tests/workflow_error_cli.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code></td><td>API-01, API-02, API-03, API-04, API-05</td><td>Phase 10</td></tr>
 <tr><td>DOC-001</td><td>Documentation</td><td>Source-of-truth precedence is recorded by topic.</td><td>current</td><td>This contract</td><td><code>book/src/Safety-Contract.md</code> Source-of-Truth Matrix</td><td>SAFE-04</td><td>Phase 1</td></tr>
@@ -496,7 +515,8 @@ editable docs, generated docs, security policy, or historical specs disagree.</p
 <tr><td>secret wrapper and CLI secret handling</td><td>Current source/tests plus <code>book/src/dexios-core/Protected-Wrapper.md</code> and <code>book/src/technical-details/Keys.md</code> are the authority for secret wrapper access, prompt temporaries, debug redaction, generated passphrase validation, and generated passphrase disclosure.</td><td><code>dexios-core/src/protected.rs</code>; <code>dexios-core/tests/protected.rs</code>; <code>dexios/src/cli.rs</code>; <code>dexios/src/cli/prompt.rs</code>; <code>dexios/src/global/states.rs</code>; <code>scripts/verify_cli_surface.sh</code>; <code>book/src/</code> editable documentation source; Context7 <code>/rustcrypto/utils</code> research.</td><td>Generated <code>docs/</code> is generated output and may lag until regenerated intentionally.</td><td>Treat <code>with_exposed</code> as the only public <code>Protected&lt;T&gt;</code> access path, no blanket <code>Protected&lt;T&gt;</code> clone as current behavior, prompt strings as <code>Zeroizing&lt;String&gt;</code> temporaries, explicit invalid <code>--auto</code> counts as fail-before-generation errors, and successful <code>--auto</code> passphrase display as intentional disclosure that can be captured by terminal scrollback or logs.</td></tr>
 <tr><td>header dump/strip/restore</td><td>Current source and owning tests are the authority.</td><td><code>dexios/src/subcommands/header.rs</code>; <code>dexios-domain/src/header/</code>; <code>dexios-domain/tests/header_restore.rs</code>; <code>dexios/tests/header_cli_regressions.rs</code>; <code>dexios/tests/workflow_error_cli.rs</code>; <code>book/src/dexios-core/Headers.md</code>; <code>book/src/</code> editable documentation source.</td><td><code>spec/specification-v1.pdf</code> is historical input; generated <code>docs/</code> is generated output.</td><td>Treat V1-only dump, strip, restore, exact detached-header length, header-only rejection, missing-payload rejection, stripped-target validation, and typed header workflow errors as current Phase 5 behavior.</td></tr>
 <tr><td>storage transactions and path identity</td><td>Current domain storage modules and real filesystem tests are the authority for Phase 4 final-output preservation, path identity, cleanup sequencing, Phase 10 storage test-support gating, and Phase 11 staged write ordering.</td><td><code>dexios-domain/src/storage/mod.rs</code>; <code>dexios-domain/src/storage/fs.rs</code>; <code>dexios-domain/src/storage/temp.rs</code>; <code>dexios-domain/src/storage/identity.rs</code>; <code>dexios-domain/src/storage/transaction.rs</code>; <code>dexios-domain/src/storage/cleanup.rs</code>; <code>dexios-domain/src/storage/test_support.rs</code>; <code>dexios-domain/tests/transactions.rs</code>; <code>dexios-domain/tests/path_identity.rs</code>; <code>dexios-domain/tests/cleanup_receipts.rs</code>; <code>dexios-domain/tests/workflow_public_api.rs</code>; <code>dexios/tests/storage_transactions_cli.rs</code>; <code>dexios/tests/delete_source_cli.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code>.</td><td>Historical direct-final-write behavior and generated docs do not override current source/tests.</td><td>Treat Phase 4 storage responsibilities as split by module: real filesystem storage, temporary artifacts, identity, transactions, cleanup receipts, and test failure hooks are separate maintainer evidence surfaces. Failure-hook entry points are test-support scoped; public receipt and identity evidence remains production API. Phase 11 adds the exact staged flush/sync/persist contract: same-directory temporary files, <code>File::sync_all</code> before persist, <code>tempfile::NamedTempFile::persist</code> or <code>persist_noclobber</code> for final placement, and no portable parent-directory durability claim.</td></tr>
-<tr><td>pack/unpack archive boundaries</td><td>Current source/tests plus editable docs are the authority for checked unpack construction, current ZIP boundary behavior, plaintext temp exposure, canonical manifest-first payload framing, minimal metadata preservation, and structural archive limits.</td><td><code>dexios-domain/src/archive.rs</code>; <code>dexios-domain/src/pack.rs</code>; <code>dexios-domain/src/unpack.rs</code>; <code>dexios-core/src/payload.rs</code>; <code>dexios-core/src/stream.rs</code>; <code>dexios/src/subcommands/unpack.rs</code>; <code>dexios-domain/tests/pack_paths.rs</code>; <code>dexios-domain/tests/unpack.rs</code>; <code>dexios-domain/tests/archive_public_api.rs</code>; <code>dexios-core/tests/stream_v1.rs</code>; <code>dexios/tests/pack_cli_regressions.rs</code>; <code>dexios/tests/unpack_cli_regressions.rs</code>; <code>book/src/technical-details/Directory-Packing.md</code>; <code>book/src/technical-details/Secure-Erase.md</code>; <code>book/src/</code> editable documentation source.</td><td><code>spec/specification-v1.pdf</code> contains older erase wording; generated <code>docs/</code> is generated output.</td><td>Treat <code>UnpackIntent</code> as the public checked unpack boundary. Current pack-side plaintext temporary ZIP exposure is reduced by streaming archive bytes into V1 encryption. Current unpack-side plaintext temporary ZIP exposure remains ordinary temp-file cleanup, not secure erase. Canonical V1 archive framing is Dexios-owned manifest-first <code>DXAR</code> plus ordered body frames; ZIP crate bytes and types are not canonical format surface.</td></tr>
+<tr><td>pack/unpack archive boundaries</td><td>Current source/tests plus editable docs are the authority for checked unpack construction, manifest-first archive payload behavior, plaintext staging exposure, minimal metadata preservation, and structural archive limits.</td><td><code>dexios-domain/src/archive.rs</code>; <code>dexios-domain/src/pack.rs</code>; <code>dexios-domain/src/unpack.rs</code>; <code>dexios-core/src/payload.rs</code>; <code>dexios-core/src/stream.rs</code>; <code>dexios/src/subcommands/unpack.rs</code>; <code>dexios-domain/tests/pack_paths.rs</code>; <code>dexios-domain/tests/unpack.rs</code>; <code>dexios-domain/tests/archive_public_api.rs</code>; <code>dexios-core/tests/stream_v1.rs</code>; <code>dexios/tests/pack_cli_regressions.rs</code>; <code>dexios/tests/unpack_cli_regressions.rs</code>; <code>book/src/technical-details/Directory-Packing.md</code>; <code>book/src/technical-details/Secure-Erase.md</code>; <code>book/src/</code> editable documentation source.</td><td><code>spec/specification-v1.pdf</code> contains older erase wording; generated <code>docs/</code> is generated output.</td><td>Treat <code>UnpackIntent</code> as the public checked unpack boundary. Current pack and unpack use Dexios-owned manifest-first <code>DXAR</code> archive framing plus ordered <code>DXBF</code> body frames. Normal operation no longer creates a full plaintext archive temporary file; the current archive workflow has no full plaintext archive temporary file. Unpack-side plaintext exposure is scoped to selected staged file bodies and ordinary filesystem temporary/staged files, not secure erase. ZIP crate bytes and types are not canonical format surface.</td></tr>
+<tr><td>release evidence and public safety claims</td><td><code>book/src/</code>, <code>CHANGELOG.md</code>, <code>scripts/verify_phase_gate.sh</code>, and <code>scripts/generate_release_manifest.sh</code> are the authority for release verification steps and public claim limits.</td><td><code>book/src/Safety-Contract.md</code>; <code>book/src/Installing-and-Building.md</code>; <code>CHANGELOG.md</code>; <code>scripts/verify_phase_gate.sh</code>; <code>scripts/generate_release_manifest.sh</code>; <code>dexios/tests/verification_gate_docs.rs</code>; Context7 <code>/rust-lang/mdbook</code>, <code>/websites/embarkstudios_github_io_cargo-deny</code>, and <code>/websites/doc_rust-lang_cargo</code> research.</td><td>Local <code>local-notes/</code> notes are not public release evidence; generated <code>docs/</code> is generated output.</td><td>Release evidence may record commit identity, dirty tracked-file state, <code>Cargo.lock</code> SHA256, tool versions, Cargo metadata, verification commands, and asset SHA256 hashes. It does not claim bit-for-bit reproducibility, signing trust, SBOM completeness, SBOM protection, supply-chain prevention, or runtime safety beyond the gates that were actually run.</td></tr>
 <tr><td>delete-after-success and secure erase wording</td><td><code>book/src/technical-details/Secure-Erase.md</code> and current source/test behavior are current authority.</td><td><code>dexios-domain/src/storage/cleanup.rs</code>; <code>dexios-domain/tests/cleanup_receipts.rs</code>; <code>dexios/src/subcommands/encrypt.rs</code>; <code>dexios/src/subcommands/decrypt.rs</code>; <code>dexios/src/subcommands/unpack.rs</code>; <code>dexios/src/subcommands/pack.rs</code>; <code>dexios/tests/delete_source_cli.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code>; <code>book/src/</code> editable documentation source.</td><td>Old erase claims in historical material are not current product claims; generated <code>docs/</code> is generated output.</td><td>Describe deletion as ordinary delete-after-success only: cleanup runs after transaction commit and requested hash success, changed cleanup identity is reported as cleanup failure, committed outputs are not rolled back, and <code>remove_file</code> does not guarantee immediate physical deletion. Do not claim physical secure erase or sanitized plaintext temp artifacts.</td></tr>
 <tr><td>error taxonomy and rollback decisions</td><td>Current source plus typed-error, diagnostic source-chain, and CLI mapping tests are the authority.</td><td><code>dexios-domain/src/workflow_error.rs</code>; <code>dexios-domain/src/encrypt.rs</code>; <code>dexios-domain/src/decrypt.rs</code>; <code>dexios-domain/src/pack.rs</code>; <code>dexios-domain/src/unpack.rs</code>; <code>dexios-domain/src/header.rs</code>; <code>dexios-domain/src/key.rs</code>; <code>dexios-domain/src/storage/mod.rs</code>; <code>dexios-domain/src/storage/identity.rs</code>; <code>dexios-domain/src/storage/transaction.rs</code>; <code>dexios-domain/tests/workflow_errors.rs</code>; <code>dexios-domain/tests/workflow_public_api.rs</code>; <code>dexios/src/subcommands/errors.rs</code>; <code>dexios/tests/workflow_error_cli.rs</code>.</td><td>Historical docs and generated <code>docs/</code> may explain user-facing behavior but do not establish rollback correctness.</td><td>Treat <code>WorkflowErrorClass</code> as the typed CLI mapping boundary. Treat <code>std::error::Error::source()</code> chains as diagnostics only; they add maintainer/debug depth and are not printed by default CLI errors.</td></tr>
 <tr><td>security reporting policy</td><td><code>SECURITY.md</code> is the authority for reporting channels and supported versions.</td><td>Current repository policy and maintainer-facing security notes.</td><td>Generated <code>docs/</code> may copy policy text but does not override <code>SECURITY.md</code>.</td><td>Use <code>SECURITY.md</code> for vulnerability reporting claims; use source/tests/contracts for runtime safety behavior.</td></tr>
@@ -576,6 +596,7 @@ accepted.</p>
 <li><code>cargo deny check</code></li>
 <li><code>cargo build -p dexios --profile release-lto</code></li>
 <li><code>bash scripts/verify_cli_surface.sh</code></li>
+<li><code>bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release-lto/dexios</code></li>
 <li><code>mdbook build</code></li>
 <li><code>git diff --exit-code -- docs</code></li>
 <li><code>bash scripts/verify_repo_hygiene.sh</code></li>
@@ -611,6 +632,13 @@ best-effort: Dexios preserves and classifies storage-related IO sources where
 the platform exposes them, but it does not prove portable free space before
 starting pack or unpack workflows. Measurements without configured thresholds
 remain advisory evidence.</p>
+<p>Phase 6 release evidence records exactly what was checked for a release
+candidate. The release manifest is evidence, not a trust root: it records commit
+identity, tracked dirty state, <code>Cargo.lock</code> SHA256, tool versions, Cargo
+metadata, verification commands, and optional asset SHA256 hashes. It does not
+claim bit-for-bit reproducibility, signing trust, SBOM completeness, SBOM
+protection, supply-chain prevention, or any safety property not covered by the
+recorded checks.</p>
 <p>Phase 9 closes with an additional KDF/passphrase/secret-memory gate:</p>
 <ul>
 <li><code>balloon-hash 0.4.0</code> keeps the <code>zeroize</code> feature and <code>blake3 = "=1.8.3"</code> stays pinned;</li>
@@ -714,34 +742,35 @@ Dexios does not revert committed outputs during this cleanup step.</p>
 <h2 id="why-secure-erase-was-removed"><a class="header" href="#why-secure-erase-was-removed">Why Secure Erase Was Removed</a></h2>
 <p>Overwrite passes are not a trustworthy abstraction on SSDs and other flash-backed storage. Dexios now prefers a simpler and more honest promise: delete sources after success, without claiming physical sanitization.</p>
 <h2 id="temporary-archives"><a class="header" href="#temporary-archives">Temporary Archives</a></h2>
-<p><code>pack</code> no longer writes a separate plaintext temporary ZIP artifact before
-encryption. <code>unpack</code> still uses a decrypted temporary ZIP so it can validate
-archive metadata, selected paths, duplicate names, and staged outputs before
-committing extracted files.</p>
+<p><code>pack</code> and <code>unpack</code> use Dexios-owned manifest-first archive payloads. Normal
+operation no longer creates a full plaintext archive temporary file before or
+after encryption. The current archive workflow has no full plaintext archive
+temporary file.</p>
 <p>The boundary is intentionally narrow:</p>
 <ul>
-<li><code>pack</code> streams ZIP bytes directly into V1 encryption and then commits the encrypted staged output.</li>
-<li><code>unpack</code> decrypts the encrypted payload into an ordinary plaintext temporary ZIP, validates archive metadata, stages selected files, commits through storage transactions, and drops the temporary artifact.</li>
+<li><code>pack</code> streams a <code>DXAR</code> manifest and ordered <code>DXBF</code> body frames directly into V1 encryption and then commits the encrypted staged output.</li>
+<li><code>unpack</code> decrypts the manifest-first payload through authenticated V1 stream reading, validates the manifest, stages selected file bodies, observes final authentication, commits through storage transactions, and drops ordinary temporary/staged artifacts.</li>
 <li>Failure-path tests cover ordinary best effort drop/delete cleanup and no committed output after selected failures.</li>
 </ul>
-<p>The unpack temporary ZIP artifact is plaintext exposure while it exists.
-Dexios does not claim secure erase for it, does not claim sanitization, does
-not defend against another local process with access to the host temporary
-storage, and does not claim resistance to forensic recovery.</p>
-<p>Pack-side plaintext temporary ZIP exposure was reduced in Phase 12.
-Unpack-side plaintext temporary ZIP exposure remains.</p>
+<p>Plaintext exposure still exists while selected file bodies are being read,
+staged, and committed. Dexios does not claim secure erase for temporary/staged
+artifacts, does not claim sanitization, does not defend against another local
+process with access to host temporary or output storage, and does not claim
+resistance to forensic recovery.</p>
+<p>The manifest-first archive behavior removes the old full plaintext archive
+temporary file from normal operation. It does not remove ordinary plaintext file
+content exposure during pack/unpack execution.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="directory-packing-1"><a href="#directory-packing-1" class="header">Directory Packing</a></h1>
 <h2 id="directory-packing"><a class="header" href="#directory-packing">Directory Packing</a></h2>
-<p>Current <code>pack</code> writes archive bytes into the normal Dexios canonical V1
-encrypted payload stream. Existing unpack still uses a decrypted temporary ZIP
-artifact so it can validate archive metadata before committing outputs.</p>
-<p>Phase 3 also defines the future canonical V1 archive payload framing:
-Dexios-owned manifest-first <code>DXAR</code> framing with ordered <code>DXBF</code> body frames. That
-core framing is not yet the full unpack implementation; Phase 5 owns the
-workflow migration from the current ZIP-backed unpack model.</p>
-<p>The canonical V1 archive payload framing is Dexios-owned manifest-first <code>DXAR</code>
-framing plus ordered <code>DXBF</code> body frames.</p>
+<p>Current <code>pack</code> and <code>unpack</code> use Dexios-owned manifest-first archive payloads
+inside the normal canonical V1 encrypted payload stream. The archive payload
+starts with a <code>DXAR</code> manifest and stores file contents as ordered <code>DXBF</code> body
+frames.</p>
+<p>ZIP bytes, ZIP central-directory metadata, ZIP crate types, compression
+selectors, and broad metadata knobs are not canonical V1 archive surface.
+Normal operation no longer creates a full plaintext archive temporary file.
+The current archive workflow has no full plaintext archive temporary file.</p>
 <h2 id="current-cli-behavior"><a class="header" href="#current-cli-behavior">Current CLI Behavior</a></h2>
 <p>The current CLI accepts one or more input directories:</p>
 <pre><code class="language-bash">dexios pack photos/ archive.enc
@@ -760,16 +789,16 @@ compression policy.</p>
 <li>excludes the output file and detached header path from being re-packed</li>
 <li>materializes the directory and file entry list in memory</li>
 <li>checks the shared <code>ArchiveLimits</code> structural policy</li>
-<li>writes directory and file entries through the current ZIP writer boundary</li>
+<li>writes a <code>DXAR</code> manifest and ordered <code>DXBF</code> body frames through the
+manifest-first archive writer</li>
 <li>encrypts those archive bytes using the same canonical V1 stream encryption
 path used for normal files</li>
 <li>commits the final encrypted output and detached header through staged storage
 transaction semantics</li>
 </ol>
-<p>Phase 12 reduced pack-side plaintext temporary ZIP exposure. Pack still
-materializes the entry list and streams file contents through the archive writer,
-but it no longer creates a separate plaintext temporary ZIP artifact before
-encryption.</p>
+<p>Pack still materializes the entry list and streams file contents through the
+archive writer, but it does not create a separate full plaintext archive
+temporary file before encryption.</p>
 <p>Storage transaction semantics here mean same-directory temporary files and
 staged flush/sync/persist before final placement. Dexios writes staged outputs,
 flushes them, calls <code>File::sync_all</code>, and then uses
@@ -799,13 +828,12 @@ each normalized archive path before prompts, staging, or writes.</p>
 <p>These are structural limits, not storage-capacity guarantees. Large directory
 trees and archives still require enough memory and output space for materialized
 entry lists, encrypted output, and extracted files. Unpack also requires
-temporary space for the decrypted plaintext ZIP. Dexios uses best-effort
-capacity pressure reporting where the platform preserves the source error, but
-it does not prove portable free space before starting the workflow.
+temporary/staged space for selected extracted file bodies. Dexios uses
+best-effort capacity pressure reporting where the platform preserves the source
+error, but it does not prove portable free space before starting the workflow.
 Structural limits are metadata bounds; they do not prove that the host has enough free memory or disk space.</p>
-<p>The current unpack model is bounded by indexing: unpack pre-scans archive
-metadata, collision sets, and selected targets before transaction commit. It is
-not yet the Phase 5 streaming archive redesign.</p>
+<p>The current unpack model is bounded by indexing: unpack pre-scans manifest
+metadata, collision sets, and selected targets before transaction commit.</p>
 <h2 id="canonical-manifest-first-framing"><a class="header" href="#canonical-manifest-first-framing">Canonical Manifest-First Framing</a></h2>
 <p>Canonical V1 reserves archive payload structure for Dexios-owned
 manifest-first framing rather than ZIP implementation surface. The shared core
@@ -824,9 +852,9 @@ frames must appear in manifest file-entry order; a body frame for a directory is
 rejected.</p>
 <p>ZIP bytes, ZIP central-directory metadata, ZIP crate types, compression
 selectors, and broad metadata knobs are not canonical V1 surface. Domain policy
-still owns path normalization, traversal rejection, duplicate and prefix
-collision checks, selected-output filtering, target revalidation, and staged
-transaction commit in later phases.</p>
+owns path normalization, traversal rejection, duplicate and prefix collision
+checks, selected-output filtering, target revalidation, and staged transaction
+commit.</p>
 <h2 id="current-unpacking"><a class="header" href="#current-unpacking">Current Unpacking</a></h2>
 <p>The current unpack flow is stricter than the historical docs:</p>
 <p>The public Rust API constructs unpack work through checked <code>UnpackIntent</code> state
@@ -836,7 +864,8 @@ and transaction commit behavior.</p>
 <ol>
 <li>construct checked unpack intent from opened input/header entries and the
 requested output root</li>
-<li>decrypt the packed file into a temporary zip artifact</li>
+<li>decrypt the packed file through the authenticated V1 stream reader</li>
+<li>read and validate the <code>DXAR</code> manifest before selected body staging</li>
 <li>normalize every archive path before writing anything to disk</li>
 <li>enforce the shared <code>ArchiveLimits</code> entry count, path byte, and path depth
 policy</li>
@@ -844,10 +873,12 @@ policy</li>
 and prefix collisions</li>
 <li>reject unsafe symlink-based output escapes through the storage layer</li>
 <li>run overwrite prompts only after the structural validation pass succeeds</li>
-<li>revalidate selected file targets near staging</li>
-<li>stage selected extracted files under the requested output root</li>
+<li>stage selected extracted file bodies under the requested output root while
+checking ordered <code>DXBF</code> body frames</li>
+<li>observe final stream authentication before committing outputs</li>
+<li>revalidate selected file targets near staging and before commit</li>
 <li>commit the extracted files through storage transaction semantics</li>
-<li>clean up the temporary archive</li>
+<li>clean up ordinary temporary/staged artifacts</li>
 </ol>
 <p>If the CLI is not run with <code>--force</code>, unpack may prompt before overwriting
 existing files.</p>
@@ -858,17 +889,13 @@ outer ciphertext still leaks overall file size.</li>
 <li>Unpack should still be treated as a risky operation on untrusted input, even
 though the current implementation has explicit path identity and path-safety
 checks.</li>
-<li>Pack-side plaintext temporary ZIP exposure is reduced because pack streams
-archive bytes into V1 encryption instead of writing a plaintext ZIP scratch
-file.</li>
-<li>Unpack-side plaintext temporary ZIP exposure remains. The temporary decrypted
-archive is plaintext while it exists and is handled as ordinary temp-file
-cleanup.</li>
-<li>Current hardening does not remove unpack-side plaintext temporary ZIP exposure;
-it remains ordinary temp-file cleanup.</li>
+<li>Normal operation no longer creates a full plaintext archive temporary file.</li>
+<li>The current archive workflow has no full plaintext archive temporary file.</li>
+<li>Unpack-side plaintext exposure is scoped to selected staged file bodies and
+ordinary filesystem temporary/staged files while the workflow is running.</li>
+<li>Temporary/staged cleanup is ordinary filesystem cleanup, not secure erase.</li>
 <li>Checked unpack construction makes the public API harder to bypass; it does
-not remove unpack-side plaintext temporary ZIP exposure or add a capacity
-proof.</li>
+not add a capacity proof or physical sanitization.</li>
 <li>Byte and storage needs are real operating assumptions. The structural limits
 bound archive metadata shape; they do not prove that the host has enough free
 memory or disk space.</li>

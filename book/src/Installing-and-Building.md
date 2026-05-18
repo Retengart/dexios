@@ -93,6 +93,31 @@ environment.
 stream, archive, and temp-space changes. It is not part of the default
 maintainer gate.
 
+## Release Evidence Manifest
+
+Release candidates can record the local evidence used for a build:
+
+```bash
+cargo build -p dexios --profile release-lto
+bash scripts/generate_release_manifest.sh \
+  --output target/release-evidence/release-manifest.md \
+  --asset target/release-lto/dexios
+```
+
+For release use, run the manifest command from a clean tracked working tree.
+Untracked local files are ignored by the dirty check. `--tag <tag>` requires the
+tag to point at the current commit. `--allow-dirty` is only for local dry runs
+where the manifest must explicitly record that tracked changes were present.
+
+The manifest records commit and tag status, tracked dirty state, `Cargo.lock`
+SHA256, `cargo metadata --format-version=1 --locked` evidence, tool versions,
+verification commands, and asset SHA256 hashes. That evidence is intentionally
+narrow: it does not claim bit-for-bit reproducibility, signing trust, SBOM
+completeness, SBOM protection, supply-chain prevention, or runtime safety beyond
+the checks that were actually run. Future SBOM, signing, attestation, or
+reproducibility work needs its own trust model and verification command before
+public claims are made.
+
 The CLI binary is produced at:
 
 ```text

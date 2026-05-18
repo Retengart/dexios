@@ -35,8 +35,11 @@ The workspace is split into:
 
 Archive workflows:
 
-- `pack` uses the default Dexios archive compression policy and does not expose ZIP compression knobs.
-- `unpack` validates archive paths, collisions, and output targets before committing extracted files.
+- `pack` writes a Dexios-owned manifest-first archive payload with a `DXAR`
+  manifest and ordered `DXBF` body frames.
+- `unpack` validates archive paths, collisions, selected body frames, and output
+  targets before committing extracted files.
+- ZIP bytes and ZIP crate types are not canonical V1 archive format surface.
 - `pack --delete-source` and `unpack --delete-input` are ordinary delete-after-success cleanup flags that run only after commit and requested hash success.
 
 ## Installation

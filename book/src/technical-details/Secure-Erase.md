@@ -38,21 +38,23 @@ Overwrite passes are not a trustworthy abstraction on SSDs and other flash-backe
 
 ## Temporary Archives
 
-`pack` no longer writes a separate plaintext temporary ZIP artifact before
-encryption. `unpack` still uses a decrypted temporary ZIP so it can validate
-archive metadata, selected paths, duplicate names, and staged outputs before
-committing extracted files.
+`pack` and `unpack` use Dexios-owned manifest-first archive payloads. Normal
+operation no longer creates a full plaintext archive temporary file before or
+after encryption. The current archive workflow has no full plaintext archive
+temporary file.
 
 The boundary is intentionally narrow:
 
-- `pack` streams ZIP bytes directly into V1 encryption and then commits the encrypted staged output.
-- `unpack` decrypts the encrypted payload into an ordinary plaintext temporary ZIP, validates archive metadata, stages selected files, commits through storage transactions, and drops the temporary artifact.
+- `pack` streams a `DXAR` manifest and ordered `DXBF` body frames directly into V1 encryption and then commits the encrypted staged output.
+- `unpack` decrypts the manifest-first payload through authenticated V1 stream reading, validates the manifest, stages selected file bodies, observes final authentication, commits through storage transactions, and drops ordinary temporary/staged artifacts.
 - Failure-path tests cover ordinary best effort drop/delete cleanup and no committed output after selected failures.
 
-The unpack temporary ZIP artifact is plaintext exposure while it exists.
-Dexios does not claim secure erase for it, does not claim sanitization, does
-not defend against another local process with access to the host temporary
-storage, and does not claim resistance to forensic recovery.
+Plaintext exposure still exists while selected file bodies are being read,
+staged, and committed. Dexios does not claim secure erase for temporary/staged
+artifacts, does not claim sanitization, does not defend against another local
+process with access to host temporary or output storage, and does not claim
+resistance to forensic recovery.
 
-Pack-side plaintext temporary ZIP exposure was reduced in Phase 12.
-Unpack-side plaintext temporary ZIP exposure remains.
+The manifest-first archive behavior removes the old full plaintext archive
+temporary file from normal operation. It does not remove ordinary plaintext file
+content exposure during pack/unpack execution.
