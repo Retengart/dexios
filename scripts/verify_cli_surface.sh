@@ -153,15 +153,24 @@ case_encrypt_decrypt_keyfile_detached_defaults() {
 case_encrypt_auto_generated_passphrase() {
     local dir="$ROOT/auto"
     local auto_key
+    local disclosure_prefix="Your generated passphrase is intentionally shown here and may be captured by terminal scrollback or logs: "
     mkdir -p "$dir"
     printf 'generated passphrase path\n' > "$dir/plain.txt"
 
-    "$BIN" encrypt -f --auto=4 "$dir/plain.txt" "$dir/plain.enc" > "$dir/auto.stdout" || return 1
-    auto_key="$(sed -n 's/^\[-\] Your generated passphrase is intentionally shown here and may be captured by terminal scrollback or logs: //p' "$dir/auto.stdout" | tail -n 1)"
+    "$BIN" encrypt -f --auto=4 "$dir/plain.txt" "$dir/plain.enc" > "$dir/auto.stdout" 2> "$dir/auto.stderr" || return 1
+    auto_key="$(sed -n 's/^\[-\] Your generated passphrase is intentionally shown here and may be captured by terminal scrollback or logs: //p' "$dir/auto.stderr" | tail -n 1)"
     [[ -n "$auto_key" ]] || {
-        echo "encrypt --auto should print generated passphrase" >&2
+        echo "encrypt --auto should print the generated passphrase to stderr" >&2
         return 1
     }
+    if grep -F "$disclosure_prefix" "$dir/auto.stdout" >/dev/null; then
+        echo "encrypt --auto should not print generated passphrase disclosure to stdout" >&2
+        return 1
+    fi
+    if grep -F "[-]" "$dir/auto.stdout" >/dev/null; then
+        echo "encrypt --auto should not print warning diagnostics to stdout" >&2
+        return 1
+    fi
 
     DEXIOS_KEY="$auto_key" "$BIN" decrypt -f "$dir/plain.enc" "$dir/plain.out" || return 1
     file_eq "$dir/plain.txt" "$dir/plain.out" "auto-generated passphrase decrypt should round-trip" || return 1
