@@ -192,7 +192,6 @@ pub struct PackIntent {
     detached_header_target: Option<ResolvedTarget>,
     raw_key: Protected<Vec<u8>>,
     kdf: Kdf,
-    archive_policy: ArchivePolicy,
     on_archive_entry: Option<OnArchiveEntryFn>,
 }
 
@@ -205,7 +204,7 @@ impl PackIntent {
         detached_header: Option<DetachedHeaderTarget>,
         raw_key: Protected<Vec<u8>>,
         kdf: Kdf,
-        archive_policy: ArchivePolicy,
+        _archive_policy: ArchivePolicy,
         _recursive: bool,
         on_archive_entry: Option<OnArchiveEntryFn>,
     ) -> Result<Self, Error>
@@ -262,7 +261,6 @@ impl PackIntent {
             detached_header_target,
             raw_key,
             kdf,
-            archive_policy,
             on_archive_entry,
         })
     }
@@ -275,7 +273,6 @@ where
 {
     writer: &'a RefCell<W>,
     entries: Vec<ArchiveSourceEntry<SRW>>,
-    archive_policy: ArchivePolicy,
     header_writer: Option<&'a RefCell<W>>,
     raw_key: Protected<Vec<u8>>,
     kdf: Kdf,
@@ -300,7 +297,6 @@ pub fn execute_transactional(intent: PackIntent) -> Result<CommitReceipt, Error>
         detached_header_target,
         raw_key,
         kdf,
-        archive_policy,
         on_archive_entry,
     } = intent;
 
@@ -327,7 +323,6 @@ pub fn execute_transactional(intent: PackIntent) -> Result<CommitReceipt, Error>
 
     let pack_result = execute_streaming_archive(HandleRequest {
         entries,
-        archive_policy,
         writer: &output_writer,
         header_writer: detached_header_writer.as_ref(),
         raw_key,
@@ -358,7 +353,6 @@ where
     SRW: Read + Write + Seek,
     W: Write,
 {
-    let _archive_policy = req.archive_policy;
     let mut output_writer = req.writer.borrow_mut();
     let encrypting_writer = match req.header_writer {
         None => crate::encrypt::begin_v1_manifest_archive_writer(
@@ -860,7 +854,7 @@ pub(crate) mod tests {
     use std::io::{Cursor, Read, Seek};
     use std::sync::Arc;
 
-    use crate::archive::{ArchiveLimitKind, ArchiveLimits, ArchivePolicy};
+    use crate::archive::{ArchiveLimitKind, ArchiveLimits};
     use crate::encrypt::tests::PASSWORD;
     use crate::storage::{InMemoryStorage, Storage};
 
@@ -945,7 +939,6 @@ pub(crate) mod tests {
 
         let req = HandleRequest {
             entries,
-            archive_policy: ArchivePolicy::default(),
             writer: output_file.try_writer().unwrap(),
             header_writer: None,
             raw_key: Protected::new(PASSWORD.to_vec()),

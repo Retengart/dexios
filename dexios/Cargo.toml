@@ -30,7 +30,6 @@ core = { package = "dexios-core", path = "../dexios-core", version = "1.2.0" }
 clap.workspace = true
 anyhow.workspace = true
 
-zip.workspace = true
 rpassword.workspace = true
 zeroize.workspace = true
 

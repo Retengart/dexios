@@ -2,40 +2,9 @@
 
 use std::path::{Component, Path};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ArchiveCompression {
-    Zstd,
-}
-
-impl ArchiveCompression {
-    const fn default_public() -> Self {
-        Self::Zstd
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ArchivePolicy {
-    compression: ArchiveCompression,
-}
-
-impl ArchivePolicy {
-    #[must_use]
-    pub const fn zstd() -> Self {
-        Self {
-            compression: ArchiveCompression::default_public(),
-        }
-    }
-
-    #[must_use]
-    pub const fn compression(self) -> ArchiveCompression {
-        self.compression
-    }
-}
-
-impl Default for ArchivePolicy {
-    fn default() -> Self {
-        Self::zstd()
-    }
+    _private: (),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
