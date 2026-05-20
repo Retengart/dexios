@@ -2397,6 +2397,136 @@ fn phase11_filesystem_transaction_and_cleanup_contract_is_source_gated() {
 }
 
 #[test]
+fn phase12_unpack_directory_rollback_contract_is_source_gated() {
+    for required in [
+        "execute_with_failure_hooks",
+        "create_selected_directories_after_final_auth",
+        "rollback_empty_directories_best_effort",
+        "TransactionError::PartialCommit",
+        "commit_all",
+    ] {
+        assert_contains(
+            "dexios-domain/src/unpack.rs",
+            DEXIOS_DOMAIN_UNPACK_RS,
+            required,
+        );
+    }
+
+    for required in [
+        "pub(crate) fn rollback_empty_directories_best_effort",
+        "created_dirs.iter().rev()",
+        "delete_empty_directory_target",
+        "fs::remove_dir(&target.path)",
+    ] {
+        assert_contains(
+            "dexios-domain/src/storage/cleanup.rs",
+            DEXIOS_DOMAIN_CLEANUP_RS,
+            required,
+        );
+    }
+
+    let rollback_section = normalized_rust_production_section(
+        "dexios-domain/src/storage/cleanup.rs",
+        DEXIOS_DOMAIN_CLEANUP_RS,
+        "pub(crate) fn rollback_empty_directories_best_effort",
+        "#[derive(Clone, Debug, Eq, PartialEq)]",
+    );
+    assert_normalized_section_order(
+        "dexios-domain/src/storage/cleanup.rs::rollback_empty_directories_best_effort",
+        &rollback_section,
+        &[
+            "created_dirs.iter().rev()",
+            "CleanupTarget::from_path(path)",
+            "delete_empty_directory_target(&target)",
+        ],
+    );
+
+    let empty_directory_delete_section = normalized_rust_production_section(
+        "dexios-domain/src/storage/cleanup.rs",
+        DEXIOS_DOMAIN_CLEANUP_RS,
+        "fn delete_empty_directory_target",
+        "fn revalidate_target",
+    );
+    assert!(
+        empty_directory_delete_section.contains(&normalized_token("fs::remove_dir(&target.path)")),
+        "rollback empty-directory delete must use non-recursive remove_dir"
+    );
+    assert!(
+        !empty_directory_delete_section.contains(&normalized_token("remove_dir_all")),
+        "rollback empty-directory delete must not recursively remove directories"
+    );
+
+    let unpack_commit_section = normalized_rust_production_section(
+        "dexios-domain/src/unpack.rs",
+        DEXIOS_DOMAIN_UNPACK_RS,
+        "fn execute_manifest_archive",
+        "fn stage_manifest_extraction",
+    );
+    assert_normalized_section_order(
+        "dexios-domain/src/unpack.rs::execute_manifest_archive",
+        &unpack_commit_section,
+        &[
+            ".finish()",
+            "revalidate_extraction_targets",
+            "create_selected_directories_after_final_auth",
+            "commit_all",
+        ],
+    );
+
+    for required in [
+        "unpack_commit_failure_removes_created_selected_directories",
+        "unpack_commit_failure_preserves_preexisting_selected_directories",
+        "unpack_commit_failure_removes_nested_intermediates_in_reverse_order",
+        "FailurePoint::Persist",
+    ] {
+        assert_contains(
+            "dexios-domain/tests/unpack.rs",
+            DEXIOS_DOMAIN_UNPACK_TESTS,
+            required,
+        );
+    }
+
+    for required in [
+        "best-effort removes directories created by the current post-final-auth directory pass before first selected file commit",
+        "Pre-existing directories are preserved",
+        "`TransactionError::PartialCommit`",
+        "committed file artifacts are not rolled back",
+    ] {
+        assert_contains(
+            "book/src/technical-details/Directory-Packing.md",
+            DIRECTORY_PACKING,
+            required,
+        );
+        assert_contains(
+            "docs/technical-details/Directory-Packing.html",
+            GENERATED_DIRECTORY_PACKING,
+            required.trim_matches('`'),
+        );
+    }
+
+    for required in [
+        "Phase 12 manifest-unpack directory rollback boundaries",
+        "pre-existing directories are preserved",
+        "`TransactionError::PartialCommit`",
+    ] {
+        assert_contains("book/src/Safety-Contract.md", SAFETY_CONTRACT, required);
+    }
+
+    for forbidden in [
+        "full unpack atomicity",
+        "rollback committed outputs",
+        "secure erase guarantee",
+    ] {
+        assert_not_contains(
+            "book/src/technical-details/Directory-Packing.md",
+            DIRECTORY_PACKING,
+            forbidden,
+        );
+        assert_not_contains("book/src/Safety-Contract.md", SAFETY_CONTRACT, forbidden);
+    }
+}
+
+#[test]
 fn archive_docs_do_not_reintroduce_removed_compression_selector() {
     for (source_name, source) in [
         ("README.md", README),

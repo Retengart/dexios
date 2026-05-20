@@ -196,6 +196,41 @@ impl CleanupResult {
     }
 }
 
+#[must_use]
+pub(crate) fn rollback_empty_directories_best_effort(created_dirs: &[PathBuf]) -> CleanupResult {
+    let mut result = CleanupResult::default();
+
+    for path in created_dirs.iter().rev() {
+        let target = match CleanupTarget::from_path(path) {
+            Ok(target) if target.kind() == CleanupTargetKind::Directory => target,
+            Ok(target) => {
+                result.failures.push(CleanupFailure::without_source(
+                    target,
+                    io::ErrorKind::InvalidData,
+                ));
+                continue;
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                result.failures.push(CleanupFailure::from_source(
+                    CleanupTarget::directory(path.clone()),
+                    error,
+                ));
+                continue;
+            }
+        };
+
+        match delete_empty_directory_target(&target) {
+            Ok(()) => result.deleted.push(target),
+            Err(error) => result
+                .failures
+                .push(CleanupFailure::from_source(target, error)),
+        }
+    }
+
+    result
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CleanupReceipt {
     targets: Vec<CleanupTarget>,
@@ -329,6 +364,15 @@ fn delete_target(target: &CleanupTarget) -> io::Result<()> {
     match target.kind {
         CleanupTargetKind::File => fs::remove_file(&target.path),
         CleanupTargetKind::Directory => fs::remove_dir_all(&target.path),
+    }
+}
+
+fn delete_empty_directory_target(target: &CleanupTarget) -> io::Result<()> {
+    revalidate_target(target)?;
+
+    match target.kind {
+        CleanupTargetKind::Directory => fs::remove_dir(&target.path),
+        CleanupTargetKind::File => Err(io::Error::other("rollback target is not a directory")),
     }
 }
 

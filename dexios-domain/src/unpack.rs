@@ -21,6 +21,8 @@ use crate::decrypt;
 use crate::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
 };
+#[cfg(any(test, feature = "test-support"))]
+use crate::storage::test_support::FailureHooks;
 use crate::storage::transaction::{
     CommitReceipt, CommittedArtifact, LinkedOutputTransaction, StagedWriteError, TransactionError,
 };
@@ -215,6 +217,11 @@ struct ScannedEntry {
     kind: ExtractionKind,
 }
 
+struct DirectoryCreation {
+    artifacts: Vec<CommittedArtifact>,
+    rollback_dirs: Vec<PathBuf>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ArchiveEntryKind {
     Directory,
@@ -258,6 +265,21 @@ impl ArchivePathTree {
 }
 
 pub fn execute(intent: UnpackIntent) -> Result<CommitReceipt, Error> {
+    execute_with_transaction(intent, LinkedOutputTransaction::new())
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub fn execute_with_failure_hooks(
+    intent: UnpackIntent,
+    hooks: FailureHooks,
+) -> Result<CommitReceipt, Error> {
+    execute_with_transaction(intent, LinkedOutputTransaction::with_failure_hooks(hooks))
+}
+
+fn execute_with_transaction(
+    intent: UnpackIntent,
+    transaction: LinkedOutputTransaction,
+) -> Result<CommitReceipt, Error> {
     let UnpackIntent {
         input,
         detached_header,
@@ -291,12 +313,13 @@ pub fn execute(intent: UnpackIntent) -> Result<CommitReceipt, Error> {
     };
 
     let stor = Arc::new(storage::FileStorage);
-    execute_manifest_archive(stor, req)
+    execute_manifest_archive(stor, req, transaction)
 }
 
 fn execute_manifest_archive<R>(
     stor: Arc<storage::FileStorage>,
     req: HandleRequest<'_, R>,
+    transaction: LinkedOutputTransaction,
 ) -> Result<CommitReceipt, Error>
 where
     R: Read + Seek,
@@ -326,6 +349,7 @@ where
         &req.input_path,
         req.detached_header_path.as_deref(),
         req.on_zip_file.as_ref(),
+        transaction,
     )?;
     if let Some(on_archive_info) = req.on_archive_info {
         on_archive_info(entities.len());
@@ -337,11 +361,22 @@ where
         .map_err(decrypt::map_stream_error)
         .map_err(Error::Decrypt)?;
     revalidate_extraction_targets(&stor, &output_dir, &entities)?;
-    let directory_artifacts =
+    let directory_creation =
         create_selected_directories_after_final_auth(&stor, &output_dir, &entities)?;
-    let mut receipt = transaction.commit_all().map_err(Error::Transaction)?;
-    receipt.artifacts.extend(directory_artifacts);
-    Ok(receipt)
+    match transaction.commit_all() {
+        Ok(mut receipt) => {
+            receipt.artifacts.extend(directory_creation.artifacts);
+            Ok(receipt)
+        }
+        Err(error) => {
+            if !matches!(error, TransactionError::PartialCommit { .. }) {
+                let _rollback = storage::cleanup::rollback_empty_directories_best_effort(
+                    &directory_creation.rollback_dirs,
+                );
+            }
+            Err(Error::Transaction(error))
+        }
+    }
 }
 
 fn stage_manifest_extraction<R: Read>(
@@ -351,6 +386,7 @@ fn stage_manifest_extraction<R: Read>(
     input_path: &Path,
     detached_header_path: Option<&Path>,
     on_zip_file: Option<&OnZipFileFn>,
+    mut transaction: LinkedOutputTransaction,
 ) -> Result<(PathBuf, Vec<ExtractionEntity>, LinkedOutputTransaction), Error> {
     let manifest = ArchiveManifest::read_from(plaintext_reader).map_err(map_payload_error)?;
     let (output_dir, entities) = prepare_manifest_extraction_entities(
@@ -368,7 +404,6 @@ fn stage_manifest_extraction<R: Read>(
         }
     }
 
-    let mut transaction = LinkedOutputTransaction::new();
     for (index, entry) in manifest.entries().iter().enumerate() {
         if entry.kind() != ManifestEntryKind::File {
             continue;
@@ -580,8 +615,9 @@ fn create_selected_directories_after_final_auth(
     stor: &storage::FileStorage,
     output_dir: &Path,
     entities: &[ExtractionEntity],
-) -> Result<Vec<CommittedArtifact>, Error> {
+) -> Result<DirectoryCreation, Error> {
     let mut artifacts = Vec::new();
+    let mut rollback_dirs = Vec::new();
     for entity in entities
         .iter()
         .filter(|entity| matches!(entity.kind, ExtractionKind::Directory(_)))
@@ -591,14 +627,19 @@ fn create_selected_directories_after_final_auth(
         };
         stor.revalidate_unpack_directory_target(output_dir, &entity.relative_path, target)
             .map_err(map_storage_path_error)?;
-        stor.create_unpack_dir_all(output_dir, &entity.relative_path)
-            .map_err(map_storage_path_error)?;
+        rollback_dirs.extend(
+            stor.create_unpack_dir_all(output_dir, &entity.relative_path)
+                .map_err(map_storage_path_error)?,
+        );
         artifacts.push(CommittedArtifact {
             role: target.role(),
             path: entity.full_path.clone(),
         });
     }
-    Ok(artifacts)
+    Ok(DirectoryCreation {
+        artifacts,
+        rollback_dirs,
+    })
 }
 
 fn revalidate_extraction_targets(

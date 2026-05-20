@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-8e264159.js";
+            window.path_to_searchindex_js = "../searchindex-1a28b548.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-07f7ca76.js"></script>
@@ -288,11 +288,14 @@ and prefix collisions</li>
 checking ordered <code>DXBF</code> body frames</li>
 <li>observe final stream authentication before committing outputs</li>
 <li>revalidate selected file targets near staging and before commit</li>
+<li>create selected directories after final authentication, tracking only
+directories created by the current unpack pass</li>
 <li>commit the extracted files through storage transaction semantics</li>
 <li>clean up ordinary temporary/staged artifacts</li>
 </ol>
 <p>If the CLI is not run with <code>--force</code>, unpack may prompt before overwriting
 existing files.</p>
+<p>If the first selected file commit fails after selected directories were created, unpack best-effort removes directories created by the current post-final-auth directory pass before first selected file commit. Pre-existing directories are preserved. After <code>TransactionError::PartialCommit</code>, committed file artifacts are not rolled back.</p>
 <h2 id="security-notes"><a class="header" href="#security-notes">Security Notes</a></h2>
 <ul>
 <li>Packing hides original directory layout inside the encrypted payload, but the

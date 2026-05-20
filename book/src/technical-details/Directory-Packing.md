@@ -138,11 +138,15 @@ and transaction commit behavior.
    checking ordered `DXBF` body frames
 10. observe final stream authentication before committing outputs
 11. revalidate selected file targets near staging and before commit
-12. commit the extracted files through storage transaction semantics
-13. clean up ordinary temporary/staged artifacts
+12. create selected directories after final authentication, tracking only
+    directories created by the current unpack pass
+13. commit the extracted files through storage transaction semantics
+14. clean up ordinary temporary/staged artifacts
 
 If the CLI is not run with `--force`, unpack may prompt before overwriting
 existing files.
+
+If the first selected file commit fails after selected directories were created, unpack best-effort removes directories created by the current post-final-auth directory pass before first selected file commit. Pre-existing directories are preserved. After `TransactionError::PartialCommit`, committed file artifacts are not rolled back.
 
 ## Security Notes
 

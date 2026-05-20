@@ -76,12 +76,13 @@ impl FileStorage {
         &self,
         root: P,
         relative: &Path,
-    ) -> Result<PathBuf, Error> {
+    ) -> Result<Vec<PathBuf>, Error> {
         let root = root.as_ref();
         reject_mutated_root(root)?;
 
         let full_path = root.join(relative);
         let mut current = root.to_path_buf();
+        let mut created = Vec::new();
         for component in relative.components() {
             let Component::Normal(part) = component else {
                 return Err(Error::UnsafePath(full_path));
@@ -96,12 +97,13 @@ impl FileStorage {
                 Ok(_) => return Err(Error::UnsafePath(full_path)),
                 Err(err) if err.kind() == io::ErrorKind::NotFound => {
                     std_fs::create_dir(&current).map_err(Error::CreateDirWithSource)?;
+                    created.push(current.clone());
                 }
                 Err(err) => return Err(Error::FileAccessWithSource(err)),
             }
         }
 
-        Ok(full_path)
+        Ok(created)
     }
 }
 

@@ -18,6 +18,10 @@ use core::protected::Protected;
 use core::stream::V1PayloadStream;
 use dexios_domain::decrypt;
 use dexios_domain::storage::identity::IdentityError;
+#[cfg(feature = "test-support")]
+use dexios_domain::storage::test_support::{FailureHooks, FailurePoint};
+#[cfg(feature = "test-support")]
+use dexios_domain::storage::transaction::TransactionError;
 use dexios_domain::storage::{FileStorage, Storage};
 use dexios_domain::unpack;
 
@@ -246,6 +250,122 @@ fn unpack_archive(
     )?;
 
     unpack::execute(intent)
+}
+
+#[cfg(feature = "test-support")]
+fn unpack_archive_with_failure_hooks(
+    encrypted_archive: &Path,
+    output_dir: &Path,
+    hooks: FailureHooks,
+) -> Result<dexios_domain::storage::transaction::CommitReceipt, unpack::Error> {
+    let stor = Arc::new(FileStorage);
+    let archive = stor.read_file(encrypted_archive).unwrap();
+    let intent = unpack::UnpackIntent::new(
+        archive,
+        None,
+        output_dir,
+        Protected::new(PASSWORD.to_vec()),
+        None,
+        None,
+        None,
+    )?;
+
+    unpack::execute_with_failure_hooks(intent, hooks)
+}
+
+#[cfg(feature = "test-support")]
+fn assert_first_persist_failure(result: Result<impl std::fmt::Debug, unpack::Error>) {
+    assert!(
+        matches!(
+            result,
+            Err(unpack::Error::Transaction(TransactionError::Persist { .. }))
+        ),
+        "expected first-file persist transaction failure, got {result:?}"
+    );
+}
+
+#[cfg(feature = "test-support")]
+#[test]
+fn unpack_commit_failure_removes_created_selected_directories() {
+    let test_dir = TestDir::new("unpack-rollback-created-dir");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+
+    write_manifest_archive_with_entries(
+        &encrypted_archive,
+        &[("created-dir/", b""), ("payload.txt", b"payload")],
+    );
+
+    let result = unpack_archive_with_failure_hooks(
+        &encrypted_archive,
+        &output_dir,
+        FailureHooks::fail_on(FailurePoint::Persist),
+    );
+
+    assert_first_persist_failure(result);
+    assert!(
+        !output_dir.join("created-dir").exists(),
+        "current-run selected directory must be removed after first-file commit failure"
+    );
+}
+
+#[cfg(feature = "test-support")]
+#[test]
+fn unpack_commit_failure_preserves_preexisting_selected_directories() {
+    let test_dir = TestDir::new("unpack-rollback-preexisting-dir");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+    let preexisting_dir = output_dir.join("preexisting");
+    let sentinel = preexisting_dir.join("sentinel.txt");
+
+    fs::create_dir_all(&preexisting_dir).unwrap();
+    fs::write(&sentinel, b"keep me").unwrap();
+    write_manifest_archive_with_entries(
+        &encrypted_archive,
+        &[("preexisting/", b""), ("payload.txt", b"payload")],
+    );
+
+    let result = unpack_archive_with_failure_hooks(
+        &encrypted_archive,
+        &output_dir,
+        FailureHooks::fail_on(FailurePoint::Persist),
+    );
+
+    assert_first_persist_failure(result);
+    assert!(
+        preexisting_dir.is_dir(),
+        "pre-existing selected directory must survive rollback"
+    );
+    assert_eq!(fs::read(&sentinel).unwrap(), b"keep me");
+}
+
+#[cfg(feature = "test-support")]
+#[test]
+fn unpack_commit_failure_removes_nested_intermediates_in_reverse_order() {
+    let test_dir = TestDir::new("unpack-rollback-nested-dir");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+
+    write_manifest_archive_with_entries(
+        &encrypted_archive,
+        &[("nested/created/", b""), ("payload.txt", b"payload")],
+    );
+
+    let result = unpack_archive_with_failure_hooks(
+        &encrypted_archive,
+        &output_dir,
+        FailureHooks::fail_on(FailurePoint::Persist),
+    );
+
+    assert_first_persist_failure(result);
+    assert!(
+        !output_dir.join("nested/created").exists(),
+        "created nested selected directory must be removed"
+    );
+    assert!(
+        !output_dir.join("nested").exists(),
+        "intermediate directory created by create_unpack_dir_all must be removed"
+    );
 }
 
 #[test]
