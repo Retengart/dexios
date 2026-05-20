@@ -1918,6 +1918,7 @@ fn phase04_archive_boundary_gates_are_source_gated() {
         "payload_contract_duplication_violations",
         "public_line_exposes_zip_type",
         "public_line_exposes_zip_metadata_knob",
+        "d03_public_archive_policy_has_no_compression_selector",
     ] {
         assert_contains(
             "dexios-domain/tests/archive_public_api.rs",
@@ -1926,15 +1927,22 @@ fn phase04_archive_boundary_gates_are_source_gated() {
         );
     }
 
-    for required in [
-        "pub enum ArchiveCompression",
+    assert_contains(
+        "dexios-domain/src/archive.rs",
+        DEXIOS_DOMAIN_ARCHIVE_RS,
         "pub struct ArchivePolicy",
-        "Self::Zstd",
+    );
+
+    for forbidden in [
+        "pub enum ArchiveCompression",
+        "ArchiveCompression::Zstd",
+        "pub const fn zstd",
+        "pub const fn compression",
     ] {
-        assert_contains(
+        assert_not_contains(
             "dexios-domain/src/archive.rs",
             DEXIOS_DOMAIN_ARCHIVE_RS,
-            required,
+            forbidden,
         );
     }
 

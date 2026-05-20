@@ -94,7 +94,19 @@ fn d01_domain_archive_contracts_do_not_expose_zip_crate_api_types() {
 }
 
 #[test]
-fn d03_public_archive_policy_has_no_stored_or_no_compression_variant() {
+fn d03_public_archive_policy_has_no_compression_selector() {
+    for forbidden in [
+        "pub enum ArchiveCompression",
+        "ArchiveCompression::Zstd",
+        "pub const fn zstd",
+        "pub const fn compression",
+    ] {
+        assert!(
+            !DOMAIN_ARCHIVE.contains(forbidden),
+            "D-03 public archive policy must not expose compression selector {forbidden:?}"
+        );
+    }
+
     let violations = collect_violations(&domain_archive_sources(), |source| {
         source
             .text
@@ -106,7 +118,7 @@ fn d03_public_archive_policy_has_no_stored_or_no_compression_variant() {
                     Some(violation(
                         source.path,
                         index,
-                        "D-03 public archive policy must not expose Stored or no-compression modes",
+                        "D-03 public archive policy must not expose compression selector modes",
                     ))
                 } else {
                     None
