@@ -49,6 +49,67 @@ fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
 }
 
 #[test]
+fn encrypt_auto_generated_passphrase_disclosure_uses_stderr_not_stdout() {
+    let test_dir = TestDir::new("encrypt-auto-stderr");
+    let plain = test_dir.path().join("plain.txt");
+    let plaintext = b"generated passphrase plaintext";
+    fs::write(&plain, plaintext).unwrap();
+
+    let output = run_cli(
+        test_dir.path(),
+        &["encrypt", "--force", "--auto=4", "plain.txt", "plain.enc"],
+    );
+
+    assert!(
+        output.status.success(),
+        "encrypt failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(test_dir.path().join("plain.enc").is_file());
+
+    let disclosure_prefix = "Your generated passphrase is intentionally shown here and may be captured by terminal scrollback or logs: ";
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr_prefix = format!("[-] {disclosure_prefix}");
+
+    assert!(
+        stderr.contains(&stderr_prefix),
+        "generated passphrase disclosure must be in stderr: stdout={stdout}\nstderr={stderr}"
+    );
+    assert!(
+        !stdout.contains(disclosure_prefix),
+        "generated passphrase disclosure must not be in stdout: stdout={stdout}\nstderr={stderr}"
+    );
+    assert!(
+        !stdout.contains("[-]"),
+        "warning diagnostics must not be in stdout: stdout={stdout}\nstderr={stderr}"
+    );
+
+    let generated_passphrase = stderr
+        .lines()
+        .find_map(|line| line.strip_prefix(&stderr_prefix))
+        .expect("stderr should include generated passphrase disclosure")
+        .to_owned();
+
+    let mut decrypt_command = Command::new(env!("CARGO_BIN_EXE_dexios"));
+    let decrypt_output = decrypt_command
+        .current_dir(test_dir.path())
+        .env("DEXIOS_KEY", generated_passphrase)
+        .args(["decrypt", "--force", "plain.enc", "plain.out"])
+        .output()
+        .unwrap();
+
+    assert!(
+        decrypt_output.status.success(),
+        "decrypt failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&decrypt_output.stdout),
+        String::from_utf8_lossy(&decrypt_output.stderr)
+    );
+    assert_eq!(fs::read(test_dir.path().join("plain.out")).unwrap(), plaintext);
+}
+
+#[test]
 fn encrypt_rejects_same_file_alias_before_opening_output() {
     let test_dir = TestDir::new("encrypt-same-file-alias");
     let plain = test_dir.path().join("plain.txt");
