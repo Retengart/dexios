@@ -1060,6 +1060,20 @@ fn assurance_replay_runs_once_after_workspace_tests_before_audit() {
 }
 
 #[test]
+fn phase_gate_stays_independent_of_local_planning_state() {
+    assert_not_contains(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "local-notes",
+    );
+    assert_non_comment_lines_exclude(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        &["local-notes"],
+    );
+}
+
+#[test]
 fn assurance_replay_script_is_bounded_offline_and_crate_owned() {
     assert_contains(
         "scripts/verify_assurance_replay.sh",
