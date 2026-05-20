@@ -37,6 +37,7 @@ const DEXIOS_DOMAIN_DECRYPT_WORKFLOW_ERROR_TESTS: &str =
 const DEXIOS_DOMAIN_PACK_PATHS_TESTS: &str =
     include_str!("../../dexios-domain/tests/pack_paths.rs");
 const DEXIOS_DOMAIN_UNPACK_TESTS: &str = include_str!("../../dexios-domain/tests/unpack.rs");
+const DEXIOS_ENCRYPT_CLI_REGRESSION_TESTS: &str = include_str!("encrypt_cli_regressions.rs");
 const DEXIOS_PACK_CLI_REGRESSION_TESTS: &str = include_str!("pack_cli_regressions.rs");
 const DEXIOS_DECRYPT_CLI_REGRESSION_TESTS: &str = include_str!("decrypt_cli_regressions.rs");
 const DEXIOS_UNPACK_CLI_REGRESSION_TESTS: &str = include_str!("unpack_cli_regressions.rs");
@@ -48,17 +49,20 @@ const DEXIOS_DOMAIN_FIXTURE_MANIFEST: &str =
 const DEXIOS_CLI_FIXTURE_MANIFEST: &str = include_str!("fixture_manifest.toml");
 const DEXIOS_MAIN_RS: &str = include_str!("../src/main.rs");
 const DEXIOS_CLI_RS: &str = include_str!("../src/cli.rs");
+const DEXIOS_GLOBAL_RS: &str = include_str!("../src/global.rs");
 const DEXIOS_STATES_RS: &str = include_str!("../src/global/states.rs");
 const DEXIOS_UNPACK_RS: &str = include_str!("../src/subcommands/unpack.rs");
 const DEXIOS_SUBCOMMAND_ERRORS_RS: &str = include_str!("../src/subcommands/errors.rs");
 const DEXIOS_CORE_LIB_RS: &str = include_str!("../../dexios-core/src/lib.rs");
 const DEXIOS_CORE_KEY_RS: &str = include_str!("../../dexios-core/src/key.rs");
 const DEXIOS_CORE_PROTECTED_RS: &str = include_str!("../../dexios-core/src/protected.rs");
+const DEXIOS_CORE_STREAM_RS: &str = include_str!("../../dexios-core/src/stream.rs");
 const DEXIOS_DOMAIN_LIB_RS: &str = include_str!("../../dexios-domain/src/lib.rs");
 const DEXIOS_DOMAIN_WORKFLOW_ERROR_RS: &str =
     include_str!("../../dexios-domain/src/workflow_error.rs");
 const DEXIOS_DOMAIN_ARCHIVE_RS: &str = include_str!("../../dexios-domain/src/archive.rs");
 const DEXIOS_DOMAIN_PACK_RS: &str = include_str!("../../dexios-domain/src/pack.rs");
+const DEXIOS_DOMAIN_DECRYPT_RS: &str = include_str!("../../dexios-domain/src/decrypt.rs");
 const DEXIOS_DOMAIN_UNPACK_RS: &str = include_str!("../../dexios-domain/src/unpack.rs");
 const DEXIOS_DOMAIN_STORAGE_RS: &str = include_str!("../../dexios-domain/src/storage/mod.rs");
 const DEXIOS_DOMAIN_CLEANUP_RS: &str = include_str!("../../dexios-domain/src/storage/cleanup.rs");
@@ -2537,6 +2541,99 @@ fn phase12_unpack_directory_rollback_contract_is_source_gated() {
             forbidden,
         );
         assert_not_contains("book/src/Safety-Contract.md", SAFETY_CONTRACT, forbidden);
+    }
+}
+
+#[test]
+fn phase13_cli_output_and_decrypt_contract_is_source_gated() {
+    assert_contains(
+        "dexios/src/global.rs",
+        DEXIOS_GLOBAL_RS,
+        "eprintln!(\"[-] {}\", format!($($arg)*))",
+    );
+    assert_non_comment_line_count(
+        "dexios/src/global.rs",
+        DEXIOS_GLOBAL_RS,
+        "println!(\"[-] {}\", format!($($arg)*))",
+        0,
+    );
+
+    for required in [
+        "generated_passphrase_secret(*i, |message| warn!(\"{message}\"))",
+        "Your generated passphrase is intentionally shown here and may be captured by terminal scrollback or logs: ",
+    ] {
+        assert_contains("dexios/src/global/states.rs", DEXIOS_STATES_RS, required);
+    }
+
+    for required in [
+        "encrypt_auto_generated_passphrase_disclosure_uses_stderr_not_stdout",
+        "--auto=4",
+        "output.stderr",
+        "output.stdout",
+        "Your generated passphrase is intentionally shown here",
+    ] {
+        assert_contains(
+            "dexios/tests/encrypt_cli_regressions.rs",
+            DEXIOS_ENCRYPT_CLI_REGRESSION_TESTS,
+            required,
+        );
+    }
+
+    for required in [
+        "auto.stderr",
+        "auto.stdout",
+        "2> \"$dir/auto.stderr\"",
+        "\"$dir/auto.stderr\"",
+    ] {
+        assert_contains(
+            "scripts/verify_cli_surface.sh",
+            VERIFY_CLI_SURFACE,
+            required,
+        );
+    }
+    assert_not_contains(
+        "scripts/verify_cli_surface.sh",
+        VERIFY_CLI_SURFACE,
+        "auto_key=\"$(sed -n 's/^\\[-\\] Your generated passphrase is intentionally shown here and may be captured by terminal scrollback or logs: //p' \"$dir/auto.stdout\"",
+    );
+
+    for required in [
+        "#[cfg(test)]\npub(crate) struct HandleRequest",
+        "#[cfg(test)]\npub(crate) fn execute_handles",
+        "_final_auth: V1FinalAuth",
+    ] {
+        assert_contains(
+            "dexios-domain/src/decrypt.rs",
+            DEXIOS_DOMAIN_DECRYPT_RS,
+            required,
+        );
+    }
+
+    let decrypt_section = normalized_rust_production_section(
+        "dexios-domain/src/decrypt.rs",
+        DEXIOS_DOMAIN_DECRYPT_RS,
+        "fn execute_transactional_target",
+        "pub(crate) fn read_v1_payload",
+    );
+    assert_normalized_section_order(
+        "dexios-domain/src/decrypt.rs::execute_transactional_target",
+        &decrypt_section,
+        &[
+            "StagedOutputTransaction::new",
+            ".with_writer_result(",
+            "decrypt_payload_with_master_key",
+            "commit_after_final_auth(transaction, final_auth)",
+        ],
+    );
+
+    for required in [
+        "pub struct V1FinalAuth",
+        "_private: ()",
+        "Result<V1FinalAuth, StreamError>",
+        "uncommitted scratch",
+        "Ok(V1FinalAuth)",
+    ] {
+        assert_contains("dexios-core/src/stream.rs", DEXIOS_CORE_STREAM_RS, required);
     }
 }
 
