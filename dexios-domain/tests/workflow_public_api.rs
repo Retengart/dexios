@@ -391,6 +391,18 @@ fn assert_retained_public_storage_exports() {
             "APIS-03 cleanup constructor must be crate-sealed: {sealed}"
         );
     }
+
+    for forbidden in [
+        "pub path: PathBuf",
+        "pub kind: CleanupTargetKind",
+        "pub identity: CleanupTargetIdentity",
+        "pub targets: Vec<CleanupTarget>",
+    ] {
+        assert!(
+            !STORAGE_CLEANUP.contains(forbidden),
+            "APIS-04 cleanup receipt state must not be externally constructible: {forbidden}"
+        );
+    }
 }
 
 fn collect_violations(

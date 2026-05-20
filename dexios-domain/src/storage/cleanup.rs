@@ -7,7 +7,7 @@ use std::sync::Arc;
 use super::test_support::{FailureError, FailureHooks, FailurePoint};
 use super::transaction::CleanupAuthorizedReceipt;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CleanupTargetKind {
     File,
     Directory,
@@ -15,9 +15,9 @@ pub enum CleanupTargetKind {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CleanupTarget {
-    pub path: PathBuf,
-    pub kind: CleanupTargetKind,
-    pub identity: CleanupTargetIdentity,
+    path: PathBuf,
+    kind: CleanupTargetKind,
+    identity: CleanupTargetIdentity,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -52,6 +52,22 @@ impl CleanupTargetIdentity {
 
 impl CleanupTarget {
     #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    #[must_use]
+    pub fn kind(&self) -> CleanupTargetKind {
+        self.kind
+    }
+
+    #[must_use]
+    pub fn identity(&self) -> &CleanupTargetIdentity {
+        &self.identity
+    }
+
+    #[must_use]
+    #[allow(dead_code)]
     pub(crate) fn file(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
@@ -63,6 +79,7 @@ impl CleanupTarget {
     }
 
     #[must_use]
+    #[allow(dead_code)]
     pub(crate) fn directory(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
@@ -181,7 +198,7 @@ impl CleanupResult {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CleanupReceipt {
-    pub targets: Vec<CleanupTarget>,
+    targets: Vec<CleanupTarget>,
 }
 
 impl CleanupReceipt {
@@ -196,6 +213,11 @@ impl CleanupReceipt {
             .map(CleanupTarget::from_path)
             .collect::<io::Result<Vec<_>>>()
             .map(Self::new)
+    }
+
+    #[must_use]
+    pub fn targets(&self) -> &[CleanupTarget] {
+        &self.targets
     }
 
     #[must_use]

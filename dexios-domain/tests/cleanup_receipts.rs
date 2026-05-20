@@ -4,6 +4,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "test-support")]
 use dexios_domain::storage::cleanup::{CleanupFailure, CleanupTarget};
 use dexios_domain::storage::cleanup::{
     CleanupGateError, CleanupReceipt, CleanupTargetIdentity, HashVerification, PostCommitSuccess,
@@ -81,7 +82,7 @@ fn cleanup_receipt_deletes_all_targets_after_post_commit_success() {
 
     assert!(
         matches!(
-            cleanup_receipt.targets[0].identity,
+            cleanup_receipt.targets()[0].identity(),
             CleanupTargetIdentity::Verified { .. }
         ),
         "CleanupReceipt::from_paths must capture target identity evidence"
@@ -114,7 +115,7 @@ fn cleanup_receipt_changed_target_identity_is_reported_and_replacement_file_is_n
     assert_eq!(fs::read(&committed).unwrap(), b"committed output");
     assert_eq!(fs::read(&target).unwrap(), b"replacement source");
     assert_eq!(result.failures.len(), 1);
-    assert_eq!(result.failures[0].target.path, target);
+    assert_eq!(result.failures[0].target.path(), target.as_path());
     assert!(
         result.failures[0].source().is_some(),
         "changed cleanup identity must retain diagnostic source evidence"
@@ -147,7 +148,7 @@ fn cleanup_receipt_changed_target_kind_is_reported_and_replacement_directory_is_
         b"replacement directory"
     );
     assert_eq!(result.failures.len(), 1);
-    assert_eq!(result.failures[0].target.path, target);
+    assert_eq!(result.failures[0].target.path(), target.as_path());
     assert!(
         result.failures[0].source().is_some(),
         "changed cleanup kind must retain diagnostic source evidence"
@@ -228,8 +229,8 @@ fn cleanup_receipt_reports_partial_failure() {
         CleanupTarget::unchecked_file_for_test(&deleted),
     ]);
     assert!(
-        cleanup_receipt.targets[0]
-            .identity
+        cleanup_receipt.targets()[0]
+            .identity()
             .source()
             .contains("unchecked CleanupTarget::file constructor"),
         "unchecked test constructor must make weaker cleanup identity status explicit"
@@ -241,9 +242,9 @@ fn cleanup_receipt_reports_partial_failure() {
 
     assert!(!result.is_success());
     assert_eq!(result.deleted.len(), 1);
-    assert_eq!(result.deleted[0].path, deleted);
+    assert_eq!(result.deleted[0].path(), deleted.as_path());
     assert_eq!(result.failures.len(), 1);
-    assert_eq!(result.failures[0].target.path, injected_failure);
+    assert_eq!(result.failures[0].target.path(), injected_failure.as_path());
     assert_eq!(result.failures[0].error, io::ErrorKind::Other);
     let hook_source = result.failures[0]
         .source()
@@ -256,6 +257,7 @@ fn cleanup_receipt_reports_partial_failure() {
 }
 
 #[test]
+#[cfg(feature = "test-support")]
 fn cleanup_failure_source_free_synthetic_case_has_no_source() {
     let failure = CleanupFailure::without_source(
         CleanupTarget::unchecked_file_for_test(PathBuf::from("source.txt")),
@@ -280,7 +282,7 @@ fn cleanup_receipt_requires_hash_success_before_delete() {
 
     assert_eq!(proof, Err(CleanupGateError::HashNotVerified));
     assert!(target.exists());
-    assert_eq!(cleanup_receipt.targets.len(), 1);
+    assert_eq!(cleanup_receipt.targets().len(), 1);
 }
 
 #[test]

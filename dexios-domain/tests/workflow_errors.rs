@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use core::header::common::HeaderReadError;
 use dexios_domain::archive::{ArchiveLimitError, ArchiveLimitKind};
 use dexios_domain::storage;
+#[cfg(feature = "test-support")]
 use dexios_domain::storage::cleanup::{CleanupFailure, CleanupResult, CleanupTarget};
 use dexios_domain::storage::identity::{IdentityError, PathRole};
 use dexios_domain::storage::transaction::{
@@ -276,6 +277,7 @@ fn resource_pressure_helpers_detect_storage_full_source_chains() {
 }
 
 #[test]
+#[cfg(feature = "test-support")]
 fn cleanup_failures_have_typed_workflow_classification() {
     let failure = CleanupFailure::without_source(
         CleanupTarget::unchecked_file_for_test(path("source.txt")),
