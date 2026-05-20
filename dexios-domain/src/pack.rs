@@ -50,6 +50,7 @@ pub enum Error {
     ArchiveLimit(ArchiveLimitError),
     ArchivePayload(PayloadError),
     ArchiveRootName,
+    SymlinkSource(PathBuf),
     ReadSource,
     ReadSourceWithSource(crate::storage::Error),
 }
@@ -76,6 +77,9 @@ impl std::fmt::Display for Error {
             Error::ArchiveLimit(inner) => write!(f, "Archive limit error: {inner}"),
             Error::ArchivePayload(inner) => write!(f, "Archive payload error: {inner}"),
             Error::ArchiveRootName => f.write_str("Unable to derive archive root names"),
+            Error::SymlinkSource(path) => {
+                write!(f, "Symlink pack source rejected: {}", path.display())
+            }
             Error::ReadSource | Error::ReadSourceWithSource(_) => {
                 f.write_str("Unable to read pack source")
             }
@@ -111,7 +115,9 @@ impl Error {
             _ if self.is_resource_pressure() => WorkflowErrorClass::ResourcePressure,
             Self::Encrypt(error) => error.workflow_class(),
             Self::PathIdentity(error) => classify_identity_error(error),
-            Self::ArchiveLimit(_) | Self::ArchiveRootName => WorkflowErrorClass::UnsafePath,
+            Self::ArchiveLimit(_) | Self::ArchiveRootName | Self::SymlinkSource(_) => {
+                WorkflowErrorClass::UnsafePath
+            }
             Self::ArchivePayload(error) => classify_payload_error(error),
             Self::CreateArchive
             | Self::CreateArchiveWithSource(_)
@@ -213,6 +219,10 @@ impl PackIntent {
             .collect::<Vec<_>>();
         if source_paths.is_empty() {
             return Err(Error::ArchiveRootName);
+        }
+
+        for source_path in &source_paths {
+            reject_symlink_source(source_path)?;
         }
 
         let archive_roots = archive_root_names(&source_paths)?;
@@ -494,6 +504,15 @@ fn normalized_archive_path_bytes(path: &Path) -> Result<Vec<u8>, Error> {
     Ok(parts.join("/").into_bytes())
 }
 
+fn reject_symlink_source(path: &Path) -> Result<(), Error> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            Err(Error::SymlinkSource(path.to_path_buf()))
+        }
+        Ok(_) | Err(_) => Ok(()),
+    }
+}
+
 fn materialize_archive_entries(
     sources: &[PackSource],
     on_archive_entry: Option<&dyn Fn(&Path)>,
@@ -516,8 +535,19 @@ fn materialize_archive_entries_with_limits(
         let root_path = file.path().to_path_buf();
 
         if file.is_dir() {
-            let files = stor.read_dir(&file).map_err(Error::ReadSourceWithSource)?;
-            for source in files {
+            for source in walkdir::WalkDir::new(&root_path) {
+                let source = source.map_err(|error| {
+                    Error::ReadSourceWithSource(match error.into_io_error() {
+                        Some(source) => crate::storage::Error::DirEntriesWithSource(source),
+                        None => crate::storage::Error::DirEntries,
+                    })
+                })?;
+                if source.path_is_symlink() {
+                    return Err(Error::SymlinkSource(source.path().to_path_buf()));
+                }
+                let source = stor
+                    .read_file(source.path())
+                    .map_err(Error::ReadSourceWithSource)?;
                 let relative = source
                     .path()
                     .strip_prefix(&root_path)
