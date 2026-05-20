@@ -20,6 +20,7 @@ const KEYS: &str = include_str!("../../book/src/technical-details/Keys.md");
 const CHANGELOG: &str = include_str!("../../CHANGELOG.md");
 const CARGO_TOML: &str = include_str!("../../Cargo.toml");
 const DEXIOS_DOMAIN_CARGO_TOML: &str = include_str!("../../dexios-domain/Cargo.toml");
+const DEXIOS_CARGO_TOML: &str = include_str!("../../dexios/Cargo.toml");
 const GITIGNORE: &str = include_str!("../../.gitignore");
 const DENY_TOML: &str = include_str!("../../deny.toml");
 const VERIFY_PHASE_GATE: &str = include_str!("../../scripts/verify_phase_gate.sh");
@@ -35,8 +36,6 @@ const DEXIOS_DOMAIN_DECRYPT_WORKFLOW_ERROR_TESTS: &str =
 const DEXIOS_DOMAIN_PACK_PATHS_TESTS: &str =
     include_str!("../../dexios-domain/tests/pack_paths.rs");
 const DEXIOS_DOMAIN_UNPACK_TESTS: &str = include_str!("../../dexios-domain/tests/unpack.rs");
-const ARCHIVE_STREAMING_FEASIBILITY: &str =
-    include_str!("../../dexios-domain/tests/archive_streaming_feasibility.rs");
 const DEXIOS_PACK_CLI_REGRESSION_TESTS: &str = include_str!("pack_cli_regressions.rs");
 const DEXIOS_DECRYPT_CLI_REGRESSION_TESTS: &str = include_str!("decrypt_cli_regressions.rs");
 const DEXIOS_UNPACK_CLI_REGRESSION_TESTS: &str = include_str!("unpack_cli_regressions.rs");
@@ -737,25 +736,46 @@ fn production_write(path: &std::path::Path) {
 }
 
 #[test]
-fn archive_streaming_feasibility_rejects_direct_zip_extract() {
+fn manifest_archive_gate_is_zip_dependency_free() {
+    for (source_name, source) in [
+        ("Cargo.toml", CARGO_TOML),
+        ("dexios-domain/Cargo.toml", DEXIOS_DOMAIN_CARGO_TOML),
+        ("dexios/Cargo.toml", DEXIOS_CARGO_TOML),
+    ] {
+        assert_not_contains(source_name, source, "zip.workspace");
+        assert!(
+            !source
+                .lines()
+                .any(|line| line.trim_start().starts_with("zip =")),
+            "{source_name} must not contain a direct zip dependency"
+        );
+    }
+
     for required in [
-        "ZipStreamReader",
-        "ProofVisitor",
-        "finalize_after_auth",
-        "zip_streaming_proof_stages_without_committing_before_finalize",
+        "pack_writes_relative_archive_paths",
+        "PayloadKind::ManifestArchive",
+        "PayloadFramingProfile::ManifestFirst",
+        "ManifestFirstPayload::parse",
     ] {
         assert_contains(
-            "dexios-domain/tests/archive_streaming_feasibility.rs",
-            ARCHIVE_STREAMING_FEASIBILITY,
+            "dexios-domain/tests/pack_paths.rs",
+            DEXIOS_DOMAIN_PACK_PATHS_TESTS,
             required,
         );
     }
 
     for (source_name, source) in [
-        (
-            "dexios-domain/tests/archive_streaming_feasibility.rs",
-            ARCHIVE_STREAMING_FEASIBILITY,
-        ),
+        ("dexios-domain/src/pack.rs", DEXIOS_DOMAIN_PACK_RS),
+        ("dexios-domain/src/unpack.rs", DEXIOS_DOMAIN_UNPACK_RS),
+    ] {
+        assert_rust_production_source_excludes(
+            source_name,
+            source,
+            &["zip::", "ZipWriter", "ZipArchive", "CompressionMethod"],
+        );
+    }
+
+    for (source_name, source) in [
         ("dexios-domain/src/unpack.rs", DEXIOS_DOMAIN_UNPACK_RS),
         (
             "dexios-domain/src/storage/transaction.rs",
