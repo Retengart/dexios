@@ -106,7 +106,10 @@ fn encrypt_auto_generated_passphrase_disclosure_uses_stderr_not_stdout() {
         String::from_utf8_lossy(&decrypt_output.stdout),
         String::from_utf8_lossy(&decrypt_output.stderr)
     );
-    assert_eq!(fs::read(test_dir.path().join("plain.out")).unwrap(), plaintext);
+    assert_eq!(
+        fs::read(test_dir.path().join("plain.out")).unwrap(),
+        plaintext
+    );
 }
 
 #[test]

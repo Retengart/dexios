@@ -92,8 +92,11 @@ impl V1PayloadStream {
         V1PayloadEncryptor::new(master_key, header)?.encrypt_file(reader, writer)
     }
 
-    /// Decrypts into `writer` as uncommitted scratch; callers must only commit
-    /// the plaintext after this function returns a `V1FinalAuth` receipt.
+    /// Decrypts into `writer` as uncommitted scratch.
+    ///
+    /// Callers must commit or publish final plaintext only after this function
+    /// returns `Ok(V1FinalAuth)`, proving the final authentication receipt was
+    /// produced for the complete V1 payload.
     pub fn decrypt_file(
         master_key: MasterKey,
         payload: &ParsedV1Payload,
