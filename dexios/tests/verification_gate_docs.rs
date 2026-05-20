@@ -19,6 +19,7 @@ const PROTECTED_WRAPPER: &str = include_str!("../../book/src/dexios-core/Protect
 const KEYS: &str = include_str!("../../book/src/technical-details/Keys.md");
 const CHANGELOG: &str = include_str!("../../CHANGELOG.md");
 const CARGO_TOML: &str = include_str!("../../Cargo.toml");
+const CARGO_LOCK: &str = include_str!("../../Cargo.lock");
 const DEXIOS_DOMAIN_CARGO_TOML: &str = include_str!("../../dexios-domain/Cargo.toml");
 const DEXIOS_CARGO_TOML: &str = include_str!("../../dexios/Cargo.toml");
 const GITIGNORE: &str = include_str!("../../.gitignore");
@@ -482,6 +483,69 @@ fn assert_manifest_row(source_name: &str, rows: &[toml::Value], row_id: &str, re
     );
 }
 
+fn assert_manifest_has_no_dependency_package(source_name: &str, source: &str, package: &str) {
+    let manifest: toml::Value =
+        toml::from_str(source).unwrap_or_else(|error| panic!("{source_name} must parse: {error}"));
+    inspect_manifest_tables_for_package(source_name, &manifest, package);
+}
+
+fn inspect_manifest_tables_for_package(source_name: &str, value: &toml::Value, package: &str) {
+    let Some(table) = value.as_table() else {
+        return;
+    };
+
+    for (key, child) in table {
+        if matches!(
+            key.as_str(),
+            "dependencies" | "dev-dependencies" | "build-dependencies"
+        ) {
+            inspect_dependency_table_for_package(source_name, child, package);
+        }
+
+        inspect_manifest_tables_for_package(source_name, child, package);
+    }
+}
+
+fn inspect_dependency_table_for_package(source_name: &str, value: &toml::Value, package: &str) {
+    let Some(table) = value.as_table() else {
+        return;
+    };
+
+    for (dependency_name, spec) in table {
+        assert_ne!(
+            dependency_name, package,
+            "{source_name} must not declare direct dependency {package:?}"
+        );
+        let package_override = spec
+            .as_table()
+            .and_then(|dependency| dependency.get("package"))
+            .and_then(toml::Value::as_str);
+        assert_ne!(
+            package_override,
+            Some(package),
+            "{source_name} must not alias direct dependency package {package:?}"
+        );
+    }
+}
+
+fn assert_lockfile_has_no_package(source_name: &str, source: &str, package: &str) {
+    let lockfile: toml::Value =
+        toml::from_str(source).unwrap_or_else(|error| panic!("{source_name} must parse: {error}"));
+    let packages = lockfile
+        .get("package")
+        .and_then(toml::Value::as_array)
+        .unwrap_or_else(|| panic!("{source_name} must contain package rows"));
+
+    for row in packages {
+        let name = row.get("name").and_then(toml::Value::as_str);
+        assert_ne!(
+            name,
+            Some(package),
+            "{source_name} must not lock package {package:?}"
+        );
+    }
+}
+
 fn is_non_comment_line(line: &str) -> bool {
     let trimmed = line.trim_start();
     !trimmed.is_empty() && !trimmed.starts_with('#')
@@ -742,14 +806,44 @@ fn manifest_archive_gate_is_zip_dependency_free() {
         ("dexios-domain/Cargo.toml", DEXIOS_DOMAIN_CARGO_TOML),
         ("dexios/Cargo.toml", DEXIOS_CARGO_TOML),
     ] {
-        assert_not_contains(source_name, source, "zip.workspace");
+        assert_manifest_has_no_dependency_package(source_name, source, "zip");
+    }
+    assert_lockfile_has_no_package("Cargo.lock", CARGO_LOCK, "zip");
+
+    for (source_name, bad_manifest) in [
+        (
+            "synthetic/dependency-table.toml",
+            "[dependencies.zip]\nversion = \"8.6.0\"\n",
+        ),
+        (
+            "synthetic/workspace-dependency-table.toml",
+            "[workspace.dependencies.zip]\nversion = \"8.6.0\"\n",
+        ),
+        (
+            "synthetic/aliased-package.toml",
+            "[dependencies]\narchive_zip = { package = \"zip\", version = \"8.6.0\" }\n",
+        ),
+    ] {
         assert!(
-            !source
-                .lines()
-                .any(|line| line.trim_start().starts_with("zip =")),
-            "{source_name} must not contain a direct zip dependency"
+            std::panic::catch_unwind(|| {
+                assert_manifest_has_no_dependency_package(source_name, bad_manifest, "zip");
+            })
+            .is_err(),
+            "manifest zip gate must reject {source_name}"
         );
     }
+
+    assert!(
+        std::panic::catch_unwind(|| {
+            assert_lockfile_has_no_package(
+                "synthetic/Cargo.lock",
+                "[[package]]\nname = \"zip\"\nversion = \"8.6.0\"\n",
+                "zip",
+            );
+        })
+        .is_err(),
+        "lockfile zip gate must reject stale zip package rows"
+    );
 
     for required in [
         "pack_writes_relative_archive_paths",

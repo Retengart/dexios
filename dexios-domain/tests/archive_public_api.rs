@@ -108,26 +108,49 @@ fn d03_public_archive_policy_has_no_compression_selector() {
     }
 
     let violations = collect_violations(&domain_archive_sources(), |source| {
-        source
-            .text
-            .lines()
-            .enumerate()
-            .filter_map(|(index, line)| {
-                let trimmed = line.trim();
-                if public_stored_or_no_compression_policy(trimmed) {
-                    Some(violation(
-                        source.path,
-                        index,
-                        "D-03 public archive policy must not expose compression selector modes",
-                    ))
-                } else {
-                    None
-                }
-            })
-            .collect()
+        public_archive_contract_violations(
+            source,
+            public_line_exposes_compression_selector,
+            "D-03 public archive policy must not expose compression selectors",
+        )
     });
 
     assert_no_violations(violations);
+
+    for bad_source in [
+        Source {
+            path: "synthetic/public-compression-method.rs",
+            text: r#"
+                pub fn compression(self) -> ArchiveCompression {
+                    ArchiveCompression::Zstd
+                }
+            "#,
+        },
+        Source {
+            path: "synthetic/public-zstd-constructor.rs",
+            text: "pub fn zstd() -> Self { Self::default() }",
+        },
+        Source {
+            path: "synthetic/public-compression-enum.rs",
+            text: r#"
+                pub enum Compression {
+                    Zstd,
+                    Stored,
+                }
+            "#,
+        },
+    ] {
+        assert!(
+            !public_archive_contract_violations(
+                bad_source,
+                public_line_exposes_compression_selector,
+                "D-03 public archive policy must not expose compression selectors",
+            )
+            .is_empty(),
+            "D-03 source gate must reject {}",
+            bad_source.path
+        );
+    }
 }
 
 #[test]
@@ -659,8 +682,16 @@ fn public_line_exposes_zip_type(trimmed: &str) -> bool {
         || trimmed.contains("SimpleFileOptions")
 }
 
-fn public_stored_or_no_compression_policy(trimmed: &str) -> bool {
-    trimmed == "Stored," || trimmed == "NoCompression," || trimmed == "Uncompressed,"
+fn public_line_exposes_compression_selector(trimmed: &str) -> bool {
+    let compact = trimmed.split_whitespace().collect::<String>();
+    compact.contains("ArchiveCompression")
+        || compact.contains("pubenumCompression")
+        || compact.contains("fncompression(")
+        || compact.contains("fnzstd(")
+        || trimmed == "Zstd,"
+        || trimmed == "Stored,"
+        || trimmed == "NoCompression,"
+        || trimmed == "Uncompressed,"
 }
 
 fn public_line_exposes_zip_metadata_knob(trimmed: &str) -> bool {
