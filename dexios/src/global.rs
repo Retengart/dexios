@@ -26,7 +26,7 @@ macro_rules! success {
 #[macro_export]
 macro_rules! warn {
     ($($arg:tt)*) => {
-        println!("[-] {}", format!($($arg)*))
+        eprintln!("[-] {}", format!($($arg)*))
     }
 }
 
