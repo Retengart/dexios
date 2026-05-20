@@ -2422,13 +2422,17 @@ fn archive_docs_do_not_reintroduce_removed_compression_selector() {
     assert_corpus_contains(
         "archive documentation corpus",
         &archive_docs,
-        "default Dexios archive",
+        "Dexios-owned manifest-first archive",
     );
     assert_corpus_contains(
         "archive documentation corpus",
         &archive_docs,
-        "compression policy",
+        "fixed archive policy",
     );
+    for (source_name, source) in archive_docs {
+        assert_not_contains(source_name, source, "archive compression policy");
+        assert_not_contains(source_name, source, "current archive compression policy");
+    }
 }
 
 #[test]

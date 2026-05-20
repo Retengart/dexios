@@ -41,8 +41,8 @@ Pack and encrypt directories:
 dexios pack photos/ archive.enc
 ```
 
-`pack` uses the default Dexios archive compression policy. It does not expose
-ZIP compression or metadata knobs as CLI options.
+`pack` uses Dexios-owned manifest-first archive framing with a fixed archive
+policy. It does not expose ZIP compression or metadata knobs as CLI options.
 
 Unpack a previously packed archive:
 

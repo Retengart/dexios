@@ -139,6 +139,14 @@ fn d03_public_archive_policy_has_no_compression_selector() {
                 }
             "#,
         },
+        Source {
+            path: "synthetic/public-renamed-compression-selector.rs",
+            text: "pub fn level(self) -> CompressionLevel { CompressionLevel::Default }",
+        },
+        Source {
+            path: "synthetic/public-policy-mode-field.rs",
+            text: "pub struct ArchivePolicy { pub mode: ArchiveMode }",
+        },
     ] {
         assert!(
             !public_archive_contract_violations(
@@ -629,10 +637,13 @@ fn public_archive_contract_violations(
     let mut violations = Vec::new();
     let mut brace_depth = 0isize;
     let mut public_enum_depth = None;
+    let mut public_struct_depth = None;
 
     for (index, line) in source.text.lines().enumerate() {
         let trimmed = line.trim_start();
-        let public_contract_line = is_public_surface_line(trimmed) || public_enum_depth.is_some();
+        let public_contract_line = is_public_surface_line(trimmed)
+            || public_enum_depth.is_some()
+            || public_struct_depth.is_some();
         if public_contract_line
             && !is_comment_or_blank(trimmed)
             && exposes_forbidden_contract(trimmed)
@@ -651,6 +662,16 @@ fn public_archive_contract_violations(
         {
             public_enum_depth = None;
         }
+
+        let starts_public_struct = starts_public_struct_block(trimmed) && line.contains('{');
+        if starts_public_struct {
+            public_struct_depth = Some(brace_depth);
+        }
+        if let Some(depth) = public_struct_depth
+            && brace_depth < depth
+        {
+            public_struct_depth = None;
+        }
     }
 
     violations
@@ -662,6 +683,12 @@ fn is_public_surface_line(trimmed: &str) -> bool {
 
 fn starts_public_enum_block(trimmed: &str) -> bool {
     ["pub enum ", "pub(crate) enum "]
+        .into_iter()
+        .any(|prefix| trimmed.starts_with(prefix))
+}
+
+fn starts_public_struct_block(trimmed: &str) -> bool {
+    ["pub struct ", "pub(crate) struct "]
         .into_iter()
         .any(|prefix| trimmed.starts_with(prefix))
 }
@@ -684,14 +711,19 @@ fn public_line_exposes_zip_type(trimmed: &str) -> bool {
 
 fn public_line_exposes_compression_selector(trimmed: &str) -> bool {
     let compact = trimmed.split_whitespace().collect::<String>();
-    compact.contains("ArchiveCompression")
-        || compact.contains("pubenumCompression")
-        || compact.contains("fncompression(")
-        || compact.contains("fnzstd(")
-        || trimmed == "Zstd,"
-        || trimmed == "Stored,"
-        || trimmed == "NoCompression,"
-        || trimmed == "Uncompressed,"
+    let normalized = compact.to_ascii_lowercase();
+    [
+        "archivecompression",
+        "compressionlevel",
+        "compress",
+        "zstd",
+        "stored",
+        "nocompression",
+        "uncompressed",
+        "archivemode",
+    ]
+    .iter()
+    .any(|pattern| normalized.contains(pattern))
 }
 
 fn public_line_exposes_zip_metadata_knob(trimmed: &str) -> bool {

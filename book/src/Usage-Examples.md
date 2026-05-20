@@ -80,7 +80,8 @@ dexios hash secret.enc
 dexios pack photos/ archive.enc
 ```
 
-Pack uses the default Dexios archive compression policy.
+Pack uses Dexios-owned manifest-first archive framing with a fixed archive
+policy.
 
 ## Unpack a Previously Packed Archive
 

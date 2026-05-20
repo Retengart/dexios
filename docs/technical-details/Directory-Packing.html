@@ -15,8 +15,8 @@
         <link rel="icon" href="../favicon-de23e50b.svg">
         <link rel="shortcut icon" href="../favicon-8114d1fc.png">
         <link rel="stylesheet" href="../css/variables-8adf115d.css">
-        <link rel="stylesheet" href="../css/general-2459343d.css">
-        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/general-0392ca55.css">
+        <link rel="stylesheet" href="../css/chrome-fc474251.css">
         <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
 
         <!-- Fonts -->
@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-507dac85.js";
+            window.path_to_searchindex_js = "../searchindex-8e264159.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-532d5d21.js"></script>
+        <script src="../toc-07f7ca76.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -191,8 +191,8 @@ The current archive workflow has no full plaintext archive temporary file.</p>
 </code></pre>
 <p><code>--recursive</code> is retained for compatibility, but recursive traversal is already
 the default behavior.</p>
-<p>Compression is not user-configurable. Pack uses the default Dexios archive
-compression policy.</p>
+<p>Compression is not user-configurable. Pack uses Dexios-owned manifest-first
+archive framing with a fixed archive policy.</p>
 <h2 id="current-archive-creation"><a class="header" href="#current-archive-creation">Current Archive Creation</a></h2>
 <p>The current implementation:</p>
 <ol>
@@ -221,9 +221,8 @@ Dexios reports partial commit evidence; committed outputs are not rolled back.</
 <p>Dexios syncs staged file contents and file metadata before persist, but it does
 not claim portable parent-directory durability across every filesystem or
 platform. This is no full power-failure proof.</p>
-<p>The archive is always written with the Dexios-owned archive policy. Current pack
-output uses the current archive compression policy for offline at-rest archival
-use. The public archive contract intentionally stays small: archive path plus
+<p>The archive is always written with the Dexios-owned fixed archive policy. The
+public archive contract intentionally stays small: archive path plus
 file/directory distinction. Dexios does not currently guarantee preservation of
 permissions, timestamps, archive extra fields, symlinks, extended attributes, or
 other filesystem metadata as stable compatibility behavior.</p>
@@ -361,11 +360,11 @@ delete-after-success cleanup, not sanitization.</li>
 
         <script src="../elasticlunr-ef4e11c1.min.js"></script>
         <script src="../mark-09e88c2c.min.js"></script>
-        <script src="../searcher-c2a407aa.js"></script>
+        <script src="../searcher-09f2665d.js"></script>
 
         <script src="../clipboard-1626706a.min.js"></script>
         <script src="../highlight-abc7f01d.js"></script>
-        <script src="../book-a0b12cfe.js"></script>
+        <script src="../book-c22b7243.js"></script>
 
         <!-- Custom JS scripts -->
 

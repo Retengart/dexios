@@ -25,8 +25,8 @@ dexios pack photos/ videos/ archive.enc
 `--recursive` is retained for compatibility, but recursive traversal is already
 the default behavior.
 
-Compression is not user-configurable. Pack uses the default Dexios archive
-compression policy.
+Compression is not user-configurable. Pack uses Dexios-owned manifest-first
+archive framing with a fixed archive policy.
 
 ## Current Archive Creation
 
@@ -60,9 +60,8 @@ Dexios syncs staged file contents and file metadata before persist, but it does
 not claim portable parent-directory durability across every filesystem or
 platform. This is no full power-failure proof.
 
-The archive is always written with the Dexios-owned archive policy. Current pack
-output uses the current archive compression policy for offline at-rest archival
-use. The public archive contract intentionally stays small: archive path plus
+The archive is always written with the Dexios-owned fixed archive policy. The
+public archive contract intentionally stays small: archive path plus
 file/directory distinction. Dexios does not currently guarantee preservation of
 permissions, timestamps, archive extra fields, symlinks, extended attributes, or
 other filesystem metadata as stable compatibility behavior.
