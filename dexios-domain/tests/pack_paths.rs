@@ -114,6 +114,161 @@ fn decrypted_archive_entry_names(archive_path: &Path, header_path: Option<&Path>
     names
 }
 
+#[cfg(unix)]
+fn symlink_file_or_skip(src: &Path, dst: &Path) -> bool {
+    match std::os::unix::fs::symlink(src, dst) {
+        Ok(()) => true,
+        Err(err) => {
+            eprintln!("skipping pack symlinked file check: symlinks unsupported here: {err}");
+            false
+        }
+    }
+}
+
+#[cfg(windows)]
+fn symlink_file_or_skip(src: &Path, dst: &Path) -> bool {
+    match std::os::windows::fs::symlink_file(src, dst) {
+        Ok(()) => true,
+        Err(err) => {
+            eprintln!("skipping pack symlinked file check: symlinks unsupported here: {err}");
+            false
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn symlink_file_or_skip(_src: &Path, _dst: &Path) -> bool {
+    eprintln!("skipping pack symlinked file check: symlink helper unsupported on this platform");
+    false
+}
+
+#[cfg(unix)]
+fn symlink_dir_or_skip(src: &Path, dst: &Path) -> bool {
+    match std::os::unix::fs::symlink(src, dst) {
+        Ok(()) => true,
+        Err(err) => {
+            eprintln!("skipping pack symlinked directory check: symlinks unsupported here: {err}");
+            false
+        }
+    }
+}
+
+#[cfg(windows)]
+fn symlink_dir_or_skip(src: &Path, dst: &Path) -> bool {
+    match std::os::windows::fs::symlink_dir(src, dst) {
+        Ok(()) => true,
+        Err(err) => {
+            eprintln!("skipping pack symlinked directory check: symlinks unsupported here: {err}");
+            false
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn symlink_dir_or_skip(_src: &Path, _dst: &Path) -> bool {
+    eprintln!("skipping pack symlinked directory check: symlink helper unsupported on this platform");
+    false
+}
+
+#[test]
+fn pack_rejects_source_root_symlink() {
+    let root = tempfile::tempdir().unwrap();
+    let target_dir = root.path().join("target");
+    let source_link = root.path().join("source_link");
+    let output_path = root.path().join("archive.enc");
+    fs::create_dir_all(&target_dir).unwrap();
+    fs::write(target_dir.join("hello.txt"), b"hello").unwrap();
+
+    if !symlink_dir_or_skip(&target_dir, &source_link) {
+        return;
+    }
+
+    let result =
+        pack_intent(vec![source_link.clone()], &output_path, None).and_then(pack::execute_transactional);
+
+    assert!(
+        matches!(result, Err(pack::Error::SymlinkSource(ref path)) if path == &source_link),
+        "expected source root symlink rejection for {}, got {result:?}",
+        source_link.display()
+    );
+    assert!(!output_path.exists());
+}
+
+#[test]
+fn pack_rejects_symlinked_file_entry() {
+    let root = tempfile::tempdir().unwrap();
+    let source_dir = root.path().join("source");
+    let outside_file = root.path().join("outside.txt");
+    let symlink_path = source_dir.join("link.txt");
+    let output_path = root.path().join("archive.enc");
+    fs::create_dir_all(&source_dir).unwrap();
+    fs::write(source_dir.join("real.txt"), b"real").unwrap();
+    fs::write(&outside_file, b"outside").unwrap();
+
+    if !symlink_file_or_skip(&outside_file, &symlink_path) {
+        return;
+    }
+
+    let result =
+        pack_intent(vec![source_dir], &output_path, None).and_then(pack::execute_transactional);
+
+    assert!(
+        matches!(result, Err(pack::Error::SymlinkSource(ref path)) if path == &symlink_path),
+        "expected symlinked file rejection for {}, got {result:?}",
+        symlink_path.display()
+    );
+    assert!(!output_path.exists());
+}
+
+#[test]
+fn pack_rejects_symlinked_directory_entry() {
+    let root = tempfile::tempdir().unwrap();
+    let source_dir = root.path().join("source");
+    let outside_dir = root.path().join("outside");
+    let symlink_path = source_dir.join("linkdir");
+    let output_path = root.path().join("archive.enc");
+    fs::create_dir_all(&source_dir).unwrap();
+    fs::create_dir_all(&outside_dir).unwrap();
+    fs::write(source_dir.join("real.txt"), b"real").unwrap();
+    fs::write(outside_dir.join("secret.txt"), b"secret").unwrap();
+
+    if !symlink_dir_or_skip(&outside_dir, &symlink_path) {
+        return;
+    }
+
+    let result =
+        pack_intent(vec![source_dir], &output_path, None).and_then(pack::execute_transactional);
+
+    assert!(
+        matches!(result, Err(pack::Error::SymlinkSource(ref path)) if path == &symlink_path),
+        "expected symlinked directory rejection for {}, got {result:?}",
+        symlink_path.display()
+    );
+    assert!(!output_path.exists());
+}
+
+#[test]
+fn pack_recursive_real_tree_still_succeeds() {
+    let root = tempfile::tempdir().unwrap();
+    let source_dir = create_source_dir(root.path());
+    let output_path = root.path().join("archive.enc");
+
+    let intent = pack_intent(vec![source_dir], &output_path, None).unwrap();
+    pack::execute_transactional(intent).unwrap();
+
+    let names = decrypted_archive_entry_names(&output_path, None);
+
+    assert_eq!(
+        names,
+        vec![
+            "source/",
+            "source/hello.txt",
+            "source/nested/",
+            "source/nested/world.txt",
+        ]
+    );
+}
+
 #[test]
 fn pack_intent_rejects_generated_output_inside_source_before_creating_output() {
     let root = tempfile::tempdir().unwrap();
