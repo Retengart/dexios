@@ -288,6 +288,41 @@ fn pack_rejects_symlink_generated_output_alias_and_preserves_source() {
 }
 
 #[test]
+fn pack_rejects_symlinked_file_source() {
+    let test_dir = TestDir::new("pack-symlinked-file-source");
+    let source_dir = test_dir.path().join("source");
+    let source_file = source_dir.join("real.txt");
+    let symlink_path = source_dir.join("link.txt");
+    let archive_path = test_dir.path().join("archive.enc");
+    fs::create_dir_all(&source_dir).unwrap();
+    fs::write(&source_file, b"real").unwrap();
+
+    if !symlink_file_or_skip(&source_file, &symlink_path) {
+        return;
+    }
+
+    let output = run_pack(test_dir.path(), &[], &["source"], "archive.enc");
+
+    assert!(
+        !output.status.success(),
+        "pack unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Unsafe path"),
+        "stderr did not mention unsafe path: {stderr}"
+    );
+    assert!(
+        stderr.contains("link.txt"),
+        "stderr did not mention rejected symlink path: {stderr}"
+    );
+    assert_eq!(fs::read(&source_file).unwrap(), b"real");
+    assert!(!archive_path.exists());
+}
+
+#[test]
 fn pack_duplicate_basenames_uses_unique_archive_roots() {
     let test_dir = TestDir::new("pack-duplicate-basenames");
     let parent1 = test_dir.path().join("parent1/foo/sub");

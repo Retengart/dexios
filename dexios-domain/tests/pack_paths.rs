@@ -166,7 +166,9 @@ fn symlink_dir_or_skip(src: &Path, dst: &Path) -> bool {
 
 #[cfg(not(any(unix, windows)))]
 fn symlink_dir_or_skip(_src: &Path, _dst: &Path) -> bool {
-    eprintln!("skipping pack symlinked directory check: symlink helper unsupported on this platform");
+    eprintln!(
+        "skipping pack symlinked directory check: symlink helper unsupported on this platform"
+    );
     false
 }
 
@@ -183,8 +185,8 @@ fn pack_rejects_source_root_symlink() {
         return;
     }
 
-    let result =
-        pack_intent(vec![source_link.clone()], &output_path, None).and_then(pack::execute_transactional);
+    let result = pack_intent(vec![source_link.clone()], &output_path, None)
+        .and_then(pack::execute_transactional);
 
     assert!(
         matches!(result, Err(pack::Error::SymlinkSource(ref path)) if path == &source_link),
