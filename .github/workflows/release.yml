@@ -45,8 +45,33 @@ jobs:
             exit 1
           fi
 
-  build:
+  maintainer_gate:
     needs: validate_tag
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component clippy
+
+      - name: Select Rust toolchain
+        run: rustup default stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked --version 0.22.1
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked --version 0.19.6
+
+      - name: Install mdBook
+        run: cargo install mdbook --locked
+
+      - name: Run maintainer verification gate
+        run: bash scripts/verify_phase_gate.sh
+
+  build:
+    needs: maintainer_gate
     strategy:
       fail-fast: false
       matrix:

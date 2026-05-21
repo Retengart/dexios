@@ -48,6 +48,8 @@
 
 ### Verification
 
+- Added source gates for spec freshness and release workflow ordering so stale
+  format claims block the maintainer gate.
 - Added the Phase 7 maintainer verification gate policy as tracked project
   documentation.
 - Added Phase 11 source gates for linked commit evidence, changed cleanup identity
@@ -77,6 +79,9 @@
 
 ### Documentation
 
+- Corrected the whitepaper-style V1 format reference to the current 512-byte
+  canonical header, BLAKE3-Balloon KDF policy, and DXAR/DXBF manifest-first
+  archive framing.
 - Documented Phase 11 filesystem transaction and cleanup limits in the safety
   contract and mdBook technical notes, including ordinary delete-after-success
   cleanup, partial commit evidence, committed outputs are not rolled back, and

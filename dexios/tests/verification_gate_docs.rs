@@ -2,6 +2,7 @@ const SAFETY_CONTRACT: &str = include_str!("../../book/src/Safety-Contract.md");
 const CONTRIBUTING: &str = include_str!("../../CONTRIBUTING.md");
 const README: &str = include_str!("../../README.md");
 const CLI_README: &str = include_str!("../../dexios/README.md");
+const SPEC_FORMAT_REFERENCE: &str = include_str!("../../spec/dexios-paper.typ");
 const USAGE_EXAMPLES: &str = include_str!("../../book/src/Usage-Examples.md");
 const DIRECTORY_PACKING: &str =
     include_str!("../../book/src/technical-details/Directory-Packing.md");
@@ -81,6 +82,7 @@ const DEXIOS_PACK_RS: &str = include_str!("../src/subcommands/pack.rs");
 const AUDIT_WORKFLOW: &str = include_str!("../../.github/workflows/audit.yml");
 const DOCS_WORKFLOW: &str = include_str!("../../.github/workflows/docs.yml");
 const DEXIOS_TESTS_WORKFLOW: &str = include_str!("../../.github/workflows/dexios-tests.yml");
+const RELEASE_WORKFLOW: &str = include_str!("../../.github/workflows/release.yml");
 const PERFORMANCE_NOTES: &str =
     include_str!("../../book/src/technical-details/Performance-Notes.md");
 
@@ -163,6 +165,77 @@ fn assert_no_release_overclaim_patterns(source_name: &str, source: &str) {
             "{source_name} must not contain release overclaim pattern: {forbidden}"
         );
     }
+}
+
+fn spec_format_reference_alignment_issues(source: &str) -> Vec<&'static str> {
+    let mut issues = Vec::new();
+
+    for (required, issue) in [
+        (
+            "512-byte canonical V1 header",
+            "missing canonical 512-byte V1 header claim",
+        ),
+        (
+            "DXIO 00 01 CV1\\0",
+            "missing canonical V1 discriminator claim",
+        ),
+        (
+            "64-byte immutable static header",
+            "missing 64-byte static header claim",
+        ),
+        (
+            "payload AAD covers the 64-byte immutable static header",
+            "missing current payload AAD boundary",
+        ),
+        (
+            "112-byte physical keyslot",
+            "missing current physical keyslot size",
+        ),
+        (
+            "BLAKE3-Balloon",
+            "missing current BLAKE3-Balloon write policy",
+        ),
+        (
+            "historical Argon2id tag",
+            "missing unsupported historical Argon2id metadata boundary",
+        ),
+        (
+            "manifest-first archive payload",
+            "missing manifest-first archive payload claim",
+        ),
+        ("DXAR", "missing DXAR manifest magic"),
+        ("DXBF", "missing DXBF body-frame magic"),
+        (
+            "no full plaintext archive temporary file",
+            "missing pack/unpack temporary-file exposure boundary",
+        ),
+    ] {
+        if !source.contains(required) {
+            issues.push(issue);
+        }
+    }
+
+    for (forbidden, issue) in [
+        ("416", "stale 416-byte header claim"),
+        ("first 32 bytes", "stale 32-byte payload AAD claim"),
+        ("96 bytes", "stale 96-byte keyslot claim"),
+        ("--argon", "stale Argon2id CLI selector claim"),
+        ("ZSTD", "stale archive compression selector claim"),
+        (
+            "encrypted `zip` archive",
+            "stale encrypted zip archive format claim",
+        ),
+        (
+            "temporary `zip` archive",
+            "stale plaintext zip temporary-file claim",
+        ),
+    ] {
+        if source.contains(forbidden) {
+            issues.push(issue);
+        }
+    }
+
+    issues
 }
 
 fn assert_all_contains(source_name: &str, source: &str, needles: &[&str]) {
@@ -1253,6 +1326,77 @@ fn canonical_v1_docs_source_gate_catches_manifest_and_error_claims() {
         "book/src/technical-details/Directory-Packing.md",
         DIRECTORY_PACKING,
         "ZIP implementation types are canonical format surface",
+    );
+}
+
+#[test]
+fn phase14_spec_alignment_and_release_gate_are_source_gated() {
+    let spec_issues = spec_format_reference_alignment_issues(SPEC_FORMAT_REFERENCE);
+    assert!(
+        spec_issues.is_empty(),
+        "spec/dexios-paper.typ must stay aligned to current source/docs; issues: {spec_issues:?}"
+    );
+
+    for stale_claim in [
+        "The current V1 header length is `416` bytes.",
+        "`--argon` selects `Argon2id` for new files.",
+        "ZSTD compression is available but must be explicitly enabled.",
+        "The packed payload is still just an encrypted `zip` archive.",
+    ] {
+        assert!(
+            !spec_format_reference_alignment_issues(stale_claim).is_empty(),
+            "spec source gate must reject stale claim: {stale_claim}"
+        );
+    }
+
+    assert_all_contains(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        &[
+            "maintainer_gate:",
+            "cargo install cargo-audit --locked --version 0.22.1",
+            "cargo install cargo-deny --locked --version 0.19.6",
+            "cargo install mdbook --locked",
+            "bash scripts/verify_phase_gate.sh",
+            "needs: maintainer_gate",
+            "needs: build",
+        ],
+    );
+    assert_occurs_before(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "validate_tag:",
+        "maintainer_gate:",
+    );
+    assert_occurs_before(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "maintainer_gate:",
+        "build:",
+    );
+    assert_occurs_before(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "build:",
+        "publish:",
+    );
+    assert_non_comment_line_count(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "needs: validate_tag",
+        1,
+    );
+    assert_non_comment_line_count(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "needs: maintainer_gate",
+        1,
+    );
+    assert_non_comment_line_count(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "needs: build",
+        1,
     );
 }
 
