@@ -2865,3 +2865,147 @@ fn phase7_decision_groups_are_source_gated() {
         "local-notes/",
     );
 }
+
+fn phase20_stale_current_product_claim_issues(source: &str) -> Vec<&'static str> {
+    let normalized = source.replace('`', "").to_ascii_lowercase();
+    let mut issues = Vec::new();
+
+    for (needle, issue) in [
+        ("416-byte canonical v1 header", "stale 416-byte header claim"),
+        ("current v1 header is 416", "stale current 416-byte header claim"),
+        ("first 32 bytes", "stale 32-byte payload AAD claim"),
+        ("--argon", "stale Argon2id CLI selector claim"),
+        ("argon2id is supported", "stale normal Argon2id support claim"),
+        ("normal argon2id support", "stale normal Argon2id support claim"),
+        (
+            "encrypted zip archive",
+            "stale encrypted ZIP archive format claim",
+        ),
+        (
+            "temporary zip archive",
+            "stale plaintext ZIP temporary-file claim",
+        ),
+        ("zstd", "stale archive compression claim"),
+        ("compression selector", "stale archive compression selector claim"),
+    ] {
+        if normalized.contains(needle) {
+            issues.push(issue);
+        }
+    }
+
+    issues
+}
+
+#[test]
+fn phase20_canonical_public_facts_are_source_gated() {
+    let required_by_source: &[(&str, &str, &[&str])] = &[
+        (
+            "README.md",
+            README,
+            &[
+                "512-byte canonical V1 header",
+                "BLAKE3-Balloon",
+                "historical Argon2id tag",
+                "not canonical V1 archive format surface",
+            ],
+        ),
+        (
+            "book/src/dexios-core/Headers.md",
+            HEADERS,
+            &[
+                "512-byte canonical V1 header",
+                "64-byte immutable static header",
+                "payload AAD covers the 64-byte immutable static header",
+                "112-byte physical keyslot",
+                "BLAKE3-Balloon",
+                "historical Argon2id tag",
+            ],
+        ),
+        (
+            "book/src/dexios-core/Encryption.md",
+            ENCRYPTION,
+            &[
+                "payload AAD covers the 64-byte immutable static header",
+                "slot-scoped AAD",
+                "manifest-first archive framing",
+                "ordered `DXBF` body frames",
+                "not canonical V1 archive format surface",
+            ],
+        ),
+        (
+            "book/src/dexios-core/Password-Hashing.md",
+            PASSWORD_HASHING,
+            &[
+                "BLAKE3-Balloon",
+                "historical Argon2id tag",
+                "unsupported metadata",
+                "not a normal write policy",
+            ],
+        ),
+        (
+            "book/src/technical-details/Directory-Packing.md",
+            DIRECTORY_PACKING,
+            &[
+                "DXAR",
+                "DXBF",
+                "not canonical V1 archive format surface",
+                "Compression is not user-configurable",
+                "no full plaintext archive temporary file",
+            ],
+        ),
+        (
+            "spec/dexios-paper.typ",
+            SPEC_FORMAT_REFERENCE,
+            &[
+                "512-byte canonical V1 header",
+                "64-byte immutable static header",
+                "payload AAD covers the 64-byte immutable static header",
+                "112-byte physical keyslot",
+                "BLAKE3-Balloon",
+                "historical Argon2id tag",
+                "DXAR",
+                "DXBF",
+                "not canonical V1 archive format surface",
+                "source tree and mdBook safety contract remain the authority",
+            ],
+        ),
+    ];
+
+    for (source_name, source, required) in required_by_source {
+        assert_all_contains(source_name, source, required);
+    }
+
+    for (source_name, source, _) in required_by_source {
+        for forbidden in [
+            "416-byte canonical V1 header",
+            "current V1 header is 416",
+            "first 32 bytes",
+            "--argon",
+            "Argon2id is supported",
+            "normal Argon2id support",
+            "encrypted `zip` archive",
+            "temporary `zip` archive",
+            "ZSTD",
+        ] {
+            assert_not_contains(source_name, source, forbidden);
+        }
+    }
+}
+
+#[test]
+fn phase20_docs_gate_rejects_stale_current_product_claims() {
+    for stale_claim in [
+        "Current V1 uses a 416-byte canonical V1 header.",
+        "Payload AAD covers the first 32 bytes of the header.",
+        "`--argon` selects Argon2id for normal encryption.",
+        "Argon2id is supported as a normal KDF.",
+        "Dexios stores an encrypted ZIP archive as its canonical archive format.",
+        "ZSTD compression selector controls archive compression.",
+        "Pack creates a temporary ZIP archive before encryption.",
+    ] {
+        assert!(
+            !phase20_stale_current_product_claim_issues(stale_claim).is_empty(),
+            "Phase 20 stale-claim gate must reject: {stale_claim}"
+        );
+    }
+}
