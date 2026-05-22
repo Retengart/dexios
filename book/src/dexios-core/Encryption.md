@@ -34,9 +34,11 @@ derives payload AAD from the immutable canonical V1 static header, and
 decryption uses the parsed V1 payload bundle that binds the header to its
 matching AAD.
 
-Payload AAD excludes mutable keyslot table state. Slot occupancy, active slot
-count, keyslot salts, keyslot nonces, KDF profile bytes, and wrapped master-key
-bytes are not part of payload AAD.
+The payload AAD covers the 64-byte immutable static header. Payload AAD excludes
+mutable keyslot table state. Payload AAD excludes mutable keyslot table state
+from payload authentication. Slot occupancy, active slot count, keyslot salts,
+keyslot nonces, KDF profile bytes, and wrapped master-key bytes are not part of
+payload AAD.
 
 Wrapped master keys use separate slot-scoped AAD. The slot-scoped AAD binds the
 immutable static header context, physical slot index, KDF profile id, KDF
@@ -87,8 +89,9 @@ The manifest-first archive framing starts with a Dexios `DXAR` manifest and then
 ordered `DXBF` body frames. This is canonical V1 payload structure, not ZIP
 crate surface. ZIP implementation bytes, ZIP central-directory metadata, ZIP
 crate types, compression selectors, and broad metadata knobs are not canonical
-V1 format surface. Manifest-first framing is not ZIP crate surface. ZIP
-implementation details are not canonical V1 format surface.
+V1 archive format surface. Manifest-first framing is not ZIP crate surface. ZIP
+implementation details are not canonical V1 archive format surface. They are
+not canonical V1 format surface.
 
 ## Header and Payload Authentication
 

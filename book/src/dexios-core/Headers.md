@@ -12,7 +12,7 @@ Legacy Dexios formats are intentionally unsupported after the safety refactor.
 
 ## Canonical V1 Layout
 
-The canonical V1 header is **512 bytes** long:
+The canonical V1 layout is a **512-byte canonical V1 header**:
 
 - 64-byte immutable static header
 - four fixed physical keyslot records, each 112 bytes
@@ -33,9 +33,10 @@ The static header begins with:
 
 Together, the canonical V1 prefix is `DXIO 00 01 CV1\0`.
 
-Those 64 static bytes are the payload AAD. Payload AAD is immutable payload
-context: it includes the canonical discriminator, schema, payload kind, payload
-framing profile, KDF parameter profile, fixed slot capacity, and payload nonce.
+Those 64 static bytes are the payload AAD; the payload AAD covers the 64-byte immutable static header.
+Payload AAD is immutable payload context: it includes
+the canonical discriminator, schema, payload kind, payload framing profile, KDF
+parameter profile, fixed slot capacity, and payload nonce.
 It excludes mutable keyslot table state such as slot occupancy, active slot
 count, salts, keyslot nonces, and wrapped master-key bytes.
 
@@ -51,7 +52,7 @@ must remain in that physical position; add, change, delete, and verify do not
 compact or reorder later slots.
 Canonical keyslot operations do not compact or reorder physical slots.
 
-Each active canonical V1 keyslot contains:
+Each 112-byte physical keyslot contains:
 
 - active-slot state byte
 - physical slot index
@@ -75,7 +76,7 @@ Canonical V1 normal writes use one KDF profile:
 - BLAKE3-Balloon with the canonical profile ids defined in `dexios-core/src/kdf.rs`
 
 New canonical V1 writes do not expose alternate KDF selection or
-user-configurable KDF parameters. Historical Argon2id metadata may still be
+user-configurable KDF parameters. The historical Argon2id tag may still be
 recognized as unsupported metadata for explicit diagnostics, but it is not a
 normal write policy and is not used for derivation.
 

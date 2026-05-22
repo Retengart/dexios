@@ -68,7 +68,7 @@ does not run this timing check.
 The same Context7 `/rustcrypto/password-hashes` source documents historical
 unsupported Argon2id as a RustCrypto implementation API. In Dexios, historical
 Argon2id metadata is now a file-format diagnosis only, not a required dependency
-or normal write policy.
+or normal write policy. It is not a normal write policy.
 
 ## Handling the Hash
 

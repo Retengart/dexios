@@ -14,7 +14,7 @@ Current defaults for new encryption:
 
 - `XChaCha20-Poly1305`
 - `BLAKE3-Balloon` as the only normal KDF for new V1 writes
-- V1 headers
+- 512-byte canonical V1 headers
 - LE31 stream encryption
 
 Current V1 stream behavior:
@@ -85,7 +85,7 @@ For user-facing and technical docs, see:
 
 - New V1 output does not expose user-configurable KDF parameters or an
   alternate KDF selector.
-- Historical V1 files may contain the unsupported Argon2id keyslot tag `[0xDF, 0x02]`;
+- Historical V1 files may contain the historical Argon2id tag `[0xDF, 0x02]`;
   Dexios recognizes that tag as unsupported historical metadata rather than
   using it for new writes.
 - delete-after-success flags are available for `encrypt`, `decrypt`, `pack`, and `unpack`

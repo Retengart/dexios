@@ -6,7 +6,7 @@ starts with a `DXAR` manifest and stores file contents as ordered `DXBF` body
 frames.
 
 ZIP bytes, ZIP central-directory metadata, ZIP crate types, compression
-selectors, and broad metadata knobs are not canonical V1 archive surface.
+selectors, and broad metadata knobs are not canonical V1 archive format surface.
 Normal operation no longer creates a full plaintext archive temporary file.
 The current archive workflow has no full plaintext archive temporary file.
 
@@ -109,10 +109,11 @@ frames must appear in manifest file-entry order; a body frame for a directory is
 rejected.
 
 ZIP bytes, ZIP central-directory metadata, ZIP crate types, compression
-selectors, and broad metadata knobs are not canonical V1 surface. Domain policy
-owns path normalization, traversal rejection, duplicate and prefix collision
-checks, selected-output filtering, target revalidation, and staged transaction
-commit.
+selectors, and broad metadata knobs are not canonical V1 archive format surface.
+They are also not canonical V1 surface.
+Domain policy owns path normalization, traversal rejection, duplicate and prefix
+collision checks, selected-output filtering, target revalidation, and staged
+transaction commit.
 
 ## Current Unpacking
 
