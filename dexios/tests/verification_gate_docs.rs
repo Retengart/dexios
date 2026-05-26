@@ -115,6 +115,7 @@ const RELEASE_WORKFLOW: &str = include_str!("../../.github/workflows/release.yml
 const UNIT_TESTS_WORKFLOW: &str = include_str!("../../.github/workflows/unit_tests.yml");
 const PERFORMANCE_NOTES: &str =
     include_str!("../../book/src/technical-details/Performance-Notes.md");
+const RC_CLOSEOUT: &str = include_str!("../../release-evidence/RC-CLOSEOUT.md");
 
 const REPAIRED_GATE_COMMANDS: &[&str] = &[
     "cargo fmt --all --check",
