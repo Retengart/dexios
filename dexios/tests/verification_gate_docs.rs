@@ -4812,3 +4812,59 @@ fn phase21_rc_closeout_artifact_is_present_and_source_gated() {
     // No overclaim patterns on any active line
     assert_no_release_overclaim_patterns("release-evidence/RC-CLOSEOUT.md", RC_CLOSEOUT);
 }
+
+#[test]
+fn phase21_release_workflow_asset_set_contract_is_source_gated() {
+    // CIGR-04, D-04, D-05, Blocker 4: publish job enumerates all 6 expected
+    // asset basenames; old sole partial-set check is gone; find for list-building
+    // appears only after the explicit enumeration.
+
+    assert_all_contains(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        &[
+            "dexios-${GITHUB_REF_NAME}-linux-amd64",
+            "dexios-${GITHUB_REF_NAME}-linux-amd64.sha256",
+            "dexios-${GITHUB_REF_NAME}-macos-amd64",
+            "dexios-${GITHUB_REF_NAME}-macos-amd64.sha256",
+            "dexios-${GITHUB_REF_NAME}-windows-amd64.exe",
+            "dexios-${GITHUB_REF_NAME}-windows-amd64.exe.sha256",
+        ],
+    );
+
+    // FAIL-CLOSED NEGATIVE (Blocker 4): the bare non-empty check must not be an
+    // active (non-comment) line.
+    assert_non_comment_lines_exclude(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        &["test \"${#files[@]}\" -gt 0"],
+    );
+
+    // Ordering: explicit expected-name enumeration must precede any find for
+    // list-building.
+    assert_non_comment_line_occurs_before(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "\"dexios-${GITHUB_REF_NAME}-linux-amd64\"",
+        "mapfile -t files < <(find release-assets -type f | sort)",
+    );
+}
+
+#[test]
+fn phase21_windows_ci_coverage_is_source_gated() {
+    // CIGR-05, D-11: unit_tests.yml has windows-latest active; dexios-tests.yml
+    // stays Linux/macOS-only per Pattern 5.
+
+    assert_non_comment_line_count(
+        ".github/workflows/unit_tests.yml",
+        UNIT_TESTS_WORKFLOW,
+        "- windows-latest",
+        1,
+    );
+
+    assert_non_comment_lines_exclude(
+        ".github/workflows/dexios-tests.yml",
+        DEXIOS_TESTS_WORKFLOW,
+        &["windows-latest"],
+    );
+}

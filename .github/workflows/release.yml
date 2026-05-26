@@ -186,8 +186,36 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
+          expected_names=(
+            "dexios-${GITHUB_REF_NAME}-linux-amd64"
+            "dexios-${GITHUB_REF_NAME}-linux-amd64.sha256"
+            "dexios-${GITHUB_REF_NAME}-macos-amd64"
+            "dexios-${GITHUB_REF_NAME}-macos-amd64.sha256"
+            "dexios-${GITHUB_REF_NAME}-windows-amd64.exe"
+            "dexios-${GITHUB_REF_NAME}-windows-amd64.exe.sha256"
+          )
+
+          for name in "${expected_names[@]}"; do
+            found="$(find release-assets -name "$name" | head -1)"
+            if [[ -z "$found" ]]; then
+              echo "Missing expected release asset: $name" >&2
+              exit 1
+            fi
+          done
+
+          for name in "${expected_names[@]}"; do
+            [[ "$name" == *.sha256 ]] && continue
+            bin_path="$(find release-assets -name "$name" | head -1)"
+            sha_path="$(find release-assets -name "${name}.sha256" | head -1)"
+            recorded_hash="$(awk '{print $1}' "$sha_path")"
+            actual_hash="$(sha256sum "$bin_path" | awk '{print $1}')"
+            if [[ "$recorded_hash" != "$actual_hash" ]]; then
+              echo "Checksum mismatch for $name: recorded=$recorded_hash actual=$actual_hash" >&2
+              exit 1
+            fi
+          done
+
           mapfile -t files < <(find release-assets -type f | sort)
-          test "${#files[@]}" -gt 0
 
           declare -A expected_files=()
           for file in "${files[@]}"; do
