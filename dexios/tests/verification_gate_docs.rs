@@ -4602,3 +4602,197 @@ fn phase20_release_metadata_gate_rejects_positive_overclaims() {
         );
     }
 }
+
+// --- Phase 21 gate tests ---
+
+#[test]
+fn phase21_locked_flag_and_lockfile_gate_are_source_gated() {
+    // CIGR-01 / D-01 / D-02: cargo --locked usage is structurally asserted on
+    // verify_phase_gate.sh (as established by Plan 02). No release.yml assertion
+    // here — those belong to Plan 04.
+
+    // Lockfile consistency: metadata --locked runs exactly once, before clippy
+    assert_non_comment_line_count(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "run cargo metadata --format-version=1 --locked --no-deps > /dev/null",
+        1,
+    );
+    assert_non_comment_line_occurs_before(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "run cargo metadata --format-version=1 --locked --no-deps > /dev/null",
+        "run cargo clippy --workspace --all-targets --all-features --no-deps --locked",
+    );
+
+    // Release LTO build uses --locked
+    assert_non_comment_line_count(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "run cargo build --locked -p dexios --profile release-lto",
+        1,
+    );
+
+    // Workspace test suite uses --locked
+    assert_non_comment_line_count(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "run cargo test --locked --workspace --all-features --release --verbose",
+        1,
+    );
+}
+
+#[test]
+fn phase21_tool_version_pins_are_source_gated() {
+    // CIGR-03 / D-07 / D-08: tool version pins are structurally asserted on the
+    // gate script only. release.yml tool-version assertions belong to Plan 04.
+
+    // mdbook version pin: active require_tool call with version 0.5.3
+    assert_contains(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "require_tool mdbook \"cargo install mdbook --locked --version 0.5.3\"",
+    );
+
+    // Old unversioned mdbook hint must be gone
+    assert_not_contains(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "require_tool mdbook \"cargo install mdbook --locked\"",
+    );
+
+    // typst version pin: 0.14.2 appears in a non-comment active check
+    assert_contains(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "typst version 0.14.2",
+    );
+
+    // D-08: action-pin coverage — unit_tests workflow already has full SHA pins
+    assert_external_actions_are_full_sha_pinned(
+        ".github/workflows/unit_tests.yml",
+        UNIT_TESTS_WORKFLOW,
+    );
+}
+
+#[test]
+fn phase21_permissions_and_job_ordering_are_source_gated() {
+    // CIGR-02 / D-09 / D-10: least-privilege permissions on all 8 workflows +
+    // release.yml job ordering. Closes Blocker 6. Config is already correct so
+    // this test is green immediately within Wave 3.
+
+    // (a) Least-privilege: every workflow must declare permissions: contents: read
+    for (source_name, source) in [
+        (".github/workflows/audit.yml", AUDIT_WORKFLOW),
+        (".github/workflows/build_nix.yml", BUILD_NIX_WORKFLOW),
+        (".github/workflows/cargo-build.yml", CARGO_BUILD_WORKFLOW),
+        (".github/workflows/cli-surface.yml", CLI_SURFACE_WORKFLOW),
+        (".github/workflows/dexios-tests.yml", DEXIOS_TESTS_WORKFLOW),
+        (".github/workflows/docs.yml", DOCS_WORKFLOW),
+        (".github/workflows/unit_tests.yml", UNIT_TESTS_WORKFLOW),
+        (".github/workflows/release.yml", RELEASE_WORKFLOW),
+    ] {
+        assert_workflow_default_read_permissions(source_name, source);
+    }
+
+    // (b) release.yml job ordering: validate_tag -> maintainer_gate -> build -> publish
+    // Each needs: line appears exactly once
+    assert_non_comment_line_count(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "needs: validate_tag",
+        1,
+    );
+    assert_non_comment_line_count(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "needs: maintainer_gate",
+        1,
+    );
+    assert_non_comment_line_count(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "needs: build",
+        1,
+    );
+
+    // Ordering is enforced: validate_tag < maintainer_gate < build
+    assert_non_comment_line_occurs_before(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "needs: validate_tag",
+        "needs: maintainer_gate",
+    );
+    assert_non_comment_line_occurs_before(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "needs: maintainer_gate",
+        "needs: build",
+    );
+}
+
+#[test]
+fn phase21_rc_closeout_artifact_is_present_and_source_gated() {
+    // RCEV-01 / RCEV-05: RC-CLOSEOUT.md stub (from Plan 01) contains all required
+    // structural headings and key content strings. Green from Wave 3.
+
+    // Required section headings
+    assert_contains(
+        "release-evidence/RC-CLOSEOUT.md",
+        RC_CLOSEOUT,
+        "# Dexios v3.0 Release Candidate Closeout Evidence",
+    );
+    assert_contains(
+        "release-evidence/RC-CLOSEOUT.md",
+        RC_CLOSEOUT,
+        "## Blocker-to-Check Traceability Matrix",
+    );
+    assert_contains(
+        "release-evidence/RC-CLOSEOUT.md",
+        RC_CLOSEOUT,
+        "## Accepted Residual Risks",
+    );
+    assert_contains(
+        "release-evidence/RC-CLOSEOUT.md",
+        RC_CLOSEOUT,
+        "## Platform Limits",
+    );
+    assert_contains(
+        "release-evidence/RC-CLOSEOUT.md",
+        RC_CLOSEOUT,
+        "## Non-Goals",
+    );
+    assert_contains(
+        "release-evidence/RC-CLOSEOUT.md",
+        RC_CLOSEOUT,
+        "## Property and Fuzz Coverage Decision (RCEV-03)",
+    );
+    assert_contains(
+        "release-evidence/RC-CLOSEOUT.md",
+        RC_CLOSEOUT,
+        "## Performance Gate Evidence (RCEV-04)",
+    );
+
+    // Blocker ID prefix coverage
+    assert_contains("release-evidence/RC-CLOSEOUT.md", RC_CLOSEOUT, "PATH-");
+    assert_contains("release-evidence/RC-CLOSEOUT.md", RC_CLOSEOUT, "CIGR-");
+    assert_contains("release-evidence/RC-CLOSEOUT.md", RC_CLOSEOUT, "RCEV-");
+
+    // Key residual risk strings
+    assert_contains(
+        "release-evidence/RC-CLOSEOUT.md",
+        RC_CLOSEOUT,
+        "ordinary (non-secure-erase) deletion",
+    );
+    assert_contains(
+        "release-evidence/RC-CLOSEOUT.md",
+        RC_CLOSEOUT,
+        "Windows filesystem identity",
+    );
+
+    // Deferred fuzz/property milestone reference
+    assert_contains("release-evidence/RC-CLOSEOUT.md", RC_CLOSEOUT, "ASR-01");
+
+    // No overclaim patterns on any active line
+    assert_no_release_overclaim_patterns("release-evidence/RC-CLOSEOUT.md", RC_CLOSEOUT);
+}
