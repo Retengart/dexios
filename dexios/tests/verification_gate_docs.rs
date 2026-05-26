@@ -18,6 +18,8 @@ const ENCRYPTION: &str = include_str!("../../book/src/dexios-core/Encryption.md"
 const PASSWORD_HASHING: &str = include_str!("../../book/src/dexios-core/Password-Hashing.md");
 const PROTECTED_WRAPPER: &str = include_str!("../../book/src/dexios-core/Protected-Wrapper.md");
 const KEYS: &str = include_str!("../../book/src/technical-details/Keys.md");
+const SECURITY_MD: &str = include_str!("../../SECURITY.md");
+const SECURITY_POLICY: &str = include_str!("../../book/src/Security-Policy.md");
 const CHANGELOG: &str = include_str!("../../CHANGELOG.md");
 const CARGO_TOML: &str = include_str!("../../Cargo.toml");
 const CARGO_LOCK: &str = include_str!("../../Cargo.lock");
@@ -2896,6 +2898,60 @@ fn phase20_stale_current_product_claim_issues(source: &str) -> Vec<&'static str>
     issues
 }
 
+fn phase20_safety_limit_overclaim_issues(source: &str) -> Vec<&'static str> {
+    let normalized = source.replace('`', "").to_ascii_lowercase();
+    let mut issues = Vec::new();
+
+    for (needle, issue) in [
+        ("secure erase guarantee", "secure erase overclaim"),
+        ("guarantees secure erase", "secure erase overclaim"),
+        ("physical sanitization guarantee", "physical sanitization overclaim"),
+        (
+            "guarantees physical sanitization",
+            "physical sanitization overclaim",
+        ),
+        ("forensic recovery resistance", "forensic recovery overclaim"),
+        ("automatic rollback", "automatic rollback overclaim"),
+        ("rollback committed outputs", "committed-output rollback overclaim"),
+        ("guaranteed recovery", "guaranteed recovery overclaim"),
+        ("guarantee recovery", "guaranteed recovery overclaim"),
+        (
+            "cleanup authorized after partial detached publication",
+            "partial detached cleanup overclaim",
+        ),
+        (
+            "windows/non-unix parity",
+            "unqualified Windows/non-Unix parity overclaim",
+        ),
+        (
+            "non-unix parity",
+            "unqualified non-Unix parity overclaim",
+        ),
+        (
+            "timestamp-only freshness",
+            "timestamp-only freshness overclaim",
+        ),
+        (
+            "mtime-only freshness",
+            "timestamp-only freshness overclaim",
+        ),
+        (
+            "fully eliminated plaintext exposure",
+            "unpack plaintext exposure overclaim",
+        ),
+        (
+            "no plaintext exposure during unpack",
+            "unpack plaintext exposure overclaim",
+        ),
+    ] {
+        if normalized.contains(needle) {
+            issues.push(issue);
+        }
+    }
+
+    issues
+}
+
 #[test]
 fn phase20_canonical_public_facts_are_source_gated() {
     let required_by_source: &[(&str, &str, &[&str])] = &[
@@ -3006,6 +3062,118 @@ fn phase20_docs_gate_rejects_stale_current_product_claims() {
         assert!(
             !phase20_stale_current_product_claim_issues(stale_claim).is_empty(),
             "Phase 20 stale-claim gate must reject: {stale_claim}"
+        );
+    }
+}
+
+#[test]
+fn phase20_safety_limit_docs_are_source_gated() {
+    for (source_name, source) in [
+        ("SECURITY.md", SECURITY_MD),
+        ("book/src/Security-Policy.md", SECURITY_POLICY),
+    ] {
+        for required in [
+            "detached payload/header partial publication diagnostics and cleanup denial",
+            "delete-after-success cleanup authority",
+            "source replacement or changed source tree refusal",
+            "temporary artifact lifecycle behavior",
+        ] {
+            assert_contains(source_name, source, required);
+        }
+    }
+
+    assert_all_contains(
+        "book/src/Safety-Contract.md",
+        SAFETY_CONTRACT,
+        &[
+            "delete-after-success and secure erase wording",
+            "ordinary delete-after-success only",
+            "complete commit and requested hash success",
+            "no secure erase",
+            "no physical sanitization",
+            "pair-aware detached publication",
+            "source cleanup is denied after partial detached publication",
+            "non-Unix behavior is limited by platform identity APIs and available tests",
+        ],
+    );
+
+    assert_all_contains(
+        "book/src/technical-details/Secure-Erase.md",
+        SECURE_ERASE,
+        &[
+            "ordinary delete-after-success cleanup",
+            "processed-source cleanup evidence",
+            "complete commit",
+            "requested hash",
+            "final-auth evidence",
+            "cleanup-refusal conditions",
+            "changed source tree",
+            "source data is preserved",
+            "committed outputs are not rolled back",
+            "no secure erase",
+            "no physical sanitization",
+            "Partial detached publication reports the committed and failed artifact state",
+            "source cleanup is denied after partial detached publication",
+            "does not roll back committed artifacts",
+            "guarantee recovery",
+        ],
+    );
+
+    assert_all_contains(
+        "book/src/technical-details/Directory-Packing.md",
+        DIRECTORY_PACKING,
+        &[
+            "reject final symlinks",
+            "symlinked parent prefixes",
+            "aliases",
+            "non-Unix behavior is limited by platform identity APIs and available tests",
+            "not a sandbox",
+            "selected staged file bodies",
+            "ordinary filesystem temporary/staged files",
+            "committed file artifacts are not rolled back",
+        ],
+    );
+
+    assert_all_contains(
+        "book/src/technical-details/Keys.md",
+        KEYS,
+        &[
+            "does not use filesystem locks",
+            "does not add recovery",
+            "rollback",
+            "secure erase",
+        ],
+    );
+
+    assert_all_contains(
+        "book/src/technical-details/Performance-Notes.md",
+        PERFORMANCE_NOTES,
+        &[
+            "Structural archive limits are not proof that the host has enough free memory or disk space",
+            "Capacity and temp-space measurements are best-effort release evidence",
+            "do not prove that unpack plaintext exposure is eliminated",
+        ],
+    );
+}
+
+#[test]
+fn phase20_safety_limit_gate_rejects_stale_overclaims() {
+    for stale_claim in [
+        "Dexios gives a secure erase guarantee for deleted inputs.",
+        "Delete-after-success guarantees physical sanitization.",
+        "Temporary cleanup provides forensic recovery resistance.",
+        "Detached mode performs automatic rollback after partial publication.",
+        "Dexios will rollback committed outputs when cleanup fails.",
+        "Partial detached publication has guaranteed recovery.",
+        "Cleanup authorized after partial detached publication.",
+        "The path identity policy has Windows/non-Unix parity.",
+        "Mutation freshness can rely on timestamp-only freshness.",
+        "Unpack has fully eliminated plaintext exposure.",
+        "There is no plaintext exposure during unpack.",
+    ] {
+        assert!(
+            !phase20_safety_limit_overclaim_issues(stale_claim).is_empty(),
+            "Phase 20 safety-limit gate must reject: {stale_claim}"
         );
     }
 }
