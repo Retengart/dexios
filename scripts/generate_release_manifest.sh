@@ -202,7 +202,8 @@ mkdir -p "$(dirname "$output")"
     printf -- '- `cargo --version`: `%s`\n' "$(tool_version cargo cargo --version)"
     printf -- '- `cargo audit --version`: `%s`\n' "$(tool_version cargo-audit cargo audit --version)"
     printf -- '- `cargo deny --version`: `%s`\n' "$(tool_version cargo-deny cargo deny --version)"
-    printf -- '- `mdbook --version`: `%s`\n\n' "$(tool_version mdbook mdbook --version)"
+    printf -- '- `mdbook --version`: `%s`\n' "$(tool_version mdbook mdbook --version)"
+    printf -- '- `typst --version`: `%s`\n\n' "$(tool_version typst typst --version)"
 
     printf '## Verification Command Contract\n\n'
     printf 'These commands are the required verification contract for this release candidate. This section records command names and does not prove that the commands completed successfully; use a completed gate log or current `bash scripts/verify_phase_gate.sh` run for pass/fail evidence.\n\n'
@@ -223,6 +224,8 @@ mkdir -p "$(dirname "$output")"
     printf '`\n'
     printf -- '- `mdbook build`\n'
     printf -- '- `git diff --exit-code -- docs`\n'
+    printf -- '- `typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf`\n'
+    printf -- '- `git diff --exit-code -- spec/dexios-paper.pdf`\n'
     printf -- '- `bash scripts/verify_repo_hygiene.sh`\n'
     printf -- '- `git diff --check`\n'
     printf -- '- `bash scripts/verify_phase_gate.sh`\n\n'

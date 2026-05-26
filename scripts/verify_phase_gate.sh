@@ -42,6 +42,7 @@ verify_no_unsafe_crate_roots() {
 require_tool cargo-audit "cargo install cargo-audit --locked --version 0.22.1"
 require_tool cargo-deny "cargo install cargo-deny --locked --version 0.19.6"
 require_tool mdbook "cargo install mdbook --locked"
+require_tool typst "install Typst from https://typst.app/docs/install/ or your OS package manager"
 
 run verify_no_unsafe_crate_roots
 run cargo fmt --all --check
@@ -66,6 +67,8 @@ run cargo build -p dexios --profile release-lto
 run bash scripts/verify_cli_surface.sh
 run mdbook build
 run git diff --exit-code -- docs
+run typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf
+run git diff --exit-code -- spec/dexios-paper.pdf
 run bash scripts/verify_repo_hygiene.sh
 run git diff --check
 run bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --allow-dirty --asset target/release-lto/dexios

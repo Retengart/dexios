@@ -98,6 +98,8 @@ const REPAIRED_GATE_COMMANDS: &[&str] = &[
     "bash scripts/verify_cli_surface.sh",
     "mdbook build",
     "git diff --exit-code -- docs",
+    "typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf",
+    "git diff --exit-code -- spec/dexios-paper.pdf",
     "bash scripts/verify_repo_hygiene.sh",
     "git diff --check",
     "bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --allow-dirty --asset target/release-lto/dexios",
@@ -1085,6 +1087,7 @@ fn local_scripts_expose_the_full_maintainer_gate() {
 
     for required in [
         "require_tool cargo-audit \"cargo install cargo-audit --locked --version 0.22.1\"",
+        "require_tool typst \"install Typst from https://typst.app/docs/install/ or your OS package manager\"",
         "require_tool cargo-deny \"cargo install cargo-deny --locked --version 0.19.6\"",
         "require_tool mdbook \"cargo install mdbook --locked\"",
         "verify_no_unsafe_crate_roots",
@@ -2994,6 +2997,36 @@ fn phase20_release_metadata_overclaim_issues(source: &str) -> Vec<&'static str> 
     }
 
     issues
+
+fn phase20_pdf_policy_overclaim_issues(source: &str) -> Vec<&'static str> {
+    let normalized = source.replace('`', "").to_ascii_lowercase();
+    let mut issues = Vec::new();
+
+    for (needle, issue) in [
+        (
+            "spec/specification-v1.pdf is current release-critical authority",
+            "binary-only historical PDF treated as current authority",
+        ),
+        (
+            "specification-v1.pdf is source-backed current spec",
+            "binary-only historical PDF treated as source-backed current spec",
+        ),
+        (
+            "generated pdf text is hand-edited truth",
+            "generated PDF text treated as hand-edited truth",
+        ),
+        (
+            "manual edits to spec/dexios-paper.pdf are release evidence",
+            "manual PDF edits treated as release evidence",
+        ),
+    ] {
+        if normalized.contains(needle) {
+            issues.push(issue);
+        }
+    }
+
+    issues
+}
 }
 
 #[test]
@@ -3292,6 +3325,113 @@ fn phase20_release_metadata_boundaries_are_source_gated() {
             "{source_name} must not overclaim release metadata boundaries; issues: {issues:?}"
         );
     }
+
+#[test]
+fn phase20_pdf_authority_policy_is_source_gated() {
+    assert_all_contains(
+        "README.md",
+        README,
+        &[
+            "the whitepaper-style format source lives in `spec/dexios-paper.typ`",
+            "the current PDF `spec/dexios-paper.pdf` is generated from that Typst source",
+            "typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf",
+            "`spec/specification-v1.pdf` is historical comparison input only, not current release-critical authority",
+        ],
+    );
+
+    assert_all_contains(
+        "book/src/Safety-Contract.md",
+        SAFETY_CONTRACT,
+        &[
+            "spec source and PDF artifacts",
+            "`spec/dexios-paper.typ` is the current source-backed whitepaper source",
+            "`spec/dexios-paper.pdf` is generated output from that Typst source",
+            "`spec/specification-v1.pdf` is historical comparison input only, not current release-critical authority",
+            "typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf",
+            "git diff --exit-code -- spec/dexios-paper.pdf",
+            "Generated PDF text is not hand-edited truth",
+            "manual edits to `spec/dexios-paper.pdf` are not release evidence",
+        ],
+    );
+
+    for (source_name, source) in [
+        ("README.md", README),
+        ("book/src/Safety-Contract.md", SAFETY_CONTRACT),
+    ] {
+        let issues = phase20_pdf_policy_overclaim_issues(source);
+        assert!(
+            issues.is_empty(),
+            "{source_name} must not overclaim PDF artifact policy; issues: {issues:?}"
+        );
+    }
+}
+
+#[test]
+fn phase20_pdf_freshness_commands_are_source_gated() {
+    assert_non_comment_line_count(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "run typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf",
+        1,
+    );
+    assert_non_comment_line_count(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "run git diff --exit-code -- spec/dexios-paper.pdf",
+        1,
+    );
+    assert_non_comment_line_occurs_before(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "run typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf",
+        "run git diff --exit-code -- spec/dexios-paper.pdf",
+    );
+    assert_non_comment_line_occurs_before(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "run git diff --exit-code -- docs",
+        "run typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf",
+    );
+
+    assert_all_contains(
+        "scripts/generate_release_manifest.sh",
+        GENERATE_RELEASE_MANIFEST,
+        &[
+            "typst --version",
+            "typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf",
+            "git diff --exit-code -- spec/dexios-paper.pdf",
+            "The verification command section records the required command contract. It is\nnot a pass/fail log for those commands.",
+        ],
+    );
+
+    for (source_name, source) in [
+        (
+            "scripts/generate_release_manifest.sh",
+            GENERATE_RELEASE_MANIFEST,
+        ),
+    ] {
+        let issues = phase20_pdf_policy_overclaim_issues(source);
+        assert!(
+            issues.is_empty(),
+            "{source_name} must not overclaim PDF artifact policy; issues: {issues:?}"
+        );
+    }
+}
+
+#[test]
+fn phase20_pdf_policy_gate_rejects_stale_authority_claims() {
+    for stale_claim in [
+        "spec/specification-v1.pdf is current release-critical authority.",
+        "specification-v1.pdf is source-backed current spec.",
+        "Generated PDF text is hand-edited truth.",
+        "Manual edits to spec/dexios-paper.pdf are release evidence.",
+    ] {
+        assert!(
+            !phase20_pdf_policy_overclaim_issues(stale_claim).is_empty(),
+            "Phase 20 PDF policy gate must reject: {stale_claim}"
+        );
+    }
+}
 }
 
 #[test]
