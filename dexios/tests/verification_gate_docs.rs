@@ -4099,6 +4099,64 @@ fn phase20_safety_limit_overclaim_issues(source: &str) -> Vec<&'static str> {
     issues
 }
 
+/// Canonical v3.0 support window: Dexios majors 8 and 7 are supported; 6 and below
+/// are unsupported. Closes DOCS-02 support-window gate coverage (audit v3.0).
+const SUPPORT_WINDOW_SUPPORTED: &[&str] = &["8.x.x", "7.x.x"];
+const SUPPORT_WINDOW_UNSUPPORTED: &[&str] = &["6.x.x", "5.0.x", "4.0.x"];
+
+/// Reads the support marker for a version row from a markdown support table.
+/// Maps both glyph styles (`✅`/`:x:` in SECURITY.md, `Yes`/`No` in Security-Policy.md)
+/// to a boolean. Returns `None` when there is no matching row or the marker is ambiguous.
+fn support_window_status(source: &str, version: &str) -> Option<bool> {
+    for line in source.lines() {
+        if !line.trim_start().starts_with('|') || !line.contains(version) {
+            continue;
+        }
+        let lowered = line.to_ascii_lowercase();
+        let supported = line.contains('✅') || lowered.contains("yes");
+        let unsupported = line.contains(":x:") || lowered.contains("no");
+        return match (supported, unsupported) {
+            (true, false) => Some(true),
+            (false, true) => Some(false),
+            _ => None,
+        };
+    }
+    None
+}
+
+fn phase20_stale_support_window_issues(source: &str) -> Vec<&'static str> {
+    let normalized = source.replace('`', "").to_ascii_lowercase();
+    let mut issues = Vec::new();
+
+    for (needle, issue) in [
+        (
+            "versions 6 and above",
+            "stale support-window floor claim (6 and above)",
+        ),
+        (
+            "versions 5 and above",
+            "stale support-window floor claim (5 and above)",
+        ),
+        ("6.x.x is supported", "stale 6.x supported claim"),
+        ("6.x is supported", "stale 6.x supported claim"),
+        (
+            "all versions of dexios are supported",
+            "stale all-versions-supported claim",
+        ),
+        (
+            "every version is supported",
+            "stale all-versions-supported claim",
+        ),
+        ("no version reaches end of life", "stale never-EOL claim"),
+    ] {
+        if normalized.contains(needle) {
+            issues.push(issue);
+        }
+    }
+
+    issues
+}
+
 fn phase20_release_metadata_overclaim_issues(source: &str) -> Vec<&'static str> {
     let normalized = source.replace('`', "").to_ascii_lowercase();
     let mut issues = Vec::new();
@@ -4403,6 +4461,79 @@ fn phase20_safety_limit_gate_rejects_stale_overclaims() {
             "Phase 20 safety-limit gate must reject: {stale_claim}"
         );
     }
+}
+
+#[test]
+fn phase20_support_window_docs_are_source_gated() {
+    for (source_name, source) in [
+        ("SECURITY.md", SECURITY_MD),
+        ("book/src/Security-Policy.md", SECURITY_POLICY),
+    ] {
+        for version in SUPPORT_WINDOW_SUPPORTED {
+            assert_eq!(
+                support_window_status(source, version),
+                Some(true),
+                "{source_name} must mark {version} as a supported version"
+            );
+        }
+        for version in SUPPORT_WINDOW_UNSUPPORTED {
+            assert_eq!(
+                support_window_status(source, version),
+                Some(false),
+                "{source_name} must mark {version} as an unsupported version"
+            );
+        }
+        let stale = phase20_stale_support_window_issues(source);
+        assert!(
+            stale.is_empty(),
+            "{source_name} has stale support-window claims: {stale:?}"
+        );
+    }
+
+    // Keep the two support-policy mirrors in sync: both docs must agree per version.
+    for version in SUPPORT_WINDOW_SUPPORTED
+        .iter()
+        .chain(SUPPORT_WINDOW_UNSUPPORTED)
+    {
+        assert_eq!(
+            support_window_status(SECURITY_MD, version),
+            support_window_status(SECURITY_POLICY, version),
+            "SECURITY.md and book/src/Security-Policy.md disagree on support status for {version}"
+        );
+    }
+
+    // dexios-core support statement must remain present and consistent on both surfaces.
+    assert_contains(
+        "SECURITY.md",
+        SECURITY_MD,
+        "all versions of `dexios-core` are supported",
+    );
+    assert_contains(
+        "book/src/Security-Policy.md",
+        SECURITY_POLICY,
+        "`dexios-core` versions are currently listed as supported",
+    );
+}
+
+#[test]
+fn phase20_support_window_gate_rejects_stale_claims() {
+    for stale_claim in [
+        "Versions 6 and above will receive security updates.",
+        "Versions 5 and above are supported.",
+        "Dexios 6.x.x is supported.",
+        "All versions of Dexios are supported.",
+        "Every version is supported and no version reaches end of life.",
+    ] {
+        assert!(
+            !phase20_stale_support_window_issues(stale_claim).is_empty(),
+            "Phase 20 support-window gate must reject: {stale_claim}"
+        );
+    }
+
+    // A drifted mirror that flips 6.x.x to supported must be detectable, so the
+    // cross-mirror sync assertion above would fail on real drift.
+    let drifted = "| Version | Supported |\n| 6.x.x | Yes |\n";
+    assert_eq!(support_window_status(drifted, "6.x.x"), Some(true));
 }
 
 #[test]
