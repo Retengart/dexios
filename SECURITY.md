@@ -19,13 +19,14 @@ Currently, all versions of `dexios-core` are supported.
 
 ## Reporting a Vulnerability
 
-Please open a Github Issue to report any vulnerabilities - they will be fixed as quickly as possible this way.
+For an unpatched vulnerability, please use a private GitHub security advisory on the main repository or email `brxken128@tutanota.com`.
 
-As an alternative, you may contact `brxken128@tutanota.com`.
+Do not open a public issue for an unpatched vulnerability. Public issues are fine for already-patched documentation/source mismatches or non-sensitive hardening follow-ups.
 
 For documentation/source mismatches that affect security-sensitive behavior, please mention whether the issue concerns:
 
 - headers or format compatibility
 - KDF selection
 - pack/unpack behavior
-- delete-after-success or temporary artifact lifecycle behavior
+- detached payload/header partial publication diagnostics and cleanup denial
+- delete-after-success cleanup authority, source replacement or changed source tree refusal, or temporary artifact lifecycle behavior

@@ -86,6 +86,5 @@ The temp-space threshold is enforced against the maximum observed KiB under
 the per-run measurement work root. Measurements that do not have a configured
 threshold remain advisory evidence only.
 
-Structural archive limits are not proof that the host has enough free memory or
-disk space. Capacity and temp-space measurements are best-effort release
-evidence, not a host-independent storage guarantee.
+Structural archive limits are not proof that the host has enough free memory or disk space. Capacity and temp-space measurements are best-effort release evidence, not a host-independent storage guarantee. They do not prove that unpack plaintext exposure is eliminated; current unpack still stages selected
+file bodies as ordinary filesystem temporary/staged files before commit.

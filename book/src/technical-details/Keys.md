@@ -51,9 +51,11 @@ If `DEXIOS_KEY` is available and no higher-priority key source is selected, Dexi
 
 Key workflows operate on V1 headers and keyslots only.
 
-- `key add` remains unsupported for V1 encrypted artifacts in this refactor
-  line. It fails with a typed unsupported-workflow result and does not request a
-  new key or mutate the header.
+- `key add` is supported for canonical V1 encrypted artifacts. It first proves
+  that an existing supported key unwraps the current master key, then adds a new
+  fixed physical keyslot with a fresh keyslot wrapping nonce. It must preserve payload bytes
+  and must reject unsupported KDF metadata instead of skipping or rewriting unsupported
+  slots.
 - `key verify` is read-only. It reads the V1 header keyslots, attempts to unwrap
   the master key with the supplied key, and reports success, incorrect key,
   unsupported KDF, malformed header, unsupported format, or read I/O failure. It
@@ -64,6 +66,14 @@ Key workflows operate on V1 headers and keyslots only.
 - `key del` deletes only the keyslot proven by the supplied old key. It rejects
   deletion of the final usable V1 keyslot and does not collect a separate
   remaining-key verification key.
+
+Key add, change, and delete snapshot the encrypted target before preparing a
+replacement header. Before commit, Dexios rechecks mutation freshness: the
+target must still have the same bytes, and on Unix it must still have the same
+device and inode. Same-inode content changes and path replacement after the
+snapshot are refused as stale key mutation, leaving the current file bytes in
+place. This check does not use filesystem locks and does not add recovery,
+rollback, or secure erase behavior.
 
 Historical V1 keyslots tagged `[0xDF, 0x02]` are recognized as unsupported
 Argon2id metadata. Key mutation refuses files containing that unsupported tag

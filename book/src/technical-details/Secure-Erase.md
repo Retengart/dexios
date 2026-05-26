@@ -19,15 +19,33 @@ The current contract is intentionally narrow:
 4. revalidate cleanup receipts, including changed cleanup identity checks
 5. delete the selected source inputs as a post-commit cleanup step
 
+Cleanup identity is evidence for this ordinary cleanup revalidation only. The
+current workflows return processed-source cleanup evidence from the domain layer
+instead of rebuilding cleanup authority from CLI path strings after commit.
+Cleanup authority also requires complete commit evidence, requested hash
+success, and final-auth evidence where the workflow produces a final
+authentication receipt before publication.
+Source replacement, final symlink substitution, hardlink alias surprises, and a
+changed source tree are cleanup-refusal conditions; the source data is preserved
+when refusal happens before deletion. This evidence is not secure erase,
+physical sanitization, rollback, recovery, or broader deletion authority.
+
 If the workflow fails, the source inputs remain in place.
 
-Partial commit evidence is not cleanup authorization. If a linked filesystem
-transaction commits one output and then fails on a later required artifact,
-Dexios reports the committed artifact and the failed artifact, leaves cleanup
-blocked, and committed outputs are not rolled back.
+Partial commit evidence is not cleanup authorization. Failed final
+authentication, archive validation failure, failed requested hashes, and partial
+commits leave cleanup blocked. If a linked filesystem transaction commits one
+output and then fails on a later required artifact, Dexios reports the committed
+artifact and the failed artifact, leaves cleanup blocked, and committed outputs
+are not rolled back.
+
+Detached payload/header publication follows the same rule. A detached encrypt or
+pack operation is cleanup-eligible only when the payload and detached header from
+the same linked operation both commit. Partial detached publication reports the committed and failed artifact state, source cleanup is denied after partial detached publication, and Dexios does not roll back committed artifacts or guarantee recovery.
 
 Cleanup failures are reported after the output commit has already succeeded.
-Dexios does not revert committed outputs during this cleanup step.
+Dexios does not revert committed outputs during this cleanup step, and
+committed outputs are not rolled back.
 
 The deletion primitive remains ordinary filesystem deletion. Rust
 `std::fs::remove_file` removes a path entry. In this contract, remove_file does not guarantee immediate physical deletion. Dexios therefore claims no secure erase, no physical sanitization, and no full power-failure proof for deleted inputs or temporary artifacts.

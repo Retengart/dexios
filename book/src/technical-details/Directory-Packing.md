@@ -41,20 +41,36 @@ The current implementation:
    manifest-first archive writer
 7. encrypts those archive bytes using the same canonical V1 stream encryption
    path used for normal files
-8. commits the final encrypted output and detached header through staged storage
-   transaction semantics
+8. commits the final encrypted output and detached header through pair-aware
+   staged storage transaction semantics
+
+Pack registers input directories, requested outputs, and generated output/header
+paths through the shared storage identity graph. Existing path roles reject final
+symlinks and symlinked parent prefixes before canonicalization, and generated
+outputs are checked against source roots before archive bytes are written.
+Delete-after-success cleanup for pack is bound to processed-source cleanup
+evidence captured for the selected source roots. Directory cleanup revalidates
+the root identity and the processed tree; a changed source tree is reported as
+cleanup refusal rather than deleting new user data.
 
 Pack still materializes the entry list and streams file contents through the
 archive writer, but it does not create a separate full plaintext archive
 temporary file before encryption.
 
 Storage transaction semantics here mean same-directory temporary files and
-staged flush/sync/persist before final placement. Dexios writes staged outputs,
-flushes them, calls `File::sync_all`, and then uses
-`tempfile::NamedTempFile::persist` or `persist_noclobber` according to the
-overwrite policy. Linked commits prepare every staged output before any output
-is persisted. If a later persist fails after an earlier artifact was committed,
-Dexios reports partial commit evidence; committed outputs are not rolled back.
+staged flush/sync/fd-relative final placement. Dexios writes staged outputs,
+flushes them, calls `File::sync_all`, and then finalizes Unix targets through
+opened parent directories: `linkat` for create-new output and `renameat` for
+replace-at-commit output. Linked commits prepare every staged output before any
+output is persisted. If a later persist fails after an earlier artifact was
+committed, Dexios reports partial commit evidence; committed outputs are not
+rolled back.
+
+For detached pack output, pair-aware detached publication means the generated
+payload and generated detached header must both commit from the same linked
+operation before cleanup can run. Partial detached publication reports the
+committed and failed artifact state, source cleanup is denied after partial
+detached publication, and committed artifacts remain visible.
 
 Dexios syncs staged file contents and file metadata before persist, but it does
 not claim portable parent-directory durability across every filesystem or
@@ -120,29 +136,36 @@ transaction commit.
 The current unpack flow is stricter than the historical docs:
 
 The public Rust API constructs unpack work through checked `UnpackIntent` state
-rather than raw request fields. The CLI still owns prompting and selected input
-paths; the domain layer keeps archive validation, path identity checks, staging,
-and transaction commit behavior.
+rather than raw request fields. The CLI passes the raw archive path and optional
+detached-header path into this domain construction; the domain registers those
+sources as `Input` and `DetachedHeader`, validates them in the shared identity
+graph, and opens checked sources through
+`FileStorage::read_resolved_existing_no_follow`. On Unix, that boundary uses
+`O_NOFOLLOW` plus opened-file identity recheck; non-Unix behavior is limited by platform identity APIs and available tests. The CLI still owns prompting and
+selected archive entries; the domain layer keeps archive validation, output-root
+and target path identity checks, staging, and transaction commit behavior.
 
-1. construct checked unpack intent from opened input/header entries and the
-   requested output root
-2. decrypt the packed file through the authenticated V1 stream reader
-3. read and validate the `DXAR` manifest before selected body staging
-4. normalize every archive path before writing anything to disk
-5. enforce the shared `ArchiveLimits` entry count, path byte, and path depth
+1. construct checked unpack intent from the raw archive path, optional
+   detached-header path, and requested output root
+2. register and open archive/header sources through checked no-follow storage
+   reads
+3. decrypt the packed file through the authenticated V1 stream reader
+4. read and validate the `DXAR` manifest before selected body staging
+5. normalize every archive path before writing anything to disk
+6. enforce the shared `ArchiveLimits` entry count, path byte, and path depth
    policy
-6. reject traversal attempts, unsafe archive names, duplicate normalized paths,
+7. reject traversal attempts, unsafe archive names, duplicate normalized paths,
    and prefix collisions
-7. reject unsafe symlink-based output escapes through the storage layer
-8. run overwrite prompts only after the structural validation pass succeeds
-9. stage selected extracted file bodies under the requested output root while
+8. reject unsafe symlink-based output escapes through the storage layer
+9. run overwrite prompts only after the structural validation pass succeeds
+10. stage selected extracted file bodies under the requested output root while
    checking ordered `DXBF` body frames
-10. observe final stream authentication before committing outputs
-11. revalidate selected file targets near staging and before commit
-12. create selected directories after final authentication, tracking only
+11. observe final stream authentication before committing outputs
+12. revalidate selected file targets near staging and before commit
+13. create selected directories after final authentication, tracking only
     directories created by the current unpack pass
-13. commit the extracted files through storage transaction semantics
-14. clean up ordinary temporary/staged artifacts
+14. commit the extracted files through storage transaction semantics
+15. clean up ordinary temporary/staged artifacts
 
 If the CLI is not run with `--force`, unpack may prompt before overwriting
 existing files.
@@ -153,9 +176,10 @@ If the first selected file commit fails after selected directories were created,
 
 - Packing hides original directory layout inside the encrypted payload, but the
   outer ciphertext still leaks overall file size.
-- Unpack should still be treated as a risky operation on untrusted input, even
-  though the current implementation has explicit path identity and path-safety
-  checks.
+- Unpack should still be treated as a risky operation on untrusted input.
+  Current source/header identity and output path checks reject final symlinks,
+  symlinked parent prefixes, and path aliases through the shared storage layer,
+  but they are not a sandbox.
 - Normal operation no longer creates a full plaintext archive temporary file.
 - The current archive workflow has no full plaintext archive temporary file.
 - Unpack-side plaintext exposure is scoped to selected staged file bodies and
