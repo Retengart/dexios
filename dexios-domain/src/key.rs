@@ -10,6 +10,7 @@ use core::primitives::{MasterKey, WrappingKey};
 use core::protected::Protected;
 
 use crate::storage::identity::IdentityError;
+use crate::storage::mutation::MutationFreshnessError;
 use crate::storage::transaction::TransactionError;
 use crate::workflow_error::WorkflowErrorClass;
 
@@ -40,6 +41,7 @@ pub enum Error {
     Seek,
     PathIdentity(IdentityError),
     Transaction(TransactionError),
+    TargetChanged,
     CannotRemoveFinalV1Keyslot,
     CannotAddV1KeyslotWithoutReencrypt,
 }
@@ -58,9 +60,11 @@ impl Error {
             | Self::Unsupported => WorkflowErrorClass::UnsupportedFormat,
             Self::UnsupportedKdf(_) | Self::KeyHash => WorkflowErrorClass::KdfFailure,
             Self::IncorrectKey => WorkflowErrorClass::IncorrectKey,
-            Self::HeaderWrite | Self::Seek | Self::ReadIo | Self::ReadIoWithSource(_) => {
-                WorkflowErrorClass::IoFailure
-            }
+            Self::HeaderWrite
+            | Self::Seek
+            | Self::ReadIo
+            | Self::ReadIoWithSource(_)
+            | Self::TargetChanged => WorkflowErrorClass::IoFailure,
             Self::PathIdentity(error) => crate::workflow_error::classify_identity_error(error),
             Self::Transaction(error) => crate::workflow_error::classify_transaction_error(error),
             Self::TooManyKeyslots
@@ -92,6 +96,7 @@ impl std::fmt::Display for Error {
             }
             Error::PathIdentity(error) => write!(f, "{error}"),
             Error::Transaction(error) => write!(f, "{error}"),
+            Error::TargetChanged => f.write_str("Key workflow target changed before commit"),
             Error::CannotRemoveFinalV1Keyslot => f.write_str("Cannot remove the final V1 keyslot"),
             Error::CannotAddV1KeyslotWithoutReencrypt => {
                 f.write_str("Cannot add a V1 keyslot without re-encrypting the payload")
@@ -137,9 +142,11 @@ pub fn decrypt_v1_master_key_with_index(
             .derive(&raw_key_old, &salt)
             .map_err(|_| Error::KeyHash)?;
 
+        let slot_index = V1KeyslotIndex::try_from_physical_index(physical_index)
+            .map_err(|_| Error::HeaderDeserialize)?;
         let encrypted_master_key = EncryptedMasterKey::new(*keyslot.encrypted_master_key());
         let slot_wrapping_aad = header
-            .slot_wrapping_aad(physical_index, keyslot)
+            .slot_wrapping_aad_for_physical_slot(slot_index)
             .map_err(|_| Error::HeaderDeserialize)?;
         let master_key_result = unwrap_v1_master_key(
             WrappingKey::from(key_old),
@@ -153,10 +160,7 @@ pub fn decrypt_v1_master_key_with_index(
         };
 
         master_key = Some(decrypted_master_key);
-        index = Some(
-            V1KeyslotIndex::try_from_physical_index(physical_index)
-                .map_err(|_| Error::HeaderDeserialize)?,
-        );
+        index = Some(slot_index);
 
         break;
     }
@@ -194,7 +198,7 @@ pub(crate) fn decrypt_v1_master_key_at_index(
     let key = kdf.derive(&raw_key, &salt).map_err(|_| Error::KeyHash)?;
     let encrypted_master_key = EncryptedMasterKey::new(*keyslot.encrypted_master_key());
     let slot_wrapping_aad = header
-        .slot_wrapping_aad(index.get(), keyslot)
+        .slot_wrapping_aad_for_physical_slot(index)
         .map_err(|_| Error::HeaderDeserialize)?;
 
     unwrap_v1_master_key(
@@ -229,6 +233,7 @@ impl std::error::Error for Error {
             | Self::ReadIo
             | Self::HeaderWrite
             | Self::Seek
+            | Self::TargetChanged
             | Self::CannotRemoveFinalV1Keyslot
             | Self::CannotAddV1KeyslotWithoutReencrypt => None,
         }
@@ -243,6 +248,21 @@ pub(crate) fn map_header_read_error(error: HeaderReadError) -> Error {
         HeaderReadError::UnsupportedVersion(version) => Error::UnsupportedVersion(version),
         HeaderReadError::RetiredV1Layout => Error::RetiredV1Layout,
         error => Error::MalformedV1Header(error),
+    }
+}
+
+pub(crate) fn ensure_target_unchanged(
+    target: &crate::storage::identity::ResolvedTarget,
+    original: &[u8],
+) -> Result<(), Error> {
+    crate::storage::mutation::ensure_fresh(target, original).map_err(map_mutation_freshness_error)
+}
+
+fn map_mutation_freshness_error(error: MutationFreshnessError) -> Error {
+    match error {
+        MutationFreshnessError::Read { source, .. } => Error::ReadIoWithSource(source),
+        MutationFreshnessError::IdentityChanged { .. }
+        | MutationFreshnessError::ContentChanged { .. } => Error::TargetChanged,
     }
 }
 
@@ -273,8 +293,21 @@ pub fn encrypt_master_key(
     kdf: Kdf,
 ) -> Result<[u8; ENCRYPTED_MASTER_KEY_LEN], Error> {
     let placeholder_keyslot = V1Keyslot::new(kdf, [0u8; ENCRYPTED_MASTER_KEY_LEN], *nonce, *salt);
-    let slot_wrapping_aad = header
-        .slot_wrapping_aad(index.get(), &placeholder_keyslot)
+    let mut placeholder_keyslots = header.keyslots_collection().clone();
+    if placeholder_keyslots.get_physical(index.get()).is_some() {
+        placeholder_keyslots
+            .replace(index, placeholder_keyslot)
+            .map_err(|_| Error::HeaderDeserialize)?;
+    } else {
+        placeholder_keyslots
+            .insert_physical_slot(index, placeholder_keyslot)
+            .map_err(|_| Error::HeaderDeserialize)?;
+    }
+    let placeholder_header = header
+        .with_keyslots(placeholder_keyslots)
+        .map_err(|_| Error::HeaderDeserialize)?;
+    let slot_wrapping_aad = placeholder_header
+        .slot_wrapping_aad_for_physical_slot(index)
         .map_err(|_| Error::HeaderDeserialize)?;
     let encrypted_master_key = wrap_v1_master_key(
         WrappingKey::from(key_new),

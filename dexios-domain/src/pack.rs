@@ -11,6 +11,8 @@ use std::cell::{Cell, RefCell};
 use std::ffi::OsString;
 use std::fs;
 use std::io::{self, Read, Seek, SeekFrom, Write};
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
 use std::rc::Rc;
 
@@ -20,11 +22,13 @@ use core::primitives::BLOCK_SIZE;
 use core::protected::Protected;
 
 use crate::archive::{ArchiveLimitError, ArchiveLimits, ArchivePolicy};
-use crate::storage::Storage;
+use crate::storage::cleanup::{CleanupReceipt, ProcessedSourceCleanupResult};
 use crate::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
 };
-use crate::storage::transaction::{CommitReceipt, LinkedOutputTransaction, TransactionError};
+use crate::storage::transaction::{
+    CommitReceipt, DetachedPublicationFailure, LinkedOutputTransaction, TransactionError,
+};
 use crate::workflow_error::{
     WorkflowErrorClass, classify_identity_error, classify_transaction_error,
 };
@@ -46,6 +50,7 @@ pub enum Error {
     Encrypt(crate::encrypt::Error),
     PathIdentity(IdentityError),
     Transaction(TransactionError),
+    DetachedPublication(TransactionError),
     TransactionWriter,
     ArchiveLimit(ArchiveLimitError),
     ArchivePayload(PayloadError),
@@ -73,6 +78,9 @@ impl std::fmt::Display for Error {
             Error::Encrypt(inner) => write!(f, "Unable to encrypt archive: {inner}"),
             Error::PathIdentity(inner) => write!(f, "Pack path identity check failed: {inner}"),
             Error::Transaction(inner) => write!(f, "Pack transaction failed: {inner}"),
+            Error::DetachedPublication(inner) => {
+                write!(f, "Detached publication incomplete: {inner}")
+            }
             Error::TransactionWriter => f.write_str("Unable to release staged pack writers"),
             Error::ArchiveLimit(inner) => write!(f, "Archive limit error: {inner}"),
             Error::ArchivePayload(inner) => write!(f, "Archive payload error: {inner}"),
@@ -99,7 +107,7 @@ impl std::error::Error for Error {
             | Self::WriteDataWithSource(error) => Some(error),
             Self::Encrypt(error) => Some(error),
             Self::PathIdentity(error) => Some(error),
-            Self::Transaction(error) => Some(error),
+            Self::Transaction(error) | Self::DetachedPublication(error) => Some(error),
             Self::ArchivePayload(error) => Some(error),
             Self::ArchiveLimit(error) => Some(error),
             _ => None,
@@ -111,7 +119,9 @@ impl Error {
     #[must_use]
     pub fn workflow_class(&self) -> WorkflowErrorClass {
         match self {
-            Self::Transaction(error) => classify_transaction_error(error),
+            Self::Transaction(error) | Self::DetachedPublication(error) => {
+                classify_transaction_error(error)
+            }
             _ if self.is_resource_pressure() => WorkflowErrorClass::ResourcePressure,
             Self::Encrypt(error) => error.workflow_class(),
             Self::PathIdentity(error) => classify_identity_error(error),
@@ -140,6 +150,14 @@ impl Error {
     #[must_use]
     pub fn is_resource_pressure(&self) -> bool {
         crate::storage::error_chain_contains_resource_pressure(self)
+    }
+
+    #[must_use]
+    pub fn detached_publication_failure(&self) -> Option<DetachedPublicationFailure> {
+        match self {
+            Self::DetachedPublication(error) => error.detached_publication_failure(),
+            _ => None,
+        }
     }
 }
 
@@ -190,6 +208,7 @@ pub struct PackIntent {
     sources: Vec<PackSource>,
     output_target: ResolvedTarget,
     detached_header_target: Option<ResolvedTarget>,
+    cleanup_receipt: CleanupReceipt,
     raw_key: Protected<Vec<u8>>,
     kdf: Kdf,
     on_archive_entry: Option<OnArchiveEntryFn>,
@@ -231,7 +250,7 @@ impl PackIntent {
             .zip(archive_roots)
             .map(|(source_path, archive_root)| {
                 graph
-                    .add_existing(source_path, PathRole::Input)
+                    .add_existing(source_path, PathRole::ProcessedSource)
                     .map(|target| PackSource {
                         target,
                         archive_root,
@@ -239,6 +258,12 @@ impl PackIntent {
             })
             .collect::<Result<Vec<_>, _>>()
             .map_err(Error::PathIdentity)?;
+        let cleanup_receipt = CleanupReceipt::from_processed_source_trees(
+            sources.iter().map(|source| &source.target),
+        )
+        .map_err(|source| {
+            Error::ReadSourceWithSource(crate::storage::Error::FileAccessWithSource(source))
+        })?;
 
         let output_target = graph
             .add_output(output_path, PathRole::GeneratedOutput, output_overwrite)
@@ -259,6 +284,7 @@ impl PackIntent {
             sources,
             output_target,
             detached_header_target,
+            cleanup_receipt,
             raw_key,
             kdf,
             on_archive_entry,
@@ -291,10 +317,18 @@ pub fn execute(intent: PackIntent) -> Result<CommitReceipt, Error> {
 }
 
 pub fn execute_transactional(intent: PackIntent) -> Result<CommitReceipt, Error> {
+    execute_transactional_with_cleanup(intent)
+        .map(ProcessedSourceCleanupResult::into_commit_receipt)
+}
+
+pub fn execute_transactional_with_cleanup(
+    intent: PackIntent,
+) -> Result<ProcessedSourceCleanupResult, Error> {
     let PackIntent {
         sources,
         output_target,
         detached_header_target,
+        cleanup_receipt,
         raw_key,
         kdf,
         on_archive_entry,
@@ -312,6 +346,7 @@ pub fn execute_transactional(intent: PackIntent) -> Result<CommitReceipt, Error>
     let detached_header_index = detached_header_target
         .map(|target| transaction.stage(target))
         .transpose()?;
+    let has_detached_header = detached_header_index.is_some();
 
     let transaction = Rc::new(RefCell::new(transaction));
     let output_writer = RefCell::new(LinkedStagedWriter::new(
@@ -345,7 +380,21 @@ pub fn execute_transactional(intent: PackIntent) -> Result<CommitReceipt, Error>
     let transaction = Rc::try_unwrap(transaction)
         .map_err(|_| Error::TransactionWriter)?
         .into_inner();
-    transaction.commit_all().map_err(Error::Transaction)
+    transaction
+        .commit_all()
+        .map_err(|error| map_detached_publication_transaction_error(error, has_detached_header))
+        .map(|commit_receipt| ProcessedSourceCleanupResult::new(commit_receipt, cleanup_receipt))
+}
+
+fn map_detached_publication_transaction_error(
+    error: TransactionError,
+    has_detached_header: bool,
+) -> Error {
+    if has_detached_header && error.detached_publication_failure().is_some() {
+        Error::DetachedPublication(error)
+    } else {
+        Error::Transaction(error)
+    }
 }
 
 fn execute_streaming_archive<SRW, W>(req: HandleRequest<'_, SRW, W>) -> Result<(), Error>
@@ -524,7 +573,7 @@ fn materialize_archive_entries_with_limits(
 
     for source_root in sources {
         let file = stor
-            .read_file(source_root.target.target_path())
+            .read_file_no_follow(source_root.target.target_path())
             .map_err(Error::ReadSourceWithSource)?;
         let root_path = file.path().to_path_buf();
 
@@ -539,9 +588,16 @@ fn materialize_archive_entries_with_limits(
                 if source.path_is_symlink() {
                     return Err(Error::SymlinkSource(source.path().to_path_buf()));
                 }
+                let walked_metadata = source.metadata().map_err(|error| {
+                    Error::ReadSourceWithSource(match error.into_io_error() {
+                        Some(source) => crate::storage::Error::FileAccessWithSource(source),
+                        None => crate::storage::Error::FileAccess,
+                    })
+                })?;
                 let source = stor
-                    .read_file(source.path())
+                    .read_file_no_follow(source.path())
                     .map_err(Error::ReadSourceWithSource)?;
+                verify_walked_entry_matches_opened(&source, &walked_metadata)?;
                 let relative = source
                     .path()
                     .strip_prefix(&root_path)
@@ -566,6 +622,53 @@ fn materialize_archive_entries_with_limits(
     }
 
     Ok(entries)
+}
+
+#[cfg(unix)]
+fn verify_walked_entry_matches_opened(
+    entry: &crate::storage::Entry<fs::File>,
+    walked_metadata: &fs::Metadata,
+) -> Result<(), Error> {
+    if entry.is_dir() {
+        let current_metadata = fs::symlink_metadata(entry.path()).map_err(|source| {
+            Error::ReadSourceWithSource(crate::storage::Error::FileAccessWithSource(source))
+        })?;
+        if walked_metadata.is_dir()
+            && current_metadata.is_dir()
+            && current_metadata.dev() == walked_metadata.dev()
+            && current_metadata.ino() == walked_metadata.ino()
+        {
+            return Ok(());
+        }
+        return Err(Error::ReadSourceWithSource(
+            crate::storage::Error::UnsafePath(entry.path().to_path_buf()),
+        ));
+    }
+
+    let opened_metadata = entry
+        .try_reader()
+        .map_err(Error::ReadSourceWithSource)?
+        .borrow()
+        .metadata()
+        .map_err(|source| {
+            Error::ReadSourceWithSource(crate::storage::Error::FileAccessWithSource(source))
+        })?;
+    if opened_metadata.dev() != walked_metadata.dev()
+        || opened_metadata.ino() != walked_metadata.ino()
+    {
+        return Err(Error::ReadSourceWithSource(
+            crate::storage::Error::UnsafePath(entry.path().to_path_buf()),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn verify_walked_entry_matches_opened(
+    _entry: &crate::storage::Entry<fs::File>,
+    _walked_metadata: &fs::Metadata,
+) -> Result<(), Error> {
+    Ok(())
 }
 
 fn push_archive_entry<RW>(

@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::Path;
-use std::sync::Arc;
 
 use core::kdf::Kdf;
 use core::protected::Protected;
@@ -10,7 +9,6 @@ use dexios_domain::encrypt;
 use dexios_domain::key;
 use dexios_domain::pack::{self, DetachedHeaderTarget, PackIntent};
 use dexios_domain::storage::identity::OverwritePolicy;
-use dexios_domain::storage::{FileStorage, Storage};
 use dexios_domain::unpack;
 
 const PASSWORD: &[u8; 8] = b"12345678";
@@ -71,10 +69,8 @@ fn unpack_archive_with_key(
     output_dir: &Path,
     key: &[u8],
 ) -> Result<dexios_domain::storage::transaction::CommitReceipt, unpack::Error> {
-    let stor = Arc::new(FileStorage);
-    let archive = stor.read_file(encrypted_archive).unwrap();
     let intent = unpack::UnpackIntent::new(
-        archive,
+        encrypted_archive,
         None,
         output_dir,
         Protected::new(key.to_vec()),

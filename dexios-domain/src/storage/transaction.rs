@@ -1,5 +1,4 @@
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{fmt, io};
 
 use super::identity::{PathRole, ResolvedTarget};
@@ -8,12 +7,18 @@ use super::test_support::FailureHooks;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommitReceipt {
-    pub artifacts: Vec<CommittedArtifact>,
+    artifacts: Vec<CommittedArtifact>,
 }
 
-pub trait CleanupAuthorizedReceipt {
+mod sealed {
+    pub trait CleanupAuthorizedReceipt {}
+}
+
+pub trait CleanupAuthorizedReceipt: sealed::CleanupAuthorizedReceipt {
     fn committed_artifacts(&self) -> &[CommittedArtifact];
 }
+
+impl sealed::CleanupAuthorizedReceipt for CommitReceipt {}
 
 impl CleanupAuthorizedReceipt for CommitReceipt {
     fn committed_artifacts(&self) -> &[CommittedArtifact] {
@@ -21,12 +26,37 @@ impl CleanupAuthorizedReceipt for CommitReceipt {
     }
 }
 
+impl CommitReceipt {
+    pub(crate) fn new(artifacts: Vec<CommittedArtifact>) -> Self {
+        Self { artifacts }
+    }
+
+    #[must_use]
+    pub fn committed_artifacts(&self) -> &[CommittedArtifact] {
+        &self.artifacts
+    }
+
+    pub(crate) fn extend_artifacts(&mut self, artifacts: Vec<CommittedArtifact>) {
+        self.artifacts.extend(artifacts);
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PartialCommitReceipt {
-    pub artifacts: Vec<CommittedArtifact>,
+    artifacts: Vec<CommittedArtifact>,
 }
 
 impl PartialCommitReceipt {
+    pub(crate) fn new(artifacts: Vec<CommittedArtifact>) -> Self {
+        Self { artifacts }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn unchecked_new_for_test(artifacts: Vec<CommittedArtifact>) -> Self {
+        Self { artifacts }
+    }
+
     #[must_use]
     pub fn committed_artifacts(&self) -> &[CommittedArtifact] {
         &self.artifacts
@@ -34,9 +64,122 @@ impl PartialCommitReceipt {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DetachedPairReceipt {
+    receipt: CommitReceipt,
+}
+
+impl DetachedPairReceipt {
+    #[must_use]
+    #[allow(dead_code)]
+    pub(crate) fn from_commit_receipt(receipt: CommitReceipt) -> Self {
+        Self { receipt }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn from_commit_receipt_for_test(receipt: CommitReceipt) -> Self {
+        Self { receipt }
+    }
+
+    #[must_use]
+    pub fn committed_artifacts(&self) -> &[CommittedArtifact] {
+        self.receipt.committed_artifacts()
+    }
+
+    #[must_use]
+    pub fn into_commit_receipt(self) -> CommitReceipt {
+        self.receipt
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PartialDetachedPublication {
+    committed_artifacts: Vec<CommittedArtifact>,
+    failed_artifact: CommittedArtifact,
+}
+
+impl PartialDetachedPublication {
+    #[must_use]
+    pub(crate) fn from_partial_commit(
+        receipt: PartialCommitReceipt,
+        failed_artifact: CommittedArtifact,
+    ) -> Self {
+        Self {
+            committed_artifacts: receipt.artifacts,
+            failed_artifact,
+        }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn from_partial_commit_for_test(
+        receipt: PartialCommitReceipt,
+        failed_artifact: CommittedArtifact,
+    ) -> Self {
+        Self::from_partial_commit(receipt, failed_artifact)
+    }
+
+    #[must_use]
+    pub fn committed_artifacts(&self) -> &[CommittedArtifact] {
+        &self.committed_artifacts
+    }
+
+    #[must_use]
+    pub fn failed_artifact(&self) -> &CommittedArtifact {
+        &self.failed_artifact
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DetachedPublicationFailure {
+    Partial(PartialDetachedPublication),
+    PostCommitSync(PartialCommitReceipt),
+}
+
+impl DetachedPublicationFailure {
+    #[must_use]
+    pub fn committed_artifacts(&self) -> &[CommittedArtifact] {
+        match self {
+            Self::Partial(receipt) => receipt.committed_artifacts(),
+            Self::PostCommitSync(receipt) => receipt.committed_artifacts(),
+        }
+    }
+
+    #[must_use]
+    pub fn failed_artifact(&self) -> Option<&CommittedArtifact> {
+        match self {
+            Self::Partial(receipt) => Some(receipt.failed_artifact()),
+            Self::PostCommitSync(_) => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommittedArtifact {
-    pub role: PathRole,
-    pub path: PathBuf,
+    role: PathRole,
+    path: PathBuf,
+}
+
+impl CommittedArtifact {
+    pub(crate) fn new(role: PathRole, path: PathBuf) -> Self {
+        Self { role, path }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn unchecked_new_for_test(role: PathRole, path: PathBuf) -> Self {
+        Self { role, path }
+    }
+
+    #[must_use]
+    pub fn role(&self) -> PathRole {
+        self.role
+    }
+
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
 }
 
 #[derive(Debug)]
@@ -62,6 +205,10 @@ pub enum TransactionError {
         failed: CommittedArtifact,
         source: Option<io::Error>,
     },
+    PostCommitSync {
+        receipt: PartialCommitReceipt,
+        source: Option<io::Error>,
+    },
 }
 
 impl fmt::Display for TransactionError {
@@ -84,8 +231,13 @@ impl fmt::Display for TransactionError {
             } => write!(
                 f,
                 "Partial transaction commit after {} artifact(s); failed to persist {}",
-                receipt.artifacts.len(),
-                failed.path.display()
+                receipt.committed_artifacts().len(),
+                failed.path().display()
+            ),
+            Self::PostCommitSync { receipt, .. } => write!(
+                f,
+                "Transaction committed {} artifact(s) but failed to sync the output directory",
+                receipt.committed_artifacts().len()
             ),
         }
     }
@@ -113,12 +265,17 @@ impl std::error::Error for TransactionError {
             | Self::PartialCommit {
                 source: Some(source),
                 ..
+            }
+            | Self::PostCommitSync {
+                source: Some(source),
+                ..
             } => Some(source),
             Self::Write { source: None, .. }
             | Self::Flush { source: None, .. }
             | Self::Sync { source: None, .. }
             | Self::Persist { source: None, .. }
-            | Self::PartialCommit { source: None, .. } => None,
+            | Self::PartialCommit { source: None, .. }
+            | Self::PostCommitSync { source: None, .. } => None,
         }
     }
 }
@@ -127,6 +284,23 @@ impl TransactionError {
     #[must_use]
     pub fn is_resource_pressure(&self) -> bool {
         super::error_chain_contains_resource_pressure(self)
+    }
+
+    #[must_use]
+    pub fn detached_publication_failure(&self) -> Option<DetachedPublicationFailure> {
+        match self {
+            Self::PartialCommit {
+                receipt, failed, ..
+            } => Some(DetachedPublicationFailure::Partial(
+                PartialDetachedPublication::from_partial_commit(receipt.clone(), failed.clone()),
+            )),
+            Self::PostCommitSync { receipt, .. } => {
+                Some(DetachedPublicationFailure::PostCommitSync(receipt.clone()))
+            }
+            Self::Write { .. } | Self::Flush { .. } | Self::Sync { .. } | Self::Persist { .. } => {
+                None
+            }
+        }
     }
 }
 
@@ -145,6 +319,7 @@ impl StagedOutputTransaction {
     }
 
     fn with_hooks(target: ResolvedTarget, hooks: FailureHooks) -> Result<Self, TransactionError> {
+        reject_directory_target(&target)?;
         let path = target.target_path().to_path_buf();
         let staged = NamedStagedOutput::with_hooks(target, hooks).map_err(|source| {
             TransactionError::Write {
@@ -188,9 +363,7 @@ impl StagedOutputTransaction {
 
     pub fn commit(self) -> Result<CommitReceipt, TransactionError> {
         let artifact = self.staged.persist_replace_at_commit()?;
-        Ok(CommitReceipt {
-            artifacts: vec![artifact],
-        })
+        Ok(CommitReceipt::new(vec![artifact]))
     }
 }
 
@@ -220,6 +393,7 @@ impl LinkedOutputTransaction {
     }
 
     pub fn stage(&mut self, target: ResolvedTarget) -> Result<usize, TransactionError> {
+        reject_directory_target(&target)?;
         let path = target.target_path().to_path_buf();
         let staged = NamedStagedOutput::with_hooks(target, self.hooks).map_err(|source| {
             TransactionError::Write {
@@ -236,6 +410,7 @@ impl LinkedOutputTransaction {
         target: ResolvedTarget,
         staging_parent: &Path,
     ) -> Result<usize, TransactionError> {
+        reject_directory_target(&target)?;
         let path = target.target_path().to_path_buf();
         let staged = NamedStagedOutput::with_staging_parent(target, staging_parent, self.hooks)
             .map_err(|source| TransactionError::Write {
@@ -255,21 +430,27 @@ impl LinkedOutputTransaction {
             staged.prepare_for_persist()?;
         }
 
-        let mut receipt = CommitReceipt {
-            artifacts: Vec::with_capacity(self.staged.len()),
-        };
+        let mut receipt = CommitReceipt::new(Vec::with_capacity(self.staged.len()));
         for staged in self.staged {
-            let failed = CommittedArtifact {
-                role: staged.target().role(),
-                path: staged.target().target_path().to_path_buf(),
-            };
+            let failed = CommittedArtifact::new(
+                staged.target().role(),
+                staged.target().target_path().to_path_buf(),
+            );
             match staged.persist_prepared() {
                 Ok(artifact) => receipt.artifacts.push(artifact),
+                Err(TransactionError::PostCommitSync {
+                    receipt: post_commit_receipt,
+                    source,
+                }) => {
+                    receipt.artifacts.extend(post_commit_receipt.artifacts);
+                    return Err(TransactionError::PostCommitSync {
+                        receipt: PartialCommitReceipt::new(receipt.artifacts),
+                        source,
+                    });
+                }
                 Err(TransactionError::Persist { source, .. }) if !receipt.artifacts.is_empty() => {
                     return Err(TransactionError::PartialCommit {
-                        receipt: PartialCommitReceipt {
-                            artifacts: receipt.artifacts,
-                        },
+                        receipt: PartialCommitReceipt::new(receipt.artifacts),
                         failed,
                         source,
                     });
@@ -286,4 +467,15 @@ impl Default for LinkedOutputTransaction {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn reject_directory_target(target: &ResolvedTarget) -> Result<(), TransactionError> {
+    if target.is_dir() {
+        return Err(TransactionError::Write {
+            path: target.target_path().to_path_buf(),
+            source: None,
+        });
+    }
+
+    Ok(())
 }

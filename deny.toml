@@ -20,7 +20,6 @@ skip = [
     { crate = "chacha20@0.9.1", reason = "Final graph keeps chacha20poly1305 0.10.1 on the RustCrypto 0.9 stream while rand 0.10.1 uses chacha20 0.10.0." },
     { crate = "cpufeatures@0.2.17", reason = "Final graph keeps stable crypto crates on cpufeatures 0.2 while rand 0.10.1 pulls chacha20 0.10 with cpufeatures 0.3." },
     { crate = "getrandom@0.2.17", reason = "Required by rand_core 0.6 through the stable RustCrypto 0.10 stack kept for the current stream AEAD/KDF contract." },
-    { crate = "getrandom@0.3.4", reason = "Required by jobserver through cc build dependencies while rand 0.10.1 and tempfile 3.27.0 use getrandom 0.4." },
     { crate = "rand_core@0.6.4", reason = "Required by the stable RustCrypto 0.10 dependency line while rand 0.10.1 uses rand_core 0.10.1." },
     { crate = "windows-sys@0.59.0", reason = "Required by rtoolbox via rpassword 7.5.2 while newer Windows transitive dependencies use windows-sys 0.61.2." },
 ]

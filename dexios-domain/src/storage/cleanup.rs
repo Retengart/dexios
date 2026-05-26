@@ -3,9 +3,11 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::SystemTime;
 
+use super::identity::{PathRole, ResolvedTarget};
 use super::test_support::{FailureError, FailureHooks, FailurePoint};
-use super::transaction::CleanupAuthorizedReceipt;
+use super::transaction::{CleanupAuthorizedReceipt, CommitReceipt};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CleanupTargetKind {
@@ -18,6 +20,8 @@ pub struct CleanupTarget {
     path: PathBuf,
     kind: CleanupTargetKind,
     identity: CleanupTargetIdentity,
+    stamp: CleanupTargetStamp,
+    tree: Option<CleanupTreeIdentity>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -75,6 +79,8 @@ impl CleanupTarget {
             identity: CleanupTargetIdentity::Unchecked {
                 source: "unchecked CleanupTarget::file constructor",
             },
+            stamp: CleanupTargetStamp::unchecked(),
+            tree: None,
         }
     }
 
@@ -87,6 +93,8 @@ impl CleanupTarget {
             identity: CleanupTargetIdentity::Unchecked {
                 source: "unchecked CleanupTarget::directory constructor",
             },
+            stamp: CleanupTargetStamp::unchecked(),
+            tree: None,
         }
     }
 
@@ -96,12 +104,30 @@ impl CleanupTarget {
         let kind = cleanup_kind(&metadata);
         let is_symlink = metadata.file_type().is_symlink();
         let identity = CleanupTargetIdentity::verified(path, is_symlink)?;
+        let stamp = CleanupTargetStamp::capture(path, &metadata)?;
 
         Ok(Self {
             path: path.to_path_buf(),
             kind,
             identity,
+            stamp,
+            tree: None,
         })
+    }
+
+    fn from_processed_source(target: &ResolvedTarget, capture_tree: bool) -> io::Result<Self> {
+        if target.role() != PathRole::ProcessedSource {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "cleanup target is not processed-source evidence",
+            ));
+        }
+
+        let mut cleanup_target = Self::from_path(target.target_path())?;
+        if capture_tree && cleanup_target.kind == CleanupTargetKind::Directory {
+            cleanup_target.tree = Some(CleanupTreeIdentity::capture(&cleanup_target.path)?);
+        }
+        Ok(cleanup_target)
     }
 }
 
@@ -116,7 +142,132 @@ impl CleanupTarget {
             identity: CleanupTargetIdentity::Unchecked {
                 source: "unchecked CleanupTarget::file constructor",
             },
+            stamp: CleanupTargetStamp::unchecked(),
+            tree: None,
         }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum CleanupTargetStamp {
+    Verified {
+        file_content: Option<CleanupFileStamp>,
+    },
+    Unchecked,
+}
+
+impl CleanupTargetStamp {
+    fn capture(path: &Path, metadata: &fs::Metadata) -> io::Result<Self> {
+        Ok(Self::Verified {
+            file_content: CleanupFileStamp::capture(path, metadata)?,
+        })
+    }
+
+    const fn unchecked() -> Self {
+        Self::Unchecked
+    }
+
+    fn revalidate(&self, path: &Path, metadata: &fs::Metadata) -> io::Result<()> {
+        match self {
+            Self::Verified { file_content } => {
+                if *file_content != CleanupFileStamp::capture(path, metadata)? {
+                    return Err(changed_target_error("changed cleanup target contents"));
+                }
+            }
+            Self::Unchecked => {}
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CleanupFileStamp {
+    len: u64,
+    digest: [u8; 32],
+}
+
+impl CleanupFileStamp {
+    fn capture(path: &Path, metadata: &fs::Metadata) -> io::Result<Option<Self>> {
+        if !metadata.file_type().is_file() {
+            return Ok(None);
+        }
+
+        let mut hasher = blake3::Hasher::new();
+        hasher.update_reader(fs::File::open(path)?)?;
+        Ok(Some(Self {
+            len: metadata.len(),
+            digest: *hasher.finalize().as_bytes(),
+        }))
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CleanupTreeIdentity {
+    entries: Vec<CleanupTreeEntry>,
+}
+
+impl CleanupTreeIdentity {
+    fn capture(root: &Path) -> io::Result<Self> {
+        let mut entries = Vec::new();
+
+        for entry in walkdir::WalkDir::new(root).min_depth(1) {
+            let entry = entry.map_err(walkdir_error)?;
+            let path = entry.path();
+            let metadata = fs::symlink_metadata(path)?;
+            let relative_path = path
+                .strip_prefix(root)
+                .map_err(|_| io::Error::other("cleanup tree entry escaped source root"))?
+                .to_path_buf();
+            let kind = cleanup_kind(&metadata);
+            let is_symlink = metadata.file_type().is_symlink();
+            let identity = CleanupTargetIdentity::verified(path, is_symlink)?;
+            let stamp = CleanupTreeEntryStamp::capture(path, &metadata)?;
+
+            entries.push(CleanupTreeEntry {
+                relative_path,
+                kind,
+                identity,
+                stamp,
+            });
+        }
+
+        entries.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+        Ok(Self { entries })
+    }
+
+    fn revalidate(&self, root: &Path) -> io::Result<()> {
+        let current = Self::capture(root)?;
+        if current == *self {
+            Ok(())
+        } else {
+            Err(changed_target_error("changed cleanup target tree"))
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CleanupTreeEntry {
+    relative_path: PathBuf,
+    kind: CleanupTargetKind,
+    identity: CleanupTargetIdentity,
+    stamp: CleanupTreeEntryStamp,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CleanupTreeEntryStamp {
+    len: u64,
+    modified: Option<SystemTime>,
+    file_content: Option<CleanupFileStamp>,
+}
+
+impl CleanupTreeEntryStamp {
+    fn capture(path: &Path, metadata: &fs::Metadata) -> io::Result<Self> {
+        Ok(Self {
+            len: metadata.len(),
+            modified: metadata.modified().ok(),
+            file_content: CleanupFileStamp::capture(path, metadata)?,
+        })
     }
 }
 
@@ -242,10 +393,31 @@ impl CleanupReceipt {
         Self { targets }
     }
 
-    pub fn from_paths<'a>(paths: impl IntoIterator<Item = &'a Path>) -> io::Result<Self> {
+    #[cfg(any(test, feature = "test-support"))]
+    fn from_paths<'a>(paths: impl IntoIterator<Item = &'a Path>) -> io::Result<Self> {
         paths
             .into_iter()
             .map(CleanupTarget::from_path)
+            .collect::<io::Result<Vec<_>>>()
+            .map(Self::new)
+    }
+
+    pub(crate) fn from_processed_sources<'a>(
+        targets: impl IntoIterator<Item = &'a ResolvedTarget>,
+    ) -> io::Result<Self> {
+        targets
+            .into_iter()
+            .map(|target| CleanupTarget::from_processed_source(target, false))
+            .collect::<io::Result<Vec<_>>>()
+            .map(Self::new)
+    }
+
+    pub(crate) fn from_processed_source_trees<'a>(
+        targets: impl IntoIterator<Item = &'a ResolvedTarget>,
+    ) -> io::Result<Self> {
+        targets
+            .into_iter()
+            .map(|target| CleanupTarget::from_processed_source(target, true))
             .collect::<io::Result<Vec<_>>>()
             .map(Self::new)
     }
@@ -276,6 +448,25 @@ impl CleanupReceipt {
         Self { targets }
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_paths_for_test<'a>(paths: impl IntoIterator<Item = &'a Path>) -> io::Result<Self> {
+        Self::from_paths(paths)
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_processed_sources_for_test<'a>(
+        targets: impl IntoIterator<Item = &'a ResolvedTarget>,
+    ) -> io::Result<Self> {
+        Self::from_processed_sources(targets)
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_processed_source_trees_for_test<'a>(
+        targets: impl IntoIterator<Item = &'a ResolvedTarget>,
+    ) -> io::Result<Self> {
+        Self::from_processed_source_trees(targets)
+    }
+
     fn run_with_hooks(&self, _proof: PostCommitSuccess, hooks: FailureHooks) -> CleanupResult {
         let mut result = CleanupResult::default();
         let mut injected_cleanup_failure = false;
@@ -303,6 +494,37 @@ impl CleanupReceipt {
         }
 
         result
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProcessedSourceCleanupResult {
+    commit_receipt: CommitReceipt,
+    cleanup_receipt: CleanupReceipt,
+}
+
+impl ProcessedSourceCleanupResult {
+    #[must_use]
+    pub(crate) fn new(commit_receipt: CommitReceipt, cleanup_receipt: CleanupReceipt) -> Self {
+        Self {
+            commit_receipt,
+            cleanup_receipt,
+        }
+    }
+
+    #[must_use]
+    pub fn commit_receipt(&self) -> &CommitReceipt {
+        &self.commit_receipt
+    }
+
+    #[must_use]
+    pub fn cleanup_receipt(&self) -> &CleanupReceipt {
+        &self.cleanup_receipt
+    }
+
+    #[must_use]
+    pub fn into_commit_receipt(self) -> CommitReceipt {
+        self.commit_receipt
     }
 }
 
@@ -402,6 +624,12 @@ fn revalidate_target(target: &CleanupTarget) -> io::Result<()> {
         CleanupTargetIdentity::Unchecked { .. } => {}
     }
 
+    target.stamp.revalidate(&target.path, &metadata)?;
+
+    if let Some(tree) = &target.tree {
+        tree.revalidate(&target.path)?;
+    }
+
     Ok(())
 }
 
@@ -415,4 +643,11 @@ fn cleanup_kind(metadata: &fs::Metadata) -> CleanupTargetKind {
 
 fn changed_target_error(message: &'static str) -> io::Error {
     io::Error::other(message)
+}
+
+fn walkdir_error(error: walkdir::Error) -> io::Error {
+    match error.into_io_error() {
+        Some(error) => error,
+        None => io::Error::other("unable to read cleanup target tree"),
+    }
 }

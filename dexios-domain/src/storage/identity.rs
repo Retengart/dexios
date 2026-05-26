@@ -1,6 +1,8 @@
 use std::ffi::OsString;
 use std::fs;
 use std::io;
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -12,6 +14,8 @@ pub enum PathRole {
     GeneratedDetachedHeader,
     UnpackRoot,
     MutationTarget,
+    ProcessedSource,
+    CleanupTarget,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -30,6 +34,10 @@ pub struct ResolvedTarget {
     missing_components: Vec<OsString>,
     exists: bool,
     is_dir: bool,
+    #[cfg(unix)]
+    existing_parent_identity: Option<UnixFileIdentity>,
+    #[cfg(unix)]
+    existing_target_identity: Option<UnixFileIdentity>,
 }
 
 impl ResolvedTarget {
@@ -67,6 +75,30 @@ impl ResolvedTarget {
     pub fn exists(&self) -> bool {
         self.exists
     }
+
+    #[must_use]
+    pub fn is_dir(&self) -> bool {
+        self.is_dir
+    }
+
+    #[cfg(unix)]
+    #[must_use]
+    pub const fn existing_parent_identity(&self) -> Option<UnixFileIdentity> {
+        self.existing_parent_identity
+    }
+
+    #[cfg(unix)]
+    #[must_use]
+    pub const fn existing_target_identity(&self) -> Option<UnixFileIdentity> {
+        self.existing_target_identity
+    }
+}
+
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UnixFileIdentity {
+    pub dev: u64,
+    pub ino: u64,
 }
 
 #[derive(Debug)]
@@ -138,11 +170,17 @@ impl PathIdentityGraph {
         role: PathRole,
     ) -> Result<ResolvedTarget, IdentityError> {
         let original_path = path.as_ref().to_path_buf();
+        let absolute_path = absolute_normalized_path(&original_path)?;
+        reject_symlinked_prefix(&absolute_path)?;
+        let meta = fs::symlink_metadata(&absolute_path).map_err(IdentityError::from_io_error)?;
+        if meta.file_type().is_symlink() {
+            return Err(IdentityError::UnsafePath(absolute_path));
+        }
         let canonical_path =
-            fs::canonicalize(&original_path).map_err(IdentityError::from_io_error)?;
-        let is_dir = fs::metadata(&canonical_path)
-            .map_err(IdentityError::from_io_error)?
-            .is_dir();
+            fs::canonicalize(&absolute_path).map_err(IdentityError::from_io_error)?;
+        let is_dir = meta.is_dir();
+        #[cfg(unix)]
+        let existing_target_identity = Some(unix_identity_from_metadata(&meta));
         let target = ResolvedTarget {
             original_path,
             target_parent: target_parent_for(&canonical_path, is_dir),
@@ -152,6 +190,10 @@ impl PathIdentityGraph {
             missing_components: Vec::new(),
             exists: true,
             is_dir,
+            #[cfg(unix)]
+            existing_parent_identity: None,
+            #[cfg(unix)]
+            existing_target_identity,
         };
 
         self.push(target)
@@ -168,18 +210,31 @@ impl PathIdentityGraph {
 
         match fs::symlink_metadata(&absolute_path) {
             Ok(meta) => {
+                reject_symlinked_prefix(&absolute_path)?;
+                if meta.file_type().is_symlink() {
+                    return Err(IdentityError::UnsafePath(absolute_path));
+                }
                 let canonical_path =
                     fs::canonicalize(&absolute_path).map_err(IdentityError::from_io_error)?;
                 let is_dir = meta.is_dir();
+                let target_parent = target_parent_for(&canonical_path, is_dir);
+                #[cfg(unix)]
+                let existing_parent_identity = Some(unix_identity_for(&target_parent)?);
+                #[cfg(unix)]
+                let existing_target_identity = Some(unix_identity_from_metadata(&meta));
                 self.push(ResolvedTarget {
                     original_path,
-                    target_parent: target_parent_for(&canonical_path, is_dir),
+                    target_parent,
                     target_path: canonical_path,
                     role,
                     overwrite_policy: Some(overwrite_policy),
                     missing_components: Vec::new(),
                     exists: true,
                     is_dir,
+                    #[cfg(unix)]
+                    existing_parent_identity,
+                    #[cfg(unix)]
+                    existing_target_identity,
                 })
             }
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
@@ -190,6 +245,10 @@ impl PathIdentityGraph {
 
                 self.push(ResolvedTarget {
                     original_path,
+                    #[cfg(unix)]
+                    existing_parent_identity: Some(unix_identity_for(&target_parent)?),
+                    #[cfg(unix)]
+                    existing_target_identity: None,
                     target_parent,
                     target_path,
                     role,
@@ -264,7 +323,7 @@ fn generated_output_inside_input(left: &ResolvedTarget, right: &ResolvedTarget) 
 }
 
 fn generated_target_inside_input(input: &ResolvedTarget, generated: &ResolvedTarget) -> bool {
-    input.role == PathRole::Input
+    matches!(input.role, PathRole::Input | PathRole::ProcessedSource)
         && input.is_dir
         && matches!(
             generated.role,
@@ -282,7 +341,18 @@ fn absolute_normalized_path(path: &Path) -> Result<PathBuf, IdentityError> {
             .join(path)
     };
 
+    reject_parent_components(&path)?;
     normalize_components(&path)
+}
+
+fn reject_parent_components(path: &Path) -> Result<(), IdentityError> {
+    for component in path.components() {
+        if matches!(component, Component::ParentDir) {
+            return Err(IdentityError::UnsafePath(path.to_path_buf()));
+        }
+    }
+
+    Ok(())
 }
 
 fn normalize_components(path: &Path) -> Result<PathBuf, IdentityError> {
@@ -370,4 +440,18 @@ fn target_parent_for(target_path: &Path, is_dir: bool) -> PathBuf {
     target_path
         .parent()
         .map_or_else(|| target_path.to_path_buf(), Path::to_path_buf)
+}
+
+#[cfg(unix)]
+fn unix_identity_for(path: &Path) -> Result<UnixFileIdentity, IdentityError> {
+    let metadata = fs::metadata(path).map_err(IdentityError::from_io_error)?;
+    Ok(unix_identity_from_metadata(&metadata))
+}
+
+#[cfg(unix)]
+fn unix_identity_from_metadata(metadata: &fs::Metadata) -> UnixFileIdentity {
+    UnixFileIdentity {
+        dev: metadata.dev(),
+        ino: metadata.ino(),
+    }
 }

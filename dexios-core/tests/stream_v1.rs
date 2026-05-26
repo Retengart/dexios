@@ -73,6 +73,35 @@ mod support {
     }
 }
 
+fn read_uncommitted_exact<R: Read>(
+    reader: &mut V1PayloadDecryptingReader<R>,
+    mut buf: &mut [u8],
+) -> Result<(), StreamError> {
+    while !buf.is_empty() {
+        let read = reader.read_uncommitted(buf)?;
+        if read == 0 {
+            return Err(StreamError::MissingFinalBlock);
+        }
+        let tmp = buf;
+        buf = &mut tmp[read..];
+    }
+    Ok(())
+}
+
+fn read_uncommitted_to_end<R: Read>(
+    reader: &mut V1PayloadDecryptingReader<R>,
+    output: &mut Vec<u8>,
+) -> Result<(), StreamError> {
+    let mut buffer = [0u8; 8192];
+    loop {
+        let read = reader.read_uncommitted(&mut buffer)?;
+        if read == 0 {
+            return Ok(());
+        }
+        output.extend_from_slice(&buffer[..read]);
+    }
+}
+
 fn plaintext_spanning_normal_chunks() -> Vec<u8> {
     (0..(BLOCK_SIZE * 3 + 37))
         .map(|index| (index % 251) as u8)
@@ -145,13 +174,34 @@ fn sample_manifest_first_payload() -> ManifestFirstPayload {
     ManifestFirstPayload::new(manifest, bodies).expect("manifest-first payload")
 }
 
+#[test]
+fn archive_payload_debug_does_not_disclose_body_bytes() {
+    let frame = ArchiveBodyFrame::new(0, b"secret-body-bytes".to_vec()).expect("body frame");
+    let frame_debug = format!("{frame:?}");
+
+    assert!(frame_debug.contains("body_len"));
+    assert!(!frame_debug.contains("body:"));
+    assert!(!frame_debug.contains("secret-body-bytes"));
+
+    let manifest = ArchiveManifest::new(vec![
+        ManifestEntry::file(b"secret.txt".to_vec(), frame.body_len()).expect("file entry"),
+    ])
+    .expect("manifest");
+    let payload = ManifestFirstPayload::new(manifest, vec![frame]).expect("manifest-first payload");
+    let payload_debug = format!("{payload:?}");
+
+    assert!(payload_debug.contains("body_frame_count"));
+    assert!(!payload_debug.contains("body_frames"));
+    assert!(!payload_debug.contains("secret-body-bytes"));
+}
+
 fn decrypt_file_with(
     master_key: MasterKey,
     payload: &ParsedV1Payload,
     ciphertext: Vec<u8>,
 ) -> (Result<V1FinalAuth, StreamError>, Vec<u8>) {
     let mut scratch = Vec::new();
-    let result = V1PayloadStream::decrypt_file(
+    let result = V1PayloadStream::decrypt_file_uncommitted(
         master_key,
         payload,
         &mut Cursor::new(ciphertext),
@@ -218,7 +268,7 @@ fn v1_stream_roundtrips_with_header_derived_aad() {
     .expect("encrypt v1 stream");
 
     let mut decrypted = Vec::new();
-    V1PayloadStream::decrypt_file(
+    V1PayloadStream::decrypt_file_uncommitted(
         support::master_key(),
         &payload,
         &mut Cursor::new(encrypted),
@@ -245,7 +295,7 @@ fn v1_decrypt_file_returns_v1_final_auth_receipt() {
     .expect("encrypt v1 stream");
 
     let mut decrypted = Vec::new();
-    let _final_auth: V1FinalAuth = V1PayloadStream::decrypt_file(
+    let _final_auth: V1FinalAuth = V1PayloadStream::decrypt_file_uncommitted(
         support::master_key(),
         &payload,
         &mut Cursor::new(encrypted),
@@ -267,9 +317,7 @@ fn decrypting_reader_returns_final_auth_only_after_authenticated_eof() {
         V1PayloadDecryptingReader::new(support::master_key(), &payload, Cursor::new(ciphertext))
             .expect("create decrypting reader");
     let mut prefix = [0u8; 31];
-    reader
-        .read_exact(&mut prefix)
-        .expect("read plaintext prefix");
+    read_uncommitted_exact(&mut reader, &mut prefix).expect("read plaintext prefix");
 
     let early_finish = reader
         .finish()
@@ -291,9 +339,7 @@ fn decrypting_reader_roundtrips_to_same_plaintext_as_file_api() {
     )
     .expect("create decrypting reader");
     let mut decrypted = Vec::new();
-    reader
-        .read_to_end(&mut decrypted)
-        .expect("read decrypting reader to EOF");
+    read_uncommitted_to_end(&mut reader, &mut decrypted).expect("read decrypting reader to EOF");
     let _final_auth: V1FinalAuth = reader.finish().expect("finish after authenticated EOF");
 
     assert_eq!(decrypted, plaintext);
@@ -314,15 +360,9 @@ fn decrypting_reader_rejects_tampered_final_chunk_without_receipt() {
     .expect("create decrypting reader");
 
     let mut scratch = Vec::new();
-    let error = reader
-        .read_to_end(&mut scratch)
-        .expect_err("tampered final chunk must fail");
-    let stream_error = error
-        .get_ref()
-        .and_then(|error| error.downcast_ref::<StreamError>())
-        .expect("io error carries stream error");
     assert!(matches!(
-        stream_error,
+        read_uncommitted_to_end(&mut reader, &mut scratch)
+            .expect_err("tampered final chunk must fail"),
         StreamError::FinalBlockAuthentication
     ));
 }
@@ -339,14 +379,11 @@ fn decrypting_reader_rejects_truncation_without_receipt() {
             .expect("create decrypting reader");
 
     let mut scratch = Vec::new();
-    let error = reader
-        .read_to_end(&mut scratch)
-        .expect_err("truncated ciphertext must fail");
-    let stream_error = error
-        .get_ref()
-        .and_then(|error| error.downcast_ref::<StreamError>())
-        .expect("io error carries stream error");
-    assert!(matches!(stream_error, StreamError::TruncatedCiphertext));
+    assert!(matches!(
+        read_uncommitted_to_end(&mut reader, &mut scratch)
+            .expect_err("truncated ciphertext must fail"),
+        StreamError::TruncatedCiphertext
+    ));
 }
 
 #[test]
@@ -550,7 +587,7 @@ fn stream_payload_boundary_matrix_roundtrips_with_file_api() {
         .unwrap_or_else(|error| panic!("{label}: encrypt v1 stream failed: {error}"));
 
         let mut decrypted = Vec::new();
-        V1PayloadStream::decrypt_file(
+        V1PayloadStream::decrypt_file_uncommitted(
             support::master_key(),
             &payload,
             &mut Cursor::new(encrypted),
@@ -577,7 +614,7 @@ fn encrypt_file_fills_plaintext_block_before_finalizing_on_short_reads() {
         .expect("encrypt v1 stream from short-reading source");
 
     let mut decrypted = Vec::new();
-    V1PayloadStream::decrypt_file(
+    V1PayloadStream::decrypt_file_uncommitted(
         support::master_key(),
         &payload,
         &mut Cursor::new(encrypted),
@@ -613,7 +650,7 @@ fn stream_file_api_handles_short_output_writes_at_boundaries() {
         let mut encrypted_reader = ShortRead::new(Cursor::new(encrypted.as_slice()), 11);
         {
             let mut decrypted_writer = ShortWrite::new(&mut decrypted, 5);
-            V1PayloadStream::decrypt_file(
+            V1PayloadStream::decrypt_file_uncommitted(
                 support::master_key(),
                 &payload,
                 &mut encrypted_reader,
@@ -648,8 +685,13 @@ fn decrypt_file_fills_ciphertext_block_before_finalizing_on_short_reads() {
 
     let mut decrypted = Vec::new();
     let mut reader = ShortRead::new(Cursor::new(encrypted.as_slice()), 257);
-    V1PayloadStream::decrypt_file(support::master_key(), &payload, &mut reader, &mut decrypted)
-        .expect("decrypt v1 stream from short-reading source");
+    V1PayloadStream::decrypt_file_uncommitted(
+        support::master_key(),
+        &payload,
+        &mut reader,
+        &mut decrypted,
+    )
+    .expect("decrypt v1 stream from short-reading source");
 
     assert_eq!(decrypted, plaintext);
 }
@@ -689,6 +731,44 @@ fn exact_block_plaintext_emits_empty_authenticated_final_chunk() {
 }
 
 #[test]
+fn segment_api_rejects_ambiguous_flat_file_chunk_sizes() {
+    let header = support::sample_v1_header();
+    let payload = support::parsed_payload_for(&header);
+    let exact_block = vec![0xA5; BLOCK_SIZE];
+
+    let mut encryptor =
+        V1PayloadEncryptor::new(support::master_key(), &header).expect("create encryptor");
+    assert!(matches!(
+        encryptor.encrypt_next(&exact_block[..BLOCK_SIZE - 1]),
+        Err(StreamError::InvalidChunkSize(len)) if len == BLOCK_SIZE - 1
+    ));
+
+    let mut encryptor =
+        V1PayloadEncryptor::new(support::master_key(), &header).expect("create encryptor");
+    let normal_chunk = encryptor
+        .encrypt_next(&exact_block)
+        .expect("encrypt exact normal chunk");
+    assert!(matches!(
+        encryptor.encrypt_last(&exact_block),
+        Err(StreamError::InvalidChunkSize(len)) if len == BLOCK_SIZE
+    ));
+
+    let mut decryptor =
+        V1PayloadDecryptor::new(support::master_key(), &payload).expect("create decryptor");
+    assert!(matches!(
+        decryptor.decrypt_next(&normal_chunk[..normal_chunk.len() - 1]),
+        Err(StreamError::InvalidChunkSize(len)) if len == BLOCK_SIZE + STREAM_TAG_LEN - 1
+    ));
+
+    let decryptor =
+        V1PayloadDecryptor::new(support::master_key(), &payload).expect("create decryptor");
+    assert!(matches!(
+        decryptor.decrypt_last(&normal_chunk),
+        Err(StreamError::InvalidChunkSize(len)) if len == BLOCK_SIZE + STREAM_TAG_LEN
+    ));
+}
+
+#[test]
 fn encrypting_writer_roundtrips_fragmented_writes() {
     let header = support::sample_v1_header();
     let payload = support::parsed_payload_for(&header);
@@ -704,7 +784,7 @@ fn encrypting_writer_roundtrips_fragmented_writes() {
     let encrypted = writer.finish().expect("finish encrypting writer");
 
     let mut decrypted = Vec::new();
-    V1PayloadStream::decrypt_file(
+    V1PayloadStream::decrypt_file_uncommitted(
         support::master_key(),
         &payload,
         &mut Cursor::new(encrypted),
@@ -734,7 +814,7 @@ fn encrypting_writer_exact_block_payload_emits_final_marker() {
     );
 
     let mut decrypted = Vec::new();
-    V1PayloadStream::decrypt_file(
+    V1PayloadStream::decrypt_file_uncommitted(
         support::master_key(),
         &payload,
         &mut Cursor::new(encrypted),
@@ -762,7 +842,7 @@ fn dropping_encrypting_writer_without_finish_does_not_finalize_payload() {
     }
 
     let mut decrypted = Vec::new();
-    let result = V1PayloadStream::decrypt_file(
+    let result = V1PayloadStream::decrypt_file_uncommitted(
         support::master_key(),
         &payload,
         &mut Cursor::new(encrypted),
@@ -789,7 +869,7 @@ fn exact_block_ciphertext_without_final_marker_fails() {
         .expect("encrypt exact normal chunk");
 
     let mut scratch = Vec::new();
-    let result = V1PayloadStream::decrypt_file(
+    let result = V1PayloadStream::decrypt_file_uncommitted(
         support::master_key(),
         &payload,
         &mut Cursor::new(ciphertext_without_final_marker),

@@ -2,10 +2,8 @@ use std::io;
 use std::path::PathBuf;
 
 use core::header::common::HeaderReadError;
-use dexios_domain::storage::identity::{IdentityError, PathRole};
-use dexios_domain::storage::transaction::{
-    CommittedArtifact, PartialCommitReceipt, TransactionError,
-};
+use dexios_domain::storage::identity::IdentityError;
+use dexios_domain::storage::transaction::TransactionError;
 use dexios_domain::workflow_error::WorkflowErrorClass;
 use dexios_domain::{header, key};
 
@@ -67,6 +65,14 @@ fn header_operation_errors_keep_exact_failure_variants() {
         header::Error::TargetNotStripped
     ));
     assert!(matches!(
+        header::Error::TargetChanged,
+        header::Error::TargetChanged
+    ));
+    assert!(matches!(
+        header::Error::DetachedHeaderChanged,
+        header::Error::DetachedHeaderChanged
+    ));
+    assert!(matches!(
         header::Error::UnsupportedFormat([0xDE, 0x01]),
         header::Error::UnsupportedFormat([0xDE, 0x01])
     ));
@@ -100,14 +106,7 @@ fn header_operation_error_classes_are_typed_not_display_derived() {
         source: None,
     });
     let transaction_commit = header::Error::Transaction(transaction_commit_error());
-    let partial_commit = header::Error::Transaction(TransactionError::PartialCommit {
-        receipt: PartialCommitReceipt { artifacts: vec![] },
-        failed: CommittedArtifact {
-            role: PathRole::MutationTarget,
-            path: path("target.dexios"),
-        },
-        source: None,
-    });
+    let partial_commit = header::Error::Transaction(transaction_commit_error());
 
     assert_eq!(
         header::Error::ShortDetachedHeader { actual_len: 12 }.workflow_class(),
@@ -128,6 +127,14 @@ fn header_operation_error_classes_are_typed_not_display_derived() {
     assert_eq!(
         header::Error::TargetNotStripped.workflow_class(),
         WorkflowErrorClass::MalformedFormat
+    );
+    assert_eq!(
+        header::Error::TargetChanged.workflow_class(),
+        WorkflowErrorClass::IoFailure
+    );
+    assert_eq!(
+        header::Error::DetachedHeaderChanged.workflow_class(),
+        WorkflowErrorClass::IoFailure
     );
     assert_eq!(
         unsupported.workflow_class(),

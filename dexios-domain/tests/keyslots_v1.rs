@@ -2,7 +2,7 @@ use core::header::common::{
     CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN,
     RETIRED_CURRENT_V1_HEADER_LEN, Salt,
 };
-use core::header::v1::{KeyslotKdf, V1Header, V1Keyslot};
+use core::header::v1::{KeyslotKdf, V1Header, V1Keyslot, V1KeyslotIndex};
 use core::header::{HeaderReadError, ParsedHeader, read_header};
 use core::kdf::Kdf;
 use core::primitives::{WrappingKey, gen_keyslot_nonce, gen_salt};
@@ -306,6 +306,49 @@ fn key_add_populates_empty_physical_slot_with_fresh_persisted_nonce() {
 }
 
 #[test]
+fn key_add_rejects_target_changed_after_old_key_proof() {
+    let (_dir, encrypted_path) = encrypted_v1_file("add-target-changed");
+    let intent = key::add::AddIntent::new(&encrypted_path).expect("prepare add intent");
+    let proven = intent
+        .verify_old_key(Protected::new(b"old-pass".to_vec()))
+        .expect("old key proof");
+    fs::write(&encrypted_path, b"changed target").expect("mutate target after proof");
+
+    let result = key::add::execute(
+        proven,
+        Protected::new(b"new-pass".to_vec()),
+        Kdf::Blake3Balloon,
+    );
+
+    assert!(matches!(result, Err(key::Error::TargetChanged)));
+    assert_eq!(fs::read(&encrypted_path).unwrap(), b"changed target");
+}
+
+#[test]
+#[cfg(unix)]
+fn key_add_rejects_target_replacement_after_old_key_proof() {
+    let (_dir, encrypted_path) = encrypted_v1_file("add-target-replaced");
+    let replacement_path = encrypted_path.with_extension("replacement.enc");
+    let original = fs::read(&encrypted_path).expect("read original fixture");
+    let intent = key::add::AddIntent::new(&encrypted_path).expect("prepare add intent");
+    let proven = intent
+        .verify_old_key(Protected::new(b"old-pass".to_vec()))
+        .expect("old key proof");
+    fs::write(&replacement_path, &original).expect("write replacement fixture");
+
+    fs::rename(&replacement_path, &encrypted_path).expect("replace target after proof");
+
+    let result = key::add::execute(
+        proven,
+        Protected::new(b"new-pass".to_vec()),
+        Kdf::Blake3Balloon,
+    );
+
+    assert!(matches!(result, Err(key::Error::TargetChanged)));
+    assert_eq!(fs::read(&encrypted_path).unwrap(), original);
+}
+
+#[test]
 fn key_add_intent_reports_unsupported_kdf_before_mutation_or_secret_use() {
     let (_dir, encrypted_path) = encrypted_v1_file("add-unsupported-kdf");
     mark_keyslot_unsupported_argon2id_file(&encrypted_path, 0);
@@ -479,10 +522,17 @@ fn append_synthetic_second_keyslot(
     let wrapping_key = Kdf::Blake3Balloon
         .derive(&Protected::new(new_key.to_vec()), &salt.to_kdf_salt())
         .expect("derive synthetic wrapping key");
-    let physical_index = keyslots.len();
-    let placeholder_keyslot = V1Keyslot::new(Kdf::Blake3Balloon, [0u8; 48], nonce, salt);
-    let slot_wrapping_aad = header
-        .slot_wrapping_aad(physical_index, &placeholder_keyslot)
+    let mut placeholder_keyslots = keyslots.clone();
+    placeholder_keyslots
+        .push(V1Keyslot::new(Kdf::Blake3Balloon, [0u8; 48], nonce, salt))
+        .expect("append placeholder keyslot");
+    let placeholder_header = header
+        .with_keyslots(placeholder_keyslots)
+        .expect("build placeholder header");
+    let slot_wrapping_aad = placeholder_header
+        .slot_wrapping_aad_for_physical_slot(
+            V1KeyslotIndex::try_from_physical_index(1).expect("slot one index"),
+        )
         .expect("synthetic slot wrapping aad");
     let encrypted_master_key = core::cipher::wrap_v1_master_key(
         WrappingKey::from(wrapping_key),
@@ -801,7 +851,12 @@ fn mutating_payload_nonce_breaks_payload_authentication_with_proven_master_key()
     let ParsedHeader::V1(payload) = parsed;
     let mut plaintext = Vec::new();
 
-    let result = V1PayloadStream::decrypt_file(master_key, &payload, &mut reader, &mut plaintext);
+    let result = V1PayloadStream::decrypt_file_uncommitted(
+        master_key,
+        &payload,
+        &mut reader,
+        &mut plaintext,
+    );
 
     assert!(
         result.is_err(),
@@ -825,6 +880,25 @@ fn key_change_failure_preserves_original_header() {
     let after = fs::read(&encrypted_path).expect("read preserved fixture");
     assert_eq!(&after[..HEADER_LEN], &original[..HEADER_LEN]);
     assert_eq!(after, original);
+}
+
+#[test]
+fn key_change_rejects_target_changed_after_old_key_proof() {
+    let (_dir, encrypted_path) = encrypted_v1_file("change-target-changed");
+    let intent = key::change::ChangeIntent::new(&encrypted_path).expect("prepare change intent");
+    let proven = intent
+        .verify_old_key(Protected::new(b"old-pass".to_vec()))
+        .expect("old key proof");
+    fs::write(&encrypted_path, b"changed target").expect("mutate target after proof");
+
+    let result = key::change::execute(
+        proven,
+        Protected::new(b"new-pass".to_vec()),
+        Kdf::Blake3Balloon,
+    );
+
+    assert!(matches!(result, Err(key::Error::TargetChanged)));
+    assert_eq!(fs::read(&encrypted_path).unwrap(), b"changed target");
 }
 
 #[test]
@@ -1006,6 +1080,19 @@ fn key_delete_failure_preserves_original_header() {
     let after = fs::read(&encrypted_path).expect("read preserved fixture");
     assert_eq!(&after[..HEADER_LEN], &original[..HEADER_LEN]);
     assert_eq!(after, original);
+}
+
+#[test]
+fn key_delete_rejects_target_changed_after_intent_construction() {
+    let (_dir, encrypted_path) = encrypted_v1_file("delete-target-changed");
+    add_key_file(&encrypted_path, b"old-pass", b"new-pass");
+    let intent = key::delete::DeleteIntent::new(&encrypted_path).expect("prepare delete intent");
+    fs::write(&encrypted_path, b"changed target").expect("mutate target after intent");
+
+    let result = key::delete::execute(intent, Protected::new(b"old-pass".to_vec()));
+
+    assert!(matches!(result, Err(key::Error::TargetChanged)));
+    assert_eq!(fs::read(&encrypted_path).unwrap(), b"changed target");
 }
 
 #[test]

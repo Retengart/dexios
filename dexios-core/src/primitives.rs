@@ -3,6 +3,8 @@ use crate::header::common::{KeyslotNonce, PayloadNonce};
 use crate::kdf::DERIVED_KEY_LEN;
 use crate::protected::Protected;
 use rand::Rng;
+use subtle::ConstantTimeEq;
+use zeroize::Zeroize;
 
 /// This is the streaming block size
 ///
@@ -22,8 +24,10 @@ pub struct MasterKey(Protected<[u8; MASTER_KEY_LEN]>);
 
 impl MasterKey {
     #[must_use]
-    pub fn new(bytes: [u8; MASTER_KEY_LEN]) -> Self {
-        Self(Protected::new(bytes))
+    pub fn new(mut bytes: [u8; MASTER_KEY_LEN]) -> Self {
+        let protected = Protected::new(bytes);
+        bytes.zeroize();
+        Self(protected)
     }
 
     #[must_use]
@@ -38,7 +42,7 @@ impl MasterKey {
 
     #[must_use]
     pub fn same_secret_as(&self, other: &Self) -> bool {
-        self.with_exposed(|left| other.with_exposed(|right| left == right))
+        self.with_exposed(|left| other.with_exposed(|right| left.ct_eq(right).unwrap_u8() == 1))
     }
 }
 
@@ -52,8 +56,10 @@ pub struct WrappingKey(Protected<[u8; DERIVED_KEY_LEN]>);
 
 impl WrappingKey {
     #[must_use]
-    pub fn new(bytes: [u8; DERIVED_KEY_LEN]) -> Self {
-        Self(Protected::new(bytes))
+    pub fn new(mut bytes: [u8; DERIVED_KEY_LEN]) -> Self {
+        let protected = Protected::new(bytes);
+        bytes.zeroize();
+        Self(protected)
     }
 
     #[must_use]
@@ -104,7 +110,9 @@ pub fn gen_keyslot_nonce() -> KeyslotNonce {
 pub fn gen_master_key() -> MasterKey {
     let mut master_key = [0u8; MASTER_KEY_LEN];
     rand::rng().fill_bytes(&mut master_key);
-    MasterKey::new(master_key)
+    let protected = MasterKey::new(master_key);
+    master_key.zeroize();
+    protected
 }
 
 /// Generates a salt, of the specified `SALT_LEN`

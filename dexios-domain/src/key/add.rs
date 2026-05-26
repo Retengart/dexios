@@ -95,6 +95,7 @@ pub fn execute(
 
     let replacement_header = added_header(&header, &master_key, empty_index, new_key_secret, kdf)?;
     let header_bytes = validated_header_bytes(&replacement_header)?;
+    super::ensure_target_unchanged(&target, &original)?;
     let target_header = original
         .get_mut(..HEADER_LEN)
         .ok_or(Error::HeaderDeserialize)?;

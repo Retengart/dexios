@@ -20,6 +20,7 @@ const STORAGE_IDENTITY: &str = include_str!("../src/storage/identity.rs");
 const STORAGE_TRANSACTION: &str = include_str!("../src/storage/transaction.rs");
 const STORAGE_TEMP: &str = include_str!("../src/storage/temp.rs");
 const STORAGE_CLEANUP: &str = include_str!("../src/storage/cleanup.rs");
+const STORAGE_MUTATION: &str = include_str!("../src/storage/mutation.rs");
 
 const CLI_MAIN: &str = include_str!("../../dexios/src/main.rs");
 const CLI_SUBCOMMANDS: &str = include_str!("../../dexios/src/subcommands.rs");
@@ -403,6 +404,83 @@ fn assert_retained_public_storage_exports() {
             "APIS-04 cleanup receipt state must not be externally constructible: {forbidden}"
         );
     }
+}
+
+fn assert_source_contains(path: &str, source: &str, expected: &str) {
+    assert!(
+        source.contains(expected),
+        "{path} must contain required source contract {expected:?}"
+    );
+}
+
+fn assert_source_contains_before(path: &str, source: &str, before: &str, after: &str) {
+    let before_index = source
+        .find(before)
+        .unwrap_or_else(|| panic!("{path} must contain {before:?}"));
+    let after_index = source
+        .find(after)
+        .unwrap_or_else(|| panic!("{path} must contain {after:?}"));
+    assert!(
+        before_index < after_index,
+        "{path} must contain {before:?} before {after:?}"
+    );
+}
+
+fn source_item<'a>(path: &str, source: &'a str, anchor: &str) -> &'a str {
+    let anchor_index = source
+        .find(anchor)
+        .unwrap_or_else(|| panic!("{path} must contain item anchor {anchor:?}"));
+    let open_index = anchor_index
+        + source[anchor_index..]
+            .find('{')
+            .unwrap_or_else(|| panic!("{path} item {anchor:?} must have a body"));
+    let mut depth = 0usize;
+
+    for (offset, ch) in source[open_index..].char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth = depth
+                    .checked_sub(1)
+                    .unwrap_or_else(|| panic!("{path} item {anchor:?} has unbalanced braces"));
+                if depth == 0 {
+                    return &source[anchor_index..=open_index + offset];
+                }
+            }
+            _ => {}
+        }
+    }
+
+    panic!("{path} item {anchor:?} body must close");
+}
+
+fn source_item_body<'a>(path: &str, source: &'a str, anchor: &str) -> &'a str {
+    let item = source_item(path, source, anchor);
+    let open_index = item
+        .find('{')
+        .unwrap_or_else(|| panic!("{path} item {anchor:?} must have a body"));
+    &item[open_index + 1..item.len() - 1]
+}
+
+fn compact_source(source: &str) -> String {
+    source.split_whitespace().collect::<String>()
+}
+
+fn contains_public_fn_signature(source: &str, name: &str) -> bool {
+    let compact = compact_source(source);
+    compact.contains(&format!("pubfn{name}(")) || compact.contains(&format!("pubfn{name}<"))
+}
+
+fn contains_unpack_cli_preopened_source(source: &str) -> bool {
+    let compact = compact_source(source);
+    [
+        "stor.read_file(input)",
+        "stor.read_file(path)",
+        "stor.read_file(input_path)",
+        "stor.read_file(header_path)",
+    ]
+    .into_iter()
+    .any(|pattern| compact.contains(pattern))
 }
 
 fn collect_violations(
@@ -1402,6 +1480,324 @@ fn test_support_escape_hatches_are_scoped_and_named_by_d05() {
         .expect("D-05 source and test-support placement");
     assert_d05_test_support_escape_hatches(&phase04_migration_sources())
         .expect("Phase 4 migration sources keep failure injection test-scoped");
+}
+
+#[test]
+fn phase15_storage_identity_policy_is_role_owned_and_no_follow_gated() {
+    let path = "dexios-domain/src/storage/identity.rs";
+    let path_role = source_item_body(path, STORAGE_IDENTITY, "pub enum PathRole");
+    for expected in [
+        "Input",
+        "Output",
+        "DetachedHeader",
+        "GeneratedOutput",
+        "GeneratedDetachedHeader",
+        "UnpackRoot",
+        "MutationTarget",
+        "ProcessedSource",
+        "CleanupTarget",
+    ] {
+        assert_source_contains(path, path_role, expected);
+    }
+
+    let graph_impl = source_item_body(path, STORAGE_IDENTITY, "impl PathIdentityGraph");
+    for expected in [
+        "pub fn add_existing",
+        "pub fn add_output",
+        "pub fn add_generated",
+        "pub fn add_unpack_root",
+    ] {
+        assert_source_contains(path, graph_impl, expected);
+    }
+
+    let add_existing = source_item(path, STORAGE_IDENTITY, "pub fn add_existing");
+    assert_source_contains(path, add_existing, "role: PathRole");
+    assert_source_contains(
+        path,
+        add_existing,
+        "let absolute_path = absolute_normalized_path(&original_path)?;",
+    );
+    assert_source_contains(path, add_existing, "fs::symlink_metadata(&absolute_path)");
+    assert_source_contains_before(
+        path,
+        add_existing,
+        "fs::symlink_metadata(&absolute_path)",
+        "fs::canonicalize(&absolute_path)",
+    );
+
+    let add_output = source_item(path, STORAGE_IDENTITY, "pub fn add_output");
+    assert_source_contains(path, add_output, "role: PathRole");
+    assert_source_contains(
+        path,
+        add_output,
+        "let absolute_path = absolute_normalized_path(&original_path)?;",
+    );
+    assert_source_contains(path, add_output, "fs::symlink_metadata(&absolute_path)");
+    assert_source_contains_before(
+        path,
+        add_output,
+        "fs::symlink_metadata(&absolute_path)",
+        "fs::canonicalize(&absolute_path)",
+    );
+
+    let absolute_normalized_path =
+        source_item(path, STORAGE_IDENTITY, "fn absolute_normalized_path");
+    assert_source_contains(
+        path,
+        absolute_normalized_path,
+        "reject_parent_components(&path)?;",
+    );
+    assert_source_contains_before(
+        path,
+        absolute_normalized_path,
+        "reject_parent_components(&path)?;",
+        "normalize_components(&path)",
+    );
+    let reject_parent_components =
+        source_item(path, STORAGE_IDENTITY, "fn reject_parent_components");
+    assert_source_contains(path, reject_parent_components, "Component::ParentDir");
+    assert_source_contains(path, reject_parent_components, "IdentityError::UnsafePath");
+
+    let add_generated = source_item(path, STORAGE_IDENTITY, "pub fn add_generated");
+    assert_source_contains(path, add_generated, "role: PathRole");
+    assert!(
+        compact_source(add_generated)
+            .contains("self.add_output(path,role,OverwritePolicy::CreateNew)"),
+        "{path} generated output registration must flow through add_output with the caller role"
+    );
+
+    let add_unpack_root = source_item(path, STORAGE_IDENTITY, "pub fn add_unpack_root");
+    assert!(
+        compact_source(add_unpack_root)
+            .contains("self.add_output(path,PathRole::UnpackRoot,OverwritePolicy::CreateNew)"),
+        "{path} unpack root registration must flow through add_output as PathRole::UnpackRoot"
+    );
+
+    assert_source_contains(path, STORAGE_IDENTITY, "fn reject_symlinked_prefix");
+    assert!(
+        STORAGE_IDENTITY.contains("reject_symlinked_prefix(&absolute_path)?;")
+            && STORAGE_IDENTITY.contains("reject_symlinked_prefix(&existing_parent)?;"),
+        "existing and output role registration must reject symlinked prefixes on the checked existing path or parent"
+    );
+    assert!(
+        !STORAGE_IDENTITY.contains("fs::canonicalize(&original_path)"),
+        "role registration must not canonicalize the caller spelling before no-follow checks"
+    );
+    assert_source_contains(path, STORAGE_IDENTITY, "same_file::is_same_file");
+    assert_source_contains(path, STORAGE_IDENTITY, "resolve_missing_target_parent");
+}
+
+#[test]
+fn phase15_unpack_intent_constructs_checked_sources_before_no_follow_reads() {
+    let path = "dexios-domain/src/unpack.rs";
+    let new_body = source_item_body(path, DOMAIN_UNPACK, "pub fn new<P, O>");
+
+    for expected in [
+        "let mut graph = PathIdentityGraph::new();",
+        ".add_existing(&input_path, PathRole::ProcessedSource)",
+        "CleanupReceipt::from_processed_sources",
+        "graph.add_existing(path, PathRole::DetachedHeader)",
+        "graph.validate().map_err(Error::PathIdentity)?;",
+        "let stor = storage::FileStorage;",
+        ".read_resolved_existing_no_follow(&input_target)",
+        "stor.read_resolved_existing_no_follow(target)",
+    ] {
+        assert_source_contains(path, new_body, expected);
+    }
+
+    assert_source_contains_before(
+        path,
+        new_body,
+        ".add_existing(&input_path, PathRole::ProcessedSource)",
+        ".read_resolved_existing_no_follow(&input_target)",
+    );
+    assert_source_contains_before(
+        path,
+        new_body,
+        "graph.add_existing(path, PathRole::DetachedHeader)",
+        "stor.read_resolved_existing_no_follow(target)",
+    );
+    assert!(
+        !new_body.contains(".read_file(input_target.target_path())")
+            && !new_body.contains("stor.read_file(target.target_path())")
+            && !new_body.contains(".read_file_no_follow(input_target.target_path())")
+            && !new_body.contains("stor.read_file_no_follow(target.target_path())"),
+        "{path} UnpackIntent::new must use identity-bound no-follow reads for checked source targets"
+    );
+}
+
+#[test]
+fn phase15_unpack_cli_delegates_raw_paths_without_preopening_sources() {
+    let old_preopen_source = r#"
+        let stor = storage::FileStorage;
+        let input = stor.read_file(input)?;
+        let header = header_path.map(|path| stor.read_file(path));
+    "#;
+    assert!(
+        contains_unpack_cli_preopened_source(old_preopen_source),
+        "source gate fixture must detect old unpack CLI pre-open reads"
+    );
+
+    let compact = compact_source(CLI_UNPACK);
+    assert_source_contains(
+        "dexios/src/subcommands/unpack.rs",
+        CLI_UNPACK,
+        "domain::unpack::UnpackIntent::new(",
+    );
+    assert!(
+        compact.contains("domain::unpack::UnpackIntent::new(input,header_path,output,"),
+        "unpack CLI must pass raw input/header/output paths to UnpackIntent::new"
+    );
+    assert!(
+        !contains_unpack_cli_preopened_source(CLI_UNPACK),
+        "unpack CLI must not pre-open sources with stor.read_file before UnpackIntent::new"
+    );
+}
+
+#[test]
+fn phase19_cleanup_authority_constructors_are_not_public() {
+    let cleanup_impl = source_item_body(
+        "dexios-domain/src/storage/cleanup.rs",
+        STORAGE_CLEANUP,
+        "impl CleanupReceipt",
+    );
+    assert!(
+        contains_public_fn_signature(
+            "impl CleanupReceipt { pub fn from_paths<'a>(paths: impl Iterator<Item = &'a Path>) {} }",
+            "from_paths"
+        ),
+        "APIF-02 source gate must catch generic public constructor signatures"
+    );
+    assert!(
+        contains_public_fn_signature(
+            "impl CleanupReceipt { fn unrelated() {} } impl CleanupReceipt { pub fn from_paths<'a>(paths: impl Iterator<Item = &'a Path>) {} }",
+            "from_paths"
+        ),
+        "APIF-02 source gate must catch generic public constructor signatures in later impl blocks"
+    );
+
+    for forbidden in [
+        "from_paths",
+        "from_processed_sources",
+        "from_processed_source_trees",
+    ] {
+        assert!(
+            !contains_public_fn_signature(STORAGE_CLEANUP, forbidden),
+            "APIF-02 cleanup receipt production constructor must not be public: {forbidden}"
+        );
+    }
+
+    for expected in [
+        "pub(crate) fn from_processed_sources",
+        "pub(crate) fn from_processed_source_trees",
+        "pub fn from_paths_for_test",
+    ] {
+        assert_source_contains(
+            "dexios-domain/src/storage/cleanup.rs",
+            cleanup_impl,
+            expected,
+        );
+    }
+    assert_source_contains(
+        "dexios-domain/src/storage/cleanup.rs",
+        cleanup_impl,
+        "#[cfg(any(test, feature = \"test-support\"))]",
+    );
+
+    let post_commit_success = source_item_body(
+        "dexios-domain/src/storage/cleanup.rs",
+        STORAGE_CLEANUP,
+        "impl PostCommitSuccess",
+    );
+    assert_source_contains(
+        "dexios-domain/src/storage/cleanup.rs",
+        post_commit_success,
+        "receipt: &(impl CleanupAuthorizedReceipt + ?Sized)",
+    );
+    assert_source_contains(
+        "dexios-domain/src/storage/transaction.rs",
+        STORAGE_TRANSACTION,
+        "impl sealed::CleanupAuthorizedReceipt for CommitReceipt",
+    );
+
+    for forbidden in [
+        "impl CleanupAuthorizedReceipt for PartialCommitReceipt",
+        "impl sealed::CleanupAuthorizedReceipt for PartialCommitReceipt",
+        "impl CleanupAuthorizedReceipt for PartialDetachedPublication",
+        "impl sealed::CleanupAuthorizedReceipt for PartialDetachedPublication",
+    ] {
+        assert!(
+            !STORAGE_TRANSACTION.contains(forbidden),
+            "APIF-02 partial or detached evidence must not authorize cleanup: {forbidden}"
+        );
+    }
+}
+
+#[test]
+fn phase19_transaction_detached_mutation_and_raw_helpers_are_not_forgeable() {
+    for forbidden in [
+        "pub artifacts: Vec<CommittedArtifact>",
+        "pub role: PathRole",
+        "pub path: PathBuf",
+    ] {
+        assert!(
+            !STORAGE_TRANSACTION.contains(forbidden),
+            "APIF-02 transaction evidence must not expose forgeable public fields: {forbidden}"
+        );
+    }
+
+    for expected in [
+        "pub(crate) fn new(artifacts: Vec<CommittedArtifact>) -> Self",
+        "pub(crate) fn new(role: PathRole, path: PathBuf) -> Self",
+        "pub fn role(&self) -> PathRole",
+        "pub fn path(&self) -> &Path",
+        "pub fn committed_artifacts(&self) -> &[CommittedArtifact]",
+    ] {
+        assert_source_contains(
+            "dexios-domain/src/storage/transaction.rs",
+            STORAGE_TRANSACTION,
+            expected,
+        );
+    }
+
+    for forbidden in ["from_commit_receipt", "from_partial_commit"] {
+        assert!(
+            !contains_public_fn_signature(STORAGE_TRANSACTION, forbidden),
+            "APIF-02 detached publication evidence constructor must be crate-owned: {forbidden}"
+        );
+    }
+    for expected in [
+        "pub(crate) fn from_commit_receipt",
+        "pub(crate) fn from_partial_commit",
+    ] {
+        assert_source_contains(
+            "dexios-domain/src/storage/transaction.rs",
+            STORAGE_TRANSACTION,
+            expected,
+        );
+    }
+
+    let mutation_impl = source_item_body(
+        "dexios-domain/src/storage/mutation.rs",
+        STORAGE_MUTATION,
+        "impl MutationSnapshot",
+    );
+    assert!(
+        !contains_public_fn_signature(STORAGE_MUTATION, "from_bytes"),
+        "APIF-04 mutation snapshots must not be externally fabricated from arbitrary bytes"
+    );
+    assert_source_contains(
+        "dexios-domain/src/storage/mutation.rs",
+        mutation_impl,
+        "pub(crate) fn from_bytes",
+    );
+
+    for (path, source) in [
+        ("dexios-domain/src/encrypt.rs", DOMAIN_ENCRYPT),
+        ("dexios-domain/src/decrypt.rs", DOMAIN_DECRYPT),
+    ] {
+        assert_source_contains(path, source, "pub(crate) fn execute_handles");
+    }
 }
 
 #[test]

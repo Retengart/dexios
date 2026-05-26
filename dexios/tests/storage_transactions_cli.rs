@@ -206,7 +206,10 @@ fn header_strip_failure_preserves_original_file() {
     let original = b"not a dexios encrypted file";
     fs::write(&invalid_input, original).unwrap();
 
-    let output = run_cli(test_dir.path(), &["header", "strip", "plain.txt"]);
+    let output = run_cli(
+        test_dir.path(),
+        &["header", "strip", "--force", "plain.txt"],
+    );
 
     assert!(
         !output.status.success(),
@@ -249,7 +252,7 @@ fn header_restore_failure_preserves_original_file() {
 
     let output = run_cli(
         test_dir.path(),
-        &["header", "restore", "plain.hdr", "plain.enc"],
+        &["header", "restore", "--force", "plain.hdr", "plain.enc"],
     );
 
     assert!(

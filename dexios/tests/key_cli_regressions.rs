@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -14,6 +15,7 @@ use domain::encrypt;
 
 const PASSWORD: &str = "old-pass";
 const KEY_SUBCOMMAND_SOURCE: &str = include_str!("../src/subcommands/key.rs");
+const ERROR_MAPPING_SOURCE: &str = include_str!("../src/subcommands/errors.rs");
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 
 struct TestDir {
@@ -63,6 +65,28 @@ fn run_cli(current_dir: &Path, args: &[&str], key: Option<&str>) -> std::process
     }
 
     command.output().unwrap()
+}
+
+fn run_cli_with_stdin(current_dir: &Path, args: &[&str], stdin: &[u8]) -> std::process::Output {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_dexios"))
+        .current_dir(current_dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env_remove("DEXIOS_KEY")
+        .args(args)
+        .spawn()
+        .unwrap();
+
+    let write_result = child.stdin.as_mut().unwrap().write_all(stdin);
+    if let Err(error) = write_result {
+        assert_eq!(
+            error.kind(),
+            ErrorKind::BrokenPipe,
+            "unexpected stdin write error: {error}"
+        );
+    }
+    child.wait_with_output().unwrap()
 }
 
 fn stderr(output: &std::process::Output) -> String {
@@ -124,6 +148,77 @@ fn write_keyfile(dir: &Path, name: &str, key: &str) -> PathBuf {
     let path = dir.join(name);
     fs::write(&path, key.as_bytes()).unwrap();
     path
+}
+
+#[test]
+fn key_add_rejects_old_and_new_keyfiles_both_reading_stdin() {
+    let test_dir = TestDir::new("key-add-dual-stdin");
+    let encrypted_path = test_dir.path().join("cipher.enc");
+
+    let output = run_cli_with_stdin(
+        test_dir.path(),
+        &[
+            "key",
+            "add",
+            "--keyfile-old",
+            "-",
+            "--keyfile-new",
+            "-",
+            encrypted_path.to_str().unwrap(),
+        ],
+        b"old-pass\nnew-pass\n",
+    );
+
+    assert!(!output.status.success());
+    assert_no_prompt(&output);
+    assert!(
+        stderr(&output).contains("--keyfile-old - and --keyfile-new - cannot both read from stdin"),
+        "unexpected stderr: {}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn key_stale_target_error_mapping_is_sanitized() {
+    for required in [
+        "domain::key::Error::TargetChanged =>",
+        "Key workflow target changed before commit",
+    ] {
+        assert!(
+            ERROR_MAPPING_SOURCE.contains(required),
+            "missing key stale CLI mapping token: {required}"
+        );
+    }
+
+    assert_sanitized_key_stderr("Key workflow target changed before commit");
+}
+
+#[test]
+fn key_change_rejects_old_and_new_keyfiles_both_reading_stdin() {
+    let test_dir = TestDir::new("key-change-dual-stdin");
+    let encrypted_path = test_dir.path().join("cipher.enc");
+
+    let output = run_cli_with_stdin(
+        test_dir.path(),
+        &[
+            "key",
+            "change",
+            "--keyfile-old",
+            "-",
+            "--keyfile-new",
+            "-",
+            encrypted_path.to_str().unwrap(),
+        ],
+        b"old-pass\nnew-pass\n",
+    );
+
+    assert!(!output.status.success());
+    assert_no_prompt(&output);
+    assert!(
+        stderr(&output).contains("--keyfile-old - and --keyfile-new - cannot both read from stdin"),
+        "unexpected stderr: {}",
+        stderr(&output)
+    );
 }
 
 fn mark_keyslot_unsupported_argon2id(path: &Path, index: usize) {
@@ -229,6 +324,33 @@ fn key_add_reads_new_key_after_old_key_verification_succeeds() {
         stdout(&new_verify),
         stderr(&new_verify)
     );
+}
+
+#[test]
+fn key_add_uses_dexios_key_for_old_key_when_old_keyfile_is_absent() {
+    let test_dir = TestDir::new("add-old-env");
+    let encrypted = encrypt_fixture(test_dir.path(), "plain");
+    let new_keyfile = write_keyfile(test_dir.path(), "new.key", "new-pass");
+
+    let output = run_cli(
+        test_dir.path(),
+        &[
+            "key",
+            "add",
+            "--keyfile-new",
+            new_keyfile.to_str().unwrap(),
+            encrypted.to_str().unwrap(),
+        ],
+        Some(PASSWORD),
+    );
+
+    assert!(
+        output.status.success(),
+        "key add did not use DEXIOS_KEY as the old key fallback: stdout={}\nstderr={}",
+        stdout(&output),
+        stderr(&output)
+    );
+    assert_no_prompt(&output);
 }
 
 #[test]
@@ -537,6 +659,33 @@ fn key_change_reads_new_key_after_old_key_verification_succeeds() {
     );
     assert!(!old_verify.status.success());
     assert!(stderr(&old_verify).contains("Incorrect key"));
+}
+
+#[test]
+fn key_change_uses_dexios_key_for_old_key_when_old_keyfile_is_absent() {
+    let test_dir = TestDir::new("change-old-env");
+    let encrypted = encrypt_fixture(test_dir.path(), "plain");
+    let new_keyfile = write_keyfile(test_dir.path(), "new.key", "new-pass");
+
+    let output = run_cli(
+        test_dir.path(),
+        &[
+            "key",
+            "change",
+            "--keyfile-new",
+            new_keyfile.to_str().unwrap(),
+            encrypted.to_str().unwrap(),
+        ],
+        Some(PASSWORD),
+    );
+
+    assert!(
+        output.status.success(),
+        "key change did not use DEXIOS_KEY as the old key fallback: stdout={}\nstderr={}",
+        stdout(&output),
+        stderr(&output)
+    );
+    assert_no_prompt(&output);
 }
 
 #[test]

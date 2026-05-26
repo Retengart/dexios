@@ -92,7 +92,11 @@ pub fn dump(input: &str, output: &str, force: ForceMode) -> Result<()> {
 // this can be used for restoring a dumped header to a file that had it's header stripped
 // this does not work for files encrypted *with* a detached header
 // it implements a check to ensure the header is valid before restoring to a file
-pub fn restore(input: &str, output: &str) -> Result<()> {
+pub fn restore(input: &str, output: &str, force: ForceMode) -> Result<()> {
+    if !overwrite_check(output, force)? {
+        return Ok(());
+    }
+
     let intent =
         domain::header::restore::RestoreIntent::new(input, output).map_err(map_header_error)?;
 
@@ -106,7 +110,11 @@ pub fn restore(input: &str, output: &str) -> Result<()> {
 // the header must be intact for this to work, as the length varies between the versions
 // it can be useful for storing the header separate from the file, to make an attacker's life that little bit harder
 // it implements a check to ensure the header is valid before stripping
-pub fn strip(input: &str) -> Result<()> {
+pub fn strip(input: &str, force: ForceMode) -> Result<()> {
+    if !overwrite_check(input, force)? {
+        return Ok(());
+    }
+
     let intent = domain::header::strip::StripIntent::new(input).map_err(map_header_error)?;
 
     let _receipt =

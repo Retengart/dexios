@@ -16,6 +16,10 @@ use core::stream::V1PayloadStream;
 
 const PASSWORD: &str = "12345678";
 const DEXIOS_SUBCOMMANDS_RS: &str = include_str!("../src/subcommands.rs");
+const ENCRYPT_SUBCOMMAND_SOURCE: &str = include_str!("../src/subcommands/encrypt.rs");
+const PACK_SUBCOMMAND_SOURCE: &str = include_str!("../src/subcommands/pack.rs");
+const DETACHED_PUBLICATION_TEST_SOURCE: &str =
+    include_str!("../../dexios-domain/tests/detached_publication.rs");
 const STREAM_TAG_LEN: usize = 16;
 const TRUNCATED_CANONICAL_V1_PREFIX: &[u8] = b"DXIO\x00\x01CV1\x00";
 const RETIRED_CURRENT_V1_PREFIX: &[u8] = b"DXIO\x00\x01\x01\x00\x07\x07";
@@ -124,7 +128,9 @@ fn manifest_archive_header_and_master_key() -> (V1Header, MasterKey) {
         V1Header::new_manifest_archive(payload_nonce, V1Keyslots::single(placeholder_keyslot))
             .unwrap();
     let slot_wrapping_aad = placeholder_header
-        .slot_wrapping_aad(0, &placeholder_keyslot)
+        .slot_wrapping_aad_for_physical_slot(
+            core::header::v1::V1KeyslotIndex::try_from_physical_index(0).expect("slot zero index"),
+        )
         .unwrap();
     let encrypted_master_key = wrap_v1_master_key(
         WrappingKey::from(wrapping_key),
@@ -588,4 +594,38 @@ fn cli_delete_after_success_hash_failure_and_identity_mismatch_are_source_gated(
     ] {
         assert_source_contains("dexios/src/subcommands.rs", DEXIOS_SUBCOMMANDS_RS, required);
     }
+}
+
+#[test]
+fn delete_source_detached_partial_publication_cleanup_denial_is_source_gated() {
+    assert_source_contains(
+        "dexios-domain/tests/detached_publication.rs",
+        DETACHED_PUBLICATION_TEST_SOURCE,
+        "execute_transactional_with_cleanup",
+    );
+    assert_source_contains(
+        "dexios-domain/tests/detached_publication.rs",
+        DETACHED_PUBLICATION_TEST_SOURCE,
+        "DetachedPublication(TransactionError::PartialCommit",
+    );
+    assert_source_contains(
+        "dexios-domain/tests/detached_publication.rs",
+        DETACHED_PUBLICATION_TEST_SOURCE,
+        "fs::read(&input_path)",
+    );
+    assert_source_contains(
+        "dexios-domain/tests/detached_publication.rs",
+        DETACHED_PUBLICATION_TEST_SOURCE,
+        "fs::read(source_dir.join(\"plain.txt\"))",
+    );
+    assert_source_contains(
+        "dexios/src/subcommands/encrypt.rs",
+        ENCRYPT_SUBCOMMAND_SOURCE,
+        "execute_transactional_with_cleanup(intent).map_err(map_encrypt_error)?",
+    );
+    assert_source_contains(
+        "dexios/src/subcommands/pack.rs",
+        PACK_SUBCOMMAND_SOURCE,
+        "execute_transactional_with_cleanup(intent).map_err(map_pack_error)?",
+    );
 }

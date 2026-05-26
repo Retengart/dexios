@@ -227,12 +227,12 @@ case_header_subcommands() {
     contains_file "$dir/details-hdr.stdout" "Header version:" "header details should describe dumped header" || return 1
 
     cp "$dir/plain.enc" "$dir/stripped.enc"
-    "$BIN" header strip "$dir/stripped.enc" || return 1
+    "$BIN" header strip -f "$dir/stripped.enc" || return 1
     DEXIOS_KEY=12345678 "$BIN" decrypt -f --header "$dir/plain.hdr" "$dir/stripped.enc" "$dir/stripped-via-header.out" || return 1
     file_eq "$dir/plain.txt" "$dir/stripped-via-header.out" "decrypt with dumped header after strip should work" || return 1
 
     cp "$dir/stripped.enc" "$dir/restored.enc"
-    "$BIN" header restore "$dir/plain.hdr" "$dir/restored.enc" || return 1
+    "$BIN" header restore -f "$dir/plain.hdr" "$dir/restored.enc" || return 1
     DEXIOS_KEY=12345678 "$BIN" decrypt -f "$dir/restored.enc" "$dir/restored.out" || return 1
     file_eq "$dir/plain.txt" "$dir/restored.out" "header restore should make file decryptable again without detached header" || return 1
 }

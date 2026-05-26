@@ -7,18 +7,19 @@ use std::path::{Path, PathBuf};
 
 use core::cipher::wrap_v1_master_key;
 use core::header::common::Salt;
-use core::header::v1::{V1Header, V1Keyslot, V1Keyslots};
+use core::header::v1::{V1Header, V1Keyslot, V1KeyslotIndex, V1Keyslots};
 use core::kdf::Kdf;
 use core::primitives::{MasterKey, WrappingKey, gen_keyslot_nonce, gen_payload_nonce};
 use core::protected::Protected;
 use core::stream::{StreamError, V1PayloadEncryptingWriter, V1PayloadStream};
 
+use crate::storage::cleanup::{CleanupReceipt, ProcessedSourceCleanupResult};
 use crate::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
 };
 use crate::storage::transaction::{
-    CommitReceipt, LinkedOutputTransaction, StagedOutputTransaction, StagedWriteError,
-    TransactionError,
+    CommitReceipt, DetachedPublicationFailure, LinkedOutputTransaction, StagedOutputTransaction,
+    StagedWriteError, TransactionError,
 };
 use crate::utils::{gen_master_key, gen_salt};
 use crate::workflow_error::{
@@ -47,6 +48,7 @@ pub enum Error {
     InitializeChiphers,
     PathIdentity(IdentityError),
     Transaction(TransactionError),
+    DetachedPublication(TransactionError),
 }
 
 impl Error {
@@ -63,7 +65,9 @@ impl Error {
             | Self::WriteHeaderWithSource(_) => WorkflowErrorClass::IoFailure,
             Self::HashKey => WorkflowErrorClass::KdfFailure,
             Self::PathIdentity(error) => classify_identity_error(error),
-            Self::Transaction(error) => classify_transaction_error(error),
+            Self::Transaction(error) | Self::DetachedPublication(error) => {
+                classify_transaction_error(error)
+            }
             Self::EncryptMasterKey | Self::InitializeStreams | Self::InitializeChiphers => {
                 WorkflowErrorClass::Other
             }
@@ -92,6 +96,9 @@ impl std::fmt::Display for Error {
             Error::InitializeChiphers => f.write_str("Cannot initialize chiphers"),
             Error::PathIdentity(error) => write!(f, "{error}"),
             Error::Transaction(error) => write!(f, "{error}"),
+            Error::DetachedPublication(error) => {
+                write!(f, "Detached publication incomplete: {error}")
+            }
         }
     }
 }
@@ -104,7 +111,17 @@ impl std::error::Error for Error {
             | Self::EncryptFileWithSource(error)
             | Self::WriteHeaderWithSource(error) => Some(error),
             Self::PathIdentity(error) => Some(error),
-            Self::Transaction(error) => Some(error),
+            Self::Transaction(error) | Self::DetachedPublication(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
+impl Error {
+    #[must_use]
+    pub fn detached_publication_failure(&self) -> Option<DetachedPublicationFailure> {
+        match self {
+            Self::DetachedPublication(error) => error.detached_publication_failure(),
             _ => None,
         }
     }
@@ -130,6 +147,7 @@ pub struct EncryptIntent {
     input_target: ResolvedTarget,
     output_target: ResolvedTarget,
     header_target: Option<ResolvedTarget>,
+    cleanup_receipt: CleanupReceipt,
     raw_key: Protected<Vec<u8>>,
     kdf: Kdf,
 }
@@ -150,8 +168,10 @@ impl EncryptIntent {
         let input_path = input_path.as_ref().to_path_buf();
         let mut graph = PathIdentityGraph::new();
         let input_target = graph
-            .add_existing(&input_path, PathRole::Input)
+            .add_existing(&input_path, PathRole::ProcessedSource)
             .map_err(Error::PathIdentity)?;
+        let cleanup_receipt = CleanupReceipt::from_processed_sources([&input_target])
+            .map_err(Error::OpenInputWithSource)?;
         let output_target = graph
             .add_output(output_path, PathRole::Output, output_overwrite)
             .map_err(Error::PathIdentity)?;
@@ -165,6 +185,7 @@ impl EncryptIntent {
             input_target,
             output_target,
             header_target,
+            cleanup_receipt,
             raw_key,
             kdf,
         })
@@ -280,6 +301,7 @@ pub fn execute(intent: EncryptIntent) -> Result<CommitReceipt, Error> {
         input_target,
         output_target,
         header_target,
+        cleanup_receipt: _,
         raw_key,
         kdf,
     } = intent;
@@ -291,6 +313,14 @@ pub fn execute(intent: EncryptIntent) -> Result<CommitReceipt, Error> {
 
 pub fn execute_transactional(intent: EncryptIntent) -> Result<CommitReceipt, Error> {
     execute(intent)
+}
+
+pub fn execute_transactional_with_cleanup(
+    intent: EncryptIntent,
+) -> Result<ProcessedSourceCleanupResult, Error> {
+    let cleanup_receipt = intent.cleanup_receipt.clone();
+    execute(intent)
+        .map(|commit_receipt| ProcessedSourceCleanupResult::new(commit_receipt, cleanup_receipt))
 }
 
 fn execute_transactional_targets<R>(
@@ -327,7 +357,9 @@ where
             .with_writer_result(|writer| encrypt_payload(reader, writer, master_key, &header))
             .map_err(map_encrypt_staged_write_error)?;
 
-        transaction.commit_all().map_err(Error::Transaction)
+        transaction
+            .commit_all()
+            .map_err(map_detached_publication_transaction_error)
     } else {
         let mut transaction =
             StagedOutputTransaction::new(output_target).map_err(Error::Transaction)?;
@@ -372,7 +404,9 @@ fn build_v1_encryption_state_for(
         V1Keyslots::single(placeholder_keyslot),
     )?;
     let slot_wrapping_aad = placeholder_header
-        .slot_wrapping_aad(0, &placeholder_keyslot)
+        .slot_wrapping_aad_for_physical_slot(
+            V1KeyslotIndex::try_from_physical_index(0).map_err(|_| Error::WriteHeader)?,
+        )
         .map_err(|_| Error::WriteHeader)?;
     let master_key_encrypted = wrap_v1_master_key(
         WrappingKey::from(key),
@@ -436,6 +470,7 @@ fn map_stream_error(error: StreamError) -> Error {
             Error::EncryptFileWithSource(error)
         }
         StreamError::Authentication
+        | StreamError::InvalidChunkSize(_)
         | StreamError::TruncatedCiphertext
         | StreamError::MissingFinalBlock
         | StreamError::FinalBlockAuthentication => Error::EncryptFile,
@@ -448,6 +483,14 @@ fn map_header_transaction_error(error: TransactionError) -> Error {
 
 fn map_encrypt_transaction_error(error: TransactionError) -> Error {
     Error::Transaction(error)
+}
+
+fn map_detached_publication_transaction_error(error: TransactionError) -> Error {
+    if error.detached_publication_failure().is_some() {
+        Error::DetachedPublication(error)
+    } else {
+        Error::Transaction(error)
+    }
 }
 
 fn map_encrypt_staged_write_error(error: StagedWriteError<Error>) -> Error {

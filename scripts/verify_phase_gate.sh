@@ -51,9 +51,16 @@ run cargo test -p dexios-core --test stream_v1 --release
 run cargo test -p dexios-core --test v1_header --release
 run cargo test -p dexios-domain --test pack_paths --release
 run cargo test -p dexios-domain --test unpack --release
+run cargo test -p dexios-domain --features test-support --test cleanup_receipts --test path_identity --release
 run cargo test -p dexios-domain --test workflow_public_api --all-features --release
 run cargo test -p dexios-domain --test archive_public_api --release
 run cargo test -p dexios-domain --test workflow_errors --all-features --release
+run cargo test -p dexios-domain --features test-support --test transactions --test cleanup_receipts --test detached_publication --release
+run cargo test -p dexios --test encrypt_cli_regressions --test pack_cli_regressions --test delete_source_cli --test workflow_error_cli --test verification_gate_docs --release
+run cargo test -p dexios-domain --features test-support --test workflow_public_api --test archive_public_api --test cleanup_receipts --test transactions --test workflow_errors --release
+run cargo test -p dexios-core --test public_api_footguns --release
+run cargo test -p dexios-domain --test header_restore --test header_workflow_errors --test keyslots_v1 --test workflow_errors --release
+run cargo test -p dexios --test header_cli_regressions --test key_cli_regressions --test verification_gate_docs --release
 run cargo test -p dexios --test pack_cli_regressions --release
 run cargo test -p dexios --test unpack_cli_regressions --release
 run cargo test -p dexios --test delete_source_cli --release
@@ -67,8 +74,13 @@ run cargo build -p dexios --profile release-lto
 run bash scripts/verify_cli_surface.sh
 run mdbook build
 run git diff --exit-code -- docs
+docs_status="$(git status --porcelain --untracked-files=all -- docs)"
+if [ -n "$docs_status" ]; then
+    printf '%s\n' "$docs_status" >&2
+    exit 1
+fi
 run typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf
 run git diff --exit-code -- spec/dexios-paper.pdf
 run bash scripts/verify_repo_hygiene.sh
 run git diff --check
-run bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --allow-dirty --asset target/release-lto/dexios
+run bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release-lto/dexios

@@ -1,7 +1,15 @@
 use anyhow::anyhow;
+use domain::storage::identity::PathRole;
+use domain::storage::transaction::{
+    CommittedArtifact, DetachedPublicationFailure, PartialDetachedPublication,
+};
 use domain::workflow_error::WorkflowErrorClass;
 
 pub fn map_encrypt_error(error: domain::encrypt::Error) -> anyhow::Error {
+    if let Some(failure) = error.detached_publication_failure() {
+        return map_detached_publication_failure(failure);
+    }
+
     match error.workflow_class() {
         WorkflowErrorClass::KdfFailure => anyhow!("Unable to derive encryption key"),
         WorkflowErrorClass::UnsafePath => anyhow!("Unsafe path: {error}"),
@@ -53,6 +61,10 @@ pub fn map_decrypt_error(error: domain::decrypt::Error) -> anyhow::Error {
 }
 
 pub fn map_pack_error(error: domain::pack::Error) -> anyhow::Error {
+    if let Some(failure) = error.detached_publication_failure() {
+        return map_detached_publication_failure(failure);
+    }
+
     match error.workflow_class() {
         WorkflowErrorClass::ResourcePressure => {
             debug_assert!(error.is_resource_pressure());
@@ -77,6 +89,73 @@ pub fn map_pack_error(error: domain::pack::Error) -> anyhow::Error {
         WorkflowErrorClass::UnsupportedWorkflow | WorkflowErrorClass::Other => {
             anyhow!("Archive packing failed")
         }
+    }
+}
+
+fn map_detached_publication_failure(failure: DetachedPublicationFailure) -> anyhow::Error {
+    let message = detached_publication_message(failure);
+    anyhow!(message)
+}
+
+fn detached_publication_message(failure: DetachedPublicationFailure) -> String {
+    let mut message = String::from("Detached publication incomplete: ");
+    match failure {
+        DetachedPublicationFailure::Partial(publication) => {
+            append_partial_detached_publication(&mut message, &publication);
+        }
+        DetachedPublicationFailure::PostCommitSync(receipt) => {
+            message.push_str(&committed_artifact_labels(receipt.committed_artifacts()));
+            message.push_str(" committed, output directory sync failed");
+        }
+    }
+    message.push_str("; source cleanup was not authorized");
+    message
+}
+
+fn append_partial_detached_publication(
+    message: &mut String,
+    publication: &PartialDetachedPublication,
+) {
+    message.push_str(&committed_artifact_labels(
+        publication.committed_artifacts(),
+    ));
+    message.push_str(" committed, ");
+    message.push_str(role_label(publication.failed_artifact().role()));
+    message.push_str(" failed");
+}
+
+fn committed_artifact_labels(artifacts: &[CommittedArtifact]) -> String {
+    let mut labels = Vec::with_capacity(artifacts.len());
+    for artifact in artifacts {
+        labels.push(role_label(artifact.role()));
+    }
+    join_labels(&labels)
+}
+
+fn join_labels(labels: &[&str]) -> String {
+    if labels.is_empty() {
+        return String::from("no artifact");
+    }
+
+    let mut joined = String::new();
+    for (index, label) in labels.iter().enumerate() {
+        if index > 0 {
+            joined.push_str(" and ");
+        }
+        joined.push_str(label);
+    }
+    joined
+}
+
+fn role_label(role: PathRole) -> &'static str {
+    match role {
+        PathRole::Output | PathRole::GeneratedOutput => "payload",
+        PathRole::DetachedHeader | PathRole::GeneratedDetachedHeader => "header",
+        PathRole::ProcessedSource => "source",
+        PathRole::Input => "input",
+        PathRole::UnpackRoot => "unpack root",
+        PathRole::MutationTarget => "target",
+        PathRole::CleanupTarget => "cleanup target",
     }
 }
 
@@ -166,6 +245,12 @@ fn map_header_error_with_disclosure(
             _ => anyhow!("Unsafe path"),
         },
         WorkflowErrorClass::IoFailure => match error {
+            domain::header::Error::TargetChanged => {
+                anyhow!("Header workflow target changed before commit")
+            }
+            domain::header::Error::DetachedHeaderChanged => {
+                anyhow!("Detached header changed before header restore commit")
+            }
             domain::header::Error::PathIdentity(_) => {
                 anyhow!("I/O failure while checking header paths")
             }
@@ -241,6 +326,9 @@ pub fn map_key_error(error: domain::key::Error) -> anyhow::Error {
             _ => anyhow!("Unsafe path"),
         },
         WorkflowErrorClass::IoFailure => match error {
+            domain::key::Error::TargetChanged => {
+                anyhow!("Key workflow target changed before commit")
+            }
             domain::key::Error::ReadIo | domain::key::Error::ReadIoWithSource(_) => {
                 anyhow!("I/O failure while reading key workflow target")
             }

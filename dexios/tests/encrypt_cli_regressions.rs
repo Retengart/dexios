@@ -1,10 +1,13 @@
 use std::fs;
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const PASSWORD: &str = "correct-password";
+const DOMAIN_ENCRYPT_SOURCE: &str = include_str!("../../dexios-domain/src/encrypt.rs");
+const CLI_ERROR_MAPPER_SOURCE: &str = include_str!("../src/subcommands/errors.rs");
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 
 struct TestDir {
@@ -46,6 +49,27 @@ fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
         .args(args)
         .output()
         .unwrap()
+}
+
+fn run_cli_with_stdin(current_dir: &Path, args: &[&str], stdin: &[u8]) -> std::process::Output {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_dexios"))
+        .current_dir(current_dir)
+        .env_remove("DEXIOS_KEY")
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let write_result = child.stdin.as_mut().unwrap().write_all(stdin);
+    if let Err(error) = write_result {
+        assert_eq!(
+            error.kind(),
+            ErrorKind::BrokenPipe,
+            "unexpected stdin write error: {error}"
+        );
+    }
+    child.wait_with_output().unwrap()
 }
 
 #[test]
@@ -113,6 +137,35 @@ fn encrypt_auto_generated_passphrase_disclosure_uses_stderr_not_stdout() {
 }
 
 #[test]
+fn encrypt_keyfile_stdin_fails_before_interactive_overwrite_prompt() {
+    let test_dir = TestDir::new("encrypt-keyfile-stdin-overwrite");
+    fs::write(test_dir.path().join("plain.txt"), b"plain").unwrap();
+    fs::write(test_dir.path().join("plain.enc"), b"existing").unwrap();
+
+    let output = run_cli_with_stdin(
+        test_dir.path(),
+        &["encrypt", "--keyfile", "-", "plain.txt", "plain.enc"],
+        b"secret-from-stdin\n",
+    );
+
+    assert!(
+        !output.status.success(),
+        "encrypt unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--keyfile - cannot be combined with interactive overwrite prompts"),
+        "stderr did not explain stdin/prompt conflict: {stderr}"
+    );
+    assert_eq!(
+        fs::read(test_dir.path().join("plain.enc")).unwrap(),
+        b"existing"
+    );
+}
+
+#[test]
 fn encrypt_rejects_same_file_alias_before_opening_output() {
     let test_dir = TestDir::new("encrypt-same-file-alias");
     let plain = test_dir.path().join("plain.txt");
@@ -167,8 +220,8 @@ fn encrypt_force_replaces_existing_output_at_commit() {
 }
 
 #[test]
-fn encrypt_transaction_commit_failures_use_typed_mapping() {
-    let test_dir = TestDir::new("encrypt-commit-failure");
+fn encrypt_directory_target_fails_during_staging_preflight() {
+    let test_dir = TestDir::new("encrypt-directory-target");
     let plain = test_dir.path().join("plain.txt");
     let output_dir = test_dir.path().join("output-dir");
     fs::write(&plain, b"new plaintext").unwrap();
@@ -186,10 +239,33 @@ fn encrypt_transaction_commit_failures_use_typed_mapping() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("Unable to commit encrypted output"),
-        "transaction failures must be routed through map_encrypt_error: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stderr).contains("I/O failure while encrypting data"),
+        "directory target preflight failures must stay in the encrypt I/O class: stdout={}\nstderr={}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(output_dir.is_dir());
+}
+
+#[test]
+fn encrypt_detached_partial_publication_source_gate_names_artifact_state() {
+    assert!(
+        DOMAIN_ENCRYPT_SOURCE.contains("DetachedPublication(TransactionError)"),
+        "encrypt domain errors must preserve a detached-publication error variant"
+    );
+    assert!(
+        DOMAIN_ENCRYPT_SOURCE.contains("map_detached_publication_transaction_error"),
+        "detached encrypt commit errors must be routed through pair-aware publication mapping"
+    );
+    assert!(
+        DOMAIN_ENCRYPT_SOURCE.contains("detached_publication_failure"),
+        "detached encrypt errors must expose committed/failed artifact evidence"
+    );
+    assert!(
+        CLI_ERROR_MAPPER_SOURCE.contains("Detached publication incomplete")
+            && CLI_ERROR_MAPPER_SOURCE.contains("payload")
+            && CLI_ERROR_MAPPER_SOURCE.contains("header")
+            && CLI_ERROR_MAPPER_SOURCE.contains("source cleanup was not authorized"),
+        "CLI detached encrypt diagnostics must name artifact state and cleanup denial"
+    );
 }

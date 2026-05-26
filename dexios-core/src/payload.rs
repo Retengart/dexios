@@ -1,6 +1,6 @@
 //! Canonical V1 payload kind and Dexios-owned archive framing primitives.
 
-use std::fmt::{Display, Formatter};
+use std::fmt::{self, Display, Formatter};
 use std::io::{self, Read, Write};
 
 pub const MANIFEST_MAGIC: [u8; 4] = *b"DXAR";
@@ -427,10 +427,19 @@ impl ArchiveManifest {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ArchiveBodyFrame {
     entry_index: u32,
     body: Vec<u8>,
+}
+
+impl fmt::Debug for ArchiveBodyFrame {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ArchiveBodyFrame")
+            .field("entry_index", &self.entry_index)
+            .field("body_len", &self.body.len())
+            .finish()
+    }
 }
 
 impl ArchiveBodyFrame {
@@ -507,10 +516,19 @@ impl ArchiveBodyFrameHeader {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ManifestFirstPayload {
     manifest: ArchiveManifest,
     body_frames: Vec<ArchiveBodyFrame>,
+}
+
+impl fmt::Debug for ManifestFirstPayload {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ManifestFirstPayload")
+            .field("manifest", &self.manifest)
+            .field("body_frame_count", &self.body_frames.len())
+            .finish()
+    }
 }
 
 impl ManifestFirstPayload {

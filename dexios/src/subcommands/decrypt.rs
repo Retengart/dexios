@@ -30,11 +30,21 @@ fn overwrite_check_if_needed(path: &str, path_exists: bool, force: ForceMode) ->
     }
 }
 
+fn reject_stdin_keyfile_prompt_conflict(params: &CryptoParams, prompt_needed: bool) -> Result<()> {
+    if prompt_needed && params.force == ForceMode::Prompt && params.key.reads_stdin() {
+        return Err(anyhow::anyhow!(
+            "--keyfile - cannot be combined with interactive overwrite prompts; pass --force to avoid reading confirmation from stdin"
+        ));
+    }
+    Ok(())
+}
+
 // this function is for decrypting a file in stream mode
 // it handles user-facing prompts and delegates path validation/opening to domain
 pub fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> Result<()> {
     // 1. validate and prepare options
     let output_exists = existing_path(output);
+    reject_stdin_keyfile_prompt_conflict(params, output_exists)?;
     if !overwrite_check_if_needed(output, output_exists, params.force)? {
         exit(0);
     }
@@ -55,13 +65,17 @@ pub fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> Result<(
         None,
     )
     .map_err(map_decrypt_error)?;
-    let commit_receipt =
-        domain::decrypt::execute_transactional(intent).map_err(map_decrypt_error)?;
+    let result =
+        domain::decrypt::execute_transactional_with_cleanup(intent).map_err(map_decrypt_error)?;
 
     let hash_verification = super::hash_after_commit(&[input.to_string()], params.hash_mode)?;
 
     if params.delete_input == DeleteInput::Delete {
-        super::cleanup_after_commit(&[input.to_string()], &commit_receipt, hash_verification)?;
+        super::cleanup_after_commit(
+            result.cleanup_receipt(),
+            result.commit_receipt(),
+            hash_verification,
+        )?;
     }
 
     Ok(())

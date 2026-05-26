@@ -102,7 +102,9 @@ pub fn unwrap_v1_master_key(
     let mut master_key = [0u8; crate::primitives::MASTER_KEY_LEN];
     master_key.copy_from_slice(&decrypted);
     decrypted.zeroize();
-    Ok(MasterKey::new(master_key))
+    let protected = MasterKey::new(master_key);
+    master_key.zeroize();
+    Ok(protected)
 }
 
 /// Direct AEAD helper for the single supported Dexios suite.

@@ -9,12 +9,17 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: read
+
 jobs:
   msrv:
     name: msrv (ubuntu-latest, 1.88)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
         run: rustup toolchain install 1.88 --profile minimal
@@ -23,7 +28,7 @@ jobs:
         run: rustup default 1.88
 
       - name: Restore cargo cache
-        uses: actions/cache@v5.0.3
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
         with:
           path: |
             ~/.cargo/registry
@@ -48,7 +53,9 @@ jobs:
           - nightly
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
         run: rustup toolchain install ${{ matrix.rust }} --profile minimal
@@ -57,7 +64,7 @@ jobs:
         run: rustup default ${{ matrix.rust }}
 
       - name: Restore cargo cache
-        uses: actions/cache@v5.0.3
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
         with:
           path: |
             ~/.cargo/registry

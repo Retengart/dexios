@@ -23,6 +23,7 @@ use crate::primitives::{BLOCK_SIZE, MasterKey};
 #[derive(Debug)]
 pub enum StreamError {
     InvalidNonceLength(usize),
+    InvalidChunkSize(usize),
     CipherInit,
     Read(std::io::Error),
     Write(std::io::Error),
@@ -37,6 +38,7 @@ impl Display for StreamError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidNonceLength(len) => write!(f, "invalid V1 stream nonce length: {len}"),
+            Self::InvalidChunkSize(len) => write!(f, "invalid V1 stream chunk size: {len}"),
             Self::CipherInit => f.write_str("unable to initialize V1 stream cipher"),
             Self::Read(error) => write!(f, "unable to read V1 stream data: {error}"),
             Self::Write(error) => write!(f, "unable to write V1 stream data: {error}"),
@@ -97,13 +99,13 @@ impl V1PayloadStream {
     /// Callers must commit or publish final plaintext only after this function
     /// returns `Ok(V1FinalAuth)`, proving the final authentication receipt was
     /// produced for the complete V1 payload.
-    pub fn decrypt_file(
+    pub fn decrypt_file_uncommitted(
         master_key: MasterKey,
         payload: &ParsedV1Payload,
         reader: &mut impl Read,
         writer: &mut impl Write,
     ) -> Result<V1FinalAuth, StreamError> {
-        V1PayloadDecryptor::new(master_key, payload)?.decrypt_file(reader, writer)
+        V1PayloadDecryptor::new(master_key, payload)?.decrypt_file_uncommitted(reader, writer)
     }
 }
 
@@ -121,6 +123,9 @@ impl V1PayloadEncryptor {
     }
 
     pub fn encrypt_next(&mut self, plaintext: &[u8]) -> Result<Vec<u8>, StreamError> {
+        if plaintext.len() != BLOCK_SIZE {
+            return Err(StreamError::InvalidChunkSize(plaintext.len()));
+        }
         let payload = Payload {
             aad: self.aad.as_bytes(),
             msg: plaintext,
@@ -129,6 +134,9 @@ impl V1PayloadEncryptor {
     }
 
     pub fn encrypt_last(self, plaintext: &[u8]) -> Result<Vec<u8>, StreamError> {
+        if plaintext.len() >= BLOCK_SIZE {
+            return Err(StreamError::InvalidChunkSize(plaintext.len()));
+        }
         let payload = Payload {
             aad: self.aad.as_bytes(),
             msg: plaintext,
@@ -311,6 +319,7 @@ impl<W: Write> Drop for V1PayloadEncryptingWriter<W> {
     }
 }
 
+/// Exposes uncommitted plaintext chunks before final authentication completes.
 pub struct V1PayloadDecryptingReader<R: Read> {
     decryptor: Option<V1PayloadDecryptor>,
     reader: R,
@@ -341,6 +350,35 @@ impl<R: Read> V1PayloadDecryptingReader<R> {
             return Err(StreamError::MissingFinalBlock);
         }
         self.final_auth.ok_or(StreamError::MissingFinalBlock)
+    }
+
+    /// Reads plaintext into `buf` before final authentication has completed.
+    ///
+    /// Bytes returned from this method are uncommitted scratch until `finish`
+    /// returns `Ok(V1FinalAuth)`.
+    pub fn read_uncommitted(&mut self, buf: &mut [u8]) -> Result<usize, StreamError> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
+        if self.plaintext_offset == self.plaintext_buffer.len() {
+            self.plaintext_buffer.zeroize();
+            self.plaintext_buffer.clear();
+            self.plaintext_offset = 0;
+            self.fill_plaintext()?;
+        }
+
+        if self.plaintext_offset == self.plaintext_buffer.len() && self.final_auth.is_some() {
+            return Ok(0);
+        }
+
+        let available = self.plaintext_buffer.len() - self.plaintext_offset;
+        let take = available.min(buf.len());
+        buf[..take].copy_from_slice(
+            &self.plaintext_buffer[self.plaintext_offset..self.plaintext_offset + take],
+        );
+        self.plaintext_offset += take;
+        Ok(take)
     }
 
     fn fill_plaintext(&mut self) -> Result<(), StreamError> {
@@ -374,33 +412,6 @@ impl<R: Read> V1PayloadDecryptingReader<R> {
     }
 }
 
-impl<R: Read> Read for V1PayloadDecryptingReader<R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if buf.is_empty() {
-            return Ok(0);
-        }
-
-        if self.plaintext_offset == self.plaintext_buffer.len() {
-            self.plaintext_buffer.zeroize();
-            self.plaintext_buffer.clear();
-            self.plaintext_offset = 0;
-            self.fill_plaintext().map_err(io::Error::other)?;
-        }
-
-        if self.plaintext_offset == self.plaintext_buffer.len() && self.final_auth.is_some() {
-            return Ok(0);
-        }
-
-        let available = self.plaintext_buffer.len() - self.plaintext_offset;
-        let take = available.min(buf.len());
-        buf[..take].copy_from_slice(
-            &self.plaintext_buffer[self.plaintext_offset..self.plaintext_offset + take],
-        );
-        self.plaintext_offset += take;
-        Ok(take)
-    }
-}
-
 impl<R: Read> Drop for V1PayloadDecryptingReader<R> {
     fn drop(&mut self) {
         self.ciphertext_buffer.zeroize();
@@ -430,8 +441,8 @@ impl V1PayloadDecryptor {
     }
 
     pub fn decrypt_next(&mut self, ciphertext: &[u8]) -> Result<Vec<u8>, StreamError> {
-        if ciphertext.len() < 16 {
-            return Err(StreamError::TruncatedCiphertext);
+        if ciphertext.len() != BLOCK_SIZE + 16 {
+            return Err(StreamError::InvalidChunkSize(ciphertext.len()));
         }
         let payload = Payload {
             aad: self.aad.as_bytes(),
@@ -444,6 +455,9 @@ impl V1PayloadDecryptor {
         if ciphertext.is_empty() {
             return Err(StreamError::MissingFinalBlock);
         }
+        if ciphertext.len() >= BLOCK_SIZE + 16 {
+            return Err(StreamError::InvalidChunkSize(ciphertext.len()));
+        }
         if ciphertext.len() < 16 {
             return Err(StreamError::TruncatedCiphertext);
         }
@@ -454,7 +468,7 @@ impl V1PayloadDecryptor {
         self.stream.decrypt_last(payload)
     }
 
-    pub fn decrypt_file(
+    pub fn decrypt_file_uncommitted(
         mut self,
         reader: &mut impl Read,
         writer: &mut impl Write,

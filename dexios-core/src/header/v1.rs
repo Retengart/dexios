@@ -472,11 +472,22 @@ impl V1Header {
         V1HeaderAad::from_static_header_bytes(aad)
     }
 
-    pub fn slot_wrapping_aad(
+    pub fn slot_wrapping_aad_for_physical_slot(
         &self,
-        physical_index: usize,
+        index: V1KeyslotIndex,
+    ) -> Result<Vec<u8>, HeaderWriteError> {
+        let keyslot = self
+            .keyslots
+            .get_physical(index.get())
+            .ok_or_else(|| HeaderWriteError::InvalidKeyslotIndex(index.get()))?;
+        self.slot_wrapping_aad_for_keyslot(keyslot)
+    }
+
+    fn slot_wrapping_aad_for_keyslot(
+        &self,
         keyslot: &V1Keyslot,
     ) -> Result<Vec<u8>, HeaderWriteError> {
+        let physical_index = keyslot.physical_index();
         if physical_index >= MAX_KEYSLOTS {
             return Err(HeaderWriteError::InvalidKeyslotIndex(physical_index));
         }

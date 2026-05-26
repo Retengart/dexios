@@ -1,6 +1,7 @@
 use std::fmt::{Display, Formatter};
 
 use crate::protected::Protected;
+use zeroize::Zeroize;
 
 pub const DERIVED_KEY_LEN: usize = 32;
 pub const SALT_LEN: usize = 16;
@@ -86,9 +87,15 @@ pub(crate) fn derive_balloon_with_params(
     let result =
         raw_key.with_exposed(|raw_key| balloon.hash_into(raw_key, salt.as_bytes(), &mut key));
 
-    if result.is_err() {
-        return Err(KdfError::DeriveFailed("Error while hashing your key"));
+    match result {
+        Ok(()) => {
+            let protected = Protected::new(key);
+            key.zeroize();
+            Ok(protected)
+        }
+        Err(_) => {
+            key.zeroize();
+            Err(KdfError::DeriveFailed("Error while hashing your key"))
+        }
     }
-
-    Ok(Protected::new(key))
 }

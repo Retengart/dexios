@@ -132,6 +132,14 @@ detached headers, detached headers with trailing bytes, short restore targets,
 and targets whose first 512 bytes are not all zero before it stages any
 replacement.
 
+Header strip snapshots the target before building replacement bytes. Header
+restore snapshots both the stripped target and the detached header input.
+Before commit, Dexios rechecks mutation freshness: same-inode content changes
+and Unix path replacement are refused. Restore reports a stale detached header
+separately from a stale restore target. These checks use byte content and Unix
+device/inode identity, not file timestamps. They do not use filesystem locks
+and do not add recovery, rollback, or secure erase behavior.
+
 Detached-header encryption outputs usually do not reserve a zeroed 512-byte
 prefix in the payload file, so restore remains a recovery operation for
 previously stripped embedded artifacts rather than a normal detached-header

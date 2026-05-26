@@ -64,7 +64,7 @@ of returning committed plaintext success.
 
 ## Final Authentication Receipt
 
-`V1PayloadStream::decrypt_file` writes plaintext to its writer as uncommitted
+`V1PayloadStream::decrypt_file_uncommitted` writes plaintext to its writer as uncommitted
 scratch. Callers must treat the plaintext as accepted only after the function
 returns a `V1FinalAuth` receipt. The receipt is created only after the final
 block authenticates and the plaintext writer flushes successfully.
@@ -73,6 +73,12 @@ This is the final authentication boundary for payload acceptance.
 Domain transactional decrypt commit observes that receipt before publishing the
 final output. A final-authentication failure after scratch plaintext exists must
 leave existing final outputs uncommitted.
+
+Low-level callers using `read_uncommitted` or `decrypt_file_uncommitted` have
+caller obligations for uncommitted stream reads: hold plaintext in scratch
+storage that is not the final output, publish it only after receiving
+`V1FinalAuth`, and do not treat cleanup receipts, transaction receipts, detached
+pair receipts, or mutation snapshots as caller-made authority.
 
 ## Payload Framing
 

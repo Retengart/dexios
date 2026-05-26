@@ -1,8 +1,6 @@
 use anyhow::Result;
 use clap::ArgMatches;
 use std::fmt;
-use std::io;
-use std::path::Path;
 
 // this is called from main.rs
 // it gets params and sends them to the appropriate functions
@@ -38,7 +36,7 @@ pub fn hash_after_commit(files: &[String], hash_mode: HashMode) -> Result<HashVe
 }
 
 pub fn cleanup_after_commit(
-    paths: &[String],
+    cleanup_receipt: &CleanupReceipt,
     commit_receipt: &CommitReceipt,
     hash_verification: HashVerification,
 ) -> std::result::Result<(), CleanupAfterCommitError> {
@@ -48,10 +46,7 @@ pub fn cleanup_after_commit(
     // which cannot satisfy the CommitReceipt argument required here.
     // Source gate: HashVerification::Failed means requested hash did not succeed.
     // Source gate: changed cleanup identity blocks cleanup.
-    // CleanupReceipt::from_paths records cleanup target identity before deletion.
-    let cleanup_receipt =
-        CleanupReceipt::from_paths(paths.iter().map(|path| Path::new(path.as_str())))
-            .map_err(CleanupAfterCommitError::CaptureTargets)?;
+    // Domain-returned processed-source cleanup evidence records cleanup target identity before deletion.
     let proof = PostCommitSuccess::from_commit_and_hash(commit_receipt, hash_verification)
         .map_err(CleanupAfterCommitError::Gate)?;
     let result = cleanup_receipt.run(&proof);
@@ -75,7 +70,6 @@ fn ensure_cleanup_succeeded(
 
 #[derive(Debug)]
 pub enum CleanupAfterCommitError {
-    CaptureTargets(io::Error),
     Gate(CleanupGateError),
     CleanupFailed(CleanupResult),
 }
@@ -83,9 +77,6 @@ pub enum CleanupAfterCommitError {
 impl fmt::Display for CleanupAfterCommitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::CaptureTargets(_) => {
-                f.write_str("Unable to prepare delete-after-success cleanup")
-            }
             Self::Gate(CleanupGateError::CommitNotAuthorized) => {
                 f.write_str("Output commit was not cleanup-authorized; source was not deleted")
             }
@@ -102,7 +93,6 @@ impl fmt::Display for CleanupAfterCommitError {
 impl std::error::Error for CleanupAfterCommitError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::CaptureTargets(error) => Some(error),
             Self::Gate(error) => Some(error),
             Self::CleanupFailed(result) => result
                 .failures
@@ -182,17 +172,20 @@ pub fn header_dump(sub_matches: &ArgMatches) -> Result<()> {
 
 pub fn header_restore(sub_matches: &ArgMatches) -> Result<()> {
     let sub_matches_restore = sub_matches.subcommand_matches("restore").unwrap();
+    let force = forcemode(sub_matches_restore);
 
     header::restore(
         &get_param("input", sub_matches_restore)?,
         &get_param("output", sub_matches_restore)?,
+        force,
     )
 }
 
 pub fn header_strip(sub_matches: &ArgMatches) -> Result<()> {
     let sub_matches_strip = sub_matches.subcommand_matches("strip").unwrap();
+    let force = forcemode(sub_matches_strip);
 
-    header::strip(&get_param("input", sub_matches_strip)?)
+    header::strip(&get_param("input", sub_matches_strip)?, force)
 }
 
 pub fn header_details(sub_matches: &ArgMatches) -> Result<()> {

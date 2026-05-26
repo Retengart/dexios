@@ -2,8 +2,6 @@ use crate::{cli::prompt::get_answer, global::states::DeleteInput};
 
 use anyhow::Result;
 
-use domain::storage::Storage;
-
 use super::errors::map_unpack_error;
 use crate::global::{
     states::{ForceMode, HeaderLocation, PasswordState, PrintMode},
@@ -41,31 +39,37 @@ where
     Ok(true)
 }
 
+fn reject_stdin_keyfile_prompt_conflict(params: &CryptoParams) -> Result<()> {
+    if params.force == ForceMode::Prompt && params.key.reads_stdin() {
+        return Err(anyhow::anyhow!(
+            "--keyfile - cannot be combined with interactive overwrite prompts; pass --force to avoid reading confirmation from stdin"
+        ));
+    }
+    Ok(())
+}
+
 // Unpacking is delegated to the domain layer, which validates the manifest,
 // stages selected file bodies, and commits only after final authentication.
 #[allow(clippy::module_name_repetitions)]
 #[allow(clippy::needless_pass_by_value)]
 pub fn unpack(
-    input: &str,  // encrypted zip file
+    input: &str,  // encrypted archive file
     output: &str, // directory
     print_mode: PrintMode,
     params: CryptoParams, // params for decrypt function
 ) -> Result<()> {
-    // TODO: It is necessary to raise it to a higher level
-    let stor = domain::storage::FileStorage;
-
-    let input_file = stor.read_file(input)?;
-    let header_file = match &params.header_location {
+    let header_path = match &params.header_location {
         HeaderLocation::Embedded => None,
-        HeaderLocation::Detached(path) => Some(stor.read_file(path)?),
+        HeaderLocation::Detached(path) => Some(Path::new(path)),
     };
 
+    reject_stdin_keyfile_prompt_conflict(&params)?;
     let raw_key = params.key.get_secret(&PasswordState::Direct)?;
     let verbose = print_mode == PrintMode::Verbose;
 
     let intent = domain::unpack::UnpackIntent::new(
-        input_file,
-        header_file,
+        input,
+        header_path,
         output,
         raw_key,
         None,
@@ -76,14 +80,15 @@ pub fn unpack(
         })),
     )
     .map_err(map_unpack_error)?;
-    let extraction_receipt = domain::unpack::execute(intent).map_err(map_unpack_error)?;
+    let extraction_result =
+        domain::unpack::execute_with_cleanup(intent).map_err(map_unpack_error)?;
 
     let hash_verification = super::hash_after_commit(&[String::from(input)], params.hash_mode)?;
 
     if params.delete_input == DeleteInput::Delete {
         super::cleanup_after_commit(
-            &[String::from(input)],
-            &extraction_receipt,
+            extraction_result.cleanup_receipt(),
+            extraction_result.commit_receipt(),
             hash_verification,
         )?;
     }

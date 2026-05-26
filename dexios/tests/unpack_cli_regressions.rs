@@ -1,7 +1,7 @@
 use std::fs;
-use std::io::Cursor;
+use std::io::{Cursor, ErrorKind, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -73,11 +73,92 @@ fn run_unpack(input: &Path, output: &Path) -> std::process::Output {
     run_unpack_with_args(input, output, &[])
 }
 
+fn run_cli_with_stdin(current_dir: &Path, args: &[&str], stdin: &[u8]) -> std::process::Output {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_dexios"))
+        .current_dir(current_dir)
+        .env_remove("DEXIOS_KEY")
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let write_result = child.stdin.as_mut().unwrap().write_all(stdin);
+    if let Err(error) = write_result {
+        assert_eq!(
+            error.kind(),
+            ErrorKind::BrokenPipe,
+            "unexpected stdin write error: {error}"
+        );
+    }
+    child.wait_with_output().unwrap()
+}
+
 fn write_manifest_archive_with_entries(path: &Path, entries: &[(&str, &[u8])]) {
     let (header, encrypted_payload) = encrypted_manifest_archive_bytes(entries);
     let mut bytes = header;
     bytes.extend_from_slice(&encrypted_payload);
     fs::write(path, bytes).unwrap();
+}
+
+#[test]
+fn unpack_keyfile_stdin_fails_before_archive_overwrite_prompt() {
+    let test_dir = TestDir::new("unpack-keyfile-stdin-overwrite");
+    let archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+    fs::create_dir_all(&output_dir).unwrap();
+    fs::write(output_dir.join("existing.txt"), b"existing output").unwrap();
+    write_manifest_archive_with_entries(&archive, &[("existing.txt", b"archive body")]);
+
+    let output = run_cli_with_stdin(
+        test_dir.path(),
+        &["unpack", "--keyfile", "-", "archive.enc", "out"],
+        b"secret-from-stdin\n",
+    );
+
+    assert!(
+        !output.status.success(),
+        "unpack unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--keyfile - cannot be combined with interactive overwrite prompts"),
+        "stderr did not explain stdin/prompt conflict: {stderr}"
+    );
+    assert_eq!(
+        fs::read(output_dir.join("existing.txt")).unwrap(),
+        b"existing output"
+    );
+}
+
+#[test]
+fn unpack_missing_detached_header_uses_typed_io_message() {
+    let test_dir = TestDir::new("unpack-missing-detached-header");
+    let archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+    write_manifest_archive_with_entries(&archive, &[("file.txt", b"archive body")]);
+
+    let output = run_unpack_with_args(&archive, &output_dir, &["--header", "missing-header.dxh"]);
+
+    assert!(
+        !output.status.success(),
+        "unpack with missing detached header unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("I/O failure while unpacking archive"),
+        "stderr did not use typed unpack IO message: {stderr}"
+    );
+    for forbidden in ["Storage error", "OpenFile", "No such", "os error"] {
+        assert!(
+            !stderr.contains(forbidden),
+            "stderr leaked raw storage detail `{forbidden}`: {stderr}"
+        );
+    }
 }
 
 fn write_malformed_manifest_body_length_archive(path: &Path) {
@@ -161,7 +242,9 @@ fn manifest_archive_header_and_master_key() -> (V1Header, MasterKey) {
         V1Header::new_manifest_archive(payload_nonce, V1Keyslots::single(placeholder_keyslot))
             .unwrap();
     let slot_wrapping_aad = placeholder_header
-        .slot_wrapping_aad(0, &placeholder_keyslot)
+        .slot_wrapping_aad_for_physical_slot(
+            core::header::v1::V1KeyslotIndex::try_from_physical_index(0).expect("slot zero index"),
+        )
         .unwrap();
     let encrypted_master_key = wrap_v1_master_key(
         WrappingKey::from(wrapping_key),
@@ -195,6 +278,28 @@ fn truncate_stream(path: &Path) {
 }
 
 #[cfg(unix)]
+fn symlink_file_or_skip(src: &Path, dst: &Path) -> bool {
+    match std::os::unix::fs::symlink(src, dst) {
+        Ok(()) => true,
+        Err(err) => {
+            eprintln!("skipping unpack CLI symlink input check: symlinks unsupported here: {err}");
+            false
+        }
+    }
+}
+
+#[cfg(windows)]
+fn symlink_file_or_skip(src: &Path, dst: &Path) -> bool {
+    match std::os::windows::fs::symlink_file(src, dst) {
+        Ok(()) => true,
+        Err(err) => {
+            eprintln!("skipping unpack CLI symlink input check: symlinks unsupported here: {err}");
+            false
+        }
+    }
+}
+
+#[cfg(unix)]
 fn symlink_dir(src: &Path, dst: &Path) {
     std::os::unix::fs::symlink(src, dst).unwrap();
 }
@@ -202,6 +307,75 @@ fn symlink_dir(src: &Path, dst: &Path) {
 #[cfg(windows)]
 fn symlink_dir(src: &Path, dst: &Path) {
     std::os::windows::fs::symlink_dir(src, dst).unwrap();
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn unpack_cli_rejects_final_symlink_archive_input_before_parsing() {
+    let test_dir = TestDir::new("unpack-cli-input-final-symlink");
+    let archive_target = test_dir.path().join("not-an-archive.enc");
+    let archive_link = test_dir.path().join("archive-link.enc");
+    let output_dir = test_dir.path().join("out");
+
+    fs::write(&archive_target, b"not a dexios archive").unwrap();
+    if !symlink_file_or_skip(&archive_target, &archive_link) {
+        return;
+    }
+
+    let output = run_unpack(&archive_link, &output_dir);
+
+    assert!(
+        !output.status.success(),
+        "unpack unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Unsafe archive path"),
+        "stderr did not report domain unsafe-path rejection: {stderr}"
+    );
+    assert!(
+        !stderr.contains("Malformed archive data"),
+        "CLI parsed the symlink target instead of rejecting the raw path: {stderr}"
+    );
+    assert!(!output_dir.exists());
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn unpack_cli_rejects_final_symlink_detached_header_before_parsing() {
+    let test_dir = TestDir::new("unpack-cli-header-final-symlink");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let header_target = test_dir.path().join("not-a-header.hdr");
+    let header_link = test_dir.path().join("header-link.hdr");
+    let output_dir = test_dir.path().join("out");
+
+    fs::write(&encrypted_archive, b"not a dexios archive").unwrap();
+    fs::write(&header_target, b"not a dexios header").unwrap();
+    if !symlink_file_or_skip(&header_target, &header_link) {
+        return;
+    }
+
+    let header_arg = header_link.to_string_lossy().into_owned();
+    let output = run_unpack_with_args(&encrypted_archive, &output_dir, &["--header", &header_arg]);
+
+    assert!(
+        !output.status.success(),
+        "unpack unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Unsafe archive path"),
+        "stderr did not report domain unsafe-path rejection: {stderr}"
+    );
+    assert!(
+        !stderr.contains("Malformed archive data"),
+        "CLI parsed the archive before rejecting the raw detached header path: {stderr}"
+    );
+    assert!(!output_dir.exists());
 }
 
 #[test]

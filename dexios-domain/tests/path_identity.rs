@@ -2,6 +2,8 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
+#[cfg(unix)]
+use dexios_domain::storage::FileStorage;
 use dexios_domain::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole,
 };
@@ -55,6 +57,33 @@ fn assert_alias(result: Result<impl std::fmt::Debug, IdentityError>) {
         matches!(result, Err(IdentityError::AliasedPath { .. })),
         "expected AliasedPath, got {result:?}"
     );
+}
+
+fn assert_unsafe_path(result: Result<impl std::fmt::Debug, IdentityError>) {
+    assert!(
+        matches!(result, Err(IdentityError::UnsafePath(_))),
+        "expected UnsafePath, got {result:?}"
+    );
+}
+
+fn existing_roles_requiring_no_follow_policy() -> [PathRole; 5] {
+    [
+        PathRole::Input,
+        PathRole::DetachedHeader,
+        PathRole::MutationTarget,
+        PathRole::ProcessedSource,
+        PathRole::CleanupTarget,
+    ]
+}
+
+fn existing_output_roles_requiring_no_follow_policy() -> [PathRole; 5] {
+    [
+        PathRole::Output,
+        PathRole::DetachedHeader,
+        PathRole::GeneratedOutput,
+        PathRole::GeneratedDetachedHeader,
+        PathRole::MutationTarget,
+    ]
 }
 
 fn assert_identity_source_kind(error: &IdentityError, expected: ErrorKind) {
@@ -151,7 +180,174 @@ fn identity_rejects_symlink_alias() {
     let mut graph = PathIdentityGraph::new();
     graph.add_existing(&input, PathRole::Input).unwrap();
 
-    assert_alias(graph.add_output(alias, PathRole::Output, OverwritePolicy::ReplaceAtCommit));
+    assert_unsafe_path(graph.add_output(alias, PathRole::Output, OverwritePolicy::ReplaceAtCommit));
+}
+
+#[test]
+fn identity_rejects_existing_roles_with_final_symlink_components() {
+    let test_dir = TestDir::new("path-identity-existing-final-symlink");
+    let target = test_dir.path().join("target.txt");
+    let link = test_dir.path().join("target-link.txt");
+    fs::write(&target, b"path identity fixture").unwrap();
+
+    if !symlink_file_or_skip(&target, &link) {
+        return;
+    }
+
+    for role in existing_roles_requiring_no_follow_policy() {
+        let mut graph = PathIdentityGraph::new();
+        assert_unsafe_path(graph.add_existing(&link, role));
+    }
+}
+
+#[test]
+fn identity_rejects_existing_roles_with_symlinked_parent_prefixes() {
+    let test_dir = TestDir::new("path-identity-existing-parent-symlink");
+    let outside = test_dir.path().join("outside");
+    let link = test_dir.path().join("link");
+    fs::create_dir(&outside).unwrap();
+    fs::write(outside.join("target.txt"), b"path identity fixture").unwrap();
+
+    if !symlink_dir_or_skip(&outside, &link) {
+        return;
+    }
+
+    for role in existing_roles_requiring_no_follow_policy() {
+        let mut graph = PathIdentityGraph::new();
+        assert_unsafe_path(graph.add_existing(link.join("target.txt"), role));
+    }
+}
+
+#[test]
+fn identity_rejects_existing_roles_with_symlinked_parent_hidden_by_parent_component() {
+    let test_dir = TestDir::new("path-identity-existing-parent-dotdot");
+    let outside = test_dir.path().join("outside");
+    let link = test_dir.path().join("link");
+    let safe = test_dir.path().join("safe");
+    fs::create_dir(&outside).unwrap();
+    fs::create_dir(&safe).unwrap();
+    fs::write(safe.join("target.txt"), b"path identity fixture").unwrap();
+
+    if !symlink_dir_or_skip(&outside, &link) {
+        return;
+    }
+
+    for role in existing_roles_requiring_no_follow_policy() {
+        let mut graph = PathIdentityGraph::new();
+        assert_unsafe_path(graph.add_existing(link.join("../safe/target.txt"), role));
+    }
+}
+
+#[test]
+fn identity_rejects_existing_output_roles_with_symlinked_parent_prefixes() {
+    let test_dir = TestDir::new("path-identity-output-parent-symlink");
+    let outside = test_dir.path().join("outside");
+    let link = test_dir.path().join("link");
+    fs::create_dir(&outside).unwrap();
+    fs::write(outside.join("output.dexios"), b"path identity fixture").unwrap();
+
+    if !symlink_dir_or_skip(&outside, &link) {
+        return;
+    }
+
+    for role in existing_output_roles_requiring_no_follow_policy() {
+        let mut graph = PathIdentityGraph::new();
+        assert_unsafe_path(graph.add_output(
+            link.join("output.dexios"),
+            role,
+            OverwritePolicy::ReplaceAtCommit,
+        ));
+    }
+}
+
+#[test]
+fn identity_rejects_output_roles_with_symlinked_parent_hidden_by_parent_component() {
+    let test_dir = TestDir::new("path-identity-output-parent-dotdot");
+    let outside = test_dir.path().join("outside");
+    let link = test_dir.path().join("link");
+    let safe = test_dir.path().join("safe");
+    fs::create_dir(&outside).unwrap();
+    fs::create_dir(&safe).unwrap();
+    fs::write(safe.join("output.dexios"), b"path identity fixture").unwrap();
+
+    if !symlink_dir_or_skip(&outside, &link) {
+        return;
+    }
+
+    for role in existing_output_roles_requiring_no_follow_policy() {
+        let mut graph = PathIdentityGraph::new();
+        assert_unsafe_path(graph.add_output(
+            link.join("../safe/output.dexios"),
+            role,
+            OverwritePolicy::ReplaceAtCommit,
+        ));
+    }
+}
+
+#[test]
+fn identity_rejects_missing_output_with_symlinked_parent_hidden_by_parent_component() {
+    let test_dir = TestDir::new("path-identity-missing-output-dotdot");
+    let outside = test_dir.path().join("outside");
+    let link = test_dir.path().join("link");
+    let safe = test_dir.path().join("safe");
+    fs::create_dir(&outside).unwrap();
+    fs::create_dir(&safe).unwrap();
+
+    if !symlink_dir_or_skip(&outside, &link) {
+        return;
+    }
+
+    let mut graph = PathIdentityGraph::new();
+    assert_unsafe_path(graph.add_output(
+        link.join("../safe/new-output.dexios"),
+        PathRole::Output,
+        OverwritePolicy::CreateNew,
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn resolved_existing_no_follow_rejects_file_replaced_after_identity_capture() {
+    let test_dir = TestDir::new("path-identity-open-replaced");
+    let input = test_dir.path().join("archive.dexios");
+    fs::write(&input, b"original archive").unwrap();
+
+    let mut graph = PathIdentityGraph::new();
+    let target = graph.add_existing(&input, PathRole::Input).unwrap();
+    fs::remove_file(&input).unwrap();
+    fs::write(&input, b"replacement archive").unwrap();
+
+    let stor = FileStorage;
+    let result = stor.read_resolved_existing_no_follow(&target);
+
+    match result {
+        Err(dexios_domain::storage::Error::UnsafePath(_)) => {}
+        Err(err) => {
+            panic!("expected resolved no-follow read to reject changed identity, got {err}")
+        }
+        Ok(_) => panic!("expected resolved no-follow read to reject changed identity"),
+    }
+}
+
+#[test]
+fn identity_accepts_processed_source_and_cleanup_roles_for_real_existing_files() {
+    let test_dir = TestDir::new("path-identity-cleanup-roles");
+    let source = test_dir.path().join("source.txt");
+    let cleanup = test_dir.path().join("cleanup.txt");
+    fs::write(&source, b"path identity fixture").unwrap();
+    fs::write(&cleanup, b"path identity fixture").unwrap();
+
+    let mut graph = PathIdentityGraph::new();
+    let processed = graph
+        .add_existing(&source, PathRole::ProcessedSource)
+        .unwrap();
+    let cleanup = graph
+        .add_existing(&cleanup, PathRole::CleanupTarget)
+        .unwrap();
+
+    assert_eq!(processed.role(), PathRole::ProcessedSource);
+    assert_eq!(cleanup.role(), PathRole::CleanupTarget);
+    graph.validate().unwrap();
 }
 
 #[test]

@@ -1,19 +1,19 @@
 //! This provides functionality for stripping a header that adheres to the Dexios format.
 
 use super::Error;
-use std::fs;
 use std::io::Cursor;
 use std::path::Path;
 
 use core::header::common::HEADER_LEN;
 use core::header::{ParsedHeader, read_header};
 
-use crate::storage::identity::{OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget};
+use crate::storage::identity::{OverwritePolicy, PathIdentityGraph, PathRole};
+use crate::storage::mutation::{MutationFreshnessError, MutationSnapshot};
 use crate::storage::transaction::{CommitReceipt, StagedOutputTransaction, TransactionError};
 
 #[derive(Debug)]
 pub struct StripIntent {
-    target: ResolvedTarget,
+    target: MutationSnapshot,
 }
 
 impl StripIntent {
@@ -28,6 +28,7 @@ impl StripIntent {
             )
             .map_err(Error::PathIdentity)?;
         graph.validate().map_err(Error::PathIdentity)?;
+        let target = read_snapshot(target)?;
 
         Ok(Self { target })
     }
@@ -35,8 +36,11 @@ impl StripIntent {
 
 pub fn execute(intent: StripIntent) -> Result<CommitReceipt, Error> {
     let StripIntent { target } = intent;
-    let original = fs::read(target.target_path()).map_err(|_| Error::ReadIo)?;
-    let replacement = stripped_header_bytes(original)?;
+    let replacement = stripped_header_bytes(target.original_bytes().to_vec())?;
+    target
+        .ensure_fresh()
+        .map_err(super::map_mutation_freshness_error)?;
+    let (target, _) = target.into_parts();
 
     let mut transaction = StagedOutputTransaction::new(target).map_err(Error::Transaction)?;
     transaction
@@ -72,5 +76,18 @@ fn map_write_transaction_error(error: TransactionError) -> Error {
     match error {
         TransactionError::Write { .. } => Error::WriteIo,
         error => Error::Transaction(error),
+    }
+}
+
+fn read_snapshot(
+    target: crate::storage::identity::ResolvedTarget,
+) -> Result<MutationSnapshot, Error> {
+    MutationSnapshot::read(target).map_err(map_snapshot_read_error)
+}
+
+fn map_snapshot_read_error(error: MutationFreshnessError) -> Error {
+    match error {
+        MutationFreshnessError::Read { .. } => Error::ReadIo,
+        error => super::map_mutation_freshness_error(error),
     }
 }

@@ -7,10 +7,8 @@ use core::header::common::{CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, HEADER_STATIC
 use core::kdf::Kdf;
 use core::primitives::BLOCK_SIZE;
 use core::protected::Protected;
-use dexios_domain::storage::identity::{OverwritePolicy, PathRole};
-use dexios_domain::storage::transaction::{
-    CommittedArtifact, PartialCommitReceipt, TransactionError,
-};
+use dexios_domain::storage::identity::OverwritePolicy;
+use dexios_domain::storage::transaction::TransactionError;
 use dexios_domain::workflow_error::WorkflowErrorClass;
 use dexios_domain::{decrypt, encrypt};
 
@@ -369,12 +367,8 @@ fn decrypt_open_and_parser_failures_preserve_diagnostic_sources() {
 
 #[test]
 fn decrypt_error_classification_keeps_format_key_auth_io_and_transaction_distinct() {
-    let transaction_commit = decrypt::Error::Transaction(TransactionError::PartialCommit {
-        receipt: PartialCommitReceipt { artifacts: vec![] },
-        failed: CommittedArtifact {
-            role: PathRole::Output,
-            path: PathBuf::from("plain.out"),
-        },
+    let transaction_commit = decrypt::Error::Transaction(TransactionError::Persist {
+        path: PathBuf::from("plain.out"),
         source: None,
     });
 

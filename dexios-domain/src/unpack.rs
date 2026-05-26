@@ -18,6 +18,7 @@ use std::sync::Arc;
 
 use crate::archive::{ArchiveLimitError, ArchiveLimits};
 use crate::decrypt;
+use crate::storage::cleanup::{CleanupReceipt, ProcessedSourceCleanupResult};
 use crate::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
 };
@@ -52,7 +53,7 @@ pub enum Error {
     PathIdentity(IdentityError),
     Transaction(TransactionError),
     Decrypt(decrypt::Error),
-    OnZipFile(String),
+    ArchiveFileCallback(String),
 }
 
 impl std::fmt::Display for Error {
@@ -79,7 +80,7 @@ impl std::fmt::Display for Error {
             Error::PathIdentity(inner) => write!(f, "Path identity error: {inner}"),
             Error::Transaction(inner) => write!(f, "Transaction error: {inner}"),
             Error::Decrypt(inner) => write!(f, "Decrypt error: {inner}"),
-            Error::OnZipFile(inner) => write!(f, "Zip file callback error: {inner}"),
+            Error::ArchiveFileCallback(inner) => write!(f, "Archive file callback error: {inner}"),
         }
     }
 }
@@ -119,7 +120,7 @@ impl Error {
             | Self::WriteDataWithSource(_)
             | Self::ResetCursorPosition
             | Self::ResetCursorPositionWithSource(_) => WorkflowErrorClass::IoFailure,
-            Self::OnZipFile(_) => WorkflowErrorClass::Other,
+            Self::ArchiveFileCallback(_) => WorkflowErrorClass::Other,
         }
     }
 
@@ -140,45 +141,66 @@ fn classify_payload_error(error: &PayloadError) -> WorkflowErrorClass {
 }
 
 type OnArchiveInfo = Box<dyn FnOnce(usize)>;
-type OnZipFileFn = Box<dyn Fn(PathBuf) -> Result<bool, String>>;
+type OnArchiveFileFn = Box<dyn Fn(PathBuf) -> Result<bool, String>>;
 
 pub struct UnpackIntent {
     input: storage::Entry<fs::File>,
     detached_header: Option<storage::Entry<fs::File>>,
+    cleanup_receipt: CleanupReceipt,
     raw_key: Protected<Vec<u8>>,
     output_dir_path: PathBuf,
     on_decrypted_header: Option<decrypt::OnDecryptedHeaderFn>,
     on_archive_info: Option<OnArchiveInfo>,
-    on_zip_file: Option<OnZipFileFn>,
+    on_archive_file: Option<OnArchiveFileFn>,
 }
 
 impl UnpackIntent {
     #[allow(clippy::too_many_arguments)]
-    pub fn new<P>(
-        input: storage::Entry<fs::File>,
-        detached_header: Option<storage::Entry<fs::File>>,
-        output_dir_path: P,
+    pub fn new<P, O>(
+        input_path: P,
+        detached_header_path: Option<&Path>,
+        output_dir_path: O,
         raw_key: Protected<Vec<u8>>,
         on_decrypted_header: Option<decrypt::OnDecryptedHeaderFn>,
         on_archive_info: Option<OnArchiveInfo>,
-        on_zip_file: Option<OnZipFileFn>,
+        on_archive_file: Option<OnArchiveFileFn>,
     ) -> Result<Self, Error>
     where
         P: AsRef<Path>,
+        O: AsRef<Path>,
     {
-        input.try_reader().map_err(Error::Storage)?;
-        if let Some(header) = &detached_header {
-            header.try_reader().map_err(Error::Storage)?;
-        }
+        let input_path = input_path.as_ref().to_path_buf();
+        let mut graph = PathIdentityGraph::new();
+        let input_target = graph
+            .add_existing(&input_path, PathRole::ProcessedSource)
+            .map_err(Error::PathIdentity)?;
+        let cleanup_receipt = CleanupReceipt::from_processed_sources([&input_target])
+            .map_err(|source| Error::Storage(storage::Error::FileAccessWithSource(source)))?;
+        let detached_header_target = detached_header_path
+            .map(|path| graph.add_existing(path, PathRole::DetachedHeader))
+            .transpose()
+            .map_err(Error::PathIdentity)?;
+        graph.validate().map_err(Error::PathIdentity)?;
+
+        let stor = storage::FileStorage;
+        let input = stor
+            .read_resolved_existing_no_follow(&input_target)
+            .map_err(Error::Storage)?;
+        let detached_header = detached_header_target
+            .as_ref()
+            .map(|target| stor.read_resolved_existing_no_follow(target))
+            .transpose()
+            .map_err(Error::Storage)?;
 
         Ok(Self {
             input,
             detached_header,
+            cleanup_receipt,
             raw_key,
             output_dir_path: output_dir_path.as_ref().to_path_buf(),
             on_decrypted_header,
             on_archive_info,
-            on_zip_file,
+            on_archive_file,
         })
     }
 }
@@ -195,7 +217,7 @@ where
     output_dir_path: PathBuf,
     on_decrypted_header: Option<decrypt::OnDecryptedHeaderFn>,
     on_archive_info: Option<OnArchiveInfo>,
-    on_zip_file: Option<OnZipFileFn>,
+    on_archive_file: Option<OnArchiveFileFn>,
 }
 
 struct ExtractionEntity {
@@ -215,6 +237,14 @@ struct ScannedEntry {
     relative_path: PathBuf,
     archive_index: usize,
     kind: ExtractionKind,
+}
+
+struct UncommittedPlaintextReader<'a, R: Read>(&'a mut V1PayloadDecryptingReader<R>);
+
+impl<R: Read> Read for UncommittedPlaintextReader<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.0.read_uncommitted(buf).map_err(io::Error::other)
+    }
 }
 
 struct DirectoryCreation {
@@ -265,6 +295,10 @@ impl ArchivePathTree {
 }
 
 pub fn execute(intent: UnpackIntent) -> Result<CommitReceipt, Error> {
+    execute_with_cleanup(intent).map(ProcessedSourceCleanupResult::into_commit_receipt)
+}
+
+pub fn execute_with_cleanup(intent: UnpackIntent) -> Result<ProcessedSourceCleanupResult, Error> {
     execute_with_transaction(intent, LinkedOutputTransaction::new())
 }
 
@@ -274,20 +308,22 @@ pub fn execute_with_failure_hooks(
     hooks: FailureHooks,
 ) -> Result<CommitReceipt, Error> {
     execute_with_transaction(intent, LinkedOutputTransaction::with_failure_hooks(hooks))
+        .map(ProcessedSourceCleanupResult::into_commit_receipt)
 }
 
 fn execute_with_transaction(
     intent: UnpackIntent,
     transaction: LinkedOutputTransaction,
-) -> Result<CommitReceipt, Error> {
+) -> Result<ProcessedSourceCleanupResult, Error> {
     let UnpackIntent {
         input,
         detached_header,
+        cleanup_receipt,
         raw_key,
         output_dir_path,
         on_decrypted_header,
         on_archive_info,
-        on_zip_file,
+        on_archive_file,
     } = intent;
 
     let input_path = input.path().to_path_buf();
@@ -309,11 +345,12 @@ fn execute_with_transaction(
         output_dir_path,
         on_decrypted_header,
         on_archive_info,
-        on_zip_file,
+        on_archive_file,
     };
 
     let stor = Arc::new(storage::FileStorage);
     execute_manifest_archive(stor, req, transaction)
+        .map(|commit_receipt| ProcessedSourceCleanupResult::new(commit_receipt, cleanup_receipt))
 }
 
 fn execute_manifest_archive<R>(
@@ -342,20 +379,24 @@ where
             .map_err(decrypt::map_stream_error)
             .map_err(Error::Decrypt)?;
 
-    let (output_dir, entities, transaction) = stage_manifest_extraction(
-        &stor,
-        &mut plaintext_reader,
-        &req.output_dir_path,
-        &req.input_path,
-        req.detached_header_path.as_deref(),
-        req.on_zip_file.as_ref(),
-        transaction,
-    )?;
+    let (output_dir, entities, transaction) = {
+        let mut uncommitted_reader = UncommittedPlaintextReader(&mut plaintext_reader);
+        let (output_dir, entities, transaction) = stage_manifest_extraction(
+            &stor,
+            &mut uncommitted_reader,
+            &req.output_dir_path,
+            &req.input_path,
+            req.detached_header_path.as_deref(),
+            req.on_archive_file.as_ref(),
+            transaction,
+        )?;
+        drain_trailing_plaintext_to_final_auth(&mut uncommitted_reader)?;
+        (output_dir, entities, transaction)
+    };
     if let Some(on_archive_info) = req.on_archive_info {
         on_archive_info(entities.len());
     }
 
-    drain_trailing_plaintext_to_final_auth(&mut plaintext_reader)?;
     let _final_auth = plaintext_reader
         .finish()
         .map_err(decrypt::map_stream_error)
@@ -365,7 +406,7 @@ where
         create_selected_directories_after_final_auth(&stor, &output_dir, &entities)?;
     match transaction.commit_all() {
         Ok(mut receipt) => {
-            receipt.artifacts.extend(directory_creation.artifacts);
+            receipt.extend_artifacts(directory_creation.artifacts);
             Ok(receipt)
         }
         Err(error) => {
@@ -385,7 +426,7 @@ fn stage_manifest_extraction<R: Read>(
     output_dir_path: &Path,
     input_path: &Path,
     detached_header_path: Option<&Path>,
-    on_zip_file: Option<&OnZipFileFn>,
+    on_archive_file: Option<&OnArchiveFileFn>,
     mut transaction: LinkedOutputTransaction,
 ) -> Result<(PathBuf, Vec<ExtractionEntity>, LinkedOutputTransaction), Error> {
     let manifest = ArchiveManifest::read_from(plaintext_reader).map_err(map_payload_error)?;
@@ -395,7 +436,7 @@ fn stage_manifest_extraction<R: Read>(
         output_dir_path,
         input_path,
         detached_header_path,
-        on_zip_file,
+        on_archive_file,
     )?;
     let mut file_entities_by_index = BTreeMap::new();
     for entity in &entities {
@@ -466,7 +507,7 @@ fn prepare_manifest_extraction_entities(
     output_dir_path: &Path,
     input_path: &Path,
     detached_header_path: Option<&Path>,
-    on_zip_file: Option<&OnZipFileFn>,
+    on_archive_file: Option<&OnArchiveFileFn>,
 ) -> Result<(PathBuf, Vec<ExtractionEntity>), Error> {
     let output_dir = stor
         .prepare_unpack_root(output_dir_path)
@@ -529,8 +570,9 @@ fn prepare_manifest_extraction_entities(
 
     let mut entities = Vec::new();
     for entry in scanned_entries {
-        if let Some(on_zip_file) = on_zip_file {
-            let should_unpack = on_zip_file(entry.full_path.clone()).map_err(Error::OnZipFile)?;
+        if let Some(on_archive_file) = on_archive_file {
+            let should_unpack =
+                on_archive_file(entry.full_path.clone()).map_err(Error::ArchiveFileCallback)?;
             if !should_unpack {
                 continue;
             }
@@ -625,16 +667,25 @@ fn create_selected_directories_after_final_auth(
         let ExtractionKind::Directory(target) = &entity.kind else {
             unreachable!();
         };
-        stor.revalidate_unpack_directory_target(output_dir, &entity.relative_path, target)
-            .map_err(map_storage_path_error)?;
-        rollback_dirs.extend(
-            stor.create_unpack_dir_all(output_dir, &entity.relative_path)
-                .map_err(map_storage_path_error)?,
-        );
-        artifacts.push(CommittedArtifact {
-            role: target.role(),
-            path: entity.full_path.clone(),
-        });
+        if let Err(error) =
+            stor.revalidate_unpack_directory_target(output_dir, &entity.relative_path, target)
+        {
+            let _rollback =
+                storage::cleanup::rollback_empty_directories_best_effort(&rollback_dirs);
+            return Err(map_storage_path_error(error));
+        }
+        match stor.create_unpack_dir_all(output_dir, &entity.relative_path) {
+            Ok(created_dirs) => rollback_dirs.extend(created_dirs),
+            Err(error) => {
+                let _rollback =
+                    storage::cleanup::rollback_empty_directories_best_effort(&rollback_dirs);
+                return Err(map_storage_path_error(error));
+            }
+        }
+        artifacts.push(CommittedArtifact::new(
+            target.role(),
+            entity.full_path.clone(),
+        ));
     }
     Ok(DirectoryCreation {
         artifacts,

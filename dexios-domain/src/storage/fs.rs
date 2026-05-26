@@ -1,10 +1,14 @@
 use std::cell::RefCell;
 use std::fs as std_fs;
 use std::io::{self, Write};
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
 
 use super::identity::ResolvedTarget;
 use super::{Entry, Error, FileData, FileMode, Storage, TempArtifact};
+#[cfg(unix)]
+use rustix::fs::{CWD, Mode, OFlags, openat};
 
 pub struct FileStorage;
 
@@ -13,6 +17,47 @@ impl FileStorage {
         let file = tempfile::tempfile().map_err(Error::CreateFileWithSource)?;
 
         Ok(TempArtifact::new(file))
+    }
+
+    pub fn read_file_no_follow<P: AsRef<Path>>(
+        &self,
+        path: P,
+    ) -> Result<Entry<std_fs::File>, Error> {
+        let path = path.as_ref().to_path_buf();
+        let metadata = std_fs::symlink_metadata(&path).map_err(Error::FileAccessWithSource)?;
+        if metadata.file_type().is_symlink() {
+            return Err(Error::UnsafePath(path));
+        }
+        if metadata.is_dir() {
+            return Ok(Entry::Dir(path));
+        }
+
+        let file = open_no_follow(&path)?;
+        #[cfg(unix)]
+        verify_opened_file_matches_metadata(&file, &metadata, &path)?;
+        Ok(Entry::File(FileData {
+            path,
+            stream: RefCell::new(file),
+        }))
+    }
+
+    pub fn read_resolved_existing_no_follow(
+        &self,
+        target: &ResolvedTarget,
+    ) -> Result<Entry<std_fs::File>, Error> {
+        if !target.exists() {
+            return Err(Error::UnsafePath(target.original_path().to_path_buf()));
+        }
+
+        let entry = self.read_file_no_follow(target.target_path())?;
+        if entry.is_dir() != target.is_dir() {
+            return Err(Error::UnsafePath(target.original_path().to_path_buf()));
+        }
+
+        #[cfg(unix)]
+        verify_entry_matches_resolved_target(&entry, target)?;
+
+        Ok(entry)
     }
 
     pub fn revalidate_unpack_target<P: AsRef<Path>>(
@@ -105,6 +150,65 @@ impl FileStorage {
 
         Ok(created)
     }
+}
+
+#[cfg(unix)]
+fn verify_entry_matches_resolved_target(
+    entry: &Entry<std_fs::File>,
+    expected: &ResolvedTarget,
+) -> Result<(), Error> {
+    let Some(expected_identity) = expected.existing_target_identity() else {
+        return Err(Error::UnsafePath(expected.original_path().to_path_buf()));
+    };
+    let actual = match entry {
+        Entry::File(FileData { stream, .. }) => stream
+            .borrow()
+            .metadata()
+            .map_err(Error::FileAccessWithSource)?,
+        Entry::Dir(path) => std_fs::symlink_metadata(path).map_err(Error::FileAccessWithSource)?,
+    };
+
+    if actual.dev() != expected_identity.dev || actual.ino() != expected_identity.ino {
+        return Err(Error::UnsafePath(expected.original_path().to_path_buf()));
+    }
+
+    Ok(())
+}
+
+#[cfg(unix)]
+fn open_no_follow(path: &Path) -> Result<std_fs::File, Error> {
+    let fd = openat(
+        CWD,
+        path,
+        OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+        Mode::empty(),
+    )
+    .map_err(|source| Error::OpenFileWithSource {
+        mode: FileMode::Read,
+        source: io::Error::from(source),
+    })?;
+    Ok(fd.into())
+}
+
+#[cfg(unix)]
+fn verify_opened_file_matches_metadata(
+    file: &std_fs::File,
+    expected: &std_fs::Metadata,
+    path: &Path,
+) -> Result<(), Error> {
+    let actual = file.metadata().map_err(Error::FileAccessWithSource)?;
+    if actual.dev() != expected.dev() || actual.ino() != expected.ino() {
+        return Err(Error::UnsafePath(path.to_path_buf()));
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn open_no_follow(path: &Path) -> Result<std_fs::File, Error> {
+    std_fs::File::open(path).map_err(|source| Error::OpenFileWithSource {
+        mode: FileMode::Read,
+        source,
+    })
 }
 
 fn reject_mutated_root(root: &Path) -> Result<(), Error> {

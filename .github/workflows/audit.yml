@@ -10,11 +10,17 @@ on:
     branches: [ main ]
   schedule:
     - cron: "0 0 * * 1" # every Monday
+
+permissions:
+  contents: read
+
 jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
       - name: Install Rust toolchain
         run: rustup toolchain install stable --profile minimal
       - name: Select Rust toolchain

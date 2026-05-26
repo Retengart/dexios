@@ -1,3 +1,4 @@
+#[cfg(feature = "test-support")]
 use std::error::Error as _;
 use std::fs;
 #[cfg(feature = "test-support")]
@@ -5,14 +6,18 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 #[cfg(feature = "test-support")]
-use dexios_domain::storage::cleanup::{CleanupFailure, CleanupTarget};
 use dexios_domain::storage::cleanup::{
-    CleanupGateError, CleanupReceipt, CleanupTargetIdentity, HashVerification, PostCommitSuccess,
+    CleanupFailure, CleanupGateError, CleanupReceipt, CleanupTarget, CleanupTargetIdentity,
+    HashVerification, PostCommitSuccess,
 };
-use dexios_domain::storage::identity::PathRole;
+#[cfg(feature = "test-support")]
+use dexios_domain::storage::identity::{OverwritePolicy, PathIdentityGraph, PathRole};
 #[cfg(feature = "test-support")]
 use dexios_domain::storage::test_support::{FailureError, FailureHooks, FailurePoint};
-use dexios_domain::storage::transaction::{CommitReceipt, CommittedArtifact};
+#[cfg(feature = "test-support")]
+use dexios_domain::storage::transaction::{CommitReceipt, StagedOutputTransaction};
+
+const TRANSACTION_SOURCE: &str = include_str!("../src/storage/transaction.rs");
 
 struct TestDir {
     _dir: tempfile::TempDir,
@@ -34,15 +39,20 @@ impl TestDir {
     }
 }
 
+#[cfg(feature = "test-support")]
 fn committed_output(path: PathBuf) -> CommitReceipt {
-    CommitReceipt {
-        artifacts: vec![CommittedArtifact {
-            role: PathRole::Output,
-            path,
-        }],
-    }
+    let mut graph = PathIdentityGraph::new();
+    let target = graph
+        .add_output(&path, PathRole::Output, OverwritePolicy::ReplaceAtCommit)
+        .expect("resolve committed output");
+    let mut transaction = StagedOutputTransaction::new(target).expect("stage committed output");
+    transaction
+        .write_all(b"committed output")
+        .expect("write committed output proof");
+    transaction.commit().expect("commit proof output")
 }
 
+#[cfg(feature = "test-support")]
 fn post_commit_success(path: PathBuf) -> PostCommitSuccess {
     let receipt = committed_output(path);
     PostCommitSuccess::from_commit_and_hash(&receipt, HashVerification::NotRequested).unwrap()
@@ -64,6 +74,7 @@ fn cleanup_receipt_harness_uses_disposable_targets() {
 }
 
 #[test]
+#[cfg(feature = "test-support")]
 fn cleanup_receipt_deletes_all_targets_after_post_commit_success() {
     let test_dir = TestDir::new("cleanup-receipt-delete-all");
     let committed = test_dir.path().join("committed.dexios");
@@ -75,7 +86,8 @@ fn cleanup_receipt_deletes_all_targets_after_post_commit_success() {
     fs::create_dir(&dir).unwrap();
     fs::write(&nested, b"nested source").unwrap();
 
-    let cleanup_receipt = CleanupReceipt::from_paths([file.as_path(), dir.as_path()]).unwrap();
+    let cleanup_receipt =
+        CleanupReceipt::from_paths_for_test([file.as_path(), dir.as_path()]).unwrap();
     let proof = post_commit_success(committed);
 
     let result = cleanup_receipt.run(&proof);
@@ -85,7 +97,7 @@ fn cleanup_receipt_deletes_all_targets_after_post_commit_success() {
             cleanup_receipt.targets()[0].identity(),
             CleanupTargetIdentity::Verified { .. }
         ),
-        "CleanupReceipt::from_paths must capture target identity evidence"
+        "CleanupReceipt::from_paths_for_test must capture target identity evidence"
     );
     assert!(result.is_success(), "cleanup failures: {result:?}");
     assert_eq!(result.deleted.len(), 2);
@@ -94,6 +106,7 @@ fn cleanup_receipt_deletes_all_targets_after_post_commit_success() {
 }
 
 #[test]
+#[cfg(feature = "test-support")]
 fn cleanup_receipt_changed_target_identity_is_reported_and_replacement_file_is_not_deleted() {
     let test_dir = TestDir::new("cleanup-receipt-changed-identity");
     let committed = test_dir.path().join("committed.dexios");
@@ -101,7 +114,7 @@ fn cleanup_receipt_changed_target_identity_is_reported_and_replacement_file_is_n
     fs::write(&committed, b"committed output").unwrap();
     fs::write(&target, b"original source").unwrap();
 
-    let cleanup_receipt = CleanupReceipt::from_paths([target.as_path()]).unwrap();
+    let cleanup_receipt = CleanupReceipt::from_paths_for_test([target.as_path()]).unwrap();
     let proof = post_commit_success(committed.clone());
     fs::remove_file(&target).unwrap();
     fs::write(&target, b"replacement source").unwrap();
@@ -123,6 +136,7 @@ fn cleanup_receipt_changed_target_identity_is_reported_and_replacement_file_is_n
 }
 
 #[test]
+#[cfg(feature = "test-support")]
 fn cleanup_receipt_changed_target_kind_is_reported_and_replacement_directory_is_not_deleted() {
     let test_dir = TestDir::new("cleanup-receipt-changed-kind");
     let committed = test_dir.path().join("committed.dexios");
@@ -130,7 +144,7 @@ fn cleanup_receipt_changed_target_kind_is_reported_and_replacement_directory_is_
     fs::write(&committed, b"committed output").unwrap();
     fs::write(&target, b"original source file").unwrap();
 
-    let cleanup_receipt = CleanupReceipt::from_paths([target.as_path()]).unwrap();
+    let cleanup_receipt = CleanupReceipt::from_paths_for_test([target.as_path()]).unwrap();
     let proof = post_commit_success(committed.clone());
     fs::remove_file(&target).unwrap();
     fs::create_dir(&target).unwrap();
@@ -156,6 +170,7 @@ fn cleanup_receipt_changed_target_kind_is_reported_and_replacement_directory_is_
 }
 
 #[test]
+#[cfg(feature = "test-support")]
 fn cleanup_receipt_changed_directory_kind_is_reported_and_replacement_file_is_not_deleted() {
     let test_dir = TestDir::new("cleanup-receipt-changed-dir-kind");
     let committed = test_dir.path().join("committed.dexios");
@@ -164,7 +179,7 @@ fn cleanup_receipt_changed_directory_kind_is_reported_and_replacement_file_is_no
     fs::create_dir(&target).unwrap();
     fs::write(target.join("original.txt"), b"original directory").unwrap();
 
-    let cleanup_receipt = CleanupReceipt::from_paths([target.as_path()]).unwrap();
+    let cleanup_receipt = CleanupReceipt::from_paths_for_test([target.as_path()]).unwrap();
     let proof = post_commit_success(committed.clone());
     fs::remove_dir_all(&target).unwrap();
     fs::write(&target, b"replacement file").unwrap();
@@ -179,8 +194,128 @@ fn cleanup_receipt_changed_directory_kind_is_reported_and_replacement_file_is_no
     assert_eq!(fs::read(&target).unwrap(), b"replacement file");
 }
 
+#[test]
+#[cfg(feature = "test-support")]
+fn cleanup_receipt_from_processed_source_refuses_replaced_file() {
+    let test_dir = TestDir::new("cleanup-receipt-processed-source");
+    let committed = test_dir.path().join("committed.dexios");
+    let target = test_dir.path().join("source.txt");
+    fs::write(&committed, b"committed output").unwrap();
+    fs::write(&target, b"original source").unwrap();
+
+    let mut graph = PathIdentityGraph::new();
+    let processed_source = graph
+        .add_existing(&target, PathRole::ProcessedSource)
+        .expect("capture processed source");
+    let cleanup_receipt = CleanupReceipt::from_processed_sources_for_test([&processed_source])
+        .expect("cleanup receipt");
+    let proof = post_commit_success(committed.clone());
+    fs::remove_file(&target).unwrap();
+    fs::write(&target, b"replacement source").unwrap();
+
+    let result = cleanup_receipt.run(&proof);
+
+    assert!(
+        !result.is_success(),
+        "processed-source cleanup must fail closed when the processed file is replaced"
+    );
+    assert_eq!(fs::read(&committed).unwrap(), b"committed output");
+    assert_eq!(fs::read(&target).unwrap(), b"replacement source");
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn cleanup_receipt_from_processed_source_refuses_same_inode_rewrite() {
+    let test_dir = TestDir::new("cleanup-receipt-processed-rewrite");
+    let committed = test_dir.path().join("committed.dexios");
+    let target = test_dir.path().join("source.txt");
+    fs::write(&committed, b"committed output").unwrap();
+    fs::write(&target, b"original source").unwrap();
+
+    let mut graph = PathIdentityGraph::new();
+    let processed_source = graph
+        .add_existing(&target, PathRole::ProcessedSource)
+        .expect("capture processed source");
+    let cleanup_receipt = CleanupReceipt::from_processed_sources_for_test([&processed_source])
+        .expect("cleanup receipt");
+    let proof = post_commit_success(committed.clone());
+    fs::write(&target, b"changed source").unwrap();
+
+    let result = cleanup_receipt.run(&proof);
+
+    assert!(
+        !result.is_success(),
+        "processed-source cleanup must fail closed when the same source file is rewritten"
+    );
+    assert_eq!(fs::read(&committed).unwrap(), b"committed output");
+    assert_eq!(fs::read(&target).unwrap(), b"changed source");
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn cleanup_receipt_from_processed_source_tree_refuses_changed_directory_tree() {
+    let test_dir = TestDir::new("cleanup-receipt-processed-tree");
+    let committed = test_dir.path().join("committed.dexios");
+    let target = test_dir.path().join("source-dir");
+    fs::write(&committed, b"committed output").unwrap();
+    fs::create_dir(&target).unwrap();
+    fs::write(target.join("original.txt"), b"original directory").unwrap();
+
+    let mut graph = PathIdentityGraph::new();
+    let processed_source = graph
+        .add_existing(&target, PathRole::ProcessedSource)
+        .expect("capture processed source directory");
+    let cleanup_receipt = CleanupReceipt::from_processed_source_trees_for_test([&processed_source])
+        .expect("cleanup receipt");
+    let proof = post_commit_success(committed.clone());
+    fs::write(target.join("replacement.txt"), b"new user data").unwrap();
+
+    let result = cleanup_receipt.run(&proof);
+
+    assert!(
+        !result.is_success(),
+        "processed-source cleanup must fail closed when a processed directory tree changes"
+    );
+    assert_eq!(fs::read(&committed).unwrap(), b"committed output");
+    assert_eq!(
+        fs::read(target.join("replacement.txt")).unwrap(),
+        b"new user data"
+    );
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn cleanup_receipt_from_processed_source_tree_refuses_same_inode_file_rewrite() {
+    let test_dir = TestDir::new("cleanup-receipt-processed-tree-rewrite");
+    let committed = test_dir.path().join("committed.dexios");
+    let target = test_dir.path().join("source-dir");
+    let file = target.join("original.txt");
+    fs::write(&committed, b"committed output").unwrap();
+    fs::create_dir(&target).unwrap();
+    fs::write(&file, b"original directory").unwrap();
+
+    let mut graph = PathIdentityGraph::new();
+    let processed_source = graph
+        .add_existing(&target, PathRole::ProcessedSource)
+        .expect("capture processed source directory");
+    let cleanup_receipt = CleanupReceipt::from_processed_source_trees_for_test([&processed_source])
+        .expect("cleanup receipt");
+    let proof = post_commit_success(committed.clone());
+    fs::write(&file, b"rewritten user data").unwrap();
+
+    let result = cleanup_receipt.run(&proof);
+
+    assert!(
+        !result.is_success(),
+        "processed-source cleanup must fail closed when a processed directory file is rewritten"
+    );
+    assert_eq!(fs::read(&committed).unwrap(), b"committed output");
+    assert_eq!(fs::read(&file).unwrap(), b"rewritten user data");
+}
+
 #[cfg(unix)]
 #[test]
+#[cfg(feature = "test-support")]
 fn cleanup_receipt_changed_target_symlink_is_reported_and_symlink_is_not_deleted() {
     use std::os::unix::fs::symlink;
 
@@ -192,7 +327,7 @@ fn cleanup_receipt_changed_target_symlink_is_reported_and_symlink_is_not_deleted
     fs::write(&target, b"original source").unwrap();
     fs::write(&linked_target, b"replacement target").unwrap();
 
-    let cleanup_receipt = CleanupReceipt::from_paths([target.as_path()]).unwrap();
+    let cleanup_receipt = CleanupReceipt::from_paths_for_test([target.as_path()]).unwrap();
     let proof = post_commit_success(committed.clone());
     fs::remove_file(&target).unwrap();
     symlink(&linked_target, &target).unwrap();
@@ -269,13 +404,14 @@ fn cleanup_failure_source_free_synthetic_case_has_no_source() {
 }
 
 #[test]
+#[cfg(feature = "test-support")]
 fn cleanup_receipt_requires_hash_success_before_delete() {
     let test_dir = TestDir::new("cleanup-receipt-hash-gate");
     let committed = test_dir.path().join("committed.dexios");
     let target = test_dir.path().join("source.txt");
     fs::write(&committed, b"committed output").unwrap();
     fs::write(&target, b"source file").unwrap();
-    let cleanup_receipt = CleanupReceipt::from_paths([target.as_path()]).unwrap();
+    let cleanup_receipt = CleanupReceipt::from_paths_for_test([target.as_path()]).unwrap();
     let commit_receipt = committed_output(committed);
 
     let proof = PostCommitSuccess::from_commit_and_hash(&commit_receipt, HashVerification::Failed);
@@ -283,6 +419,32 @@ fn cleanup_receipt_requires_hash_success_before_delete() {
     assert_eq!(proof, Err(CleanupGateError::HashNotVerified));
     assert!(target.exists());
     assert_eq!(cleanup_receipt.targets().len(), 1);
+}
+
+#[test]
+fn partial_detached_publication_has_no_cleanup_authorization_impl() {
+    assert!(
+        TRANSACTION_SOURCE.contains("pub struct PartialDetachedPublication"),
+        "detached partial publication evidence must stay explicit"
+    );
+    assert!(
+        TRANSACTION_SOURCE.contains("impl CleanupAuthorizedReceipt for CommitReceipt"),
+        "only complete commit receipts should authorize cleanup"
+    );
+    assert!(
+        !TRANSACTION_SOURCE.contains("impl CleanupAuthorizedReceipt for PartialCommitReceipt"),
+        "partial transaction receipts must not authorize cleanup"
+    );
+    assert!(
+        !TRANSACTION_SOURCE
+            .contains("impl CleanupAuthorizedReceipt for PartialDetachedPublication"),
+        "partial detached publication evidence must not authorize cleanup"
+    );
+    assert!(
+        !TRANSACTION_SOURCE
+            .contains("impl sealed::CleanupAuthorizedReceipt for PartialDetachedPublication"),
+        "sealed partial detached evidence must not authorize cleanup"
+    );
 }
 
 #[test]
@@ -295,6 +457,7 @@ fn failure_hooks_select_cleanup_failure_point() {
         FailurePoint::Flush,
         FailurePoint::Sync,
         FailurePoint::Persist,
+        FailurePoint::PostCommitSync,
     ] {
         assert!(hooks.check(point).is_ok(), "non-cleanup point should pass");
     }

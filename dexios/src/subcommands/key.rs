@@ -8,7 +8,17 @@ use std::path::Path;
 use super::errors::map_key_error;
 use crate::info;
 
+fn reject_dual_stdin_keyfiles(params: &KeyManipulationParams) -> Result<()> {
+    if params.key_old.reads_stdin() && params.key_new.reads_stdin() {
+        anyhow::bail!(
+            "--keyfile-old - and --keyfile-new - cannot both read from stdin; pass one key through a file, prompt, or environment variable"
+        );
+    }
+    Ok(())
+}
+
 pub fn add(input: &str, params: &KeyManipulationParams) -> Result<()> {
+    reject_dual_stdin_keyfiles(params)?;
     let intent = domain::key::add::AddIntent::new(Path::new(input)).map_err(map_key_error)?;
 
     if params.key_old == Key::User {
@@ -30,6 +40,7 @@ pub fn add(input: &str, params: &KeyManipulationParams) -> Result<()> {
 }
 
 pub fn change(input: &str, params: &KeyManipulationParams) -> Result<()> {
+    reject_dual_stdin_keyfiles(params)?;
     let intent = domain::key::change::ChangeIntent::new(Path::new(input)).map_err(map_key_error)?;
 
     if params.key_old == Key::User {

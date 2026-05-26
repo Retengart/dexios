@@ -1,6 +1,7 @@
 use std::fs;
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -56,6 +57,27 @@ fn run_cli(current_dir: &Path, key: &str, args: &[&str]) -> std::process::Output
         .args(args)
         .output()
         .unwrap()
+}
+
+fn run_cli_with_stdin(current_dir: &Path, args: &[&str], stdin: &[u8]) -> std::process::Output {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_dexios"))
+        .current_dir(current_dir)
+        .env_remove("DEXIOS_KEY")
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let write_result = child.stdin.as_mut().unwrap().write_all(stdin);
+    if let Err(error) = write_result {
+        assert_eq!(
+            error.kind(),
+            ErrorKind::BrokenPipe,
+            "unexpected stdin write error: {error}"
+        );
+    }
+    child.wait_with_output().unwrap()
 }
 
 fn stderr(output: &std::process::Output) -> String {
@@ -191,6 +213,46 @@ fn decrypt_cli_corrupted_stream_variants_preserve_existing_output() {
         "truncated stream stderr should stay terse and typed: {stderr}"
     );
     assert_eq!(fs::read(output_path).unwrap(), sentinel.as_slice());
+}
+
+#[test]
+fn decrypt_keyfile_stdin_fails_before_interactive_overwrite_prompt() {
+    let test_dir = TestDir::new("decrypt-keyfile-stdin-overwrite");
+    fs::write(test_dir.path().join("plain.txt"), b"plain").unwrap();
+    let encrypt_output = run_cli(
+        test_dir.path(),
+        CORRECT_PASSWORD,
+        &["encrypt", "--force", "plain.txt", "plain.enc"],
+    );
+    assert!(
+        encrypt_output.status.success(),
+        "encrypt fixture failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&encrypt_output.stdout),
+        String::from_utf8_lossy(&encrypt_output.stderr)
+    );
+    fs::write(test_dir.path().join("plain.out"), b"existing output").unwrap();
+
+    let output = run_cli_with_stdin(
+        test_dir.path(),
+        &["decrypt", "--keyfile", "-", "plain.enc", "plain.out"],
+        b"secret-from-stdin\n",
+    );
+
+    assert!(
+        !output.status.success(),
+        "decrypt unexpectedly succeeded: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = stderr(&output);
+    assert!(
+        stderr.contains("--keyfile - cannot be combined with interactive overwrite prompts"),
+        "stderr did not explain stdin/prompt conflict: {stderr}"
+    );
+    assert_eq!(
+        fs::read(test_dir.path().join("plain.out")).unwrap(),
+        b"existing output"
+    );
 }
 
 #[test]

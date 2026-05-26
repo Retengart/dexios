@@ -2,7 +2,9 @@ use dexios_core::header::common::{
     CANONICAL_HEADER_LEN, CANONICAL_HEADER_STATIC_LEN, CANONICAL_V1_DISCRIMINATOR, HEADER_LEN,
     HEADER_STATIC_LEN, KEYSLOT_LEN, KeyslotNonce, PayloadNonce, Salt as HeaderSalt,
 };
-use dexios_core::header::v1::{EncryptedMasterKey, KeyslotKdf, V1Header, V1Keyslot, V1Keyslots};
+use dexios_core::header::v1::{
+    EncryptedMasterKey, KeyslotKdf, V1Header, V1Keyslot, V1KeyslotIndex, V1Keyslots,
+};
 use dexios_core::header::{HeaderReadError, ParsedHeader, ParsedV1Payload};
 use dexios_core::kdf::{
     BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID, BLAKE3_BALLOON_KDF_PROFILE_ID, Kdf, Salt,
@@ -117,7 +119,9 @@ fn keyslot_wrap_unwrap_uses_typed_nonce_and_key_inputs() {
     let payload = support::parsed_payload_for(&header);
     let nonce = KeyslotNonce::new([13u8; 24]);
     let wrapping_aad = header
-        .slot_wrapping_aad(0, &header.keyslots()[0])
+        .slot_wrapping_aad_for_physical_slot(
+            V1KeyslotIndex::try_from_physical_index(0).expect("slot zero index"),
+        )
         .expect("slot wrapping aad");
     let encrypted_master_key: EncryptedMasterKey = dexios_core::cipher::wrap_v1_master_key(
         WrappingKey::new([41u8; 32]),
@@ -163,7 +167,10 @@ fn keyslot_wrap_unwrap_authenticates_slot_scoped_metadata() {
     let header = support::sample_v1_header();
     let keyslot = &header.keyslots()[0];
     let wrapping_aad = header
-        .slot_wrapping_aad(0, keyslot)
+        .slot_wrapping_aad_for_physical_slot(
+            V1KeyslotIndex::try_from_physical_index(keyslot.physical_index())
+                .expect("fixture slot index"),
+        )
         .expect("slot wrapping aad");
     let encrypted_master_key = dexios_core::cipher::wrap_v1_master_key(
         WrappingKey::new([41u8; 32]),
@@ -262,7 +269,7 @@ fn v1_payload_stream_uses_header_derived_aad() {
 
     let payload = support::parsed_payload_for(&header);
     let mut decrypted = Vec::new();
-    V1PayloadStream::decrypt_file(
+    V1PayloadStream::decrypt_file_uncommitted(
         MasterKey::new([31u8; 32]),
         &payload,
         &mut std::io::Cursor::new(&encrypted),
@@ -272,7 +279,7 @@ fn v1_payload_stream_uses_header_derived_aad() {
     assert_eq!(decrypted, plaintext);
 
     let wrong_payload = support::parsed_payload_for(&other_header);
-    let wrong_bundle_result = V1PayloadStream::decrypt_file(
+    let wrong_bundle_result = V1PayloadStream::decrypt_file_uncommitted(
         MasterKey::new([31u8; 32]),
         &wrong_payload,
         &mut std::io::Cursor::new(&encrypted),
@@ -288,7 +295,7 @@ fn v1_payload_stream_uses_header_derived_aad() {
 fn v1_stream_file_api_returns_typed_stream_errors() {
     let header = support::sample_v1_header();
     let payload = support::parsed_payload_for(&header);
-    let result = V1PayloadStream::decrypt_file(
+    let result = V1PayloadStream::decrypt_file_uncommitted(
         MasterKey::new([31u8; 32]),
         &payload,
         &mut std::io::Cursor::new(Vec::<u8>::new()),
@@ -504,9 +511,10 @@ fn payload_aad_excludes_mutable_keyslot_table_state() {
 #[test]
 fn slot_wrapping_aad_binds_static_header_and_physical_slot_metadata() {
     let header = support::sample_v1_header();
-    let keyslot = &header.keyslots()[0];
     let aad = header
-        .slot_wrapping_aad(0, keyslot)
+        .slot_wrapping_aad_for_physical_slot(
+            V1KeyslotIndex::try_from_physical_index(0).expect("slot zero index"),
+        )
         .expect("slot wrapping aad");
 
     let mut expected = Vec::new();
@@ -519,8 +527,29 @@ fn slot_wrapping_aad_binds_static_header_and_physical_slot_metadata() {
 
     assert_eq!(aad, expected);
 
-    let slot_one_aad = header
-        .slot_wrapping_aad(1, keyslot)
+    let two_slot_header = V1Header::new(
+        PayloadNonce::new([7u8; 20]),
+        V1Keyslots::try_from_vec(vec![
+            V1Keyslot::new(
+                Kdf::Blake3Balloon,
+                [11u8; 48],
+                KeyslotNonce::new([13u8; 24]),
+                HeaderSalt::new([17u8; 16]),
+            ),
+            V1Keyslot::new(
+                Kdf::Blake3Balloon,
+                [19u8; 48],
+                KeyslotNonce::new([23u8; 24]),
+                HeaderSalt::new([29u8; 16]),
+            ),
+        ])
+        .expect("two slot keyslots"),
+    )
+    .expect("two slot header");
+    let slot_one_aad = two_slot_header
+        .slot_wrapping_aad_for_physical_slot(
+            V1KeyslotIndex::try_from_physical_index(1).expect("slot one index"),
+        )
         .expect("slot one wrapping aad");
     assert_ne!(aad, slot_one_aad);
 }

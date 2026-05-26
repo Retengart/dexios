@@ -224,6 +224,7 @@ mkdir -p "$(dirname "$output")"
     printf '`\n'
     printf -- '- `mdbook build`\n'
     printf -- '- `git diff --exit-code -- docs`\n'
+    printf -- '- `git status --porcelain --untracked-files=all -- docs`\n'
     printf -- '- `typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf`\n'
     printf -- '- `git diff --exit-code -- spec/dexios-paper.pdf`\n'
     printf -- '- `bash scripts/verify_repo_hygiene.sh`\n'

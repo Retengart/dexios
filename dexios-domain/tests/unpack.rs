@@ -22,12 +22,11 @@ use dexios_domain::storage::identity::IdentityError;
 use dexios_domain::storage::test_support::{FailureHooks, FailurePoint};
 #[cfg(feature = "test-support")]
 use dexios_domain::storage::transaction::TransactionError;
-use dexios_domain::storage::{FileStorage, Storage};
 use dexios_domain::unpack;
 
 const PASSWORD: &[u8; 8] = b"12345678";
 const STREAM_TAG_LEN: usize = 16;
-type TestOnZipFile = Box<dyn Fn(PathBuf) -> Result<bool, String>>;
+type TestOnArchiveFile = Box<dyn Fn(PathBuf) -> Result<bool, String>>;
 
 struct TestDir {
     _dir: tempfile::TempDir,
@@ -182,7 +181,9 @@ fn manifest_archive_header_and_master_key() -> (V1Header, MasterKey) {
         V1Header::new_manifest_archive(payload_nonce, V1Keyslots::single(placeholder_keyslot))
             .unwrap();
     let slot_wrapping_aad = placeholder_header
-        .slot_wrapping_aad(0, &placeholder_keyslot)
+        .slot_wrapping_aad_for_physical_slot(
+            core::header::v1::V1KeyslotIndex::try_from_physical_index(0).expect("slot zero index"),
+        )
         .unwrap();
     let encrypted_master_key = wrap_v1_master_key(
         WrappingKey::from(wrapping_key),
@@ -235,18 +236,16 @@ fn truncate_stream(path: &Path) {
 fn unpack_archive(
     encrypted_archive: &Path,
     output_dir: &Path,
-    on_zip_file: Option<TestOnZipFile>,
+    on_archive_file: Option<TestOnArchiveFile>,
 ) -> Result<dexios_domain::storage::transaction::CommitReceipt, unpack::Error> {
-    let stor = Arc::new(FileStorage);
-    let archive = stor.read_file(encrypted_archive).unwrap();
     let intent = unpack::UnpackIntent::new(
-        archive,
+        encrypted_archive,
         None,
         output_dir,
         Protected::new(PASSWORD.to_vec()),
         None,
         None,
-        on_zip_file,
+        on_archive_file,
     )?;
 
     unpack::execute(intent)
@@ -258,10 +257,8 @@ fn unpack_archive_with_failure_hooks(
     output_dir: &Path,
     hooks: FailureHooks,
 ) -> Result<dexios_domain::storage::transaction::CommitReceipt, unpack::Error> {
-    let stor = Arc::new(FileStorage);
-    let archive = stor.read_file(encrypted_archive).unwrap();
     let intent = unpack::UnpackIntent::new(
-        archive,
+        encrypted_archive,
         None,
         output_dir,
         Protected::new(PASSWORD.to_vec()),
@@ -437,12 +434,9 @@ fn unpack_archive_with_detached_header(
     detached_header: &Path,
     output_dir: &Path,
 ) -> Result<dexios_domain::storage::transaction::CommitReceipt, unpack::Error> {
-    let stor = Arc::new(FileStorage);
-    let archive = stor.read_file(encrypted_archive).unwrap();
-    let header = stor.read_file(detached_header).unwrap();
     let intent = unpack::UnpackIntent::new(
-        archive,
-        Some(header),
+        encrypted_archive,
+        Some(detached_header),
         output_dir,
         Protected::new(PASSWORD.to_vec()),
         None,
@@ -451,6 +445,14 @@ fn unpack_archive_with_detached_header(
     )?;
 
     unpack::execute(intent)
+}
+
+fn assert_unpack_intent_rejects_unsafe_path(result: Result<unpack::UnpackIntent, unpack::Error>) {
+    match result {
+        Err(unpack::Error::PathIdentity(IdentityError::UnsafePath(_))) => {}
+        Err(error) => panic!("expected intent unsafe path rejection, got {error:?}"),
+        Ok(_) => panic!("expected intent unsafe path rejection, got Ok"),
+    }
 }
 
 #[test]
@@ -478,8 +480,11 @@ fn unpack_directory_only_archive_returns_directory_commit_receipt() {
     let receipt = unpack_archive(&encrypted_archive, &output_dir, None).unwrap();
 
     assert!(output_dir.join("empty-dir").is_dir());
-    assert_eq!(receipt.artifacts.len(), 1);
-    assert_eq!(receipt.artifacts[0].path, output_dir.join("empty-dir"));
+    assert_eq!(receipt.committed_artifacts().len(), 1);
+    assert_eq!(
+        receipt.committed_artifacts()[0].path(),
+        output_dir.join("empty-dir")
+    );
 }
 
 #[test]
@@ -676,7 +681,7 @@ fn unpack_declined_safe_overwrite_is_skipped_after_validation() {
         fs::read_to_string(output_dir.join("new.txt")).unwrap(),
         "new contents"
     );
-    assert_eq!(receipt.artifacts.len(), 1);
+    assert_eq!(receipt.committed_artifacts().len(), 1);
 }
 
 #[test]
@@ -1037,6 +1042,146 @@ fn symlink_dir(src: &Path, dst: &Path) {
 #[cfg(windows)]
 fn symlink_dir(src: &Path, dst: &Path) {
     std::os::windows::fs::symlink_dir(src, dst).unwrap();
+}
+
+#[cfg(unix)]
+fn symlink_file_or_skip(src: &Path, dst: &Path) -> bool {
+    match std::os::unix::fs::symlink(src, dst) {
+        Ok(()) => true,
+        Err(err) => {
+            eprintln!("skipping unpack symlink input check: symlinks unsupported here: {err}");
+            false
+        }
+    }
+}
+
+#[cfg(windows)]
+fn symlink_file_or_skip(src: &Path, dst: &Path) -> bool {
+    match std::os::windows::fs::symlink_file(src, dst) {
+        Ok(()) => true,
+        Err(err) => {
+            eprintln!("skipping unpack symlink input check: symlinks unsupported here: {err}");
+            false
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn symlink_file_or_skip(_src: &Path, _dst: &Path) -> bool {
+    eprintln!("skipping unpack symlink input check: symlink helper unsupported on this platform");
+    false
+}
+
+#[cfg(unix)]
+fn symlink_dir_or_skip(src: &Path, dst: &Path) -> bool {
+    match std::os::unix::fs::symlink(src, dst) {
+        Ok(()) => true,
+        Err(err) => {
+            eprintln!("skipping unpack symlink parent check: symlinks unsupported here: {err}");
+            false
+        }
+    }
+}
+
+#[cfg(windows)]
+fn symlink_dir_or_skip(src: &Path, dst: &Path) -> bool {
+    match std::os::windows::fs::symlink_dir(src, dst) {
+        Ok(()) => true,
+        Err(err) => {
+            eprintln!("skipping unpack symlink parent check: symlinks unsupported here: {err}");
+            false
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn symlink_dir_or_skip(_src: &Path, _dst: &Path) -> bool {
+    eprintln!("skipping unpack symlink parent check: symlink helper unsupported on this platform");
+    false
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn unpack_intent_rejects_final_symlink_archive_input_before_parsing() {
+    let test_dir = TestDir::new("unpack-input-final-symlink");
+    let archive_target = test_dir.path().join("not-an-archive.enc");
+    let archive_link = test_dir.path().join("archive-link.enc");
+    let output_dir = test_dir.path().join("out");
+
+    fs::write(&archive_target, b"not a dexios archive").unwrap();
+    if !symlink_file_or_skip(&archive_target, &archive_link) {
+        return;
+    }
+
+    let result = unpack::UnpackIntent::new(
+        &archive_link,
+        None,
+        &output_dir,
+        Protected::new(PASSWORD.to_vec()),
+        None,
+        None,
+        None,
+    );
+
+    assert_unpack_intent_rejects_unsafe_path(result);
+    assert!(!output_dir.exists());
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn unpack_intent_rejects_final_symlink_detached_header_before_parsing() {
+    let test_dir = TestDir::new("unpack-header-final-symlink");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let header_target = test_dir.path().join("not-a-header.hdr");
+    let header_link = test_dir.path().join("header-link.hdr");
+    let output_dir = test_dir.path().join("out");
+
+    fs::write(&encrypted_archive, b"not a dexios archive").unwrap();
+    fs::write(&header_target, b"not a dexios header").unwrap();
+    if !symlink_file_or_skip(&header_target, &header_link) {
+        return;
+    }
+
+    let result = unpack::UnpackIntent::new(
+        &encrypted_archive,
+        Some(header_link.as_path()),
+        &output_dir,
+        Protected::new(PASSWORD.to_vec()),
+        None,
+        None,
+        None,
+    );
+
+    assert_unpack_intent_rejects_unsafe_path(result);
+    assert!(!output_dir.exists());
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn unpack_intent_rejects_archive_input_with_symlinked_parent_before_parsing() {
+    let test_dir = TestDir::new("unpack-input-parent-symlink");
+    let outside_dir = test_dir.path().join("outside");
+    let parent_link = test_dir.path().join("archive-parent-link");
+    let output_dir = test_dir.path().join("out");
+
+    fs::create_dir(&outside_dir).unwrap();
+    fs::write(outside_dir.join("archive.enc"), b"not a dexios archive").unwrap();
+    if !symlink_dir_or_skip(&outside_dir, &parent_link) {
+        return;
+    }
+
+    let result = unpack::UnpackIntent::new(
+        parent_link.join("archive.enc"),
+        None,
+        &output_dir,
+        Protected::new(PASSWORD.to_vec()),
+        None,
+        None,
+        None,
+    );
+
+    assert_unpack_intent_rejects_unsafe_path(result);
+    assert!(!output_dir.exists());
 }
 
 #[cfg(any(unix, windows))]

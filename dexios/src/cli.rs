@@ -466,6 +466,13 @@ pub fn build_cli() -> Command {
                                 .action(ArgAction::Set)
                                 .required(true)
                                 .help("The encrypted file"),
+                        )
+                        .arg(
+                            Arg::new("force")
+                                .short('f')
+                                .long("force")
+                                .action(ArgAction::SetTrue)
+                                .help("Force all actions"),
                         ),
                 )
                 .subcommand(
@@ -478,6 +485,13 @@ pub fn build_cli() -> Command {
                                 .action(ArgAction::Set)
                                 .required(true)
                                 .help("The encrypted file"),
+                        )
+                        .arg(
+                            Arg::new("force")
+                                .short('f')
+                                .long("force")
+                                .action(ArgAction::SetTrue)
+                                .help("Force all actions"),
                         ),
                 )
                 .subcommand(
@@ -943,7 +957,14 @@ mod tests {
     #[test]
     fn header_restore_command_accepts_input_and_output() {
         let matches = super::build_cli()
-            .try_get_matches_from(["dexios", "header", "restore", "dump.hdr", "cipher.enc"])
+            .try_get_matches_from([
+                "dexios",
+                "header",
+                "restore",
+                "--force",
+                "dump.hdr",
+                "cipher.enc",
+            ])
             .expect("CLI should parse");
 
         let (name, sub) = matches.subcommand().expect("subcommand");
@@ -957,12 +978,13 @@ mod tests {
             restore.get_one::<String>("output").map(String::as_str),
             Some("cipher.enc")
         );
+        assert!(restore.get_flag("force"));
     }
 
     #[test]
     fn header_strip_command_accepts_input() {
         let matches = super::build_cli()
-            .try_get_matches_from(["dexios", "header", "strip", "cipher.enc"])
+            .try_get_matches_from(["dexios", "header", "strip", "--force", "cipher.enc"])
             .expect("CLI should parse");
 
         let (name, sub) = matches.subcommand().expect("subcommand");
@@ -972,6 +994,7 @@ mod tests {
             strip.get_one::<String>("input").map(String::as_str),
             Some("cipher.enc")
         );
+        assert!(strip.get_flag("force"));
     }
 
     #[test]

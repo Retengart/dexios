@@ -13,6 +13,7 @@ use core::protected::Protected;
 use core::stream::{StreamError, V1FinalAuth, V1PayloadStream};
 
 use crate::key::decrypt_v1_master_key_with_index;
+use crate::storage::cleanup::{CleanupReceipt, ProcessedSourceCleanupResult};
 use crate::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
 };
@@ -125,6 +126,7 @@ pub struct DecryptIntent {
     input_target: ResolvedTarget,
     detached_header_target: Option<ResolvedTarget>,
     output_target: ResolvedTarget,
+    cleanup_receipt: CleanupReceipt,
     raw_key: Protected<Vec<u8>>,
     on_decrypted_header: Option<OnDecryptedHeaderFn>,
 }
@@ -135,6 +137,7 @@ impl std::fmt::Debug for DecryptIntent {
             .field("input_target", &self.input_target)
             .field("detached_header_target", &self.detached_header_target)
             .field("output_target", &self.output_target)
+            .field("cleanup_receipt", &self.cleanup_receipt)
             .field("raw_key", &self.raw_key)
             .field(
                 "on_decrypted_header",
@@ -161,8 +164,10 @@ impl DecryptIntent {
         let input_path = input_path.as_ref().to_path_buf();
         let mut graph = PathIdentityGraph::new();
         let input_target = graph
-            .add_existing(&input_path, PathRole::Input)
+            .add_existing(&input_path, PathRole::ProcessedSource)
             .map_err(Error::PathIdentity)?;
+        let cleanup_receipt = CleanupReceipt::from_processed_sources([&input_target])
+            .map_err(Error::ReadEncryptedDataWithSource)?;
         let detached_header_target = detached_header_path
             .map(|path| graph.add_existing(path, PathRole::DetachedHeader))
             .transpose()
@@ -176,6 +181,7 @@ impl DecryptIntent {
             input_target,
             detached_header_target,
             output_target,
+            cleanup_receipt,
             raw_key,
             on_decrypted_header,
         })
@@ -222,6 +228,7 @@ pub fn execute(intent: DecryptIntent) -> Result<CommitReceipt, Error> {
         input_target,
         detached_header_target,
         output_target,
+        cleanup_receipt: _,
         raw_key,
         on_decrypted_header,
     } = intent;
@@ -245,6 +252,14 @@ pub fn execute(intent: DecryptIntent) -> Result<CommitReceipt, Error> {
 
 pub fn execute_transactional(intent: DecryptIntent) -> Result<CommitReceipt, Error> {
     execute(intent)
+}
+
+pub fn execute_transactional_with_cleanup(
+    intent: DecryptIntent,
+) -> Result<ProcessedSourceCleanupResult, Error> {
+    let cleanup_receipt = intent.cleanup_receipt.clone();
+    execute(intent)
+        .map(|commit_receipt| ProcessedSourceCleanupResult::new(commit_receipt, cleanup_receipt))
 }
 
 fn execute_transactional_target<R>(
@@ -336,8 +351,13 @@ where
     R: Read + Seek,
     W: Write + Seek,
 {
-    V1PayloadStream::decrypt_file(master_key, payload, &mut *reader.borrow_mut(), &mut *writer)
-        .map_err(map_stream_error)
+    V1PayloadStream::decrypt_file_uncommitted(
+        master_key,
+        payload,
+        &mut *reader.borrow_mut(),
+        &mut *writer,
+    )
+    .map_err(map_stream_error)
 }
 
 fn commit_after_final_auth(
@@ -387,6 +407,7 @@ pub(crate) fn map_stream_error(error: StreamError) -> Error {
         StreamError::Read(error) => Error::ReadEncryptedDataWithSource(error),
         StreamError::Write(error) | StreamError::Flush(error) => Error::WriteDataWithSource(error),
         StreamError::Authentication
+        | StreamError::InvalidChunkSize(_)
         | StreamError::TruncatedCiphertext
         | StreamError::MissingFinalBlock
         | StreamError::FinalBlockAuthentication => Error::DecryptData,
@@ -641,6 +662,11 @@ mod tests {
             ),
             (
                 StreamError::Authentication,
+                Error::DecryptData,
+                WorkflowErrorClass::AuthenticationFailure,
+            ),
+            (
+                StreamError::InvalidChunkSize(7),
                 Error::DecryptData,
                 WorkflowErrorClass::AuthenticationFailure,
             ),

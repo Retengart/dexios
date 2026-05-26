@@ -11,12 +11,17 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: read
+
 jobs:
   clippy:
     name: clippy (ubuntu-latest, stable)
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6.0.2
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      with:
+        persist-credentials: false
 
     - name: Install Rust toolchain
       run: rustup toolchain install stable --profile minimal --component clippy
@@ -25,7 +30,7 @@ jobs:
       run: rustup default stable
 
     - name: Restore cargo cache
-      uses: actions/cache@v5.0.3
+      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
       with:
         path: |
           ~/.cargo/registry
@@ -40,7 +45,9 @@ jobs:
     name: check (ubuntu-latest, stable)
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6.0.2
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      with:
+        persist-credentials: false
 
     - name: Install Rust toolchain
       run: rustup toolchain install stable --profile minimal
@@ -49,7 +56,7 @@ jobs:
       run: rustup default stable
 
     - name: Restore cargo cache
-      uses: actions/cache@v5.0.3
+      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
       with:
         path: |
           ~/.cargo/registry
@@ -73,7 +80,9 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
         run: rustup toolchain install ${{ matrix.rust }} --profile minimal
@@ -82,7 +91,7 @@ jobs:
         run: rustup default ${{ matrix.rust }}
 
       - name: Restore cargo cache
-        uses: actions/cache@v5.0.3
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
         with:
           path: |
             ~/.cargo/registry
@@ -103,19 +112,19 @@ jobs:
 
       - if: matrix.os == 'ubuntu-latest'
         name: Upload Binary as artifact
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: dexios-linux-amd64
           path: target/release/dexios
       - if: matrix.os == 'macos-latest'
         name: Upload Binary as artifact
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: dexios-macos-amd64
           path: target/release/dexios
       - if: matrix.os == 'windows-latest'
         name: Upload Binary as artifact
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: dexios-windows-amd64
           path: target/release/dexios.exe

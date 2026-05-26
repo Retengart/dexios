@@ -16,8 +16,8 @@ use core::payload::{ArchiveBodyFrame, ArchiveManifest, ManifestEntry, ManifestFi
 use core::primitives::{MasterKey, WrappingKey};
 use core::protected::Protected;
 use core::stream::V1PayloadStream;
-use domain::storage::identity::PathRole;
-use domain::storage::transaction::{CommittedArtifact, PartialCommitReceipt, TransactionError};
+use domain::storage::identity::{OverwritePolicy, PathIdentityGraph, PathRole};
+use domain::storage::transaction::{LinkedOutputTransaction, TransactionError};
 use domain::workflow_error::WorkflowErrorClass;
 
 #[allow(dead_code)]
@@ -202,7 +202,9 @@ fn manifest_archive_header_and_master_key() -> (V1Header, MasterKey) {
         V1Header::new_manifest_archive(payload_nonce, V1Keyslots::single(placeholder_keyslot))
             .unwrap();
     let slot_wrapping_aad = placeholder_header
-        .slot_wrapping_aad(0, &placeholder_keyslot)
+        .slot_wrapping_aad_for_physical_slot(
+            core::header::v1::V1KeyslotIndex::try_from_physical_index(0).expect("slot zero index"),
+        )
         .unwrap();
     let encrypted_master_key = wrap_v1_master_key(
         WrappingKey::from(wrapping_key),
@@ -275,20 +277,37 @@ fn write_retired_v1_fixture(path: &Path) {
     fs::write(path, retired_v1_fixture_bytes()).unwrap();
 }
 
-fn partial_commit_storage_full_error() -> TransactionError {
-    TransactionError::PartialCommit {
-        receipt: PartialCommitReceipt {
-            artifacts: vec![CommittedArtifact {
-                role: PathRole::Output,
-                path: PathBuf::from("committed.out"),
-            }],
-        },
-        failed: CommittedArtifact {
-            role: PathRole::DetachedHeader,
-            path: PathBuf::from("failed.header"),
-        },
-        source: Some(std::io::Error::from(std::io::ErrorKind::StorageFull)),
-    }
+fn partial_commit_error() -> TransactionError {
+    let test_dir = TestDir::new("partial-commit-error");
+    let output_path = test_dir.path().join("committed.out");
+    let header_path = test_dir.path().join("failed.header");
+    fs::write(&header_path, b"existing header").unwrap();
+
+    let mut graph = PathIdentityGraph::new();
+    let output = graph
+        .add_output(&output_path, PathRole::Output, OverwritePolicy::CreateNew)
+        .unwrap();
+    let header = graph
+        .add_output(
+            &header_path,
+            PathRole::DetachedHeader,
+            OverwritePolicy::CreateNew,
+        )
+        .unwrap();
+    let mut transaction = LinkedOutputTransaction::new();
+    let output_index = transaction.stage(output).unwrap();
+    let header_index = transaction.stage(header).unwrap();
+    transaction
+        .staged_output_mut(output_index)
+        .unwrap()
+        .write_all(b"committed")
+        .unwrap();
+    transaction
+        .staged_output_mut(header_index)
+        .unwrap()
+        .write_all(b"failed")
+        .unwrap();
+    transaction.commit_all().unwrap_err()
 }
 
 fn mark_keyslot_unsupported_argon2id(path: &Path, index: usize) {
@@ -299,9 +318,8 @@ fn mark_keyslot_unsupported_argon2id(path: &Path, index: usize) {
 }
 
 #[test]
-fn partial_commit_resource_pressure_source_keeps_commit_failure_cli_mapping() {
-    let pack_error = domain::pack::Error::Transaction(partial_commit_storage_full_error());
-    assert!(pack_error.is_resource_pressure());
+fn partial_commit_keeps_commit_failure_cli_mapping() {
+    let pack_error = domain::pack::Error::Transaction(partial_commit_error());
     assert_eq!(
         pack_error.workflow_class(),
         WorkflowErrorClass::TransactionCommitFailure
@@ -314,8 +332,7 @@ fn partial_commit_resource_pressure_source_keeps_commit_failure_cli_mapping() {
         "partial commit evidence must not collapse into resource-pressure wording: {mapped}"
     );
 
-    let unpack_error = domain::unpack::Error::Transaction(partial_commit_storage_full_error());
-    assert!(unpack_error.is_resource_pressure());
+    let unpack_error = domain::unpack::Error::Transaction(partial_commit_error());
     assert_eq!(
         unpack_error.workflow_class(),
         WorkflowErrorClass::TransactionCommitFailure
@@ -326,6 +343,44 @@ fn partial_commit_resource_pressure_source_keeps_commit_failure_cli_mapping() {
     assert!(
         !mapped.contains("Not enough temporary or output storage"),
         "partial commit evidence must not collapse into resource-pressure wording: {mapped}"
+    );
+}
+
+#[test]
+fn detached_encrypt_partial_publication_names_committed_and_failed_artifacts() {
+    let encrypt_error = domain::encrypt::Error::DetachedPublication(partial_commit_error());
+    assert_eq!(
+        encrypt_error.workflow_class(),
+        WorkflowErrorClass::TransactionCommitFailure
+    );
+
+    let mapped = cli_error_mappers::map_encrypt_error(encrypt_error).to_string();
+    assert_eq!(
+        mapped,
+        "Detached publication incomplete: payload committed, header failed; source cleanup was not authorized"
+    );
+    assert!(
+        !mapped.contains("Unable to commit encrypted output"),
+        "detached partial publication must not collapse into generic commit wording: {mapped}"
+    );
+}
+
+#[test]
+fn detached_pack_partial_publication_names_committed_and_failed_artifacts() {
+    let pack_error = domain::pack::Error::DetachedPublication(partial_commit_error());
+    assert_eq!(
+        pack_error.workflow_class(),
+        WorkflowErrorClass::TransactionCommitFailure
+    );
+
+    let mapped = cli_error_mappers::map_pack_error(pack_error).to_string();
+    assert_eq!(
+        mapped,
+        "Detached publication incomplete: payload committed, header failed; source cleanup was not authorized"
+    );
+    assert!(
+        !mapped.contains("Unable to commit packed archive"),
+        "detached partial publication must not collapse into generic commit wording: {mapped}"
     );
 }
 
@@ -525,6 +580,15 @@ fn unsafe_path_and_transaction_errors_use_typed_cli_mapping() {
         b"do not truncate"
     );
 
+    let mapped_commit_error = cli_error_mappers::map_encrypt_error(
+        domain::encrypt::Error::Transaction(TransactionError::Persist {
+            path: PathBuf::from("cipher.enc"),
+            source: None,
+        }),
+    )
+    .to_string();
+    assert_eq!(mapped_commit_error, "Unable to commit encrypted output");
+
     fs::create_dir(test_dir.path().join("out-dir")).unwrap();
     let transaction_output = run_cli(
         test_dir.path(),
@@ -534,8 +598,8 @@ fn unsafe_path_and_transaction_errors_use_typed_cli_mapping() {
     assert!(!transaction_output.status.success());
     let transaction_stderr = stderr(&transaction_output);
     assert!(
-        transaction_stderr.contains("commit"),
-        "stderr did not expose the transaction failure class: {transaction_stderr}"
+        transaction_stderr.contains("I/O failure while encrypting data"),
+        "directory target preflight failure did not stay in the encrypt I/O class: {transaction_stderr}"
     );
 }
 
@@ -801,7 +865,13 @@ fn header_exact_failures_use_typed_cli_mapping() {
     let short_output = run_cli(
         test_dir.path(),
         CORRECT_PASSWORD,
-        &["header", "restore", "short.hdr", "short-target.enc"],
+        &[
+            "header",
+            "restore",
+            "--force",
+            "short.hdr",
+            "short-target.enc",
+        ],
     );
     assert!(!short_output.status.success());
     let short_stderr = stderr(&short_output);
@@ -821,7 +891,13 @@ fn header_exact_failures_use_typed_cli_mapping() {
     let trailing_output = run_cli(
         test_dir.path(),
         CORRECT_PASSWORD,
-        &["header", "restore", "trailing.hdr", "trailing-target.enc"],
+        &[
+            "header",
+            "restore",
+            "--force",
+            "trailing.hdr",
+            "trailing-target.enc",
+        ],
     );
     assert!(!trailing_output.status.success());
     let trailing_stderr = stderr(&trailing_output);
@@ -833,7 +909,7 @@ fn header_exact_failures_use_typed_cli_mapping() {
     let not_stripped_output = run_cli(
         test_dir.path(),
         CORRECT_PASSWORD,
-        &["header", "restore", "plain.hdr", "plain.enc"],
+        &["header", "restore", "--force", "plain.hdr", "plain.enc"],
     );
     assert!(!not_stripped_output.status.success());
     let not_stripped_stderr = stderr(&not_stripped_output);

@@ -10,13 +10,40 @@ use crate::protected::Protected;
 
 // TODO: choose better place for this util
 /// This is a simple helper function, used for converting the 32-byte master key `Vec<u8>`s to `[u8; 32]`
-#[must_use]
-pub fn vec_to_arr<const N: usize>(mut master_key_vec: Vec<u8>) -> [u8; N] {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VecToArrayLengthError {
+    pub expected: usize,
+    pub actual: usize,
+}
+
+impl std::fmt::Display for VecToArrayLengthError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "invalid key material length: expected {}, got {}",
+            self.expected, self.actual
+        )
+    }
+}
+
+impl std::error::Error for VecToArrayLengthError {}
+
+pub fn vec_to_arr<const N: usize>(
+    mut master_key_vec: Vec<u8>,
+) -> Result<[u8; N], VecToArrayLengthError> {
+    let actual = master_key_vec.len();
+    if actual != N {
+        master_key_vec.zeroize();
+        return Err(VecToArrayLengthError {
+            expected: N,
+            actual,
+        });
+    }
+
     let mut master_key = [0u8; N];
-    let len = N.min(master_key_vec.len());
-    master_key[..len].copy_from_slice(&master_key_vec[..len]);
+    master_key.copy_from_slice(&master_key_vec);
     master_key_vec.zeroize();
-    master_key
+    Ok(master_key)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

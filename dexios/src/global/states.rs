@@ -105,6 +105,11 @@ fn parse_generated_passphrase_word_count(words: &str) -> Result<PassphraseWordCo
 }
 
 impl Key {
+    #[must_use]
+    pub fn reads_stdin(&self) -> bool {
+        matches!(self, Self::Keyfile(path) if path == "-")
+    }
+
     pub(crate) fn resolve_key_source(
         keyfile: Option<&str>,
         autogenerate: Option<&str>,

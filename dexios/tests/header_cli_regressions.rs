@@ -1,12 +1,14 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use core::header::common::HEADER_LEN;
 
 const PASSWORD: &str = "correct-password";
+const ERROR_MAPPING_SOURCE: &str = include_str!("../src/subcommands/errors.rs");
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 
 struct TestDir {
@@ -48,6 +50,20 @@ fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
         .args(args)
         .output()
         .unwrap()
+}
+
+fn run_cli_with_stdin(current_dir: &Path, args: &[&str], stdin: &[u8]) -> std::process::Output {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_dexios"))
+        .current_dir(current_dir)
+        .env("DEXIOS_KEY", PASSWORD)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.as_mut().unwrap().write_all(stdin).unwrap();
+    child.wait_with_output().unwrap()
 }
 
 fn assert_success(output: &std::process::Output, label: &str) {
@@ -120,6 +136,21 @@ fn header_dump_rejects_header_only_input_and_writes_exact_detached_header() {
 }
 
 #[test]
+fn header_stale_errors_have_role_specific_cli_mappings() {
+    for required in [
+        "domain::header::Error::TargetChanged =>",
+        "Header workflow target changed before commit",
+        "domain::header::Error::DetachedHeaderChanged =>",
+        "Detached header changed before header restore commit",
+    ] {
+        assert!(
+            ERROR_MAPPING_SOURCE.contains(required),
+            "missing header stale CLI mapping token: {required}"
+        );
+    }
+}
+
+#[test]
 fn header_restore_rejects_inexact_headers_and_invalid_targets_without_mutation() {
     let test_dir = TestDir::new("header-restore-exact");
     let encrypted = encrypt_fixture(&test_dir, "plain", b"payload bytes");
@@ -136,7 +167,13 @@ fn header_restore_rejects_inexact_headers_and_invalid_targets_without_mutation()
     fs::write(&stripped_for_short, &stripped_bytes).unwrap();
     let output = run_cli(
         test_dir.path(),
-        &["header", "restore", "short.hdr", "stripped-short.enc"],
+        &[
+            "header",
+            "restore",
+            "--force",
+            "short.hdr",
+            "stripped-short.enc",
+        ],
     );
     assert_failure(&output, "restore with short detached header");
     assert_eq!(fs::read(&stripped_for_short).unwrap(), stripped_bytes);
@@ -149,7 +186,13 @@ fn header_restore_rejects_inexact_headers_and_invalid_targets_without_mutation()
     fs::write(&stripped_for_trailing, &stripped_bytes).unwrap();
     let output = run_cli(
         test_dir.path(),
-        &["header", "restore", "trailing.hdr", "stripped-trailing.enc"],
+        &[
+            "header",
+            "restore",
+            "--force",
+            "trailing.hdr",
+            "stripped-trailing.enc",
+        ],
     );
     assert_failure(&output, "restore with trailing detached header");
     assert_eq!(fs::read(&stripped_for_trailing).unwrap(), stripped_bytes);
@@ -159,7 +202,13 @@ fn header_restore_rejects_inexact_headers_and_invalid_targets_without_mutation()
     fs::write(&short_target, &short_target_bytes).unwrap();
     let output = run_cli(
         test_dir.path(),
-        &["header", "restore", "plain.hdr", "short-target.enc"],
+        &[
+            "header",
+            "restore",
+            "--force",
+            "plain.hdr",
+            "short-target.enc",
+        ],
     );
     assert_failure(&output, "restore into short target");
     assert_eq!(fs::read(&short_target).unwrap(), short_target_bytes);
@@ -169,7 +218,13 @@ fn header_restore_rejects_inexact_headers_and_invalid_targets_without_mutation()
     fs::write(&header_only_target, &header_only_bytes).unwrap();
     let output = run_cli(
         test_dir.path(),
-        &["header", "restore", "plain.hdr", "header-only-target.enc"],
+        &[
+            "header",
+            "restore",
+            "--force",
+            "plain.hdr",
+            "header-only-target.enc",
+        ],
     );
     assert_failure(&output, "restore into header-only target");
     assert_eq!(fs::read(&header_only_target).unwrap(), header_only_bytes);
@@ -178,7 +233,13 @@ fn header_restore_rejects_inexact_headers_and_invalid_targets_without_mutation()
     fs::write(&non_zero_target, &original).unwrap();
     let output = run_cli(
         test_dir.path(),
-        &["header", "restore", "plain.hdr", "non-zero-target.enc"],
+        &[
+            "header",
+            "restore",
+            "--force",
+            "plain.hdr",
+            "non-zero-target.enc",
+        ],
     );
     assert_failure(&output, "restore into non-stripped target");
     assert_eq!(fs::read(&non_zero_target).unwrap(), original);
@@ -191,7 +252,19 @@ fn header_strip_rejects_header_only_input_and_preserves_payload_bytes() {
     let original = fs::read(&encrypted).unwrap();
     let payload = original[HEADER_LEN..].to_vec();
 
-    let output = run_cli(test_dir.path(), &["header", "strip", "plain.enc"]);
+    let decline_output =
+        run_cli_with_stdin(test_dir.path(), &["header", "strip", "plain.enc"], b"n\n");
+    assert_success(&decline_output, "declined header strip");
+    assert_eq!(
+        fs::read(&encrypted).unwrap(),
+        original,
+        "declining header strip confirmation must leave the target unchanged"
+    );
+
+    let output = run_cli(
+        test_dir.path(),
+        &["header", "strip", "--force", "plain.enc"],
+    );
     assert_success(&output, "header strip");
 
     let stripped = fs::read(&encrypted).unwrap();
@@ -202,7 +275,49 @@ fn header_strip_rejects_header_only_input_and_preserves_payload_bytes() {
     let header_only = test_dir.path().join("header-only.enc");
     fs::write(&header_only, &original[..HEADER_LEN]).unwrap();
     let header_only_before = fs::read(&header_only).unwrap();
-    let output = run_cli(test_dir.path(), &["header", "strip", "header-only.enc"]);
+    let output = run_cli(
+        test_dir.path(),
+        &["header", "strip", "--force", "header-only.enc"],
+    );
     assert_failure(&output, "header strip header-only input");
     assert_eq!(fs::read(header_only).unwrap(), header_only_before);
+}
+
+#[test]
+fn header_restore_requires_confirmation_without_force() {
+    let test_dir = TestDir::new("header-restore-confirmation");
+    let encrypted = encrypt_fixture(&test_dir, "plain", b"payload bytes");
+    let header = dump_header(&test_dir, "plain.enc", "plain.hdr");
+    let original = fs::read(&encrypted).unwrap();
+    let payload = original[HEADER_LEN..].to_vec();
+    let stripped = test_dir.path().join("stripped.enc");
+    let mut stripped_bytes = vec![0u8; HEADER_LEN];
+    stripped_bytes.extend_from_slice(&payload);
+    fs::write(&stripped, &stripped_bytes).unwrap();
+
+    let output = run_cli_with_stdin(
+        test_dir.path(),
+        &["header", "restore", "plain.hdr", "stripped.enc"],
+        b"n\n",
+    );
+
+    assert_success(&output, "declined header restore");
+    assert_eq!(
+        fs::read(&stripped).unwrap(),
+        stripped_bytes,
+        "declining header restore confirmation must leave the target unchanged"
+    );
+
+    let output = run_cli(
+        test_dir.path(),
+        &[
+            "header",
+            "restore",
+            "--force",
+            header.to_str().unwrap(),
+            "stripped.enc",
+        ],
+    );
+    assert_success(&output, "forced header restore");
+    assert_eq!(fs::read(&stripped).unwrap(), original);
 }

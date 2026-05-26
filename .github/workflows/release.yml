@@ -8,12 +8,18 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: read
+
 jobs:
   validate_tag:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      # actions/checkout v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
 
       - name: Enforce full semver tag
         shell: bash
@@ -50,7 +56,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      # actions/checkout v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
         run: rustup toolchain install stable --profile minimal --component clippy
@@ -98,7 +107,10 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      # actions/checkout v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
         run: rustup toolchain install ${{ matrix.rust }} --profile minimal
@@ -144,7 +156,8 @@ jobs:
           [System.IO.File]::WriteAllText($checksumPath, $checksum, [System.Text.Encoding]::ASCII)
 
       - name: Upload release assets
-        uses: actions/upload-artifact@v7.0.0
+        # actions/upload-artifact v7.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: ${{ matrix.artifact_name }}
           path: |
@@ -155,11 +168,13 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
 
     steps:
-      - uses: actions/download-artifact@v8.0.0
+      # actions/download-artifact v8.0.0
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
         with:
           path: release-assets
 
@@ -180,6 +195,7 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             declare -A existing_assets=()
             unexpected_assets=()
+            duplicate_assets=()
 
             while IFS= read -r asset_name; do
               [[ -n "$asset_name" ]] || continue
@@ -201,18 +217,24 @@ jobs:
               exit 1
             fi
 
-            missing_files=()
             for file in "${files[@]}"; do
               asset_name="$(basename "$file")"
-              if [[ -z "${existing_assets[$asset_name]:-}" ]]; then
-                missing_files+=("$file")
+              if [[ -n "${existing_assets[$asset_name]:-}" ]]; then
+                duplicate_assets+=("$asset_name")
               fi
             done
 
-            if [[ "${#missing_files[@]}" -gt 0 ]]; then
-              gh release upload "$GITHUB_REF_NAME" "${missing_files[@]}" \
-                --repo "$GITHUB_REPOSITORY"
+            if [[ "${#duplicate_assets[@]}" -gt 0 ]]; then
+              {
+                echo "Existing release '$GITHUB_REF_NAME' already contains asset names from this run:"
+                printf '  - %s\n' "${duplicate_assets[@]}"
+                echo "Manual cleanup required: remove existing release assets before retrying."
+              } >&2
+              exit 1
             fi
+
+            gh release upload "$GITHUB_REF_NAME" "${files[@]}" \
+              --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$GITHUB_REF_NAME" "${files[@]}" \
               --repo "$GITHUB_REPOSITORY" \

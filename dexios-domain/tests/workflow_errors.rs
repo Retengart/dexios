@@ -8,10 +8,12 @@ use dexios_domain::archive::{ArchiveLimitError, ArchiveLimitKind};
 use dexios_domain::storage;
 #[cfg(feature = "test-support")]
 use dexios_domain::storage::cleanup::{CleanupFailure, CleanupResult, CleanupTarget};
-use dexios_domain::storage::identity::{IdentityError, PathRole};
-use dexios_domain::storage::transaction::{
-    CommittedArtifact, PartialCommitReceipt, TransactionError,
-};
+use dexios_domain::storage::identity::IdentityError;
+#[cfg(feature = "test-support")]
+use dexios_domain::storage::identity::PathRole;
+use dexios_domain::storage::transaction::TransactionError;
+#[cfg(feature = "test-support")]
+use dexios_domain::storage::transaction::{CommittedArtifact, PartialCommitReceipt};
 use dexios_domain::workflow_error::WorkflowErrorClass;
 use dexios_domain::{decrypt, encrypt, header, key, pack, unpack};
 
@@ -24,24 +26,33 @@ fn path(name: &str) -> PathBuf {
     PathBuf::from(name)
 }
 
+#[cfg(feature = "test-support")]
 fn partial_commit_error_with_source(source: io::Error) -> TransactionError {
     TransactionError::PartialCommit {
-        receipt: PartialCommitReceipt {
-            artifacts: vec![CommittedArtifact {
-                role: PathRole::Output,
-                path: path("written.out"),
-            }],
-        },
-        failed: CommittedArtifact {
-            role: PathRole::DetachedHeader,
-            path: path("failed.header"),
-        },
+        receipt: PartialCommitReceipt::unchecked_new_for_test(vec![
+            CommittedArtifact::unchecked_new_for_test(PathRole::Output, path("written.out")),
+        ]),
+        failed: CommittedArtifact::unchecked_new_for_test(
+            PathRole::DetachedHeader,
+            path("failed.header"),
+        ),
         source: Some(source),
     }
 }
 
+#[cfg(feature = "test-support")]
 fn partial_commit_error() -> TransactionError {
     partial_commit_error_with_source(io::Error::from(io::ErrorKind::AlreadyExists))
+}
+
+#[cfg(feature = "test-support")]
+fn post_commit_sync_error_with_source(source: io::Error) -> TransactionError {
+    TransactionError::PostCommitSync {
+        receipt: PartialCommitReceipt::unchecked_new_for_test(vec![
+            CommittedArtifact::unchecked_new_for_test(PathRole::Output, path("visible.out")),
+        ]),
+        source: Some(source),
+    }
 }
 
 fn archive_limit_error() -> ArchiveLimitError {
@@ -67,6 +78,7 @@ fn assert_encrypt_source(error: encrypt::Error, class: WorkflowErrorClass, label
     assert_source(&error, label);
 }
 
+#[cfg(feature = "test-support")]
 fn storage_full() -> io::Error {
     io::Error::from(io::ErrorKind::StorageFull)
 }
@@ -213,6 +225,7 @@ fn storage_errors_preserve_io_sources() {
 }
 
 #[test]
+#[cfg(feature = "test-support")]
 fn resource_pressure_helpers_detect_storage_full_source_chains() {
     let storage_error = storage::Error::CreateFileWithSource(storage_full());
     assert!(storage_error.is_resource_pressure());
@@ -224,16 +237,13 @@ fn resource_pressure_helpers_detect_storage_full_source_chains() {
     assert!(transaction_error.is_resource_pressure());
 
     let partial_commit = TransactionError::PartialCommit {
-        receipt: PartialCommitReceipt {
-            artifacts: vec![CommittedArtifact {
-                role: PathRole::Output,
-                path: path("committed.out"),
-            }],
-        },
-        failed: CommittedArtifact {
-            role: PathRole::DetachedHeader,
-            path: path("failed.header"),
-        },
+        receipt: PartialCommitReceipt::unchecked_new_for_test(vec![
+            CommittedArtifact::unchecked_new_for_test(PathRole::Output, path("committed.out")),
+        ]),
+        failed: CommittedArtifact::unchecked_new_for_test(
+            PathRole::DetachedHeader,
+            path("failed.header"),
+        ),
         source: Some(storage_full()),
     };
     assert!(partial_commit.is_resource_pressure());
@@ -243,6 +253,15 @@ fn resource_pressure_helpers_detect_storage_full_source_chains() {
         WorkflowErrorClass::TransactionCommitFailure
     );
     assert!(pack_partial_commit.is_resource_pressure());
+
+    let post_commit_sync = post_commit_sync_error_with_source(storage_full());
+    assert!(post_commit_sync.is_resource_pressure());
+    let pack_post_commit_sync = pack::Error::Transaction(post_commit_sync);
+    assert_eq!(
+        pack_post_commit_sync.workflow_class(),
+        WorkflowErrorClass::TransactionCommitFailure
+    );
+    assert!(pack_post_commit_sync.is_resource_pressure());
 
     let pack_error = pack::Error::Transaction(transaction_error);
     assert_eq!(
@@ -414,6 +433,7 @@ fn domain_errors_classify_path_identity_without_display_strings() {
 }
 
 #[test]
+#[cfg(feature = "test-support")]
 fn domain_errors_classify_transactions_without_display_strings() {
     let write = encrypt::Error::Transaction(TransactionError::Write {
         path: path("target"),
@@ -441,12 +461,28 @@ fn domain_errors_classify_transactions_without_display_strings() {
     else {
         unreachable!("partial commit fixture must stay transaction-backed");
     };
-    assert_eq!(receipt.artifacts.len(), 1);
-    assert_eq!(receipt.artifacts[0].role, PathRole::Output);
-    assert_eq!(receipt.artifacts[0].path, path("written.out"));
-    assert_eq!(failed.role, PathRole::DetachedHeader);
-    assert_eq!(failed.path, path("failed.header"));
+    assert_eq!(receipt.committed_artifacts().len(), 1);
+    assert_eq!(receipt.committed_artifacts()[0].role(), PathRole::Output);
+    assert_eq!(receipt.committed_artifacts()[0].path(), path("written.out"));
+    assert_eq!(failed.role(), PathRole::DetachedHeader);
+    assert_eq!(failed.path(), path("failed.header"));
     assert_source(&partial, "partial commit transaction wrapper");
+
+    let post_commit_sync = pack::Error::Transaction(post_commit_sync_error_with_source(
+        io::Error::from(io::ErrorKind::Other),
+    ));
+    assert_eq!(
+        post_commit_sync.workflow_class(),
+        WorkflowErrorClass::TransactionCommitFailure
+    );
+    let pack::Error::Transaction(TransactionError::PostCommitSync { receipt, .. }) =
+        &post_commit_sync
+    else {
+        unreachable!("post-commit sync fixture must stay transaction-backed");
+    };
+    assert_eq!(receipt.committed_artifacts().len(), 1);
+    assert_eq!(receipt.committed_artifacts()[0].path(), path("visible.out"));
+    assert_source(&post_commit_sync, "post-commit sync transaction wrapper");
 
     let partial_with_storage_full =
         unpack::Error::Transaction(partial_commit_error_with_source(storage_full()));
@@ -518,6 +554,9 @@ fn key_change_errors_classify_mutation_failures_without_display_strings() {
         transaction_commit.workflow_class(),
         WorkflowErrorClass::TransactionCommitFailure
     );
+
+    let stale_target = key::Error::TargetChanged;
+    assert_eq!(stale_target.workflow_class(), WorkflowErrorClass::IoFailure);
 
     let wrong_old_key = key::Error::IncorrectKey;
     assert_eq!(

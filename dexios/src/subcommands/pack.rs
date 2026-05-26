@@ -15,6 +15,18 @@ use domain::storage::identity::OverwritePolicy;
 
 use crate::cli::prompt::overwrite_check;
 
+fn reject_stdin_keyfile_prompt_conflict(params: &CryptoParams, prompt_needed: bool) -> Result<()> {
+    if prompt_needed
+        && params.force == crate::global::states::ForceMode::Prompt
+        && params.key.reads_stdin()
+    {
+        return Err(anyhow::anyhow!(
+            "--keyfile - cannot be combined with interactive overwrite prompts; pass --force to avoid reading confirmation from stdin"
+        ));
+    }
+    Ok(())
+}
+
 fn should_continue_after_overwrite_checks<F>(output_ok: bool, header_check: F) -> Result<bool>
 where
     F: FnOnce() -> Result<Option<bool>>,
@@ -66,6 +78,11 @@ pub fn execute(req: &Request) -> Result<()> {
         .map_or(OverwritePolicy::CreateNew, |path| {
             overwrite_policy_for(path)
         });
+    reject_stdin_keyfile_prompt_conflict(
+        &req.crypto_params,
+        output_overwrite_policy == OverwritePolicy::ReplaceAtCommit
+            || detached_header_overwrite_policy == OverwritePolicy::ReplaceAtCommit,
+    )?;
 
     let output_ok = overwrite_check(req.output_file, req.crypto_params.force)?;
 
@@ -103,7 +120,8 @@ pub fn execute(req: &Request) -> Result<()> {
         on_archive_entry,
     )
     .map_err(map_pack_error)?;
-    let commit_receipt = domain::pack::execute_transactional(intent).map_err(map_pack_error)?;
+    let result =
+        domain::pack::execute_transactional_with_cleanup(intent).map_err(map_pack_error)?;
 
     let hash_verification = super::hash_after_commit(
         &[String::from(req.output_file)],
@@ -111,7 +129,11 @@ pub fn execute(req: &Request) -> Result<()> {
     )?;
 
     if req.pack_params.delete_source == DeleteSource::Delete {
-        super::cleanup_after_commit(req.input_file, &commit_receipt, hash_verification)?;
+        super::cleanup_after_commit(
+            result.cleanup_receipt(),
+            result.commit_receipt(),
+            hash_verification,
+        )?;
     }
 
     Ok(())

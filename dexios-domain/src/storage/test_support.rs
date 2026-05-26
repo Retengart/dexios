@@ -6,6 +6,7 @@ pub enum FailurePoint {
     Flush,
     Sync,
     Persist,
+    PostCommitSync,
     Cleanup,
 }
 

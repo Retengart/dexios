@@ -10,17 +10,22 @@ env:
   CARGO_TERM_COLOR: always
   DEXIOS_BIN: ${{ github.workspace }}/target/release/dexios
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6.0.2
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      with:
+        persist-credentials: false
     - name: Install Rust toolchain
       run: rustup toolchain install stable --profile minimal
     - name: Select Rust toolchain
       run: rustup default stable
     - name: Restore cargo cache
-      uses: actions/cache@v5.0.3
+      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
       with:
         path: |
           ~/.cargo/registry
@@ -32,7 +37,7 @@ jobs:
     - name: Strip
       run: strip target/release/dexios
     - name: Upload Binary as artifact
-      uses: actions/upload-artifact@v7.0.0
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
       with:
         name: dexios
         path: target/release/dexios
@@ -42,9 +47,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6.0.2
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      with:
+        persist-credentials: false
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v8.0.0
+      uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
       with:
         name: dexios
         path: target/release
@@ -69,9 +76,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6.0.2
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      with:
+        persist-credentials: false
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v8.0.0
+      uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
       with:
         name: dexios
         path: target/release
@@ -90,15 +99,15 @@ jobs:
     - name: Dump Header
       run: '"$DEXIOS_BIN" header dump 100MB.enc 100MB.enc.header'
     - name: Strip Header
-      run: '"$DEXIOS_BIN" header strip 100MB.enc'
+      run: '"$DEXIOS_BIN" header strip -f 100MB.enc'
     - name: Restore Header
-      run: '"$DEXIOS_BIN" header restore 100MB.enc.header 100MB.enc'
+      run: '"$DEXIOS_BIN" header restore -f 100MB.enc.header 100MB.enc'
     - name: Decrypt in stream mode (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -dHfk keyfile 100MB.enc 100MB.bin'
     - name: Verify restored-header plaintext
       run: sha256sum -c 100MB.bin.sha256
     - name: Strip Header
-      run: '"$DEXIOS_BIN" header strip 100MB.enc'
+      run: '"$DEXIOS_BIN" header strip -f 100MB.enc'
     - name: Decrypt in stream mode with detached header (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -dHfk keyfile --header 100MB.enc.header 100MB.enc 100MB.bin'
     - name: Verify detached-header plaintext
@@ -116,9 +125,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6.0.2
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      with:
+        persist-credentials: false
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v8.0.0
+      uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
       with:
         name: dexios
         path: target/release
@@ -148,9 +159,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6.0.2
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      with:
+        persist-credentials: false
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v8.0.0
+      uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
       with:
         name: dexios
         path: target/release
@@ -189,9 +202,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6.0.2
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      with:
+        persist-credentials: false
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v8.0.0
+      uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
       with:
         name: dexios
         path: target/release
@@ -217,7 +232,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v8.0.0
+      uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
       with:
         name: dexios
         path: target/release
@@ -242,9 +257,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6.0.2
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      with:
+        persist-credentials: false
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v8.0.0
+      uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
       with:
         name: dexios
         path: target/release
@@ -261,11 +278,11 @@ jobs:
     - name: Save source manifest
       run: find test -type f -print0 | sort -z | xargs -0 sha256sum > test.manifest
     - name: Pack+Encrypt test directory (XChaCha20-Poly1305)
-      run: '"$DEXIOS_BIN" pack -fk keyfile test/ output.zip'
+      run: '"$DEXIOS_BIN" pack -fk keyfile test/ output.dexios'
     - name: Remove Directory
       run: rm -rf test/
     - name: Decrypt+Unpack archive (XChaCha20-Poly1305)
-      run: '"$DEXIOS_BIN" unpack -fk keyfile output.zip .'
+      run: '"$DEXIOS_BIN" unpack -fk keyfile output.dexios .'
     - name: Save unpacked manifest
       run: find test -type f -print0 | sort -z | xargs -0 sha256sum > test.after.manifest
     - name: Verify unpacked files
@@ -275,9 +292,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6.0.2
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      with:
+        persist-credentials: false
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v8.0.0
+      uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
       with:
         name: dexios
         path: target/release
@@ -308,9 +327,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6.0.2
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      with:
+        persist-credentials: false
     - name: Retrieve Dexios
-      uses: actions/download-artifact@v8.0.0
+      uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
       with:
         name: dexios
         path: target/release

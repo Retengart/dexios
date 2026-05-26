@@ -48,7 +48,10 @@ pub(crate) fn classify_identity_error(error: &IdentityError) -> WorkflowErrorCla
 }
 
 pub(crate) fn classify_transaction_error(error: &TransactionError) -> WorkflowErrorClass {
-    if matches!(error, TransactionError::PartialCommit { .. }) {
+    if matches!(
+        error,
+        TransactionError::PartialCommit { .. } | TransactionError::PostCommitSync { .. }
+    ) {
         return WorkflowErrorClass::TransactionCommitFailure;
     }
 
@@ -60,9 +63,9 @@ pub(crate) fn classify_transaction_error(error: &TransactionError) -> WorkflowEr
         TransactionError::Write { .. }
         | TransactionError::Flush { .. }
         | TransactionError::Sync { .. } => WorkflowErrorClass::IoFailure,
-        TransactionError::Persist { .. } | TransactionError::PartialCommit { .. } => {
-            WorkflowErrorClass::TransactionCommitFailure
-        }
+        TransactionError::Persist { .. }
+        | TransactionError::PartialCommit { .. }
+        | TransactionError::PostCommitSync { .. } => WorkflowErrorClass::TransactionCommitFailure,
     }
 }
 

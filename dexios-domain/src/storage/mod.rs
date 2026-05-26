@@ -7,6 +7,7 @@ mod fs;
 pub mod identity;
 #[cfg(test)]
 mod memory;
+pub mod mutation;
 mod temp;
 /// Deterministic failure hooks for storage safety tests; runtime workflows do not use them.
 #[cfg(any(test, feature = "test-support"))]

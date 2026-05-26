@@ -154,7 +154,7 @@ pub fn key_manipulation_params(sub_matches: &ArgMatches) -> Result<KeyManipulati
         sub_matches,
         &KeyParams {
             user: true,
-            env: false,
+            env: true,
             autogenerate: false,
             keyfile: true,
         },

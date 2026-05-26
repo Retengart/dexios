@@ -138,7 +138,7 @@ purpose = "Prove payload ciphertext is authenticated against the parsed canonica
 invariant = "D-14"
 requirement = "STRM-02"
 source = "Generated in memory from sample V1 headers with matching nonce but different static header-derived AAD; no committed secret material."
-expected = "V1PayloadStream::decrypt_file returns StreamError::Authentication and does not report committed plaintext success."
+expected = "V1PayloadStream::decrypt_file_uncommitted returns StreamError::Authentication and does not report committed plaintext success."
 owner_phase = "Phase 1"
 
 [[fixture]]
@@ -149,7 +149,7 @@ purpose = "Prove V1 stream ciphertext is bound to the payload nonce from the par
 invariant = "D-14"
 requirement = "STRM-02"
 source = "Generated in memory by decrypting deterministic ciphertext with a parsed payload carrying a different nonce."
-expected = "V1PayloadStream::decrypt_file returns StreamError::Authentication and does not expose committed plaintext success."
+expected = "V1PayloadStream::decrypt_file_uncommitted returns StreamError::Authentication and does not expose committed plaintext success."
 owner_phase = "Phase 1"
 
 [[fixture]]
@@ -160,7 +160,7 @@ purpose = "Prove deterministic V1 stream ciphertext fails when decrypted with th
 invariant = "D-14"
 requirement = "STRM-02"
 source = "Generated in memory from sample V1 headers and deterministic payload bytes using disposable fixed test keys."
-expected = "V1PayloadStream::decrypt_file returns StreamError::Authentication before committed plaintext success."
+expected = "V1PayloadStream::decrypt_file_uncommitted returns StreamError::Authentication before committed plaintext success."
 owner_phase = "Phase 1"
 
 [[fixture]]
@@ -171,7 +171,7 @@ purpose = "Prove V1 LE31 chunk ordering is authenticated and rejects swapped non
 invariant = "D-14"
 requirement = "STRM-02"
 source = "Generated in memory by encrypting plaintext_spanning_normal_chunks and swapping two deterministic ciphertext chunks."
-expected = "V1PayloadStream::decrypt_file returns StreamError::Authentication before committed plaintext success."
+expected = "V1PayloadStream::decrypt_file_uncommitted returns StreamError::Authentication before committed plaintext success."
 owner_phase = "Phase 1"
 
 [[fixture]]
@@ -182,7 +182,7 @@ purpose = "Prove V1 stream decryption rejects a duplicated non-final ciphertext 
 invariant = "D-14"
 requirement = "STRM-02"
 source = "Generated in memory by encrypting plaintext_spanning_normal_chunks and inserting a duplicate of the first non-final chunk."
-expected = "V1PayloadStream::decrypt_file returns StreamError::Authentication; any bytes written are uncommitted scratch before the duplicate."
+expected = "V1PayloadStream::decrypt_file_uncommitted returns StreamError::Authentication; any bytes written are uncommitted scratch before the duplicate."
 owner_phase = "Phase 1"
 
 [[fixture]]
@@ -204,7 +204,7 @@ purpose = "Prove exact multi-block V1 streams reject ciphertext that omits the a
 invariant = "D-14"
 requirement = "STRM-02"
 source = "Generated in memory by removing the deterministic empty final marker after exact-two-block encryption."
-expected = "V1PayloadStream::decrypt_file returns StreamError::MissingFinalBlock; plaintext bytes are uncommitted scratch."
+expected = "V1PayloadStream::decrypt_file_uncommitted returns StreamError::MissingFinalBlock; plaintext bytes are uncommitted scratch."
 owner_phase = "Phase 1"
 
 [[fixture]]
@@ -215,7 +215,7 @@ purpose = "Prove V1 stream decryption rejects a bit flip in a non-final cipherte
 invariant = "D-14"
 requirement = "STRM-02"
 source = "Generated in memory by flipping a deterministic bit in the second encrypted chunk of plaintext_spanning_normal_chunks."
-expected = "V1PayloadStream::decrypt_file returns StreamError::Authentication; earlier plaintext is only uncommitted scratch."
+expected = "V1PayloadStream::decrypt_file_uncommitted returns StreamError::Authentication; earlier plaintext is only uncommitted scratch."
 owner_phase = "Phase 1"
 
 [[fixture]]
@@ -226,7 +226,7 @@ purpose = "Prove V1 stream decryption rejects a bit flip in the authenticated fi
 invariant = "D-14"
 requirement = "STRM-02"
 source = "Generated in memory by flipping a deterministic bit in the final encrypted chunk of plaintext_spanning_normal_chunks."
-expected = "V1PayloadStream::decrypt_file returns StreamError::FinalBlockAuthentication; normal chunks are only uncommitted scratch."
+expected = "V1PayloadStream::decrypt_file_uncommitted returns StreamError::FinalBlockAuthentication; normal chunks are only uncommitted scratch."
 owner_phase = "Phase 1"
 
 [[fixture]]

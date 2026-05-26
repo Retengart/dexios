@@ -6,7 +6,8 @@ pub mod strip;
 
 use core::header::common::HeaderReadError;
 
-use crate::storage::identity::IdentityError;
+use crate::storage::identity::{IdentityError, PathRole};
+use crate::storage::mutation::MutationFreshnessError;
 use crate::storage::transaction::TransactionError;
 use crate::workflow_error::WorkflowErrorClass;
 use crate::workflow_error::{classify_identity_error, classify_transaction_error};
@@ -32,6 +33,8 @@ pub enum Error {
     MissingPayload { actual_len: usize },
     TargetTooShort { actual_len: usize },
     TargetNotStripped,
+    TargetChanged,
+    DetachedHeaderChanged,
     PathIdentity(IdentityError),
     Transaction(TransactionError),
 }
@@ -58,7 +61,9 @@ impl Error {
             | Self::WriteIo
             | Self::ReadIo
             | Self::ReadIoWithSource(_)
-            | Self::Rewind => WorkflowErrorClass::IoFailure,
+            | Self::Rewind
+            | Self::TargetChanged
+            | Self::DetachedHeaderChanged => WorkflowErrorClass::IoFailure,
             Self::PathIdentity(error) => classify_identity_error(error),
             Self::Transaction(error) => classify_transaction_error(error),
         }
@@ -70,8 +75,9 @@ impl std::fmt::Display for Error {
         use Error::{
             HeaderSizeParse, InvalidFile, InvalidMagic, MalformedV1Header, MissingPayload,
             PathIdentity, Read, ReadIo, ReadIoWithSource, RetiredV1Layout, Rewind,
-            ShortDetachedHeader, TargetNotStripped, TargetTooShort, TrailingDetachedHeader,
-            Transaction, UnsupportedFormat, UnsupportedRestore, UnsupportedVersion, Write, WriteIo,
+            ShortDetachedHeader, TargetChanged, TargetNotStripped, TargetTooShort,
+            TrailingDetachedHeader, Transaction, UnsupportedFormat, UnsupportedRestore,
+            UnsupportedVersion, Write, WriteIo,
         };
         match self {
             UnsupportedRestore => f.write_str("The provided request is unsupported with this file. It maybe isn't an encrypted file, or it was encrypted in detached mode."),
@@ -104,6 +110,10 @@ impl std::fmt::Display for Error {
                 write!(f, "Header restore target is too short: {actual_len} bytes")
             }
             TargetNotStripped => f.write_str("Header restore target is not stripped"),
+            TargetChanged => f.write_str("Header workflow target changed before commit"),
+            Error::DetachedHeaderChanged => {
+                f.write_str("Detached header changed before header restore commit")
+            }
             PathIdentity(error) => write!(f, "{error}"),
             Transaction(error) => write!(f, "{error}"),
         }
@@ -133,8 +143,25 @@ impl std::error::Error for Error {
             | Self::TrailingDetachedHeader { .. }
             | Self::MissingPayload { .. }
             | Self::TargetTooShort { .. }
-            | Self::TargetNotStripped => None,
+            | Self::TargetNotStripped
+            | Self::TargetChanged
+            | Self::DetachedHeaderChanged => None,
         }
+    }
+}
+
+pub(crate) fn map_mutation_freshness_error(error: MutationFreshnessError) -> Error {
+    match error.role() {
+        PathRole::DetachedHeader | PathRole::GeneratedDetachedHeader => {
+            Error::DetachedHeaderChanged
+        }
+        PathRole::Input
+        | PathRole::Output
+        | PathRole::GeneratedOutput
+        | PathRole::UnpackRoot
+        | PathRole::MutationTarget
+        | PathRole::ProcessedSource
+        | PathRole::CleanupTarget => Error::TargetChanged,
     }
 }
 

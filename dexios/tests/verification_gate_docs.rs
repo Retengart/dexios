@@ -23,6 +23,7 @@ const SECURITY_POLICY: &str = include_str!("../../book/src/Security-Policy.md");
 const CHANGELOG: &str = include_str!("../../CHANGELOG.md");
 const CARGO_TOML: &str = include_str!("../../Cargo.toml");
 const CARGO_LOCK: &str = include_str!("../../Cargo.lock");
+const FLAKE_LOCK: &str = include_str!("../../flake.lock");
 const DEXIOS_DOMAIN_CARGO_TOML: &str = include_str!("../../dexios-domain/Cargo.toml");
 const DEXIOS_CARGO_TOML: &str = include_str!("../../dexios/Cargo.toml");
 const GITIGNORE: &str = include_str!("../../.gitignore");
@@ -54,6 +55,8 @@ const DEXIOS_MAIN_RS: &str = include_str!("../src/main.rs");
 const DEXIOS_CLI_RS: &str = include_str!("../src/cli.rs");
 const DEXIOS_GLOBAL_RS: &str = include_str!("../src/global.rs");
 const DEXIOS_STATES_RS: &str = include_str!("../src/global/states.rs");
+const DEXIOS_ENCRYPT_RS: &str = include_str!("../src/subcommands/encrypt.rs");
+const DEXIOS_DECRYPT_RS: &str = include_str!("../src/subcommands/decrypt.rs");
 const DEXIOS_UNPACK_RS: &str = include_str!("../src/subcommands/unpack.rs");
 const DEXIOS_SUBCOMMAND_ERRORS_RS: &str = include_str!("../src/subcommands/errors.rs");
 const DEXIOS_CORE_LIB_RS: &str = include_str!("../../dexios-core/src/lib.rs");
@@ -64,14 +67,33 @@ const DEXIOS_DOMAIN_LIB_RS: &str = include_str!("../../dexios-domain/src/lib.rs"
 const DEXIOS_DOMAIN_WORKFLOW_ERROR_RS: &str =
     include_str!("../../dexios-domain/src/workflow_error.rs");
 const DEXIOS_DOMAIN_ARCHIVE_RS: &str = include_str!("../../dexios-domain/src/archive.rs");
+const DEXIOS_DOMAIN_ENCRYPT_RS: &str = include_str!("../../dexios-domain/src/encrypt.rs");
 const DEXIOS_DOMAIN_PACK_RS: &str = include_str!("../../dexios-domain/src/pack.rs");
 const DEXIOS_DOMAIN_DECRYPT_RS: &str = include_str!("../../dexios-domain/src/decrypt.rs");
 const DEXIOS_DOMAIN_UNPACK_RS: &str = include_str!("../../dexios-domain/src/unpack.rs");
+const DEXIOS_DOMAIN_IDENTITY_RS: &str = include_str!("../../dexios-domain/src/storage/identity.rs");
 const DEXIOS_DOMAIN_STORAGE_RS: &str = include_str!("../../dexios-domain/src/storage/mod.rs");
+const DEXIOS_DOMAIN_MUTATION_RS: &str = include_str!("../../dexios-domain/src/storage/mutation.rs");
 const DEXIOS_DOMAIN_CLEANUP_RS: &str = include_str!("../../dexios-domain/src/storage/cleanup.rs");
 const DEXIOS_DOMAIN_TRANSACTION_RS: &str =
     include_str!("../../dexios-domain/src/storage/transaction.rs");
 const DEXIOS_DOMAIN_TEMP_RS: &str = include_str!("../../dexios-domain/src/storage/temp.rs");
+const DEXIOS_DOMAIN_HEADER_RS: &str = include_str!("../../dexios-domain/src/header.rs");
+const DEXIOS_DOMAIN_HEADER_STRIP_RS: &str = include_str!("../../dexios-domain/src/header/strip.rs");
+const DEXIOS_DOMAIN_HEADER_RESTORE_RS: &str =
+    include_str!("../../dexios-domain/src/header/restore.rs");
+const DEXIOS_DOMAIN_KEY_RS: &str = include_str!("../../dexios-domain/src/key.rs");
+const DEXIOS_DOMAIN_PATH_IDENTITY_TESTS: &str =
+    include_str!("../../dexios-domain/tests/path_identity.rs");
+const DEXIOS_DOMAIN_TRANSACTION_TESTS: &str =
+    include_str!("../../dexios-domain/tests/transactions.rs");
+const DEXIOS_DOMAIN_HEADER_RESTORE_TESTS: &str =
+    include_str!("../../dexios-domain/tests/header_restore.rs");
+const DEXIOS_DOMAIN_KEYSLOTS_TESTS: &str = include_str!("../../dexios-domain/tests/keyslots_v1.rs");
+const DEXIOS_DOMAIN_CLEANUP_RECEIPTS_TESTS: &str =
+    include_str!("../../dexios-domain/tests/cleanup_receipts.rs");
+const DEXIOS_DOMAIN_DETACHED_PUBLICATION_TESTS: &str =
+    include_str!("../../dexios-domain/tests/detached_publication.rs");
 const DEXIOS_DOMAIN_WORKFLOW_ERROR_TESTS: &str =
     include_str!("../../dexios-domain/tests/workflow_errors.rs");
 const DEXIOS_DOMAIN_WORKFLOW_PUBLIC_API_TESTS: &str =
@@ -79,12 +101,18 @@ const DEXIOS_DOMAIN_WORKFLOW_PUBLIC_API_TESTS: &str =
 const DEXIOS_DOMAIN_ARCHIVE_PUBLIC_API_TESTS: &str =
     include_str!("../../dexios-domain/tests/archive_public_api.rs");
 const DEXIOS_WORKFLOW_ERROR_CLI_TESTS: &str = include_str!("workflow_error_cli.rs");
+const DEXIOS_HEADER_CLI_REGRESSION_TESTS: &str = include_str!("header_cli_regressions.rs");
+const DEXIOS_KEY_CLI_REGRESSION_TESTS: &str = include_str!("key_cli_regressions.rs");
 const DEXIOS_SUBCOMMANDS_RS: &str = include_str!("../src/subcommands.rs");
 const DEXIOS_PACK_RS: &str = include_str!("../src/subcommands/pack.rs");
 const AUDIT_WORKFLOW: &str = include_str!("../../.github/workflows/audit.yml");
+const BUILD_NIX_WORKFLOW: &str = include_str!("../../.github/workflows/build_nix.yml");
+const CARGO_BUILD_WORKFLOW: &str = include_str!("../../.github/workflows/cargo-build.yml");
+const CLI_SURFACE_WORKFLOW: &str = include_str!("../../.github/workflows/cli-surface.yml");
 const DOCS_WORKFLOW: &str = include_str!("../../.github/workflows/docs.yml");
 const DEXIOS_TESTS_WORKFLOW: &str = include_str!("../../.github/workflows/dexios-tests.yml");
 const RELEASE_WORKFLOW: &str = include_str!("../../.github/workflows/release.yml");
+const UNIT_TESTS_WORKFLOW: &str = include_str!("../../.github/workflows/unit_tests.yml");
 const PERFORMANCE_NOTES: &str =
     include_str!("../../book/src/technical-details/Performance-Notes.md");
 
@@ -98,11 +126,12 @@ const REPAIRED_GATE_COMMANDS: &[&str] = &[
     "bash scripts/verify_cli_surface.sh",
     "mdbook build",
     "git diff --exit-code -- docs",
+    "git status --porcelain --untracked-files=all -- docs",
     "typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf",
     "git diff --exit-code -- spec/dexios-paper.pdf",
     "bash scripts/verify_repo_hygiene.sh",
     "git diff --check",
-    "bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --allow-dirty --asset target/release-lto/dexios",
+    "bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release-lto/dexios",
 ];
 
 const ASSURANCE_REPLAY_COMMANDS: &[&str] = &[
@@ -144,6 +173,62 @@ fn assert_not_contains(source_name: &str, source: &str, needle: &str) {
         !source.contains(needle),
         "{source_name} must not contain {needle:?}"
     );
+}
+
+fn assert_action_pin(source_name: &str, source: &str, action: &str, sha: &str) {
+    assert_eq!(sha.len(), 40, "expected full SHA for {action}");
+    assert!(
+        sha.chars().all(|ch| ch.is_ascii_hexdigit()),
+        "expected lowercase/uppercase hex SHA for {action}: {sha}"
+    );
+    assert_contains(source_name, source, &format!("uses: {action}@{sha}"));
+}
+
+fn assert_external_actions_are_full_sha_pinned(source_name: &str, source: &str) {
+    for (line_number, line) in source.lines().enumerate() {
+        let line = line.trim();
+        let Some(uses_ref) = line
+            .strip_prefix("- uses: ")
+            .or_else(|| line.strip_prefix("uses: "))
+        else {
+            continue;
+        };
+        if uses_ref.starts_with("./") {
+            continue;
+        }
+        let Some((_action, reference)) = uses_ref.rsplit_once('@') else {
+            panic!(
+                "{source_name}:{} action use must include an @ ref",
+                line_number + 1
+            );
+        };
+        assert!(
+            reference.len() == 40 && reference.chars().all(|ch| ch.is_ascii_hexdigit()),
+            "{source_name}:{} action ref must be a full 40-char SHA: {uses_ref}",
+            line_number + 1
+        );
+    }
+}
+
+fn assert_checkout_steps_disable_persist_credentials(source_name: &str, source: &str) {
+    let lines: Vec<_> = source.lines().collect();
+    for (index, line) in lines.iter().enumerate() {
+        if !line.contains("uses: actions/checkout@") {
+            continue;
+        }
+        let window_end = (index + 4).min(lines.len());
+        assert!(
+            lines[index..window_end]
+                .iter()
+                .any(|line| line.trim() == "persist-credentials: false"),
+            "{source_name}:{} checkout step must set persist-credentials: false",
+            index + 1
+        );
+    }
+}
+
+fn assert_workflow_default_read_permissions(source_name: &str, source: &str) {
+    assert_contains(source_name, source, "\npermissions:\n  contents: read\n");
 }
 
 fn assert_no_release_overclaim_patterns(source_name: &str, source: &str) {
@@ -236,6 +321,159 @@ fn spec_format_reference_alignment_issues(source: &str) -> Vec<&'static str> {
     ] {
         if source.contains(forbidden) {
             issues.push(issue);
+        }
+    }
+
+    issues
+}
+
+fn phase15_safety_contract_issues(source: &str) -> Vec<&'static str> {
+    let mut issues = Vec::new();
+
+    for (required, issue) in [
+        (
+            "dexios-domain/src/storage/identity.rs",
+            "missing storage identity source authority",
+        ),
+        (
+            "dexios-domain/tests/path_identity.rs",
+            "missing path identity test authority",
+        ),
+        (
+            "dexios-domain/tests/unpack.rs",
+            "missing unpack identity regression authority",
+        ),
+        (
+            "dexios/tests/unpack_cli_regressions.rs",
+            "missing unpack CLI identity regression authority",
+        ),
+        (
+            "dexios/tests/delete_source_cli.rs",
+            "missing delete-source cleanup identity regression authority",
+        ),
+        ("PathRole::Input", "missing input path identity role"),
+        (
+            "PathRole::DetachedHeader",
+            "missing detached-header path identity role",
+        ),
+        (
+            "PathRole::ProcessedSource",
+            "missing processed-source cleanup role",
+        ),
+        (
+            "PathRole::CleanupTarget",
+            "missing cleanup-target identity role",
+        ),
+        (
+            "parent-directory components before normalization",
+            "missing parent-component pre-normalization boundary",
+        ),
+        (
+            "FileStorage::read_resolved_existing_no_follow",
+            "missing identity-bound no-follow reopen boundary",
+        ),
+    ] {
+        if !source.contains(required) {
+            issues.push(issue);
+        }
+    }
+
+    issues
+}
+
+fn phase15_public_docs_issues(sources: &[(&str, &str)]) -> Vec<&'static str> {
+    let mut issues = Vec::new();
+
+    for (required, issue) in [
+        ("symlinked parent", "missing symlinked parent rejection"),
+        (
+            "parent-directory components",
+            "missing parent-component rejection wording",
+        ),
+        ("final symlink", "missing final symlink rejection"),
+        (
+            "alias-aware identity",
+            "missing alias-aware identity wording",
+        ),
+        ("same-file", "missing same-file alias wording"),
+        (
+            "ordinary delete-after-success cleanup",
+            "missing ordinary cleanup boundary",
+        ),
+        ("no secure erase", "missing no-secure-erase boundary"),
+        (
+            "no physical sanitization",
+            "missing no-physical-sanitization boundary",
+        ),
+    ] {
+        if !sources
+            .iter()
+            .any(|(_, source)| source.replace('`', "").contains(required))
+        {
+            issues.push(issue);
+        }
+    }
+
+    for (source_name, source) in sources {
+        issues.extend(phase15_platform_parity_issues(
+            source_name,
+            source,
+            &[DEXIOS_DOMAIN_IDENTITY_RS, DEXIOS_DOMAIN_PATH_IDENTITY_TESTS],
+        ));
+        issues.extend(phase15_cleanup_authorization_issues(source_name, source));
+    }
+
+    issues
+}
+
+fn phase15_platform_parity_issues(
+    _source_name: &str,
+    source: &str,
+    proof_sources: &[&str],
+) -> Vec<&'static str> {
+    let has_explicit_unqualified_proof = proof_sources.iter().any(|proof_source| {
+        proof_source.contains("explicit Windows/non-Unix path identity parity proof")
+            || proof_source.contains("explicit Windows and non-Unix path identity parity proof")
+    });
+    if has_explicit_unqualified_proof {
+        return Vec::new();
+    }
+
+    let normalized = source.to_ascii_lowercase();
+    let mut issues = Vec::new();
+
+    for forbidden in [
+        "windows/non-unix parity",
+        "windows and non-unix parity",
+        "identical path identity behavior on windows and non-unix",
+        "same path identity guarantees on windows and non-unix",
+        "full path identity parity across windows and non-unix",
+        "symlink rejection parity on every platform",
+    ] {
+        if normalized.contains(forbidden) {
+            issues.push("unqualified Windows/non-Unix parity claim without source proof");
+        }
+    }
+
+    issues
+}
+
+fn phase15_cleanup_authorization_issues(_source_name: &str, source: &str) -> Vec<&'static str> {
+    let normalized = source.to_ascii_lowercase();
+    let mut issues = Vec::new();
+
+    for forbidden in [
+        "phase 16 cleanup authorization",
+        "phase16 cleanup authorization",
+        "partial commit evidence is cleanup authorization",
+        "partial commit evidence authorizes cleanup",
+        "cleanup may run after partial commit",
+        "cleanup runs after partial commit evidence",
+        "secure erase guarantee",
+        "physical sanitization guarantee",
+    ] {
+        if normalized.contains(forbidden) {
+            issues.push("cleanup or secure-erase overclaim");
         }
     }
 
@@ -634,15 +872,22 @@ fn is_non_comment_line(line: &str) -> bool {
 
 #[test]
 fn tracked_docs_define_the_minimum_maintainer_gate() {
-    for (source_name, source) in [
-        ("book/src/Safety-Contract.md", SAFETY_CONTRACT),
-        (
-            "book/src/Installing-and-Building.md",
-            INSTALLING_AND_BUILDING,
-        ),
-    ] {
-        assert_all_contains(source_name, source, REPAIRED_GATE_COMMANDS);
-    }
+    assert_all_contains(
+        "book/src/Safety-Contract.md",
+        SAFETY_CONTRACT,
+        REPAIRED_GATE_COMMANDS,
+    );
+
+    let installing_gate_commands: Vec<_> = REPAIRED_GATE_COMMANDS
+        .iter()
+        .copied()
+        .filter(|command| !command.starts_with("typst compile "))
+        .collect();
+    assert_all_contains(
+        "book/src/Installing-and-Building.md",
+        INSTALLING_AND_BUILDING,
+        &installing_gate_commands,
+    );
 
     for required in [
         "cargo install cargo-audit --locked --version 0.22.1",
@@ -1082,14 +1327,19 @@ fn local_scripts_expose_the_full_maintainer_gate() {
         "scripts/verify_phase_gate.sh",
         VERIFY_PHASE_GATE,
         "run git diff --check",
-        "run bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --allow-dirty --asset target/release-lto/dexios",
+        "run bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release-lto/dexios",
+    );
+    assert_non_comment_lines_exclude(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        &["--allow-dirty"],
     );
 
     for required in [
         "require_tool cargo-audit \"cargo install cargo-audit --locked --version 0.22.1\"",
-        "require_tool typst \"install Typst from https://typst.app/docs/install/ or your OS package manager\"",
         "require_tool cargo-deny \"cargo install cargo-deny --locked --version 0.19.6\"",
         "require_tool mdbook \"cargo install mdbook --locked\"",
+        "require_tool typst \"install Typst from https://typst.app/docs/install/ or your OS package manager\"",
         "verify_no_unsafe_crate_roots",
         "grep -Fxq '#![forbid(unsafe_code)]'",
         "dexios/src/main.rs",
@@ -1117,6 +1367,32 @@ fn local_scripts_expose_the_full_maintainer_gate() {
             required,
         );
     }
+}
+
+#[test]
+fn release_manifest_dirty_policy_is_split_between_local_dry_run_and_release_gate() {
+    for required in [
+        "bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release-lto/dexios",
+        "tracked working tree changes fail closed",
+        "--allow-dirty` is only for local dry runs",
+    ] {
+        assert_contains(
+            "book/src/Installing-and-Building.md",
+            INSTALLING_AND_BUILDING,
+            required,
+        );
+    }
+
+    assert_contains(
+        "book/src/Safety-Contract.md",
+        SAFETY_CONTRACT,
+        "bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release-lto/dexios",
+    );
+    assert_not_contains(
+        "book/src/Safety-Contract.md",
+        SAFETY_CONTRACT,
+        "verify_phase_gate.sh` may pass `--allow-dirty`",
+    );
 }
 
 #[test]
@@ -1293,6 +1569,51 @@ fn canonical_v1_docs_source_gate_catches_stream_and_payload_claims() {
 }
 
 #[test]
+fn phase19_public_api_authority_contract_is_source_gated() {
+    let docs = [
+        ("book/src/Safety-Contract.md", SAFETY_CONTRACT),
+        ("book/src/dexios-core/Encryption.md", ENCRYPTION),
+    ];
+
+    for required in [
+        "public API authority boundaries",
+        "forge-resistant receipts",
+        "V1FinalAuth",
+        "cleanup receipts",
+        "transaction receipts",
+        "detached pair receipts",
+        "mutation snapshots",
+        "caller obligations for uncommitted stream reads",
+    ] {
+        assert_corpus_markdown_text_contains("Phase 19 APIF documentation corpus", &docs, required);
+    }
+
+    for (source_name, source) in docs {
+        for forbidden in [
+            "public API rollback guarantee",
+            "public API recovery guarantee",
+            "public API locking guarantee",
+            "public API secure erase guarantee",
+        ] {
+            assert_not_contains(source_name, source, forbidden);
+        }
+    }
+
+    for command in [
+        "run cargo test -p dexios-domain --features test-support --test workflow_public_api --test archive_public_api --test cleanup_receipts --test transactions --test workflow_errors --release",
+        "run cargo test -p dexios-core --test public_api_footguns --release",
+        "run cargo test -p dexios --test verification_gate_docs --release",
+    ] {
+        assert_non_comment_line_count(
+            "scripts/verify_phase_gate.sh",
+            VERIFY_PHASE_GATE,
+            command,
+            1,
+        );
+    }
+}
+
+#[test]
 fn canonical_v1_docs_source_gate_catches_manifest_and_error_claims() {
     for required in [
         "manifest-first archive payloads",
@@ -1402,6 +1723,664 @@ fn phase14_spec_alignment_and_release_gate_are_source_gated() {
         RELEASE_WORKFLOW,
         "needs: build",
         1,
+    );
+}
+
+#[test]
+fn phase15_storage_identity_source_boundaries_are_source_gated() {
+    for required in [
+        "pub enum PathRole",
+        "ProcessedSource",
+        "CleanupTarget",
+        "fs::symlink_metadata(&absolute_path)",
+        "meta.file_type().is_symlink()",
+        "reject_parent_components(&path)?",
+        "Component::ParentDir",
+        "reject_symlinked_prefix(&absolute_path)?",
+        "reject_symlinked_prefix(&existing_parent)?",
+        "same_file::is_same_file",
+        "resolve_missing_target_parent",
+    ] {
+        assert_contains(
+            "dexios-domain/src/storage/identity.rs",
+            DEXIOS_DOMAIN_IDENTITY_RS,
+            required,
+        );
+    }
+
+    let unpack_intent_section = normalized_rust_production_section(
+        "dexios-domain/src/unpack.rs",
+        DEXIOS_DOMAIN_UNPACK_RS,
+        "impl UnpackIntent",
+        "struct HandleRequest",
+    );
+    assert_normalized_section_order(
+        "dexios-domain/src/unpack.rs::UnpackIntent::new",
+        &unpack_intent_section,
+        &[
+            "PathIdentityGraph::new",
+            ".add_existing(&input_path, PathRole::ProcessedSource)",
+            "CleanupReceipt::from_processed_sources",
+            ".add_existing(path, PathRole::DetachedHeader)",
+            "graph.validate()",
+            "read_resolved_existing_no_follow(&input_target)",
+        ],
+    );
+    for required in [
+        "let input_path = input_path.as_ref().to_path_buf();",
+        "output_dir_path: output_dir_path.as_ref().to_path_buf()",
+        "PathRole::ProcessedSource",
+        "PathRole::DetachedHeader",
+        "read_resolved_existing_no_follow",
+    ] {
+        assert_contains(
+            "dexios-domain/src/unpack.rs",
+            DEXIOS_DOMAIN_UNPACK_RS,
+            required,
+        );
+    }
+
+    let manifest_identity_section = normalized_rust_production_section(
+        "dexios-domain/src/unpack.rs",
+        DEXIOS_DOMAIN_UNPACK_RS,
+        "fn prepare_manifest_extraction_entities",
+        "fn stage_manifest_file_body",
+    );
+    assert_normalized_section_order(
+        "dexios-domain/src/unpack.rs::prepare_manifest_extraction_entities",
+        &manifest_identity_section,
+        &[
+            "PathIdentityGraph::new",
+            ".add_existing(input_path, PathRole::Input)",
+            ".add_existing(detached_header_path, PathRole::DetachedHeader)",
+            ".add_unpack_root(&output_dir)",
+            ".add_output(&full_path, PathRole::Output, overwrite_policy)",
+        ],
+    );
+
+    for required in [
+        "identity_rejects_existing_roles_with_final_symlink_components",
+        "identity_rejects_existing_roles_with_symlinked_parent_prefixes",
+        "identity_rejects_existing_output_roles_with_symlinked_parent_prefixes",
+        "identity_accepts_processed_source_and_cleanup_roles_for_real_existing_files",
+        "identity_rejects_hardlink_alias",
+        "identity_rejects_symlinked_missing_target_prefix",
+    ] {
+        assert_contains(
+            "dexios-domain/tests/path_identity.rs",
+            DEXIOS_DOMAIN_PATH_IDENTITY_TESTS,
+            required,
+        );
+    }
+
+    for required in [
+        "unpack_intent_rejects_final_symlink_archive_input_before_parsing",
+        "unpack_intent_rejects_final_symlink_detached_header_before_parsing",
+        "unpack_intent_rejects_archive_input_with_symlinked_parent_before_parsing",
+        "unpack_rejects_symlinked_intermediate_output_paths",
+        "unpack_rejects_symlinked_output_directory_prefix",
+        "unpack_rejects_entry_that_aliases_encrypted_input_archive",
+        "unpack_rejects_entry_that_aliases_detached_header",
+    ] {
+        assert_contains(
+            "dexios-domain/tests/unpack.rs",
+            DEXIOS_DOMAIN_UNPACK_TESTS,
+            required,
+        );
+    }
+
+    for required in [
+        "unpack_cli_rejects_final_symlink_archive_input_before_parsing",
+        "unpack_cli_rejects_final_symlink_detached_header_before_parsing",
+        "unpack_cli_rejects_symlinked_output_component",
+        "unpack_cli_rejects_symlinked_output_prefix",
+        "unpack_cli_delete_input_rejects_archive_entry_that_aliases_input",
+    ] {
+        assert_contains(
+            "dexios/tests/unpack_cli_regressions.rs",
+            DEXIOS_UNPACK_CLI_REGRESSION_TESTS,
+            required,
+        );
+    }
+}
+
+#[test]
+fn phase16_processed_source_cleanup_authorization_is_source_gated() {
+    let docs = [
+        ("book/src/Safety-Contract.md", SAFETY_CONTRACT),
+        ("book/src/technical-details/Secure-Erase.md", SECURE_ERASE),
+        (
+            "book/src/technical-details/Directory-Packing.md",
+            DIRECTORY_PACKING,
+        ),
+        ("SECURITY.md", SECURITY_MD),
+    ];
+
+    for required in [
+        "from_processed_sources",
+        "from_processed_source_trees",
+        "ProcessedSourceCleanupResult",
+        "cleanup target is not processed-source evidence",
+        "changed cleanup target tree",
+        "pub fn from_commit_and_hash",
+        "HashVerification::Failed",
+    ] {
+        assert_contains(
+            "dexios-domain/src/storage/cleanup.rs",
+            DEXIOS_DOMAIN_CLEANUP_RS,
+            required,
+        );
+    }
+
+    for required in [
+        "impl sealed::CleanupAuthorizedReceipt for CommitReceipt",
+        "impl CleanupAuthorizedReceipt for CommitReceipt",
+    ] {
+        assert_contains(
+            "dexios-domain/src/storage/transaction.rs",
+            DEXIOS_DOMAIN_TRANSACTION_RS,
+            required,
+        );
+    }
+    assert_not_contains(
+        "dexios-domain/src/storage/transaction.rs",
+        DEXIOS_DOMAIN_TRANSACTION_RS,
+        "impl CleanupAuthorizedReceipt for PartialCommitReceipt",
+    );
+
+    for (source_name, source, constructor) in [
+        (
+            "dexios-domain/src/encrypt.rs",
+            DEXIOS_DOMAIN_ENCRYPT_RS,
+            "CleanupReceipt::from_processed_sources",
+        ),
+        (
+            "dexios-domain/src/decrypt.rs",
+            DEXIOS_DOMAIN_DECRYPT_RS,
+            "CleanupReceipt::from_processed_sources",
+        ),
+        (
+            "dexios-domain/src/pack.rs",
+            DEXIOS_DOMAIN_PACK_RS,
+            "CleanupReceipt::from_processed_source_trees",
+        ),
+        (
+            "dexios-domain/src/unpack.rs",
+            DEXIOS_DOMAIN_UNPACK_RS,
+            "CleanupReceipt::from_processed_sources",
+        ),
+    ] {
+        assert_contains(source_name, source, "PathRole::ProcessedSource");
+        assert_contains(source_name, source, constructor);
+        assert_contains(source_name, source, "ProcessedSourceCleanupResult");
+    }
+
+    assert_contains(
+        "dexios-domain/src/storage/identity.rs",
+        DEXIOS_DOMAIN_IDENTITY_RS,
+        "matches!(input.role, PathRole::Input | PathRole::ProcessedSource)",
+    );
+
+    for (source_name, source, execute_fn) in [
+        (
+            "dexios/src/subcommands/encrypt.rs",
+            DEXIOS_ENCRYPT_RS,
+            "execute_transactional_with_cleanup",
+        ),
+        (
+            "dexios/src/subcommands/decrypt.rs",
+            DEXIOS_DECRYPT_RS,
+            "execute_transactional_with_cleanup",
+        ),
+        (
+            "dexios/src/subcommands/pack.rs",
+            DEXIOS_PACK_RS,
+            "execute_transactional_with_cleanup",
+        ),
+        (
+            "dexios/src/subcommands/unpack.rs",
+            DEXIOS_UNPACK_RS,
+            "execute_with_cleanup",
+        ),
+    ] {
+        assert_contains(source_name, source, execute_fn);
+        assert_contains(source_name, source, "cleanup_receipt()");
+        assert_not_contains(source_name, source, "CleanupReceipt::from_paths");
+    }
+
+    assert_not_contains(
+        "dexios/src/subcommands.rs",
+        DEXIOS_SUBCOMMANDS_RS,
+        "CleanupReceipt::from_paths",
+    );
+    assert_contains(
+        "dexios/src/subcommands.rs",
+        DEXIOS_SUBCOMMANDS_RS,
+        "Domain-returned processed-source cleanup evidence",
+    );
+    assert_contains(
+        "dexios/src/subcommands.rs",
+        DEXIOS_SUBCOMMANDS_RS,
+        "PostCommitSuccess::from_commit_and_hash",
+    );
+
+    for required in [
+        "cleanup_receipt_from_processed_source_refuses_replaced_file",
+        "cleanup_receipt_from_processed_source_tree_refuses_changed_directory_tree",
+        "cleanup_receipt_requires_hash_success_before_delete",
+    ] {
+        assert_contains(
+            "dexios-domain/tests/cleanup_receipts.rs",
+            DEXIOS_DOMAIN_CLEANUP_RECEIPTS_TESTS,
+            required,
+        );
+    }
+
+    for required in [
+        "ordinary delete-after-success cleanup",
+        "processed-source cleanup evidence",
+        "changed source tree",
+        "partial commit evidence is not cleanup authorization",
+        "committed outputs are not rolled back",
+        "no secure erase",
+        "no physical sanitization",
+    ] {
+        assert_corpus_markdown_text_contains("Phase 16 documentation corpus", &docs, required);
+    }
+
+    for (source_name, source) in docs {
+        for forbidden in [
+            "secure erase guarantee",
+            "physical sanitization guarantee",
+            "cleanup runs after partial commit evidence",
+            "cleanup rollback",
+            "rollback committed outputs",
+        ] {
+            assert_not_contains(source_name, source, forbidden);
+        }
+    }
+
+    assert_contains(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "cargo test -p dexios-domain --features test-support --test cleanup_receipts --test path_identity --release",
+    );
+}
+
+#[test]
+fn phase17_detached_payload_header_publication_is_source_gated() {
+    let docs = [
+        ("book/src/Safety-Contract.md", SAFETY_CONTRACT),
+        ("book/src/technical-details/Secure-Erase.md", SECURE_ERASE),
+        (
+            "book/src/technical-details/Directory-Packing.md",
+            DIRECTORY_PACKING,
+        ),
+        ("SECURITY.md", SECURITY_MD),
+    ];
+
+    for required in [
+        "DetachedPairReceipt",
+        "PartialDetachedPublication",
+        "DetachedPublicationFailure",
+        "detached_publication_failure",
+    ] {
+        assert_contains(
+            "dexios-domain/src/storage/transaction.rs",
+            DEXIOS_DOMAIN_TRANSACTION_RS,
+            required,
+        );
+    }
+    assert_not_contains(
+        "dexios-domain/src/storage/transaction.rs",
+        DEXIOS_DOMAIN_TRANSACTION_RS,
+        "impl CleanupAuthorizedReceipt for PartialDetachedPublication",
+    );
+
+    for (source_name, source) in [
+        ("dexios-domain/src/encrypt.rs", DEXIOS_DOMAIN_ENCRYPT_RS),
+        ("dexios-domain/src/pack.rs", DEXIOS_DOMAIN_PACK_RS),
+    ] {
+        assert_contains(source_name, source, "DetachedPublication(TransactionError)");
+        assert_contains(source_name, source, "detached_publication_failure");
+        assert_contains(
+            source_name,
+            source,
+            "map_detached_publication_transaction_error",
+        );
+    }
+    assert_contains(
+        "dexios-domain/src/pack.rs",
+        DEXIOS_DOMAIN_PACK_RS,
+        "has_detached_header",
+    );
+
+    for required in [
+        "Detached publication incomplete",
+        "source cleanup was not authorized",
+        "PathRole::Output | PathRole::GeneratedOutput => \"payload\"",
+        "PathRole::DetachedHeader | PathRole::GeneratedDetachedHeader => \"header\"",
+    ] {
+        assert_contains(
+            "dexios/src/subcommands/errors.rs",
+            DEXIOS_SUBCOMMAND_ERRORS_RS,
+            required,
+        );
+    }
+
+    for required in [
+        "linked_transaction_complete_detached_pair_receipt_names_payload_and_header",
+        "linked_transaction_partial_detached_publication_receipt_names_committed_and_failed_artifacts",
+        "post_commit_sync_detached_publication_failure_is_not_clean_success",
+    ] {
+        assert_contains(
+            "dexios-domain/tests/transactions.rs",
+            DEXIOS_DOMAIN_TRANSACTION_TESTS,
+            required,
+        );
+    }
+    assert_contains(
+        "dexios-domain/tests/transactions.rs",
+        DEXIOS_DOMAIN_TRANSACTION_TESTS,
+        "TransactionError::PostCommitSync",
+    );
+
+    for required in [
+        "encrypt_detached_partial_publication_reports_committed_payload_and_failed_header",
+        "pack_detached_partial_publication_reports_committed_payload_and_failed_header",
+    ] {
+        assert_contains(
+            "dexios-domain/tests/detached_publication.rs",
+            DEXIOS_DOMAIN_DETACHED_PUBLICATION_TESTS,
+            required,
+        );
+    }
+
+    for required in [
+        "partial_detached_publication_has_no_cleanup_authorization_impl",
+        "delete_source_detached_partial_publication_cleanup_denial_is_source_gated",
+        "detached_encrypt_partial_publication_names_committed_and_failed_artifacts",
+        "detached_pack_partial_publication_names_committed_and_failed_artifacts",
+        "encrypt_detached_partial_publication_source_gate_names_artifact_state",
+        "pack_detached_partial_publication_source_gate_names_generated_artifact_state",
+    ] {
+        assert_corpus_contains(
+            "Phase 17 detached publication tests",
+            &[
+                (
+                    "dexios-domain/tests/cleanup_receipts.rs",
+                    DEXIOS_DOMAIN_CLEANUP_RECEIPTS_TESTS,
+                ),
+                (
+                    "dexios/tests/delete_source_cli.rs",
+                    DEXIOS_DELETE_SOURCE_CLI_TESTS,
+                ),
+                (
+                    "dexios/tests/workflow_error_cli.rs",
+                    DEXIOS_WORKFLOW_ERROR_CLI_TESTS,
+                ),
+                (
+                    "dexios/tests/encrypt_cli_regressions.rs",
+                    DEXIOS_ENCRYPT_CLI_REGRESSION_TESTS,
+                ),
+                (
+                    "dexios/tests/pack_cli_regressions.rs",
+                    DEXIOS_PACK_CLI_REGRESSION_TESTS,
+                ),
+            ],
+            required,
+        );
+    }
+
+    for required in [
+        "pair-aware detached publication",
+        "partial detached publication",
+        "committed and failed artifact state",
+        "source cleanup is denied after partial detached publication",
+        "does not roll back committed artifacts",
+        "guarantee recovery",
+    ] {
+        assert_corpus_markdown_text_contains("Phase 17 documentation corpus", &docs, required);
+    }
+    assert_contains(
+        "SECURITY.md",
+        SECURITY_MD,
+        "detached payload/header partial publication diagnostics and cleanup denial",
+    );
+
+    for (source_name, source) in docs {
+        for forbidden in [
+            "provides atomic multi-file commit",
+            "automatic rollback",
+            "guaranteed recovery",
+            "cleanup authorized after partial detached publication",
+        ] {
+            assert_not_contains(source_name, source, forbidden);
+        }
+    }
+
+    for command in [
+        "run cargo test -p dexios-domain --features test-support --test transactions --test cleanup_receipts --test detached_publication --release",
+        "run cargo test -p dexios --test encrypt_cli_regressions --test pack_cli_regressions --test delete_source_cli --test workflow_error_cli --test verification_gate_docs --release",
+    ] {
+        assert_non_comment_line_count(
+            "scripts/verify_phase_gate.sh",
+            VERIFY_PHASE_GATE,
+            command,
+            1,
+        );
+    }
+}
+
+#[test]
+fn phase18_header_and_key_mutation_guards_are_source_gated() {
+    let docs = [
+        ("book/src/Safety-Contract.md", SAFETY_CONTRACT),
+        ("book/src/technical-details/Keys.md", KEYS),
+        ("book/src/dexios-core/Headers.md", HEADERS),
+    ];
+
+    for required in [
+        "MutationSnapshot",
+        "MutationFreshnessError",
+        "fs::symlink_metadata",
+        "metadata.dev()",
+        "metadata.ino()",
+        "IdentityChanged",
+        "ContentChanged",
+    ] {
+        assert_contains(
+            "dexios-domain/src/storage/mutation.rs",
+            DEXIOS_DOMAIN_MUTATION_RS,
+            required,
+        );
+    }
+
+    for forbidden in [
+        "modified()",
+        "created()",
+        "accessed()",
+        "SystemTime",
+        "mtime",
+        "ctime",
+    ] {
+        assert_not_contains(
+            "dexios-domain/src/storage/mutation.rs",
+            DEXIOS_DOMAIN_MUTATION_RS,
+            forbidden,
+        );
+    }
+
+    for (source_name, source) in [
+        (
+            "dexios-domain/src/header/strip.rs",
+            DEXIOS_DOMAIN_HEADER_STRIP_RS,
+        ),
+        (
+            "dexios-domain/src/header/restore.rs",
+            DEXIOS_DOMAIN_HEADER_RESTORE_RS,
+        ),
+    ] {
+        assert_contains(source_name, source, "MutationSnapshot");
+        assert_contains(source_name, source, "original_bytes()");
+        assert_contains(source_name, source, "ensure_fresh()");
+        assert_contains(source_name, source, "map_mutation_freshness_error");
+    }
+    assert_contains(
+        "dexios-domain/src/header/restore.rs",
+        DEXIOS_DOMAIN_HEADER_RESTORE_RS,
+        "header_target.original_bytes()",
+    );
+    assert_contains(
+        "dexios-domain/src/header/restore.rs",
+        DEXIOS_DOMAIN_HEADER_RESTORE_RS,
+        "target.original_bytes().to_vec()",
+    );
+
+    for required in [
+        "TargetChanged",
+        "DetachedHeaderChanged",
+        "map_mutation_freshness_error",
+    ] {
+        assert_contains(
+            "dexios-domain/src/header.rs",
+            DEXIOS_DOMAIN_HEADER_RS,
+            required,
+        );
+    }
+
+    for required in [
+        "crate::storage::mutation::ensure_fresh",
+        "MutationFreshnessError::IdentityChanged",
+        "MutationFreshnessError::ContentChanged",
+        "Error::TargetChanged",
+    ] {
+        assert_contains("dexios-domain/src/key.rs", DEXIOS_DOMAIN_KEY_RS, required);
+    }
+
+    for required in [
+        "mutation_snapshot_rejects_same_inode_content_rewrite",
+        "mutation_snapshot_rejects_path_replacement_with_identical_bytes",
+        "header_strip_rejects_target_rewrite_after_snapshot",
+        "header_strip_rejects_target_replacement_after_snapshot",
+        "header_restore_rejects_target_rewrite_after_snapshot",
+        "header_restore_rejects_detached_header_append_after_snapshot",
+        "header_restore_rejects_detached_header_replacement_after_snapshot",
+    ] {
+        assert_contains(
+            "dexios-domain/tests/header_restore.rs",
+            DEXIOS_DOMAIN_HEADER_RESTORE_TESTS,
+            required,
+        );
+    }
+    assert_contains(
+        "dexios-domain/tests/keyslots_v1.rs",
+        DEXIOS_DOMAIN_KEYSLOTS_TESTS,
+        "key_add_rejects_target_replacement_after_old_key_proof",
+    );
+
+    assert_contains(
+        "dexios/tests/header_cli_regressions.rs",
+        DEXIOS_HEADER_CLI_REGRESSION_TESTS,
+        "header_stale_errors_have_role_specific_cli_mappings",
+    );
+    assert_contains(
+        "dexios/tests/key_cli_regressions.rs",
+        DEXIOS_KEY_CLI_REGRESSION_TESTS,
+        "key_stale_target_error_mapping_is_sanitized",
+    );
+
+    for required in [
+        "Header workflow target changed before commit",
+        "Detached header changed before header restore commit",
+        "Key workflow target changed before commit",
+    ] {
+        assert_contains(
+            "dexios/src/subcommands/errors.rs",
+            DEXIOS_SUBCOMMAND_ERRORS_RS,
+            required,
+        );
+    }
+
+    for required in [
+        "mutation freshness",
+        "same-inode content changes",
+        "path replacement",
+        "stale detached header",
+        "stale key mutation",
+        "does not add recovery",
+        "does not use filesystem locks",
+    ] {
+        assert_corpus_markdown_text_contains("Phase 18 documentation corpus", &docs, required);
+    }
+
+    for (source_name, source) in docs {
+        for forbidden in [
+            "timestamp-only freshness",
+            "automatic rollback",
+            "guaranteed recovery",
+            "stale mutation recovery",
+            "secure erase stale mutation",
+            "uses filesystem locks",
+        ] {
+            assert_not_contains(source_name, source, forbidden);
+        }
+    }
+
+    for command in [
+        "run cargo test -p dexios-domain --test header_restore --test header_workflow_errors --test keyslots_v1 --test workflow_errors --release",
+        "run cargo test -p dexios --test header_cli_regressions --test key_cli_regressions --test verification_gate_docs --release",
+    ] {
+        assert_non_comment_line_count(
+            "scripts/verify_phase_gate.sh",
+            VERIFY_PHASE_GATE,
+            command,
+            1,
+        );
+    }
+}
+
+#[test]
+fn phase15_storage_identity_public_docs_are_source_gated() {
+    let mut issues = phase15_safety_contract_issues(SAFETY_CONTRACT);
+    issues.extend(phase15_public_docs_issues(&[
+        ("book/src/Safety-Contract.md", SAFETY_CONTRACT),
+        (
+            "book/src/technical-details/Directory-Packing.md",
+            DIRECTORY_PACKING,
+        ),
+        ("book/src/technical-details/Secure-Erase.md", SECURE_ERASE),
+    ]));
+
+    assert!(
+        issues.is_empty(),
+        "Phase 15 storage identity docs must stay aligned to current source/tests; issues: {issues:?}"
+    );
+}
+
+#[test]
+fn phase15_docs_gate_rejects_stale_identity_and_cleanup_overclaims() {
+    let stale_safety = "Path identity is implemented somewhere and cleanup is safe.";
+    assert!(
+        !phase15_safety_contract_issues(stale_safety).is_empty(),
+        "Phase 15 Safety Contract gate must reject vague source evidence"
+    );
+
+    let overclaim = "Dexios has Windows/non-Unix parity for every path identity check. \
+        Phase 16 cleanup authorization lets cleanup run after partial commit evidence. \
+        This is a secure erase guarantee.";
+    assert!(
+        !phase15_platform_parity_issues(
+            "synthetic Phase 15 overclaim",
+            overclaim,
+            &[DEXIOS_DOMAIN_IDENTITY_RS, DEXIOS_DOMAIN_PATH_IDENTITY_TESTS],
+        )
+        .is_empty(),
+        "Phase 15 docs gate must reject unqualified platform parity claims"
+    );
+    assert!(
+        !phase15_cleanup_authorization_issues("synthetic Phase 15 overclaim", overclaim).is_empty(),
+        "Phase 15 docs gate must reject cleanup authorization and secure-erase overclaims"
     );
 }
 
@@ -1519,6 +2498,7 @@ fn cargo_deny_policy_is_source_gated() {
     ] {
         assert_contains("deny.toml", DENY_TOML, required);
     }
+    assert_not_contains("deny.toml", DENY_TOML, "getrandom@0.3.4");
 }
 
 #[test]
@@ -1536,10 +2516,126 @@ fn ci_workflows_keep_audit_and_docs_fresh() {
     for required in [
         "mdbook build",
         "git diff --exit-code -- docs",
+        "git status --porcelain --untracked-files=all -- docs",
         "verify_repo_hygiene.sh",
         "workflow_dispatch",
     ] {
         assert_contains(".github/workflows/docs.yml", DOCS_WORKFLOW, required);
+    }
+
+    for (source_name, source) in [
+        (".github/workflows/audit.yml", AUDIT_WORKFLOW),
+        (".github/workflows/build_nix.yml", BUILD_NIX_WORKFLOW),
+        (".github/workflows/cargo-build.yml", CARGO_BUILD_WORKFLOW),
+        (".github/workflows/cli-surface.yml", CLI_SURFACE_WORKFLOW),
+        (".github/workflows/dexios-tests.yml", DEXIOS_TESTS_WORKFLOW),
+        (".github/workflows/docs.yml", DOCS_WORKFLOW),
+        (".github/workflows/unit_tests.yml", UNIT_TESTS_WORKFLOW),
+    ] {
+        assert_workflow_default_read_permissions(source_name, source);
+        assert_external_actions_are_full_sha_pinned(source_name, source);
+        assert_checkout_steps_disable_persist_credentials(source_name, source);
+    }
+}
+
+#[test]
+fn release_workflow_actions_are_sha_pinned_with_verified_tag_comments() {
+    for forbidden in [
+        "actions/checkout@v",
+        "actions/upload-artifact@v",
+        "actions/download-artifact@v",
+    ] {
+        assert_not_contains(".github/workflows/release.yml", RELEASE_WORKFLOW, forbidden);
+    }
+
+    for required in [
+        "# actions/checkout v6.0.2",
+        "# actions/upload-artifact v7.0.0",
+        "# actions/download-artifact v8.0.0",
+    ] {
+        assert_contains(".github/workflows/release.yml", RELEASE_WORKFLOW, required);
+    }
+
+    assert_workflow_default_read_permissions(".github/workflows/release.yml", RELEASE_WORKFLOW);
+    assert_external_actions_are_full_sha_pinned(".github/workflows/release.yml", RELEASE_WORKFLOW);
+    assert_checkout_steps_disable_persist_credentials(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+    );
+    assert_action_pin(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "actions/checkout",
+        "de0fac2e4500dabe0009e67214ff5f5447ce83dd",
+    );
+    assert_action_pin(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "actions/upload-artifact",
+        "bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
+    );
+    assert_action_pin(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "actions/download-artifact",
+        "70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3",
+    );
+    assert_contains(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "environment: release",
+    );
+    assert_contains(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "permissions:\n      contents: write",
+    );
+    assert_contains(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "duplicate_assets=()",
+    );
+    assert_contains(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "already contains asset names from this run",
+    );
+}
+
+#[test]
+fn nix_gate_tracks_current_workspace_msrv() {
+    assert_not_contains(
+        "flake.lock",
+        FLAKE_LOCK,
+        "0e304ff0d9db453a4b230e9386418fd974d5804a",
+    );
+
+    for required in [
+        "nix-build . -A defaultPackage.x86_64-linux --dry-run",
+        "Rust `1.88`",
+        "edition `2024`",
+    ] {
+        assert_contains(
+            "book/src/Installing-and-Building.md",
+            INSTALLING_AND_BUILDING,
+            required,
+        );
+    }
+}
+
+#[test]
+fn security_policy_prefers_private_reporting_for_unpatched_vulnerabilities() {
+    for (source_name, source) in [
+        ("SECURITY.md", SECURITY_MD),
+        ("book/src/Security-Policy.md", SECURITY_POLICY),
+    ] {
+        for required in [
+            "private GitHub security advisory",
+            "brxken128@tutanota.com",
+            "Do not open a public issue for an unpatched vulnerability",
+        ] {
+            assert_contains(source_name, source, required);
+        }
     }
 }
 
@@ -1860,9 +2956,17 @@ fn phase9_kdf_passphrase_and_secret_contract_is_source_gated() {
         "--auto=-1",
         "rejected before passphrase generation",
         "terminal scrollback or logs",
+        "`key add`",
+        "fresh keyslot wrapping nonce",
+        "preserve payload bytes",
     ] {
         assert_contains("book/src/technical-details/Keys.md", KEYS, required);
     }
+    assert_not_contains(
+        "book/src/technical-details/Keys.md",
+        KEYS,
+        "`key add` remains unsupported",
+    );
 
     for required in [
         "redacted",
@@ -2448,9 +3552,10 @@ fn phase11_filesystem_transaction_and_cleanup_contract_is_source_gated() {
         "partial commit evidence",
         "linked commit evidence",
         "committed outputs are not rolled back",
-        "staged flush/sync/persist",
+        "staged flush/sync/fd-relative final placement",
         "same-directory temporary files",
-        "tempfile::NamedTempFile::persist",
+        "linkat",
+        "renameat",
         "File::sync_all",
         "does not claim portable parent-directory durability",
         "remove_file does not guarantee immediate physical deletion",
@@ -2527,8 +3632,11 @@ fn phase11_filesystem_transaction_and_cleanup_contract_is_source_gated() {
         "flush()",
         "sync_all()",
         "persist_prepared",
-        "persist_noclobber",
-        "persist(&path)",
+        "openat(",
+        "OFlags::NOFOLLOW",
+        "mkdirat(",
+        "linkat(",
+        "renameat(",
     ] {
         assert_contains(
             "dexios-domain/src/storage/temp.rs",
@@ -2638,6 +3746,22 @@ fn phase12_unpack_directory_rollback_contract_is_source_gated() {
             "create_selected_directories_after_final_auth",
             "commit_all",
         ],
+    );
+
+    let create_selected_directories_section = normalized_rust_production_section(
+        "dexios-domain/src/unpack.rs",
+        DEXIOS_DOMAIN_UNPACK_RS,
+        "fn create_selected_directories_after_final_auth",
+        "fn revalidate_extraction_targets",
+    );
+    assert!(
+        create_selected_directories_section
+            .matches(&normalized_token(
+                "rollback_empty_directories_best_effort(&rollback_dirs)"
+            ))
+            .count()
+            >= 2,
+        "selected-directory creation must roll back prior created directories on revalidation and mkdir failures"
     );
 
     for required in [
@@ -2876,12 +4000,24 @@ fn phase20_stale_current_product_claim_issues(source: &str) -> Vec<&'static str>
     let mut issues = Vec::new();
 
     for (needle, issue) in [
-        ("416-byte canonical v1 header", "stale 416-byte header claim"),
-        ("current v1 header is 416", "stale current 416-byte header claim"),
+        (
+            "416-byte canonical v1 header",
+            "stale 416-byte header claim",
+        ),
+        (
+            "current v1 header is 416",
+            "stale current 416-byte header claim",
+        ),
         ("first 32 bytes", "stale 32-byte payload AAD claim"),
         ("--argon", "stale Argon2id CLI selector claim"),
-        ("argon2id is supported", "stale normal Argon2id support claim"),
-        ("normal argon2id support", "stale normal Argon2id support claim"),
+        (
+            "argon2id is supported",
+            "stale normal Argon2id support claim",
+        ),
+        (
+            "normal argon2id support",
+            "stale normal Argon2id support claim",
+        ),
         (
             "encrypted zip archive",
             "stale encrypted ZIP archive format claim",
@@ -2891,7 +4027,10 @@ fn phase20_stale_current_product_claim_issues(source: &str) -> Vec<&'static str>
             "stale plaintext ZIP temporary-file claim",
         ),
         ("zstd", "stale archive compression claim"),
-        ("compression selector", "stale archive compression selector claim"),
+        (
+            "compression selector",
+            "stale archive compression selector claim",
+        ),
     ] {
         if normalized.contains(needle) {
             issues.push(issue);
@@ -2908,14 +4047,23 @@ fn phase20_safety_limit_overclaim_issues(source: &str) -> Vec<&'static str> {
     for (needle, issue) in [
         ("secure erase guarantee", "secure erase overclaim"),
         ("guarantees secure erase", "secure erase overclaim"),
-        ("physical sanitization guarantee", "physical sanitization overclaim"),
+        (
+            "physical sanitization guarantee",
+            "physical sanitization overclaim",
+        ),
         (
             "guarantees physical sanitization",
             "physical sanitization overclaim",
         ),
-        ("forensic recovery resistance", "forensic recovery overclaim"),
+        (
+            "forensic recovery resistance",
+            "forensic recovery overclaim",
+        ),
         ("automatic rollback", "automatic rollback overclaim"),
-        ("rollback committed outputs", "committed-output rollback overclaim"),
+        (
+            "rollback committed outputs",
+            "committed-output rollback overclaim",
+        ),
         ("guaranteed recovery", "guaranteed recovery overclaim"),
         ("guarantee recovery", "guaranteed recovery overclaim"),
         (
@@ -2926,18 +4074,12 @@ fn phase20_safety_limit_overclaim_issues(source: &str) -> Vec<&'static str> {
             "windows/non-unix parity",
             "unqualified Windows/non-Unix parity overclaim",
         ),
-        (
-            "non-unix parity",
-            "unqualified non-Unix parity overclaim",
-        ),
+        ("non-unix parity", "unqualified non-Unix parity overclaim"),
         (
             "timestamp-only freshness",
             "timestamp-only freshness overclaim",
         ),
-        (
-            "mtime-only freshness",
-            "timestamp-only freshness overclaim",
-        ),
+        ("mtime-only freshness", "timestamp-only freshness overclaim"),
         (
             "fully eliminated plaintext exposure",
             "unpack plaintext exposure overclaim",
@@ -2966,7 +4108,10 @@ fn phase20_release_metadata_overclaim_issues(source: &str) -> Vec<&'static str> 
         ),
         ("guarantee signing trust", "signing-trust overclaim"),
         ("guarantees signing trust", "signing-trust overclaim"),
-        ("guarantees sbom completeness", "SBOM completeness overclaim"),
+        (
+            "guarantees sbom completeness",
+            "SBOM completeness overclaim",
+        ),
         ("guarantees sbom protection", "SBOM protection overclaim"),
         (
             "prevents supply-chain attacks",
@@ -2985,7 +4130,10 @@ fn phase20_release_metadata_overclaim_issues(source: &str) -> Vec<&'static str> 
             "full platform asset set is enforced",
             "platform asset-set overclaim",
         ),
-        ("all release assets are present", "release asset-set overclaim"),
+        (
+            "all release assets are present",
+            "release asset-set overclaim",
+        ),
         (
             "phase 20 enforces platform assets",
             "Phase 21 asset-enforcement overclaim",
@@ -2997,6 +4145,7 @@ fn phase20_release_metadata_overclaim_issues(source: &str) -> Vec<&'static str> 
     }
 
     issues
+}
 
 fn phase20_pdf_policy_overclaim_issues(source: &str) -> Vec<&'static str> {
     let normalized = source.replace('`', "").to_ascii_lowercase();
@@ -3026,7 +4175,6 @@ fn phase20_pdf_policy_overclaim_issues(source: &str) -> Vec<&'static str> {
     }
 
     issues
-}
 }
 
 #[test]
@@ -3325,6 +4473,7 @@ fn phase20_release_metadata_boundaries_are_source_gated() {
             "{source_name} must not overclaim release metadata boundaries; issues: {issues:?}"
         );
     }
+}
 
 #[test]
 fn phase20_pdf_authority_policy_is_source_gated() {
@@ -3404,12 +4553,11 @@ fn phase20_pdf_freshness_commands_are_source_gated() {
         ],
     );
 
-    for (source_name, source) in [
-        (
+    {
+        let (source_name, source) = (
             "scripts/generate_release_manifest.sh",
             GENERATE_RELEASE_MANIFEST,
-        ),
-    ] {
+        );
         let issues = phase20_pdf_policy_overclaim_issues(source);
         assert!(
             issues.is_empty(),
@@ -3431,7 +4579,6 @@ fn phase20_pdf_policy_gate_rejects_stale_authority_claims() {
             "Phase 20 PDF policy gate must reject: {stale_claim}"
         );
     }
-}
 }
 
 #[test]

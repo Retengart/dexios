@@ -61,6 +61,7 @@ pub fn execute(
 
     let replacement_header = deleted_header(&header, raw_key_old)?;
     let header_bytes = validated_header_bytes(&replacement_header)?;
+    super::ensure_target_unchanged(&target, &original)?;
     let target_header = original
         .get_mut(..HEADER_LEN)
         .ok_or(Error::HeaderDeserialize)?;
