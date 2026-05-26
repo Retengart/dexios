@@ -74,6 +74,14 @@ The mdBook source for the project documentation lives in `book/src/`.
 - the whitepaper-style format reference lives in `spec/dexios-paper.typ`
 - the Maintainer Verification Gate is tracked in `book/src/Safety-Contract.md`
 
+Release-facing metadata is source-backed:
+
+- release manifest wording lives in `scripts/generate_release_manifest.sh`
+- release workflow asset-name construction lives in `.github/workflows/release.yml`
+- source-backed docs/spec locations are `book/src/`, `docs/`, and `spec/dexios-paper.typ`
+- manifest asset entries record supplied basenames and SHA256 values only, and
+  this wording does not claim a complete platform asset set
+
 For user-facing and technical docs, see:
 
 - [Dexios CLI notes](dexios/README.md)

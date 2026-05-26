@@ -90,10 +90,20 @@
 - Documented the current manifest-first archive payload behavior and source-gated
   that no full plaintext archive temporary file is created during normal
   pack/unpack operation.
+- Added Phase 20 Docs, Spec, and Generated Artifact Fidelity release-facing
+  wording for canonical V1 fact reconciliation, PDF/generated artifact policy,
+  source gates, ordinary delete-after-success cleanup, no secure erase, no
+  physical sanitization, and no recovery overclaims.
 - Documented the release manifest workflow and its non-claims: no bit-for-bit
   reproducibility, signing trust, SBOM completeness, SBOM protection,
   supply-chain prevention, completed verification, or runtime safety beyond
   separately completed gate results.
+- Documented release asset-name content truth: the current release workflow
+  builds `dexios-${GITHUB_REF_NAME}-linux-amd64`,
+  `dexios-${GITHUB_REF_NAME}-macos-amd64`, and
+  `dexios-${GITHUB_REF_NAME}-windows-amd64.exe` basenames, while the release
+  manifest records only supplied asset basenames and SHA256 values. The manifest
+  does not claim a complete platform asset set before Phase 21 enforcement.
 - Documented the Phase 9 KDF feature policy, generated passphrase validation,
   focused KDF measurement workflow, and narrow secret-memory claim boundaries.
 - Documented the release-note trigger and local-only `local-notes/` boundary for

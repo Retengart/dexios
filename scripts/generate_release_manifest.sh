@@ -228,6 +228,7 @@ mkdir -p "$(dirname "$output")"
     printf -- '- `bash scripts/verify_phase_gate.sh`\n\n'
 
     printf '## Assets\n\n'
+    printf 'Asset entries record only files passed with `--asset` by basename and SHA256. This manifest does not claim a complete platform asset set; Phase 21 owns full expected asset-set enforcement and publishing gates.\n\n'
     if [[ "${#assets[@]}" -eq 0 ]]; then
         printf 'No release assets were recorded.\n\n'
     else
