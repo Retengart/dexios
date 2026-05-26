@@ -2952,6 +2952,50 @@ fn phase20_safety_limit_overclaim_issues(source: &str) -> Vec<&'static str> {
     issues
 }
 
+fn phase20_release_metadata_overclaim_issues(source: &str) -> Vec<&'static str> {
+    let normalized = source.replace('`', "").to_ascii_lowercase();
+    let mut issues = Vec::new();
+
+    for (needle, issue) in [
+        (
+            "guarantees bit-for-bit reproducibility",
+            "reproducibility overclaim",
+        ),
+        ("guarantee signing trust", "signing-trust overclaim"),
+        ("guarantees signing trust", "signing-trust overclaim"),
+        ("guarantees sbom completeness", "SBOM completeness overclaim"),
+        ("guarantees sbom protection", "SBOM protection overclaim"),
+        (
+            "prevents supply-chain attacks",
+            "supply-chain prevention overclaim",
+        ),
+        (
+            "proves completed verification",
+            "completed-verification overclaim",
+        ),
+        ("proves runtime safety", "runtime-safety overclaim"),
+        (
+            "complete platform asset set is enforced",
+            "platform asset-set overclaim",
+        ),
+        (
+            "full platform asset set is enforced",
+            "platform asset-set overclaim",
+        ),
+        ("all release assets are present", "release asset-set overclaim"),
+        (
+            "phase 20 enforces platform assets",
+            "Phase 21 asset-enforcement overclaim",
+        ),
+    ] {
+        if normalized.contains(needle) {
+            issues.push(issue);
+        }
+    }
+
+    issues
+}
+
 #[test]
 fn phase20_canonical_public_facts_are_source_gated() {
     let required_by_source: &[(&str, &str, &[&str])] = &[
@@ -3174,6 +3218,98 @@ fn phase20_safety_limit_gate_rejects_stale_overclaims() {
         assert!(
             !phase20_safety_limit_overclaim_issues(stale_claim).is_empty(),
             "Phase 20 safety-limit gate must reject: {stale_claim}"
+        );
+    }
+}
+
+#[test]
+fn phase20_release_metadata_boundaries_are_source_gated() {
+    assert_all_contains(
+        "scripts/generate_release_manifest.sh",
+        GENERATE_RELEASE_MANIFEST,
+        &[
+            "## Verification Command Contract",
+            "does not prove that the commands completed successfully",
+            "## Assets",
+            "- name: `%s`",
+            "- SHA256: `%s`",
+            "Asset entries record only files passed with `--asset` by basename and SHA256.",
+            "This manifest does not claim a complete platform asset set; Phase 21 owns full expected asset-set enforcement and publishing gates.",
+            "## Claim Limits",
+            "does not claim bit-for-bit reproducibility, signing trust, SBOM completeness, SBOM protection, supply-chain prevention, completed verification, or runtime safety beyond separately completed gate results",
+        ],
+    );
+
+    assert_all_contains(
+        "README.md",
+        README,
+        &[
+            "release manifest wording lives in `scripts/generate_release_manifest.sh`",
+            "source-backed docs/spec locations",
+            "does not claim a complete platform asset set",
+        ],
+    );
+
+    assert_all_contains(
+        "CHANGELOG.md",
+        CHANGELOG,
+        &[
+            "Docs, Spec, and Generated Artifact Fidelity",
+            "canonical V1 fact reconciliation",
+            "PDF/generated artifact policy",
+            "source gates",
+            "ordinary delete-after-success cleanup",
+            "no secure erase",
+            "no physical sanitization",
+            "does not claim a complete platform asset set",
+        ],
+    );
+
+    assert_all_contains(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        &[
+            "asset_name=\"dexios-${GITHUB_REF_NAME}-${{ matrix.asset_suffix }}${{ matrix.asset_ext }}\"",
+            "asset_suffix: linux-amd64",
+            "asset_suffix: macos-amd64",
+            "asset_suffix: windows-amd64",
+            "asset_ext: \".exe\"",
+        ],
+    );
+
+    for (source_name, source) in [
+        ("README.md", README),
+        ("CHANGELOG.md", CHANGELOG),
+        (
+            "scripts/generate_release_manifest.sh",
+            GENERATE_RELEASE_MANIFEST,
+        ),
+    ] {
+        assert_no_release_overclaim_patterns(source_name, source);
+        let issues = phase20_release_metadata_overclaim_issues(source);
+        assert!(
+            issues.is_empty(),
+            "{source_name} must not overclaim release metadata boundaries; issues: {issues:?}"
+        );
+    }
+}
+
+#[test]
+fn phase20_release_metadata_gate_rejects_positive_overclaims() {
+    for stale_claim in [
+        "Dexios guarantees bit-for-bit reproducibility for release assets.",
+        "Release artifacts guarantee signing trust.",
+        "Dexios guarantees SBOM completeness.",
+        "The manifest guarantees SBOM protection.",
+        "The release process prevents supply-chain attacks.",
+        "The manifest proves completed verification.",
+        "The manifest proves runtime safety.",
+        "The complete platform asset set is enforced in Phase 20.",
+        "All release assets are present.",
+    ] {
+        assert!(
+            !phase20_release_metadata_overclaim_issues(stale_claim).is_empty(),
+            "Phase 20 release metadata gate must reject: {stale_claim}"
         );
     }
 }
