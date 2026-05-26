@@ -133,12 +133,13 @@ For local verification, use:
 VERI-04 broad-gate rule: the minimum maintainer gate includes:
 
 - no-unsafe crate-root checks for `dexios/src/main.rs`, `dexios-core/src/lib.rs`, and `dexios-domain/src/lib.rs`
+- `cargo metadata --format-version=1 --locked --no-deps`
 - `cargo fmt --all --check`
-- `cargo clippy --workspace --all-targets --all-features --no-deps`
-- `cargo test --workspace --all-features --release --verbose`
+- `cargo clippy --workspace --all-targets --all-features --no-deps --locked`
+- `cargo test --locked --workspace --all-features --release --verbose`
 - `cargo audit --deny warnings`
 - `cargo deny check`
-- `cargo build -p dexios --profile release-lto`
+- `cargo build --locked -p dexios --profile release-lto`
 - `bash scripts/verify_cli_surface.sh`
 - `mdbook build`
 - `git diff --exit-code -- docs`
@@ -153,7 +154,7 @@ The gate fails before long-running checks if required tools are missing. Local
 setup remains explicit: install `cargo-audit` with
 `cargo install cargo-audit --locked --version 0.22.1`, install `cargo-deny`
 with `cargo install cargo-deny --locked --version 0.19.6`, and install
-`mdbook` with `cargo install mdbook --locked`. Install Typst from
+`mdbook` with `cargo install mdbook --locked --version 0.5.3`. Install Typst from
 https://typst.app/docs/install/ or your operating system package manager. The
 gate prints these install hints but does not auto-install tools.
 

@@ -61,12 +61,13 @@ and `dexios-domain/src/lib.rs`.
 The command set is:
 
 ```bash
+cargo metadata --format-version=1 --locked --no-deps
 cargo fmt --all --check
-cargo clippy --workspace --all-targets --all-features --no-deps
-cargo test --workspace --all-features --release --verbose
+cargo clippy --workspace --all-targets --all-features --no-deps --locked
+cargo test --locked --workspace --all-features --release --verbose
 cargo audit --deny warnings
 cargo deny check
-cargo build -p dexios --profile release-lto
+cargo build --locked -p dexios --profile release-lto
 bash scripts/verify_cli_surface.sh
 mdbook build
 git diff --exit-code -- docs
@@ -90,9 +91,11 @@ hint:
 ```bash
 cargo install cargo-audit --locked --version 0.22.1
 cargo install cargo-deny --locked --version 0.19.6
-cargo install mdbook --locked
+cargo install mdbook --locked --version 0.5.3
 # Install Typst from https://typst.app/docs/install/ or your operating system package manager.
 ```
+
+Typst 0.14.2 required. Install from https://typst.app/docs/install/
 
 The gate does not auto-install tools or otherwise mutate the maintainer
 environment.

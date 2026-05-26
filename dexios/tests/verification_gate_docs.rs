@@ -118,12 +118,13 @@ const PERFORMANCE_NOTES: &str =
 const RC_CLOSEOUT: &str = include_str!("../../release-evidence/RC-CLOSEOUT.md");
 
 const REPAIRED_GATE_COMMANDS: &[&str] = &[
+    "cargo metadata --format-version=1 --locked --no-deps",
     "cargo fmt --all --check",
-    "cargo clippy --workspace --all-targets --all-features --no-deps",
-    "cargo test --workspace --all-features --release --verbose",
+    "cargo clippy --workspace --all-targets --all-features --no-deps --locked",
+    "cargo test --locked --workspace --all-features --release --verbose",
     "cargo audit --deny warnings",
     "cargo deny check",
-    "cargo build -p dexios --profile release-lto",
+    "cargo build --locked -p dexios --profile release-lto",
     "bash scripts/verify_cli_surface.sh",
     "mdbook build",
     "git diff --exit-code -- docs",
@@ -1339,7 +1340,7 @@ fn local_scripts_expose_the_full_maintainer_gate() {
     for required in [
         "require_tool cargo-audit \"cargo install cargo-audit --locked --version 0.22.1\"",
         "require_tool cargo-deny \"cargo install cargo-deny --locked --version 0.19.6\"",
-        "require_tool mdbook \"cargo install mdbook --locked\"",
+        "require_tool mdbook \"cargo install mdbook --locked --version 0.5.3\"",
         "require_tool typst \"install Typst from https://typst.app/docs/install/ or your OS package manager\"",
         "verify_no_unsafe_crate_roots",
         "grep -Fxq '#![forbid(unsafe_code)]'",
@@ -1407,7 +1408,7 @@ fn assurance_replay_runs_once_after_workspace_tests_before_audit() {
     assert_non_comment_line_occurs_before(
         "scripts/verify_phase_gate.sh",
         VERIFY_PHASE_GATE,
-        "run cargo test --workspace --all-features --release --verbose",
+        "run cargo test --locked --workspace --all-features --release --verbose",
         "run bash scripts/verify_assurance_replay.sh",
     );
     assert_non_comment_line_occurs_before(
@@ -1601,9 +1602,9 @@ fn phase19_public_api_authority_contract_is_source_gated() {
     }
 
     for command in [
-        "run cargo test -p dexios-domain --features test-support --test workflow_public_api --test archive_public_api --test cleanup_receipts --test transactions --test workflow_errors --release",
-        "run cargo test -p dexios-core --test public_api_footguns --release",
-        "run cargo test -p dexios --test verification_gate_docs --release",
+        "run cargo test --locked -p dexios-domain --features test-support --test workflow_public_api --test archive_public_api --test cleanup_receipts --test transactions --test workflow_errors --release",
+        "run cargo test --locked -p dexios-core --test public_api_footguns --release",
+        "run cargo test --locked -p dexios --test verification_gate_docs --release",
     ] {
         assert_non_comment_line_count(
             "scripts/verify_phase_gate.sh",
@@ -2004,7 +2005,7 @@ fn phase16_processed_source_cleanup_authorization_is_source_gated() {
     assert_contains(
         "scripts/verify_phase_gate.sh",
         VERIFY_PHASE_GATE,
-        "cargo test -p dexios-domain --features test-support --test cleanup_receipts --test path_identity --release",
+        "cargo test --locked -p dexios-domain --features test-support --test cleanup_receipts --test path_identity --release",
     );
 }
 
@@ -2161,8 +2162,8 @@ fn phase17_detached_payload_header_publication_is_source_gated() {
     }
 
     for command in [
-        "run cargo test -p dexios-domain --features test-support --test transactions --test cleanup_receipts --test detached_publication --release",
-        "run cargo test -p dexios --test encrypt_cli_regressions --test pack_cli_regressions --test delete_source_cli --test workflow_error_cli --test verification_gate_docs --release",
+        "run cargo test --locked -p dexios-domain --features test-support --test transactions --test cleanup_receipts --test detached_publication --release",
+        "run cargo test --locked -p dexios --test encrypt_cli_regressions --test pack_cli_regressions --test delete_source_cli --test workflow_error_cli --test verification_gate_docs --release",
     ] {
         assert_non_comment_line_count(
             "scripts/verify_phase_gate.sh",
@@ -2329,8 +2330,8 @@ fn phase18_header_and_key_mutation_guards_are_source_gated() {
     }
 
     for command in [
-        "run cargo test -p dexios-domain --test header_restore --test header_workflow_errors --test keyslots_v1 --test workflow_errors --release",
-        "run cargo test -p dexios --test header_cli_regressions --test key_cli_regressions --test verification_gate_docs --release",
+        "run cargo test --locked -p dexios-domain --test header_restore --test header_workflow_errors --test keyslots_v1 --test workflow_errors --release",
+        "run cargo test --locked -p dexios --test header_cli_regressions --test key_cli_regressions --test verification_gate_docs --release",
     ] {
         assert_non_comment_line_count(
             "scripts/verify_phase_gate.sh",
@@ -2406,7 +2407,7 @@ fn canonical_v1_assurance_replay_includes_phase3_evidence() {
     assert_non_comment_line_occurs_before(
         "scripts/verify_phase_gate.sh",
         VERIFY_PHASE_GATE,
-        "run cargo test --workspace --all-features --release --verbose",
+        "run cargo test --locked --workspace --all-features --release --verbose",
         "run bash scripts/verify_assurance_replay.sh",
     );
 }
@@ -3283,8 +3284,8 @@ fn phase04_failure_hook_and_workflow_boundary_gates_are_source_gated() {
     }
 
     for command in [
-        "run cargo test -p dexios-domain --test workflow_public_api --all-features --release",
-        "run cargo test -p dexios --test verification_gate_docs --release",
+        "run cargo test --locked -p dexios-domain --test workflow_public_api --all-features --release",
+        "run cargo test --locked -p dexios --test verification_gate_docs --release",
     ] {
         assert_non_comment_line_count(
             "scripts/verify_phase_gate.sh",
@@ -3352,7 +3353,7 @@ fn phase04_archive_boundary_gates_are_source_gated() {
     assert_non_comment_line_count(
         "scripts/verify_phase_gate.sh",
         VERIFY_PHASE_GATE,
-        "run cargo test -p dexios-domain --test archive_public_api --release",
+        "run cargo test --locked -p dexios-domain --test archive_public_api --release",
         1,
     );
 }
@@ -3360,17 +3361,17 @@ fn phase04_archive_boundary_gates_are_source_gated() {
 #[test]
 fn phase05_manifest_archive_and_cli_gate_is_source_gated() {
     let focused_commands = [
-        "run cargo test -p dexios-core --test stream_v1 --release",
-        "run cargo test -p dexios-core --test v1_header --release",
-        "run cargo test -p dexios-domain --test pack_paths --release",
-        "run cargo test -p dexios-domain --test unpack --release",
-        "run cargo test -p dexios-domain --test archive_public_api --release",
-        "run cargo test -p dexios-domain --test workflow_errors --all-features --release",
-        "run cargo test -p dexios --test pack_cli_regressions --release",
-        "run cargo test -p dexios --test unpack_cli_regressions --release",
-        "run cargo test -p dexios --test delete_source_cli --release",
-        "run cargo test -p dexios --test workflow_error_cli --release",
-        "run cargo test -p dexios --test verification_gate_docs --release",
+        "run cargo test --locked -p dexios-core --test stream_v1 --release",
+        "run cargo test --locked -p dexios-core --test v1_header --release",
+        "run cargo test --locked -p dexios-domain --test pack_paths --release",
+        "run cargo test --locked -p dexios-domain --test unpack --release",
+        "run cargo test --locked -p dexios-domain --test archive_public_api --release",
+        "run cargo test --locked -p dexios-domain --test workflow_errors --all-features --release",
+        "run cargo test --locked -p dexios --test pack_cli_regressions --release",
+        "run cargo test --locked -p dexios --test unpack_cli_regressions --release",
+        "run cargo test --locked -p dexios --test delete_source_cli --release",
+        "run cargo test --locked -p dexios --test workflow_error_cli --release",
+        "run cargo test --locked -p dexios --test verification_gate_docs --release",
     ];
     for command in focused_commands {
         assert_non_comment_line_count(
@@ -3383,7 +3384,7 @@ fn phase05_manifest_archive_and_cli_gate_is_source_gated() {
             "scripts/verify_phase_gate.sh",
             VERIFY_PHASE_GATE,
             command,
-            "run cargo test --workspace --all-features --release --verbose",
+            "run cargo test --locked --workspace --all-features --release --verbose",
         );
     }
 
