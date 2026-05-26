@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-83857cf6.js";
+            window.path_to_searchindex_js = "searchindex-30bc5527.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-07f7ca76.js"></script>
@@ -316,12 +316,13 @@ accepted.</p>
 <p>VERI-04 broad-gate rule: the minimum maintainer gate includes:</p>
 <ul>
 <li>no-unsafe crate-root checks for <code>dexios/src/main.rs</code>, <code>dexios-core/src/lib.rs</code>, and <code>dexios-domain/src/lib.rs</code></li>
+<li><code>cargo metadata --format-version=1 --locked --no-deps</code></li>
 <li><code>cargo fmt --all --check</code></li>
-<li><code>cargo clippy --workspace --all-targets --all-features --no-deps</code></li>
-<li><code>cargo test --workspace --all-features --release --verbose</code></li>
+<li><code>cargo clippy --workspace --all-targets --all-features --no-deps --locked</code></li>
+<li><code>cargo test --locked --workspace --all-features --release --verbose</code></li>
 <li><code>cargo audit --deny warnings</code></li>
 <li><code>cargo deny check</code></li>
-<li><code>cargo build -p dexios --profile release-lto</code></li>
+<li><code>cargo build --locked -p dexios --profile release-lto</code></li>
 <li><code>bash scripts/verify_cli_surface.sh</code></li>
 <li><code>mdbook build</code></li>
 <li><code>git diff --exit-code -- docs</code></li>
@@ -336,7 +337,7 @@ accepted.</p>
 setup remains explicit: install <code>cargo-audit</code> with
 <code>cargo install cargo-audit --locked --version 0.22.1</code>, install <code>cargo-deny</code>
 with <code>cargo install cargo-deny --locked --version 0.19.6</code>, and install
-<code>mdbook</code> with <code>cargo install mdbook --locked</code>. Install Typst from
+<code>mdbook</code> with <code>cargo install mdbook --locked --version 0.5.3</code>. Install Typst from
 https://typst.app/docs/install/ or your operating system package manager. The
 gate prints these install hints but does not auto-install tools.</p>
 <p>VERI-06 release-note rule: breaking changes to file format behavior, CLI

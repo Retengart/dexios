@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-83857cf6.js";
+            window.path_to_searchindex_js = "searchindex-30bc5527.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-07f7ca76.js"></script>
@@ -208,12 +208,13 @@ then run the broad gate:</p>
 no-unsafe crate-root check for <code>dexios/src/main.rs</code>, <code>dexios-core/src/lib.rs</code>,
 and <code>dexios-domain/src/lib.rs</code>.</p>
 <p>The command set is:</p>
-<pre><code class="language-bash">cargo fmt --all --check
-cargo clippy --workspace --all-targets --all-features --no-deps
-cargo test --workspace --all-features --release --verbose
+<pre><code class="language-bash">cargo metadata --format-version=1 --locked --no-deps
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features --no-deps --locked
+cargo test --locked --workspace --all-features --release --verbose
 cargo audit --deny warnings
 cargo deny check
-cargo build -p dexios --profile release-lto
+cargo build --locked -p dexios --profile release-lto
 bash scripts/verify_cli_surface.sh
 mdbook build
 git diff --exit-code -- docs
@@ -232,9 +233,10 @@ Missing <code>cargo-audit</code>, <code>cargo-deny</code>, <code>mdbook</code>, 
 hint:</p>
 <pre><code class="language-bash">cargo install cargo-audit --locked --version 0.22.1
 cargo install cargo-deny --locked --version 0.19.6
-cargo install mdbook --locked
+cargo install mdbook --locked --version 0.5.3
 # Install Typst from https://typst.app/docs/install/ or your operating system package manager.
 </code></pre>
+<p>Typst 0.14.2 required. Install from https://typst.app/docs/install/</p>
 <p>The gate does not auto-install tools or otherwise mutate the maintainer
 environment.</p>
 <p><code>scripts/measure_performance_gate.sh</code> is a focused release gate for KDF,
