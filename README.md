@@ -71,7 +71,11 @@ The mdBook source for the project documentation lives in `book/src/`.
 
 - generated site output lives in `docs/`
 - crate API docs are published separately on docs.rs
-- the whitepaper-style format reference lives in `spec/dexios-paper.typ`
+- the whitepaper-style format source lives in `spec/dexios-paper.typ`
+- the current PDF `spec/dexios-paper.pdf` is generated from that Typst source
+  and checked by the maintainer gate with
+  `typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf`
+- `spec/specification-v1.pdf` is historical comparison input only, not current release-critical authority
 - the Maintainer Verification Gate is tracked in `book/src/Safety-Contract.md`
 
 Release-facing metadata is source-backed:
