@@ -246,6 +246,15 @@ mkdir -p "$(dirname "$output")"
         done
     fi
 
+    printf '## RC Evidence\n\n'
+    printf 'The v3.0 release candidate closeout evidence artifact is recorded at\n'
+    printf '`release-evidence/RC-CLOSEOUT.md` in the source tree. That document names the\n'
+    printf 'blocker-to-check traceability matrix, accepted residual risks, platform limits,\n'
+    printf 'non-goals, property/fuzz coverage decision, and performance gate status for v3.0.\n'
+    printf 'This manifest entry records the reference; it does not independently verify the\n'
+    printf 'matrix entries. Use a completed `bash scripts/verify_phase_gate.sh` run for\n'
+    printf 'pass/fail evidence against the contracts named in RC-CLOSEOUT.md.\n\n'
+
     printf '## Claim Limits\n\n'
     printf 'This manifest records local evidence for one release candidate. It does not claim bit-for-bit reproducibility, signing trust, SBOM completeness, SBOM protection, supply-chain prevention, completed verification, or runtime safety beyond separately completed gate results for this candidate.\n'
 } >"$output"
