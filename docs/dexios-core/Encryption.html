@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-1a28b548.js";
+            window.path_to_searchindex_js = "../searchindex-83857cf6.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-07f7ca76.js"></script>
@@ -203,9 +203,11 @@ and fails wrapped master-key authentication for that slot.</p>
 derives payload AAD from the immutable canonical V1 static header, and
 decryption uses the parsed V1 payload bundle that binds the header to its
 matching AAD.</p>
-<p>Payload AAD excludes mutable keyslot table state. Slot occupancy, active slot
-count, keyslot salts, keyslot nonces, KDF profile bytes, and wrapped master-key
-bytes are not part of payload AAD.</p>
+<p>The payload AAD covers the 64-byte immutable static header. Payload AAD excludes
+mutable keyslot table state. Payload AAD excludes mutable keyslot table state
+from payload authentication. Slot occupancy, active slot count, keyslot salts,
+keyslot nonces, KDF profile bytes, and wrapped master-key bytes are not part of
+payload AAD.</p>
 <p>Wrapped master keys use separate slot-scoped AAD. The slot-scoped AAD binds the
 immutable static header context, physical slot index, KDF profile id, KDF
 parameter profile id, salt, and keyslot nonce. This lets <code>key add</code>, <code>key change</code>, and <code>key del</code> mutate keyslot records without re-encrypting the payload
@@ -223,7 +225,7 @@ ambiguity.</p>
 Decryption requires the marker; ciphertext without the final block fails instead
 of returning committed plaintext success.</p>
 <h2 id="final-authentication-receipt"><a class="header" href="#final-authentication-receipt">Final Authentication Receipt</a></h2>
-<p><code>V1PayloadStream::decrypt_file</code> writes plaintext to its writer as uncommitted
+<p><code>V1PayloadStream::decrypt_file_uncommitted</code> writes plaintext to its writer as uncommitted
 scratch. Callers must treat the plaintext as accepted only after the function
 returns a <code>V1FinalAuth</code> receipt. The receipt is created only after the final
 block authenticates and the plaintext writer flushes successfully.
@@ -231,6 +233,11 @@ This is the final authentication boundary for payload acceptance.</p>
 <p>Domain transactional decrypt commit observes that receipt before publishing the
 final output. A final-authentication failure after scratch plaintext exists must
 leave existing final outputs uncommitted.</p>
+<p>Low-level callers using <code>read_uncommitted</code> or <code>decrypt_file_uncommitted</code> have
+caller obligations for uncommitted stream reads: hold plaintext in scratch
+storage that is not the final output, publish it only after receiving
+<code>V1FinalAuth</code>, and do not treat cleanup receipts, transaction receipts, detached
+pair receipts, or mutation snapshots as caller-made authority.</p>
 <h2 id="payload-framing"><a class="header" href="#payload-framing">Payload Framing</a></h2>
 <p>Canonical V1 stores payload kind and payload framing bytes in the static header.
 The bytes are interpreted by the shared core <code>PayloadKind</code> and
@@ -245,8 +252,9 @@ encryption</li>
 ordered <code>DXBF</code> body frames. This is canonical V1 payload structure, not ZIP
 crate surface. ZIP implementation bytes, ZIP central-directory metadata, ZIP
 crate types, compression selectors, and broad metadata knobs are not canonical
-V1 format surface. Manifest-first framing is not ZIP crate surface. ZIP
-implementation details are not canonical V1 format surface.</p>
+V1 archive format surface. Manifest-first framing is not ZIP crate surface. ZIP
+implementation details are not canonical V1 archive format surface. They are
+not canonical V1 format surface.</p>
 <h2 id="header-and-payload-authentication"><a class="header" href="#header-and-payload-authentication">Header and Payload Authentication</a></h2>
 <p>Payload authentication is provided by the AEAD itself. Header authentication for
 payload bytes is provided through immutable canonical V1 payload AAD. Wrapped

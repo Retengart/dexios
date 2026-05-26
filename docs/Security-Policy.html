@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-1a28b548.js";
+            window.path_to_searchindex_js = "searchindex-83857cf6.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-07f7ca76.js"></script>
@@ -193,16 +193,23 @@
 </div>
 <p>All published <code>dexios-core</code> versions are currently listed as supported in the repository security policy.</p>
 <h2 id="reporting-a-vulnerability"><a class="header" href="#reporting-a-vulnerability">Reporting a Vulnerability</a></h2>
-<p>The preferred reporting path is a GitHub issue or GitHub advisory on the main repository.</p>
-<p>If needed, you can also contact:</p>
+<p>For an unpatched vulnerability, use a private GitHub security advisory on the main repository or email:</p>
 <pre><code class="language-text">brxken128@tutanota.com
 </code></pre>
+<p>Do not open a public issue for an unpatched vulnerability. Public issues are fine for already-patched documentation/source mismatches or non-sensitive hardening follow-ups.</p>
 <p>Useful reports include:</p>
 <ul>
 <li>affected version</li>
 <li>reproduction steps</li>
 <li>whether the issue affects confidentiality, integrity, or availability</li>
 <li>whether it is format-compatibility-sensitive</li>
+<li>whether it concerns headers or format compatibility</li>
+<li>whether it concerns KDF selection</li>
+<li>whether it concerns pack/unpack behavior</li>
+<li>whether it concerns detached payload/header partial publication diagnostics and cleanup denial</li>
+<li>whether it concerns delete-after-success cleanup authority</li>
+<li>whether it concerns source replacement or changed source tree refusal</li>
+<li>whether it concerns temporary artifact lifecycle behavior</li>
 </ul>
 
                     </main>

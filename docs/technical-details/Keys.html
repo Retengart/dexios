@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-1a28b548.js";
+            window.path_to_searchindex_js = "../searchindex-83857cf6.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-07f7ca76.js"></script>
@@ -206,9 +206,11 @@ generated-passphrase disclosure message is printed.</p>
 <h2 id="v1-key-workflows"><a class="header" href="#v1-key-workflows">V1 Key Workflows</a></h2>
 <p>Key workflows operate on V1 headers and keyslots only.</p>
 <ul>
-<li><code>key add</code> remains unsupported for V1 encrypted artifacts in this refactor
-line. It fails with a typed unsupported-workflow result and does not request a
-new key or mutate the header.</li>
+<li><code>key add</code> is supported for canonical V1 encrypted artifacts. It first proves
+that an existing supported key unwraps the current master key, then adds a new
+fixed physical keyslot with a fresh keyslot wrapping nonce. It must preserve payload bytes
+and must reject unsupported KDF metadata instead of skipping or rewriting unsupported
+slots.</li>
 <li><code>key verify</code> is read-only. It reads the V1 header keyslots, attempts to unwrap
 the master key with the supplied key, and reports success, incorrect key,
 unsupported KDF, malformed header, unsupported format, or read I/O failure. It
@@ -220,6 +222,13 @@ master key before committing the staged header update.</li>
 deletion of the final usable V1 keyslot and does not collect a separate
 remaining-key verification key.</li>
 </ul>
+<p>Key add, change, and delete snapshot the encrypted target before preparing a
+replacement header. Before commit, Dexios rechecks mutation freshness: the
+target must still have the same bytes, and on Unix it must still have the same
+device and inode. Same-inode content changes and path replacement after the
+snapshot are refused as stale key mutation, leaving the current file bytes in
+place. This check does not use filesystem locks and does not add recovery,
+rollback, or secure erase behavior.</p>
 <p>Historical V1 keyslots tagged <code>[0xDF, 0x02]</code> are recognized as unsupported
 Argon2id metadata. Key mutation refuses files containing that unsupported tag
 instead of skipping, normalizing, or rewriting the slot. <code>key verify</code> reports a

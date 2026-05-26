@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-1a28b548.js";
+            window.path_to_searchindex_js = "../searchindex-83857cf6.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-07f7ca76.js"></script>
@@ -240,9 +240,8 @@ bash scripts/measure_performance_gate.sh --scenario all
 The temp-space threshold is enforced against the maximum observed KiB under
 the per-run measurement work root. Measurements that do not have a configured
 threshold remain advisory evidence only.</p>
-<p>Structural archive limits are not proof that the host has enough free memory or
-disk space. Capacity and temp-space measurements are best-effort release
-evidence, not a host-independent storage guarantee.</p>
+<p>Structural archive limits are not proof that the host has enough free memory or disk space. Capacity and temp-space measurements are best-effort release evidence, not a host-independent storage guarantee. They do not prove that unpack plaintext exposure is eliminated; current unpack still stages selected
+file bodies as ordinary filesystem temporary/staged files before commit.</p>
 
                     </main>
 

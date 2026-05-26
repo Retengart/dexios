@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-1a28b548.js";
+            window.path_to_searchindex_js = "searchindex-83857cf6.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-07f7ca76.js"></script>
@@ -263,17 +263,23 @@ cargo build -p dexios --profile release-lto
 bash scripts/verify_cli_surface.sh
 mdbook build
 git diff --exit-code -- docs
+git status --porcelain --untracked-files=all -- docs
+typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf
+git diff --exit-code -- spec/dexios-paper.pdf
 bash scripts/verify_repo_hygiene.sh
 git diff --check
-bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --allow-dirty --asset target/release-lto/dexios
+bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release-lto/dexios
 </code></pre>
 <p><code>mdbook build</code> writes the generated documentation site to <code>docs/</code> because
-<code>book.toml</code> sets <code>build-dir = "docs"</code>.</p>
+<code>book.toml</code> sets <code>build-dir = "docs"</code>. <code>typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf</code> rebuilds the source-backed current
+PDF from the tracked Typst source with deterministic PDF metadata.</p>
 <p>The gate checks for required tools before running the long workspace commands.
-Missing <code>cargo-audit</code>, <code>cargo-deny</code>, or <code>mdbook</code> fails with an install hint:</p>
+Missing <code>cargo-audit</code>, <code>cargo-deny</code>, <code>mdbook</code>, or <code>typst</code> fails with an install
+hint:</p>
 <pre><code class="language-bash">cargo install cargo-audit --locked --version 0.22.1
 cargo install cargo-deny --locked --version 0.19.6
 cargo install mdbook --locked
+# Install Typst from https://typst.app/docs/install/ or your operating system package manager.
 </code></pre>
 <p>The gate does not auto-install tools or otherwise mutate the maintainer
 environment.</p>
@@ -288,9 +294,15 @@ bash scripts/generate_release_manifest.sh \
   --asset target/release-lto/dexios
 </code></pre>
 <p>For release use, run the manifest command from a clean tracked working tree.
-Untracked local files are ignored by the dirty check. <code>--tag &lt;tag&gt;</code> requires the
-tag to point at the current commit. <code>--allow-dirty</code> is only for local dry runs
-where the manifest must explicitly record that tracked changes were present.</p>
+Without <code>--allow-dirty</code>, tracked working tree changes fail closed. Untracked
+local files are ignored by the dirty check. <code>--tag &lt;tag&gt;</code> requires the tag to
+point at the current commit. <code>--allow-dirty</code> is only for local dry runs where
+the manifest must explicitly record that tracked changes were present:</p>
+<pre><code class="language-bash">bash scripts/generate_release_manifest.sh \
+  --output target/release-evidence/release-manifest.md \
+  --allow-dirty \
+  --asset target/release-lto/dexios
+</code></pre>
 <p>The manifest records commit and tag status, tracked dirty state, <code>Cargo.lock</code>
 SHA256, <code>cargo metadata --format-version=1 --locked</code> evidence, tool versions,
 the verification command contract, and asset SHA256 hashes. The command contract
@@ -309,6 +321,12 @@ verification command before public claims are made.</p>
 <li>Linux and FreeBSD builds require <code>gcc</code>.</li>
 <li>The workspace currently uses Rust edition <code>2024</code>.</li>
 <li>The workspace MSRV is <code>1.88</code>.</li>
+<li>The legacy Nix package gate should plan against the current flake pin with
+Rust <code>1.88</code> or newer:</li>
+</ul>
+<pre><code class="language-bash">nix-build . -A defaultPackage.x86_64-linux --dry-run
+</code></pre>
+<ul>
 <li>Release workflows also use a dedicated <code>release-lto</code> profile for shipping artifacts.</li>
 </ul>
 <h2 id="precompiled-binaries"><a class="header" href="#precompiled-binaries">Precompiled Binaries</a></h2>
@@ -492,12 +510,15 @@ assigned to a later phase.</p>
 <tr><td>SECR-001</td><td>Secret handling</td><td><code>Protected&lt;T&gt;</code> zeroizes on drop, redacts <code>Debug</code> as <code>[REDACTED]</code>, has no blanket clone or public direct exposure API, and exposes secrets only through closure-scoped <code>with_exposed</code>.</td><td>current</td><td>Current source, tests, editable docs, and Context7 <code>/rustcrypto/utils</code> zeroize research</td><td><code>dexios-core/src/protected.rs</code>; <code>dexios-core/tests/protected.rs</code>; <code>book/src/dexios-core/Protected-Wrapper.md</code></td><td>SECR-01, SECR-03, SECR-04</td><td>Phase 3</td></tr>
 <tr><td>SECR-002</td><td>Secret handling</td><td>CLI prompt password temporaries use <code>Zeroizing&lt;String&gt;</code> for direct, confirmation, mismatch, empty-input, and prompt-error paths; generated passphrase output is intentional disclosure and warns about terminal scrollback or logs; invalid explicit <code>--auto</code> word counts are rejected before generation and disclosure.</td><td>current</td><td>Current CLI source, tests, editable docs, and Context7 <code>/rustcrypto/utils</code> zeroize research</td><td><code>dexios/src/cli/prompt.rs</code>; <code>dexios/src/cli.rs</code>; <code>dexios/src/global/states.rs</code>; <code>scripts/verify_cli_surface.sh</code>; <code>book/src/technical-details/Keys.md</code></td><td>SECR-02, SECR-04, KDF-03, KDF-04</td><td>Phase 3 / Phase 9</td></tr>
 <tr><td>STOR-001</td><td>Storage writes</td><td>Existing final outputs remain unchanged until the operation, required staged output commits, and requested hash gates succeed.</td><td>current</td><td>Current source and real filesystem tests</td><td><code>dexios-domain/src/storage/transaction.rs</code>; <code>dexios-domain/src/storage/cleanup.rs</code>; <code>dexios-domain/tests/transactions.rs</code>; <code>dexios-domain/tests/cleanup_receipts.rs</code>; <code>dexios/tests/decrypt_cli_regressions.rs::decrypt_wrong_key_preserves_existing_output</code>; <code>dexios/tests/storage_transactions_cli.rs</code>; <code>dexios/tests/delete_source_cli.rs</code></td><td>SAFE-01, STOR-01, STOR-02, STOR-04, STOR-06, VERI-01</td><td>Phase 4</td></tr>
-<tr><td>STOR-002</td><td>Path identity</td><td>Input/output/header path aliases are rejected by domain-owned identity checks before final output handles open.</td><td>current</td><td>Current source and real filesystem tests</td><td><code>dexios-domain/src/storage/identity.rs</code>; <code>dexios-domain/tests/path_identity.rs</code>; <code>dexios/tests/encrypt_cli_regressions.rs::encrypt_rejects_same_file_alias_before_opening_output</code>; <code>dexios/tests/pack_cli_regressions.rs</code>; <code>dexios/tests/unpack_cli_regressions.rs</code>; <code>dexios/tests/storage_transactions_cli.rs</code></td><td>SAFE-01, STOR-03, STOR-06, VERI-01</td><td>Phase 4</td></tr>
-<tr><td>STOR-003</td><td>Filesystem transactions</td><td>Staged writes use same-directory temporary files and staged flush/sync/persist before final placement: <code>NamedStagedOutput::prepare_for_persist</code> requires a write, calls <code>flush</code>, calls <code>File::sync_all</code>, and only then uses <code>tempfile::NamedTempFile::persist</code> or <code>persist_noclobber</code> through <code>persist_prepared</code>. Linked commits prepare every staged artifact before any persist call. During manifest unpack, if the first selected file commit fails after selected directories were created, Dexios best-effort removes directories created by the current post-final-auth directory pass before first selected file commit; pre-existing directories are preserved. Partial commit evidence reports already committed artifacts and the failed artifact; committed outputs are not rolled back. Dexios does not claim portable parent-directory durability across every filesystem or platform, and this is no full power-failure proof.</td><td>current</td><td>Current source, source gates, and real filesystem tests</td><td><code>dexios-domain/src/storage/temp.rs</code>; <code>dexios-domain/src/storage/transaction.rs</code>; <code>dexios-domain/src/storage/cleanup.rs</code>; <code>dexios-domain/tests/transactions.rs</code>; <code>dexios-domain/tests/unpack.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code>; <code>book/src/technical-details/Directory-Packing.md</code>; <code>book/src/technical-details/Secure-Erase.md</code></td><td>FS-01, FS-03, FS-04, FS-05, TXN-01, TXN-02, TXN-03</td><td>Phase 11 / Phase 12</td></tr>
-<tr><td>STOR-004</td><td>Cleanup identity and deletion</td><td>Cleanup is ordinary delete-after-success cleanup after complete commit and requested hash success. Cleanup receipts capture a target identity snapshot, changed cleanup identity fails closed, and cleanup failures are reported after commit without reverting outputs. <code>remove_file</code> does not guarantee immediate physical deletion, and Dexios claims no secure erase and no physical sanitization.</td><td>current</td><td>Current source, source gates, and real filesystem tests</td><td><code>dexios-domain/src/storage/cleanup.rs</code>; <code>dexios-domain/tests/cleanup_receipts.rs</code>; <code>dexios/tests/delete_source_cli.rs</code>; <code>dexios/tests/storage_transactions_cli.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code>; <code>book/src/technical-details/Secure-Erase.md</code></td><td>FS-02, FS-04, FS-05</td><td>Phase 11</td></tr>
+<tr><td>STOR-002</td><td>Path identity</td><td>Shared domain path identity is the role authority for <code>PathRole::Input</code>, <code>Output</code>, <code>PathRole::DetachedHeader</code>, <code>GeneratedOutput</code>, <code>GeneratedDetachedHeader</code>, <code>UnpackRoot</code>, <code>MutationTarget</code>, <code>PathRole::ProcessedSource</code>, and <code>PathRole::CleanupTarget</code>; aliases and unsafe symlink paths are rejected before final output or checked source handles open.</td><td>current</td><td>Current source, real filesystem tests, and Unix identity evidence</td><td><code>dexios-domain/src/storage/identity.rs</code>; <code>dexios-domain/src/storage/fs.rs</code>; <code>dexios-domain/src/unpack.rs</code>; <code>dexios-domain/tests/path_identity.rs</code>; <code>dexios-domain/tests/unpack.rs</code>; <code>dexios/tests/encrypt_cli_regressions.rs::encrypt_rejects_same_file_alias_before_opening_output</code>; <code>dexios/tests/pack_cli_regressions.rs</code>; <code>dexios/tests/unpack_cli_regressions.rs</code>; <code>dexios/tests/storage_transactions_cli.rs</code></td><td>SAFE-01, STOR-03, STOR-06, VERI-01</td><td>Phase 4 / Phase 15</td></tr>
+<tr><td>STOR-003</td><td>Filesystem transactions</td><td>Staged writes use same-directory temporary files and staged flush/sync/fd-relative final placement: <code>NamedStagedOutput::prepare_for_persist</code> requires a write, calls <code>flush</code>, calls <code>File::sync_all</code>, and only then uses opened parent directories for Unix finalization: <code>linkat</code> for create-new output and <code>renameat</code> for replace-at-commit output through <code>persist_prepared</code>. Linked commits prepare every staged artifact before any persist call. During manifest unpack, if the first selected file commit fails after selected directories were created, Dexios best-effort removes directories created by the current post-final-auth directory pass before first selected file commit; pre-existing directories are preserved. Partial commit evidence reports already committed artifacts and the failed artifact; committed outputs are not rolled back. Dexios does not claim portable parent-directory durability across every filesystem or platform, and this is no full power-failure proof.</td><td>current</td><td>Current source, source gates, and real filesystem tests</td><td><code>dexios-domain/src/storage/temp.rs</code>; <code>dexios-domain/src/storage/transaction.rs</code>; <code>dexios-domain/src/storage/cleanup.rs</code>; <code>dexios-domain/tests/transactions.rs</code>; <code>dexios-domain/tests/unpack.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code>; <code>book/src/technical-details/Directory-Packing.md</code>; <code>book/src/technical-details/Secure-Erase.md</code></td><td>FS-01, FS-03, FS-04, FS-05, TXN-01, TXN-02, TXN-03</td><td>Phase 11 / Phase 12</td></tr>
+<tr><td>STOR-004</td><td>Cleanup identity and deletion</td><td>Cleanup is ordinary delete-after-success cleanup after complete commit and requested hash success. Domain workflows return processed-source cleanup evidence instead of post-commit CLI path strings. Cleanup receipts capture target identity and, for processed directory sources, changed source tree evidence; changed cleanup identity fails closed, partial commit evidence is not cleanup authorization, and cleanup failures are reported after commit without reverting outputs. <code>remove_file</code> does not guarantee immediate physical deletion, and Dexios claims no secure erase and no physical sanitization.</td><td>current</td><td>Current source, source gates, and real filesystem tests</td><td><code>dexios-domain/src/storage/cleanup.rs</code>; <code>dexios-domain/src/encrypt.rs</code>; <code>dexios-domain/src/decrypt.rs</code>; <code>dexios-domain/src/pack.rs</code>; <code>dexios-domain/src/unpack.rs</code>; <code>dexios-domain/tests/cleanup_receipts.rs</code>; <code>dexios/tests/delete_source_cli.rs</code>; <code>dexios/tests/storage_transactions_cli.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code>; <code>book/src/technical-details/Secure-Erase.md</code></td><td>FS-02, FS-04, FS-05, DASI-01, DASI-02, DASI-03, DASI-04</td><td>Phase 11 / Phase 16</td></tr>
+<tr><td>STOR-005</td><td>Detached publication</td><td>Detached encrypt and pack publication is pair-aware: cleanup-eligible success requires the payload and detached header from the same linked operation to commit. Partial detached publication is an error path that reports the committed and failed artifact state, keeps source cleanup denied, and does not roll back committed artifacts or guarantee recovery.</td><td>current</td><td>Current source, source gates, real filesystem tests, and editable docs</td><td><code>dexios-domain/src/storage/transaction.rs</code>; <code>dexios-domain/src/encrypt.rs</code>; <code>dexios-domain/src/pack.rs</code>; <code>dexios-domain/tests/transactions.rs</code>; <code>dexios-domain/tests/detached_publication.rs</code>; <code>dexios-domain/tests/cleanup_receipts.rs</code>; <code>dexios/tests/workflow_error_cli.rs</code>; <code>dexios/tests/encrypt_cli_regressions.rs</code>; <code>dexios/tests/pack_cli_regressions.rs</code>; <code>dexios/tests/delete_source_cli.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code>; <code>book/src/technical-details/Secure-Erase.md</code>; <code>book/src/technical-details/Directory-Packing.md</code></td><td>DETP-01, DETP-02, DETP-03, DETP-04</td><td>Phase 17</td></tr>
+<tr><td>STOR-006</td><td>Mutation freshness</td><td>Header strip/restore and key add/change/delete snapshot mutation inputs and refuse publication when target identity or bytes changed before commit. Restore separately reports stale detached header input; key workflows report stale key mutation. Tests cover same-inode content changes and Unix path replacement without relying on file timestamps. This check does not use filesystem locks and does not add recovery, rollback, or secure erase behavior.</td><td>current</td><td>Current source, source gates, real filesystem tests, and editable docs</td><td><code>dexios-domain/src/storage/mutation.rs</code>; <code>dexios-domain/src/header/strip.rs</code>; <code>dexios-domain/src/header/restore.rs</code>; <code>dexios-domain/src/key.rs</code>; <code>dexios-domain/tests/header_restore.rs</code>; <code>dexios-domain/tests/keyslots_v1.rs</code>; <code>dexios-domain/tests/workflow_errors.rs</code>; <code>dexios/tests/header_cli_regressions.rs</code>; <code>dexios/tests/key_cli_regressions.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code>; <code>book/src/dexios-core/Headers.md</code>; <code>book/src/technical-details/Keys.md</code></td><td>HDRM-01, HDRM-02, HDRM-03, HDRM-04</td><td>Phase 18</td></tr>
 <tr><td>ARCH-001</td><td>Archive boundaries</td><td>Current pack and unpack use Dexios-owned manifest-first archive payloads with <code>DXAR</code> manifests and ordered <code>DXBF</code> body frames. ZIP bytes and ZIP crate types are not canonical V1 archive surface. Normal operation no longer creates a full plaintext archive temporary file; the current archive workflow has no full plaintext archive temporary file. Unpack-side plaintext exposure is scoped to selected staged file bodies and ordinary filesystem temporary/staged files, without secure erase or capacity-preflight claims.</td><td>current</td><td>Current source, real filesystem tests, source gates, and editable docs</td><td><code>dexios-domain/src/archive.rs</code>; <code>dexios-domain/src/pack.rs</code>; <code>dexios-domain/src/unpack.rs</code>; <code>dexios-core/src/payload.rs</code>; <code>dexios-core/src/stream.rs</code>; <code>dexios-domain/tests/pack_paths.rs</code>; <code>dexios-domain/tests/unpack.rs</code>; <code>dexios-core/tests/stream_v1.rs</code>; <code>dexios/tests/pack_cli_regressions.rs</code>; <code>dexios/tests/unpack_cli_regressions.rs</code>; <code>book/src/technical-details/Directory-Packing.md</code>; <code>book/src/technical-details/Secure-Erase.md</code></td><td>FMT-01, STRM-04, ARCH-04, ARCH-05, PERF-03</td><td>Phase 5 / Phase 6</td></tr>
 <tr><td>ERR-001</td><td>Error handling</td><td>Parse, authentication, path, IO, unsupported workflow, unsafe path, and commit failures remain distinguishable enough for rollback and user data preservation in encrypt, decrypt, header, and key workflows.</td><td>current</td><td>Current source and tests</td><td><code>dexios-domain/src/workflow_error.rs</code>; <code>dexios-domain/tests/workflow_errors.rs</code>; <code>dexios-domain/tests/workflow_public_api.rs</code>; <code>dexios/src/subcommands/errors.rs</code>; <code>dexios/tests/workflow_error_cli.rs</code>; source gates in Phase 05 Plan 08</td><td>SAFE-01, ERR-01, ERR-02, ERR-03, ERR-04</td><td>Phase 5</td></tr>
 <tr><td>API-001</td><td>Domain API and diagnostics</td><td>Public unpack construction uses checked <code>UnpackIntent</code>, storage failure hooks are gated behind <code>test-support</code> outside the default production API, typed <code>WorkflowErrorClass</code> remains the CLI mapping boundary, and domain errors preserve safe diagnostic <code>source()</code> chains.</td><td>current</td><td>Current source, source gates, focused tests, and CLI tests</td><td><code>dexios-domain/src/unpack.rs</code>; <code>dexios/src/subcommands/unpack.rs</code>; <code>dexios-domain/src/storage/mod.rs</code>; <code>dexios-domain/src/storage/identity.rs</code>; <code>dexios-domain/src/storage/transaction.rs</code>; <code>dexios-domain/src/storage/temp.rs</code>; <code>dexios-domain/tests/workflow_public_api.rs</code>; <code>dexios-domain/tests/archive_public_api.rs</code>; <code>dexios-domain/tests/workflow_errors.rs</code>; <code>dexios-domain/tests/transactions.rs</code>; <code>dexios/tests/workflow_error_cli.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code></td><td>API-01, API-02, API-03, API-04, API-05</td><td>Phase 10</td></tr>
+<tr><td>API-002</td><td>Public API authority boundaries</td><td>Production plaintext publication requires <code>V1FinalAuth</code> plus staged commit evidence; cleanup receipts, transaction receipts, detached pair receipts, and mutation snapshots are forge-resistant receipts whose authority constructors stay private, crate-private, or <code>test-support</code> scoped. Legitimate low-level core stream helpers remain public only with explicit caller obligations for uncommitted stream reads.</td><td>current</td><td>Current source, source gates, focused tests, and editable docs</td><td><code>dexios-core/src/stream.rs</code>; <code>dexios-domain/src/decrypt.rs</code>; <code>dexios-domain/src/encrypt.rs</code>; <code>dexios-domain/src/storage/transaction.rs</code>; <code>dexios-domain/src/storage/cleanup.rs</code>; <code>dexios-domain/src/storage/mutation.rs</code>; <code>dexios-domain/src/storage/test_support.rs</code>; <code>dexios-domain/tests/workflow_public_api.rs</code>; <code>dexios-domain/tests/archive_public_api.rs</code>; <code>dexios-core/tests/public_api_footguns.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code>; <code>book/src/dexios-core/Encryption.md</code></td><td>APIF-01, APIF-02, APIF-03, APIF-04</td><td>Phase 19</td></tr>
 <tr><td>DOC-001</td><td>Documentation</td><td>Source-of-truth precedence is recorded by topic.</td><td>current</td><td>This contract</td><td><code>book/src/Safety-Contract.md</code> Source-of-Truth Matrix</td><td>SAFE-04</td><td>Phase 1</td></tr>
 </tbody>
 </table>
@@ -515,12 +536,14 @@ editable docs, generated docs, security policy, or historical specs disagree.</p
 <tr><td>V1 header layout and AAD</td><td>Current source/tests plus <code>book/src/dexios-core/Headers.md</code> are the current authority.</td><td><code>dexios-core/src/header/common.rs</code>; <code>dexios-core/src/header/v1.rs</code>; <code>dexios-core/tests/v1_header.rs</code>; <code>book/src/</code> editable documentation source.</td><td><code>spec/specification-v1.pdf</code> is historical input only; generated <code>docs/</code> is generated output.</td><td>Treat canonical V1 as a 512-byte header with <code>DXIO 00 01 CV1\0</code>, a 64-byte immutable static-header payload AAD, four fixed 112-byte physical keyslot records, and retired old current-V1 rejection.</td></tr>
 <tr><td>KDF identifiers and parameters</td><td>Current source, current KDF vectors, <code>book/src/dexios-core/Headers.md</code>, and <code>book/src/dexios-core/Password-Hashing.md</code> are the authority for canonical V1 keyslot profile ids, dependency feature policy, and KDF parameter evidence.</td><td><code>Cargo.toml</code>; <code>Cargo.lock</code>; <code>dexios-core/src/header/v1.rs</code>; <code>dexios-core/src/kdf.rs</code>; <code>dexios-core/tests/key_derivation.rs</code>; <code>dexios-core/tests/testdata/kdf_vectors.toml</code>; <code>dexios-domain/tests/keyslots_v1.rs</code>; <code>book/src/</code> editable documentation source; Context7 <code>/rustcrypto/password-hashes</code> research.</td><td><code>spec/specification-v1.pdf</code> and generated <code>docs/</code> are comparison inputs only.</td><td>Treat canonical BLAKE3-Balloon profile ids as the normal write policy. Treat historical Argon2id metadata as unsupported diagnostics only. Current BLAKE3-Balloon parameters are frozen: space cost <code>278_528</code>, time cost <code>1</code>, p-cost <code>1</code>, output length <code>32</code>, and delta <code>3</code>. <code>balloon-hash 0.4.0</code> must keep the <code>zeroize</code> feature unless a later dependency proof replaces this policy.</td></tr>
 <tr><td>stream encryption block/final semantics</td><td>Current source, <code>dexios-core/tests/stream_v1.rs</code>, and <code>book/src/dexios-core/Encryption.md</code> describe current typed stream, immutable header-derived AAD, slot-scoped key wrapping AAD, uncommitted scratch, and final-auth receipt behavior.</td><td><code>dexios-core/src/stream.rs</code>; <code>dexios-core/src/payload.rs</code>; <code>dexios-core/tests/stream_v1.rs</code>; <code>dexios-domain/src/encrypt.rs</code>; <code>dexios-domain/src/decrypt.rs</code>; <code>book/src/</code> editable documentation source; Context7 <code>/rustcrypto/aeads</code> research.</td><td><code>spec/specification-v1.pdf</code> documents historical LE31 and final-block behavior but is not sole authority; generated <code>docs/</code> is generated output.</td><td>Treat STRM-001 as current after Phase 3 stream matrix and <code>V1FinalAuth</code> receipt coverage. Domain final-output commit must observe the receipt before publishing decrypt output.</td></tr>
-<tr><td>keyslot mutation safety</td><td>Current source and owning-crate tests are the authority.</td><td><code>dexios-core/src/header/v1.rs::V1Keyslots</code>; <code>dexios-domain/src/key/add.rs</code>; <code>dexios-domain/src/key/change.rs</code>; <code>dexios-domain/src/key/delete.rs</code>; <code>dexios-domain/src/key/verify.rs</code>; <code>dexios-domain/tests/keyslots_v1.rs</code>.</td><td>Historical docs describe older key deletion mechanics but do not override canonical fixed-slot behavior; generated <code>docs/</code> is generated output.</td><td>Treat canonical V1 keyslot add/change/delete/verify as fixed physical slot operations with no compaction, fresh add/change wrapping nonces, and final-supported-slot deletion rejection.</td></tr>
+<tr><td>public API authority boundaries</td><td>Current source, source gates, and editable docs are the authority for public API authority boundaries and forge-resistant receipts.</td><td><code>dexios-core/src/stream.rs</code>; <code>dexios-domain/src/decrypt.rs</code>; <code>dexios-domain/src/encrypt.rs</code>; <code>dexios-domain/src/storage/transaction.rs</code>; <code>dexios-domain/src/storage/cleanup.rs</code>; <code>dexios-domain/src/storage/mutation.rs</code>; <code>dexios-domain/src/storage/test_support.rs</code>; <code>dexios-domain/tests/workflow_public_api.rs</code>; <code>dexios-domain/tests/archive_public_api.rs</code>; <code>dexios-core/tests/public_api_footguns.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code>; <code>book/src/dexios-core/Encryption.md</code>.</td><td>Generated docs and external caller examples do not create authority.</td><td>Treat <code>V1FinalAuth</code>, cleanup receipts, transaction receipts, detached pair receipts, and mutation snapshots as authority evidence produced by core/domain workflows, not caller-made data. Low-level stream reads are uncommitted until final authentication succeeds, and callers using those helpers must keep plaintext scratch outside final publication paths until they hold the receipt.</td></tr>
+<tr><td>keyslot mutation safety</td><td>Current source and owning-crate tests are the authority.</td><td><code>dexios-core/src/header/v1.rs::V1Keyslots</code>; <code>dexios-domain/src/key/add.rs</code>; <code>dexios-domain/src/key/change.rs</code>; <code>dexios-domain/src/key/delete.rs</code>; <code>dexios-domain/src/key/verify.rs</code>; <code>dexios-domain/src/key.rs</code>; <code>dexios-domain/src/storage/mutation.rs</code>; <code>dexios-domain/tests/keyslots_v1.rs</code>; <code>dexios/tests/key_cli_regressions.rs</code>.</td><td>Historical docs describe older key deletion mechanics but do not override canonical fixed-slot behavior; generated <code>docs/</code> is generated output.</td><td>Treat canonical V1 keyslot add/change/delete/verify as fixed physical slot operations with no compaction, fresh add/change wrapping nonces, final-supported-slot deletion rejection, and stale key mutation refusal through mutation freshness checks.</td></tr>
 <tr><td>secret wrapper and CLI secret handling</td><td>Current source/tests plus <code>book/src/dexios-core/Protected-Wrapper.md</code> and <code>book/src/technical-details/Keys.md</code> are the authority for secret wrapper access, prompt temporaries, debug redaction, generated passphrase validation, and generated passphrase disclosure.</td><td><code>dexios-core/src/protected.rs</code>; <code>dexios-core/tests/protected.rs</code>; <code>dexios/src/cli.rs</code>; <code>dexios/src/cli/prompt.rs</code>; <code>dexios/src/global/states.rs</code>; <code>scripts/verify_cli_surface.sh</code>; <code>book/src/</code> editable documentation source; Context7 <code>/rustcrypto/utils</code> research.</td><td>Generated <code>docs/</code> is generated output and may lag until regenerated intentionally.</td><td>Treat <code>with_exposed</code> as the only public <code>Protected&lt;T&gt;</code> access path, no blanket <code>Protected&lt;T&gt;</code> clone as current behavior, prompt strings as <code>Zeroizing&lt;String&gt;</code> temporaries, explicit invalid <code>--auto</code> counts as fail-before-generation errors, and successful <code>--auto</code> passphrase display as intentional disclosure that can be captured by terminal scrollback or logs.</td></tr>
-<tr><td>header dump/strip/restore</td><td>Current source and owning tests are the authority.</td><td><code>dexios/src/subcommands/header.rs</code>; <code>dexios-domain/src/header/</code>; <code>dexios-domain/tests/header_restore.rs</code>; <code>dexios/tests/header_cli_regressions.rs</code>; <code>dexios/tests/workflow_error_cli.rs</code>; <code>book/src/dexios-core/Headers.md</code>; <code>book/src/</code> editable documentation source.</td><td><code>spec/specification-v1.pdf</code> is historical input; generated <code>docs/</code> is generated output.</td><td>Treat V1-only dump, strip, restore, exact detached-header length, header-only rejection, missing-payload rejection, stripped-target validation, and typed header workflow errors as current Phase 5 behavior.</td></tr>
-<tr><td>storage transactions and path identity</td><td>Current domain storage modules and real filesystem tests are the authority for Phase 4 final-output preservation, path identity, cleanup sequencing, Phase 10 storage test-support gating, Phase 11 staged write ordering, and Phase 12 manifest-unpack directory rollback boundaries.</td><td><code>dexios-domain/src/storage/mod.rs</code>; <code>dexios-domain/src/storage/fs.rs</code>; <code>dexios-domain/src/storage/temp.rs</code>; <code>dexios-domain/src/storage/identity.rs</code>; <code>dexios-domain/src/storage/transaction.rs</code>; <code>dexios-domain/src/storage/cleanup.rs</code>; <code>dexios-domain/src/storage/test_support.rs</code>; <code>dexios-domain/tests/transactions.rs</code>; <code>dexios-domain/tests/path_identity.rs</code>; <code>dexios-domain/tests/cleanup_receipts.rs</code>; <code>dexios-domain/tests/unpack.rs</code>; <code>dexios-domain/tests/workflow_public_api.rs</code>; <code>dexios/tests/storage_transactions_cli.rs</code>; <code>dexios/tests/delete_source_cli.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code>.</td><td>Historical direct-final-write behavior and generated docs do not override current source/tests.</td><td>Treat Phase 4 storage responsibilities as split by module: real filesystem storage, temporary artifacts, identity, transactions, cleanup receipts, and test failure hooks are separate maintainer evidence surfaces. Failure-hook entry points are test-support scoped; public receipt and identity evidence remains production API. Phase 11 adds the exact staged flush/sync/persist contract: same-directory temporary files, <code>File::sync_all</code> before persist, <code>tempfile::NamedTempFile::persist</code> or <code>persist_noclobber</code> for final placement, and no portable parent-directory durability claim. Phase 12 adds the manifest-unpack rollback boundary: before the first selected file commit, Dexios best-effort removes only directories created by the current post-final-auth directory pass; pre-existing directories are preserved, and <code>TransactionError::PartialCommit</code> remains evidence without rollback of committed file artifacts.</td></tr>
+<tr><td>header dump/strip/restore</td><td>Current source and owning tests are the authority.</td><td><code>dexios/src/subcommands/header.rs</code>; <code>dexios-domain/src/header/</code>; <code>dexios-domain/src/storage/mutation.rs</code>; <code>dexios-domain/tests/header_restore.rs</code>; <code>dexios/tests/header_cli_regressions.rs</code>; <code>dexios/tests/workflow_error_cli.rs</code>; <code>book/src/dexios-core/Headers.md</code>; <code>book/src/</code> editable documentation source.</td><td><code>spec/specification-v1.pdf</code> is historical input; generated <code>docs/</code> is generated output.</td><td>Treat V1-only dump, strip, restore, exact detached-header length, header-only rejection, missing-payload rejection, stripped-target validation, typed header workflow errors, stale target refusal, and stale detached header refusal as current behavior.</td></tr>
+<tr><td>storage transactions and path identity</td><td>Current domain storage modules and real filesystem tests are the authority for Phase 4 final-output preservation, Phase 15 shared path-role identity, cleanup sequencing, Phase 10 storage test-support gating, Phase 11 staged write ordering, Phase 12 manifest-unpack directory rollback boundaries, Phase 17 pair-aware detached publication, and Phase 18 mutation freshness.</td><td><code>dexios-domain/src/storage/mod.rs</code>; <code>dexios-domain/src/storage/fs.rs</code>; <code>dexios-domain/src/storage/temp.rs</code>; <code>dexios-domain/src/storage/identity.rs</code>; <code>dexios-domain/src/storage/mutation.rs</code>; <code>dexios-domain/src/storage/transaction.rs</code>; <code>dexios-domain/src/storage/cleanup.rs</code>; <code>dexios-domain/src/storage/test_support.rs</code>; <code>dexios-domain/src/encrypt.rs</code>; <code>dexios-domain/src/pack.rs</code>; <code>dexios-domain/src/unpack.rs</code>; <code>dexios-domain/src/header/strip.rs</code>; <code>dexios-domain/src/header/restore.rs</code>; <code>dexios-domain/src/key.rs</code>; <code>dexios-domain/tests/transactions.rs</code>; <code>dexios-domain/tests/detached_publication.rs</code>; <code>dexios-domain/tests/path_identity.rs</code>; <code>dexios-domain/tests/header_restore.rs</code>; <code>dexios-domain/tests/keyslots_v1.rs</code>; <code>dexios-domain/tests/cleanup_receipts.rs</code>; <code>dexios-domain/tests/unpack.rs</code>; <code>dexios-domain/tests/workflow_public_api.rs</code>; <code>dexios/tests/storage_transactions_cli.rs</code>; <code>dexios/tests/header_cli_regressions.rs</code>; <code>dexios/tests/key_cli_regressions.rs</code>; <code>dexios/tests/delete_source_cli.rs</code>; <code>dexios/tests/workflow_error_cli.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code>.</td><td>Historical direct-final-write behavior and generated docs do not override current source/tests.</td><td>Treat Phase 4 storage responsibilities as split by module: real filesystem storage, temporary artifacts, identity, transactions, cleanup receipts, and test failure hooks are separate maintainer evidence surfaces. Failure-hook entry points are test-support scoped; public receipt and identity evidence remains production API. Phase 15 makes <code>dexios-domain/src/storage/identity.rs</code> the shared authority for <code>PathRole::Input</code>, <code>Output</code>, <code>PathRole::DetachedHeader</code>, <code>GeneratedOutput</code>, <code>GeneratedDetachedHeader</code>, <code>UnpackRoot</code>, <code>MutationTarget</code>, <code>PathRole::ProcessedSource</code>, and <code>PathRole::CleanupTarget</code>: existing input/output role registration rejects parent-directory components before normalization and rejects final symlinks and symlinked parent prefixes before canonicalization; alias-aware identity uses <code>same-file</code> platform checks with Unix dev/inode evidence; missing outputs retain nearest-existing-ancestor plus missing-suffix state; unpack construction receives raw archive/header paths and opens checked sources through <code>FileStorage::read_resolved_existing_no_follow</code>. The strong model is Unix-backed; non-Unix behavior is limited by platform identity APIs and available tests. Phase 11 adds the exact staged flush/sync/fd-relative final placement contract: same-directory temporary files, <code>File::sync_all</code> before persist, Unix <code>linkat</code> for create-new output, Unix <code>renameat</code> for replace-at-commit output, and no portable parent-directory durability claim. Phase 12 adds the manifest-unpack rollback boundary: before the first selected file commit, Dexios best-effort removes only directories created by the current post-final-auth directory pass; pre-existing directories are preserved, and <code>TransactionError::PartialCommit</code> remains evidence without rollback of committed file artifacts. Phase 17 adds pair-aware detached publication: detached payload/header success requires both artifacts from the same linked operation, partial detached publication reports committed and failed artifact state, and source cleanup is denied after partial detached publication. Phase 18 adds mutation freshness for header/key mutation workflows: snapshots compare byte content and Unix dev/inode identity to catch same-inode content changes and path replacement before publishing.</td></tr>
 <tr><td>pack/unpack archive boundaries</td><td>Current source/tests plus editable docs are the authority for checked unpack construction, manifest-first archive payload behavior, plaintext staging exposure, minimal metadata preservation, structural archive limits, and selected-directory rollback boundaries.</td><td><code>dexios-domain/src/archive.rs</code>; <code>dexios-domain/src/pack.rs</code>; <code>dexios-domain/src/unpack.rs</code>; <code>dexios-domain/src/storage/cleanup.rs</code>; <code>dexios-core/src/payload.rs</code>; <code>dexios-core/src/stream.rs</code>; <code>dexios/src/subcommands/unpack.rs</code>; <code>dexios-domain/tests/pack_paths.rs</code>; <code>dexios-domain/tests/unpack.rs</code>; <code>dexios-domain/tests/archive_public_api.rs</code>; <code>dexios-core/tests/stream_v1.rs</code>; <code>dexios/tests/pack_cli_regressions.rs</code>; <code>dexios/tests/unpack_cli_regressions.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code>; <code>book/src/technical-details/Directory-Packing.md</code>; <code>book/src/technical-details/Secure-Erase.md</code>; <code>book/src/</code> editable documentation source.</td><td><code>spec/specification-v1.pdf</code> contains older erase wording; generated <code>docs/</code> is generated output.</td><td>Treat <code>UnpackIntent</code> as the public checked unpack boundary. Current pack and unpack use Dexios-owned manifest-first <code>DXAR</code> archive framing plus ordered <code>DXBF</code> body frames. Normal operation no longer creates a full plaintext archive temporary file; the current archive workflow has no full plaintext archive temporary file. Unpack-side plaintext exposure is scoped to selected staged file bodies and ordinary filesystem temporary/staged files, not secure erase. ZIP crate bytes and types are not canonical format surface. Selected directories are created only after final authentication; before the first selected file commit, rollback best-effort removes directories created by that pass while preserving pre-existing directories.</td></tr>
 <tr><td>release evidence and public safety claims</td><td><code>book/src/</code>, <code>CHANGELOG.md</code>, <code>scripts/verify_phase_gate.sh</code>, and <code>scripts/generate_release_manifest.sh</code> are the authority for release verification steps and public claim limits.</td><td><code>book/src/Safety-Contract.md</code>; <code>book/src/Installing-and-Building.md</code>; <code>CHANGELOG.md</code>; <code>scripts/verify_phase_gate.sh</code>; <code>scripts/generate_release_manifest.sh</code>; <code>dexios/tests/verification_gate_docs.rs</code>; Context7 <code>/rust-lang/mdbook</code>, <code>/websites/embarkstudios_github_io_cargo-deny</code>, and <code>/websites/doc_rust-lang_cargo</code> research.</td><td>Local <code>local-notes/</code> notes are not public release evidence; generated <code>docs/</code> is generated output.</td><td>Release evidence may record commit identity, dirty tracked-file state, <code>Cargo.lock</code> SHA256, tool versions, Cargo metadata, the verification command contract, and asset SHA256 hashes. It does not claim bit-for-bit reproducibility, signing trust, SBOM completeness, SBOM protection, supply-chain prevention, completed verification, or runtime safety beyond separately completed gate results.</td></tr>
+<tr><td>spec source and PDF artifacts</td><td><code>spec/dexios-paper.typ</code> is the current source-backed whitepaper source, and <code>spec/dexios-paper.pdf</code> is generated output from that Typst source.</td><td><code>spec/dexios-paper.typ</code>; <code>spec/dexios-paper.pdf</code>; <code>scripts/verify_phase_gate.sh</code>; <code>scripts/generate_release_manifest.sh</code>; <code>dexios/tests/verification_gate_docs.rs</code>; Context7 <code>/typst/typst</code> research.</td><td><code>spec/specification-v1.pdf</code> is historical comparison input only, not current release-critical authority.</td><td>Keep the source-backed PDF fresh with <code>typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf</code> and <code>git diff --exit-code -- spec/dexios-paper.pdf</code>. Generated PDF text is not hand-edited truth, and manual edits to <code>spec/dexios-paper.pdf</code> are not release evidence.</td></tr>
 <tr><td>delete-after-success and secure erase wording</td><td><code>book/src/technical-details/Secure-Erase.md</code> and current source/test behavior are current authority.</td><td><code>dexios-domain/src/storage/cleanup.rs</code>; <code>dexios-domain/tests/cleanup_receipts.rs</code>; <code>dexios/src/subcommands/encrypt.rs</code>; <code>dexios/src/subcommands/decrypt.rs</code>; <code>dexios/src/subcommands/unpack.rs</code>; <code>dexios/src/subcommands/pack.rs</code>; <code>dexios/tests/delete_source_cli.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code>; <code>book/src/</code> editable documentation source.</td><td>Old erase claims in historical material are not current product claims; generated <code>docs/</code> is generated output.</td><td>Describe deletion as ordinary delete-after-success only: cleanup runs after transaction commit and requested hash success, changed cleanup identity is reported as cleanup failure, committed outputs are not rolled back, and <code>remove_file</code> does not guarantee immediate physical deletion. Do not claim physical secure erase or sanitized plaintext temp artifacts.</td></tr>
 <tr><td>error taxonomy and rollback decisions</td><td>Current source plus typed-error, diagnostic source-chain, and CLI mapping tests are the authority.</td><td><code>dexios-domain/src/workflow_error.rs</code>; <code>dexios-domain/src/encrypt.rs</code>; <code>dexios-domain/src/decrypt.rs</code>; <code>dexios-domain/src/pack.rs</code>; <code>dexios-domain/src/unpack.rs</code>; <code>dexios-domain/src/header.rs</code>; <code>dexios-domain/src/key.rs</code>; <code>dexios-domain/src/storage/mod.rs</code>; <code>dexios-domain/src/storage/identity.rs</code>; <code>dexios-domain/src/storage/transaction.rs</code>; <code>dexios-domain/tests/workflow_errors.rs</code>; <code>dexios-domain/tests/workflow_public_api.rs</code>; <code>dexios/src/subcommands/errors.rs</code>; <code>dexios/tests/workflow_error_cli.rs</code>.</td><td>Historical docs and generated <code>docs/</code> may explain user-facing behavior but do not establish rollback correctness.</td><td>Treat <code>WorkflowErrorClass</code> as the typed CLI mapping boundary. Treat <code>std::error::Error::source()</code> chains as diagnostics only; they add maintainer/debug depth and are not printed by default CLI errors.</td></tr>
 <tr><td>security reporting policy</td><td><code>SECURITY.md</code> is the authority for reporting channels and supported versions.</td><td>Current repository policy and maintainer-facing security notes.</td><td>Generated <code>docs/</code> may copy policy text but does not override <code>SECURITY.md</code>.</td><td>Use <code>SECURITY.md</code> for vulnerability reporting claims; use source/tests/contracts for runtime safety behavior.</td></tr>
@@ -602,16 +625,20 @@ accepted.</p>
 <li><code>bash scripts/verify_cli_surface.sh</code></li>
 <li><code>mdbook build</code></li>
 <li><code>git diff --exit-code -- docs</code></li>
+<li><code>git status --porcelain --untracked-files=all -- docs</code></li>
+<li><code>typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf</code></li>
+<li><code>git diff --exit-code -- spec/dexios-paper.pdf</code></li>
 <li><code>bash scripts/verify_repo_hygiene.sh</code></li>
 <li><code>git diff --check</code></li>
-<li><code>bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --allow-dirty --asset target/release-lto/dexios</code></li>
+<li><code>bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release-lto/dexios</code></li>
 </ul>
 <p>The gate fails before long-running checks if required tools are missing. Local
 setup remains explicit: install <code>cargo-audit</code> with
 <code>cargo install cargo-audit --locked --version 0.22.1</code>, install <code>cargo-deny</code>
 with <code>cargo install cargo-deny --locked --version 0.19.6</code>, and install
-<code>mdbook</code> with <code>cargo install mdbook --locked</code>. The gate prints these install
-hints but does not auto-install tools.</p>
+<code>mdbook</code> with <code>cargo install mdbook --locked</code>. Install Typst from
+https://typst.app/docs/install/ or your operating system package manager. The
+gate prints these install hints but does not auto-install tools.</p>
 <p>VERI-06 release-note rule: breaking changes to file format behavior, CLI
 behavior, security claims, or compatibility boundaries must update
 <code>CHANGELOG.md</code> under <code>## Unreleased</code>. Use the <code>### Breaking Changes</code>,
@@ -644,7 +671,9 @@ The command contract is not a pass/fail log; use a completed gate log or current
 <code>bash scripts/verify_phase_gate.sh</code> run for pass/fail evidence. The manifest
 does not claim bit-for-bit reproducibility, signing trust, SBOM completeness,
 SBOM protection, supply-chain prevention, completed verification, or any safety
-property not covered by separately completed gate results.</p>
+property not covered by separately completed gate results. The manifest records
+the source-backed PDF freshness commands for <code>spec/dexios-paper.pdf</code>; it does
+not treat <code>spec/specification-v1.pdf</code> as current release-critical authority.</p>
 <p>Phase 9 closes with an additional KDF/passphrase/secret-memory gate:</p>
 <ul>
 <li><code>balloon-hash 0.4.0</code> keeps the <code>zeroize</code> feature and <code>blake3 = "=1.8.3"</code> stays pinned;</li>
@@ -695,9 +724,11 @@ generated-passphrase disclosure message is printed.</p>
 <h2 id="v1-key-workflows"><a class="header" href="#v1-key-workflows">V1 Key Workflows</a></h2>
 <p>Key workflows operate on V1 headers and keyslots only.</p>
 <ul>
-<li><code>key add</code> remains unsupported for V1 encrypted artifacts in this refactor
-line. It fails with a typed unsupported-workflow result and does not request a
-new key or mutate the header.</li>
+<li><code>key add</code> is supported for canonical V1 encrypted artifacts. It first proves
+that an existing supported key unwraps the current master key, then adds a new
+fixed physical keyslot with a fresh keyslot wrapping nonce. It must preserve payload bytes
+and must reject unsupported KDF metadata instead of skipping or rewriting unsupported
+slots.</li>
 <li><code>key verify</code> is read-only. It reads the V1 header keyslots, attempts to unwrap
 the master key with the supplied key, and reports success, incorrect key,
 unsupported KDF, malformed header, unsupported format, or read I/O failure. It
@@ -709,6 +740,13 @@ master key before committing the staged header update.</li>
 deletion of the final usable V1 keyslot and does not collect a separate
 remaining-key verification key.</li>
 </ul>
+<p>Key add, change, and delete snapshot the encrypted target before preparing a
+replacement header. Before commit, Dexios rechecks mutation freshness: the
+target must still have the same bytes, and on Unix it must still have the same
+device and inode. Same-inode content changes and path replacement after the
+snapshot are refused as stale key mutation, leaving the current file bytes in
+place. This check does not use filesystem locks and does not add recovery,
+rollback, or secure erase behavior.</p>
 <p>Historical V1 keyslots tagged <code>[0xDF, 0x02]</code> are recognized as unsupported
 Argon2id metadata. Key mutation refuses files containing that unsupported tag
 instead of skipping, normalizing, or rewriting the slot. <code>key verify</code> reports a
@@ -736,13 +774,29 @@ new key only after the old key has been verified against the current header.</p>
 <li>revalidate cleanup receipts, including changed cleanup identity checks</li>
 <li>delete the selected source inputs as a post-commit cleanup step</li>
 </ol>
+<p>Cleanup identity is evidence for this ordinary cleanup revalidation only. The
+current workflows return processed-source cleanup evidence from the domain layer
+instead of rebuilding cleanup authority from CLI path strings after commit.
+Cleanup authority also requires complete commit evidence, requested hash
+success, and final-auth evidence where the workflow produces a final
+authentication receipt before publication.
+Source replacement, final symlink substitution, hardlink alias surprises, and a
+changed source tree are cleanup-refusal conditions; the source data is preserved
+when refusal happens before deletion. This evidence is not secure erase,
+physical sanitization, rollback, recovery, or broader deletion authority.</p>
 <p>If the workflow fails, the source inputs remain in place.</p>
-<p>Partial commit evidence is not cleanup authorization. If a linked filesystem
-transaction commits one output and then fails on a later required artifact,
-Dexios reports the committed artifact and the failed artifact, leaves cleanup
-blocked, and committed outputs are not rolled back.</p>
+<p>Partial commit evidence is not cleanup authorization. Failed final
+authentication, archive validation failure, failed requested hashes, and partial
+commits leave cleanup blocked. If a linked filesystem transaction commits one
+output and then fails on a later required artifact, Dexios reports the committed
+artifact and the failed artifact, leaves cleanup blocked, and committed outputs
+are not rolled back.</p>
+<p>Detached payload/header publication follows the same rule. A detached encrypt or
+pack operation is cleanup-eligible only when the payload and detached header from
+the same linked operation both commit. Partial detached publication reports the committed and failed artifact state, source cleanup is denied after partial detached publication, and Dexios does not roll back committed artifacts or guarantee recovery.</p>
 <p>Cleanup failures are reported after the output commit has already succeeded.
-Dexios does not revert committed outputs during this cleanup step.</p>
+Dexios does not revert committed outputs during this cleanup step, and
+committed outputs are not rolled back.</p>
 <p>The deletion primitive remains ordinary filesystem deletion. Rust
 <code>std::fs::remove_file</code> removes a path entry. In this contract, remove_file does not guarantee immediate physical deletion. Dexios therefore claims no secure erase, no physical sanitization, and no full power-failure proof for deleted inputs or temporary artifacts.</p>
 <h2 id="why-secure-erase-was-removed"><a class="header" href="#why-secure-erase-was-removed">Why Secure Erase Was Removed</a></h2>
@@ -774,7 +828,7 @@ inside the normal canonical V1 encrypted payload stream. The archive payload
 starts with a <code>DXAR</code> manifest and stores file contents as ordered <code>DXBF</code> body
 frames.</p>
 <p>ZIP bytes, ZIP central-directory metadata, ZIP crate types, compression
-selectors, and broad metadata knobs are not canonical V1 archive surface.
+selectors, and broad metadata knobs are not canonical V1 archive format surface.
 Normal operation no longer creates a full plaintext archive temporary file.
 The current archive workflow has no full plaintext archive temporary file.</p>
 <h2 id="current-cli-behavior"><a class="header" href="#current-cli-behavior">Current CLI Behavior</a></h2>
@@ -799,19 +853,33 @@ archive framing with a fixed archive policy.</p>
 manifest-first archive writer</li>
 <li>encrypts those archive bytes using the same canonical V1 stream encryption
 path used for normal files</li>
-<li>commits the final encrypted output and detached header through staged storage
-transaction semantics</li>
+<li>commits the final encrypted output and detached header through pair-aware
+staged storage transaction semantics</li>
 </ol>
+<p>Pack registers input directories, requested outputs, and generated output/header
+paths through the shared storage identity graph. Existing path roles reject final
+symlinks and symlinked parent prefixes before canonicalization, and generated
+outputs are checked against source roots before archive bytes are written.
+Delete-after-success cleanup for pack is bound to processed-source cleanup
+evidence captured for the selected source roots. Directory cleanup revalidates
+the root identity and the processed tree; a changed source tree is reported as
+cleanup refusal rather than deleting new user data.</p>
 <p>Pack still materializes the entry list and streams file contents through the
 archive writer, but it does not create a separate full plaintext archive
 temporary file before encryption.</p>
 <p>Storage transaction semantics here mean same-directory temporary files and
-staged flush/sync/persist before final placement. Dexios writes staged outputs,
-flushes them, calls <code>File::sync_all</code>, and then uses
-<code>tempfile::NamedTempFile::persist</code> or <code>persist_noclobber</code> according to the
-overwrite policy. Linked commits prepare every staged output before any output
-is persisted. If a later persist fails after an earlier artifact was committed,
-Dexios reports partial commit evidence; committed outputs are not rolled back.</p>
+staged flush/sync/fd-relative final placement. Dexios writes staged outputs,
+flushes them, calls <code>File::sync_all</code>, and then finalizes Unix targets through
+opened parent directories: <code>linkat</code> for create-new output and <code>renameat</code> for
+replace-at-commit output. Linked commits prepare every staged output before any
+output is persisted. If a later persist fails after an earlier artifact was
+committed, Dexios reports partial commit evidence; committed outputs are not
+rolled back.</p>
+<p>For detached pack output, pair-aware detached publication means the generated
+payload and generated detached header must both commit from the same linked
+operation before cleanup can run. Partial detached publication reports the
+committed and failed artifact state, source cleanup is denied after partial
+detached publication, and committed artifacts remain visible.</p>
 <p>Dexios syncs staged file contents and file metadata before persist, but it does
 not claim portable parent-directory durability across every filesystem or
 platform. This is no full power-failure proof.</p>
@@ -856,19 +924,27 @@ body frames, body-frame length mismatch, and ordered body-frame rules. Body
 frames must appear in manifest file-entry order; a body frame for a directory is
 rejected.</p>
 <p>ZIP bytes, ZIP central-directory metadata, ZIP crate types, compression
-selectors, and broad metadata knobs are not canonical V1 surface. Domain policy
-owns path normalization, traversal rejection, duplicate and prefix collision
-checks, selected-output filtering, target revalidation, and staged transaction
-commit.</p>
+selectors, and broad metadata knobs are not canonical V1 archive format surface.
+They are also not canonical V1 surface.
+Domain policy owns path normalization, traversal rejection, duplicate and prefix
+collision checks, selected-output filtering, target revalidation, and staged
+transaction commit.</p>
 <h2 id="current-unpacking"><a class="header" href="#current-unpacking">Current Unpacking</a></h2>
 <p>The current unpack flow is stricter than the historical docs:</p>
 <p>The public Rust API constructs unpack work through checked <code>UnpackIntent</code> state
-rather than raw request fields. The CLI still owns prompting and selected input
-paths; the domain layer keeps archive validation, path identity checks, staging,
-and transaction commit behavior.</p>
+rather than raw request fields. The CLI passes the raw archive path and optional
+detached-header path into this domain construction; the domain registers those
+sources as <code>Input</code> and <code>DetachedHeader</code>, validates them in the shared identity
+graph, and opens checked sources through
+<code>FileStorage::read_resolved_existing_no_follow</code>. On Unix, that boundary uses
+<code>O_NOFOLLOW</code> plus opened-file identity recheck; non-Unix behavior is limited by platform identity APIs and available tests. The CLI still owns prompting and
+selected archive entries; the domain layer keeps archive validation, output-root
+and target path identity checks, staging, and transaction commit behavior.</p>
 <ol>
-<li>construct checked unpack intent from opened input/header entries and the
-requested output root</li>
+<li>construct checked unpack intent from the raw archive path, optional
+detached-header path, and requested output root</li>
+<li>register and open archive/header sources through checked no-follow storage
+reads</li>
 <li>decrypt the packed file through the authenticated V1 stream reader</li>
 <li>read and validate the <code>DXAR</code> manifest before selected body staging</li>
 <li>normalize every archive path before writing anything to disk</li>
@@ -894,9 +970,10 @@ existing files.</p>
 <ul>
 <li>Packing hides original directory layout inside the encrypted payload, but the
 outer ciphertext still leaks overall file size.</li>
-<li>Unpack should still be treated as a risky operation on untrusted input, even
-though the current implementation has explicit path identity and path-safety
-checks.</li>
+<li>Unpack should still be treated as a risky operation on untrusted input.
+Current source/header identity and output path checks reject final symlinks,
+symlinked parent prefixes, and path aliases through the shared storage layer,
+but they are not a sandbox.</li>
 <li>Normal operation no longer creates a full plaintext archive temporary file.</li>
 <li>The current archive workflow has no full plaintext archive temporary file.</li>
 <li>Unpack-side plaintext exposure is scoped to selected staged file bodies and
@@ -980,9 +1057,8 @@ bash scripts/measure_performance_gate.sh --scenario all
 The temp-space threshold is enforced against the maximum observed KiB under
 the per-run measurement work root. Measurements that do not have a configured
 threshold remain advisory evidence only.</p>
-<p>Structural archive limits are not proof that the host has enough free memory or
-disk space. Capacity and temp-space measurements are best-effort release
-evidence, not a host-independent storage guarantee.</p>
+<p>Structural archive limits are not proof that the host has enough free memory or disk space. Capacity and temp-space measurements are best-effort release evidence, not a host-independent storage guarantee. They do not prove that unpack plaintext exposure is eliminated; current unpack still stages selected
+file bodies as ordinary filesystem temporary/staged files before commit.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="dexios-core"><a class="header" href="#dexios-core">Dexios-Core</a></h1>
 <p><code>dexios-core</code> is the reusable cryptographic and format layer behind Dexios.</p>
@@ -1006,7 +1082,7 @@ The phrase obsolete retired layout means the old bytes are retained only for
 typed rejection evidence.</p>
 <p>Legacy Dexios formats are intentionally unsupported after the safety refactor.</p>
 <h2 id="canonical-v1-layout"><a class="header" href="#canonical-v1-layout">Canonical V1 Layout</a></h2>
-<p>The canonical V1 header is <strong>512 bytes</strong> long:</p>
+<p>The canonical V1 layout is a <strong>512-byte canonical V1 header</strong>:</p>
 <ul>
 <li>64-byte immutable static header</li>
 <li>four fixed physical keyslot records, each 112 bytes</li>
@@ -1026,9 +1102,10 @@ typed rejection evidence.</p>
 <li>zeroed reserved bytes through the end of the 64-byte static header</li>
 </ul>
 <p>Together, the canonical V1 prefix is <code>DXIO 00 01 CV1\0</code>.</p>
-<p>Those 64 static bytes are the payload AAD. Payload AAD is immutable payload
-context: it includes the canonical discriminator, schema, payload kind, payload
-framing profile, KDF parameter profile, fixed slot capacity, and payload nonce.
+<p>Those 64 static bytes are the payload AAD; the payload AAD covers the 64-byte immutable static header.
+Payload AAD is immutable payload context: it includes
+the canonical discriminator, schema, payload kind, payload framing profile, KDF
+parameter profile, fixed slot capacity, and payload nonce.
 It excludes mutable keyslot table state such as slot occupancy, active slot
 count, salts, keyslot nonces, and wrapped master-key bytes.</p>
 <p>Detached headers are exact 512-byte canonical V1 header bytes. They are parsed
@@ -1040,7 +1117,7 @@ all-zero 112-byte records. Active slots serialize their physical slot index and
 must remain in that physical position; add, change, delete, and verify do not
 compact or reorder later slots.
 Canonical keyslot operations do not compact or reorder physical slots.</p>
-<p>Each active canonical V1 keyslot contains:</p>
+<p>Each 112-byte physical keyslot contains:</p>
 <ul>
 <li>active-slot state byte</li>
 <li>physical slot index</li>
@@ -1062,7 +1139,7 @@ metadata fails keyslot unwrap authentication.</p>
 <li>BLAKE3-Balloon with the canonical profile ids defined in <code>dexios-core/src/kdf.rs</code></li>
 </ul>
 <p>New canonical V1 writes do not expose alternate KDF selection or
-user-configurable KDF parameters. Historical Argon2id metadata may still be
+user-configurable KDF parameters. The historical Argon2id tag may still be
 recognized as unsupported metadata for explicit diagnostics, but it is not a
 normal write policy and is not used for derivation.</p>
 <h2 id="key-manipulation"><a class="header" href="#key-manipulation">Key Manipulation</a></h2>
@@ -1110,6 +1187,13 @@ them because there are no payload bytes after the header. Restore rejects short
 detached headers, detached headers with trailing bytes, short restore targets,
 and targets whose first 512 bytes are not all zero before it stages any
 replacement.</p>
+<p>Header strip snapshots the target before building replacement bytes. Header
+restore snapshots both the stripped target and the detached header input.
+Before commit, Dexios rechecks mutation freshness: same-inode content changes
+and Unix path replacement are refused. Restore reports a stale detached header
+separately from a stale restore target. These checks use byte content and Unix
+device/inode identity, not file timestamps. They do not use filesystem locks
+and do not add recovery, rollback, or secure erase behavior.</p>
 <p>Detached-header encryption outputs usually do not reserve a zeroed 512-byte
 prefix in the payload file, so restore remains a recovery operation for
 previously stripped embedded artifacts rather than a normal detached-header
@@ -1174,7 +1258,7 @@ does not run this timing check.</p>
 <p>The same Context7 <code>/rustcrypto/password-hashes</code> source documents historical
 unsupported Argon2id as a RustCrypto implementation API. In Dexios, historical
 Argon2id metadata is now a file-format diagnosis only, not a required dependency
-or normal write policy.</p>
+or normal write policy. It is not a normal write policy.</p>
 <h2 id="handling-the-hash"><a class="header" href="#handling-the-hash">Handling the Hash</a></h2>
 <p>Derived keys are wrapped in <code>Protected&lt;&gt;</code> and exposed only when initializing the cipher layer.</p>
 <p>The implementation is intentionally explicit:</p>
@@ -1215,9 +1299,11 @@ and fails wrapped master-key authentication for that slot.</p>
 derives payload AAD from the immutable canonical V1 static header, and
 decryption uses the parsed V1 payload bundle that binds the header to its
 matching AAD.</p>
-<p>Payload AAD excludes mutable keyslot table state. Slot occupancy, active slot
-count, keyslot salts, keyslot nonces, KDF profile bytes, and wrapped master-key
-bytes are not part of payload AAD.</p>
+<p>The payload AAD covers the 64-byte immutable static header. Payload AAD excludes
+mutable keyslot table state. Payload AAD excludes mutable keyslot table state
+from payload authentication. Slot occupancy, active slot count, keyslot salts,
+keyslot nonces, KDF profile bytes, and wrapped master-key bytes are not part of
+payload AAD.</p>
 <p>Wrapped master keys use separate slot-scoped AAD. The slot-scoped AAD binds the
 immutable static header context, physical slot index, KDF profile id, KDF
 parameter profile id, salt, and keyslot nonce. This lets <code>key add</code>, <code>key change</code>, and <code>key del</code> mutate keyslot records without re-encrypting the payload
@@ -1235,7 +1321,7 @@ ambiguity.</p>
 Decryption requires the marker; ciphertext without the final block fails instead
 of returning committed plaintext success.</p>
 <h2 id="final-authentication-receipt"><a class="header" href="#final-authentication-receipt">Final Authentication Receipt</a></h2>
-<p><code>V1PayloadStream::decrypt_file</code> writes plaintext to its writer as uncommitted
+<p><code>V1PayloadStream::decrypt_file_uncommitted</code> writes plaintext to its writer as uncommitted
 scratch. Callers must treat the plaintext as accepted only after the function
 returns a <code>V1FinalAuth</code> receipt. The receipt is created only after the final
 block authenticates and the plaintext writer flushes successfully.
@@ -1243,6 +1329,11 @@ This is the final authentication boundary for payload acceptance.</p>
 <p>Domain transactional decrypt commit observes that receipt before publishing the
 final output. A final-authentication failure after scratch plaintext exists must
 leave existing final outputs uncommitted.</p>
+<p>Low-level callers using <code>read_uncommitted</code> or <code>decrypt_file_uncommitted</code> have
+caller obligations for uncommitted stream reads: hold plaintext in scratch
+storage that is not the final output, publish it only after receiving
+<code>V1FinalAuth</code>, and do not treat cleanup receipts, transaction receipts, detached
+pair receipts, or mutation snapshots as caller-made authority.</p>
 <h2 id="payload-framing"><a class="header" href="#payload-framing">Payload Framing</a></h2>
 <p>Canonical V1 stores payload kind and payload framing bytes in the static header.
 The bytes are interpreted by the shared core <code>PayloadKind</code> and
@@ -1257,8 +1348,9 @@ encryption</li>
 ordered <code>DXBF</code> body frames. This is canonical V1 payload structure, not ZIP
 crate surface. ZIP implementation bytes, ZIP central-directory metadata, ZIP
 crate types, compression selectors, and broad metadata knobs are not canonical
-V1 format surface. Manifest-first framing is not ZIP crate surface. ZIP
-implementation details are not canonical V1 format surface.</p>
+V1 archive format surface. Manifest-first framing is not ZIP crate surface. ZIP
+implementation details are not canonical V1 archive format surface. They are
+not canonical V1 format surface.</p>
 <h2 id="header-and-payload-authentication"><a class="header" href="#header-and-payload-authentication">Header and Payload Authentication</a></h2>
 <p>Payload authentication is provided by the AEAD itself. Header authentication for
 payload bytes is provided through immutable canonical V1 payload AAD. Wrapped
@@ -1355,16 +1447,23 @@ checks, but it is still not a substitute for a dedicated independent audit.</p>
 </div>
 <p>All published <code>dexios-core</code> versions are currently listed as supported in the repository security policy.</p>
 <h2 id="reporting-a-vulnerability"><a class="header" href="#reporting-a-vulnerability">Reporting a Vulnerability</a></h2>
-<p>The preferred reporting path is a GitHub issue or GitHub advisory on the main repository.</p>
-<p>If needed, you can also contact:</p>
+<p>For an unpatched vulnerability, use a private GitHub security advisory on the main repository or email:</p>
 <pre><code class="language-text">brxken128@tutanota.com
 </code></pre>
+<p>Do not open a public issue for an unpatched vulnerability. Public issues are fine for already-patched documentation/source mismatches or non-sensitive hardening follow-ups.</p>
 <p>Useful reports include:</p>
 <ul>
 <li>affected version</li>
 <li>reproduction steps</li>
 <li>whether the issue affects confidentiality, integrity, or availability</li>
 <li>whether it is format-compatibility-sensitive</li>
+<li>whether it concerns headers or format compatibility</li>
+<li>whether it concerns KDF selection</li>
+<li>whether it concerns pack/unpack behavior</li>
+<li>whether it concerns detached payload/header partial publication diagnostics and cleanup denial</li>
+<li>whether it concerns delete-after-success cleanup authority</li>
+<li>whether it concerns source replacement or changed source tree refusal</li>
+<li>whether it concerns temporary artifact lifecycle behavior</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="supporting-dexios-1"><a href="#supporting-dexios-1" class="header">Supporting Dexios</a></h1>

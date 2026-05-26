@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-1a28b548.js";
+            window.path_to_searchindex_js = "../searchindex-83857cf6.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-07f7ca76.js"></script>
@@ -180,7 +180,7 @@ inside the normal canonical V1 encrypted payload stream. The archive payload
 starts with a <code>DXAR</code> manifest and stores file contents as ordered <code>DXBF</code> body
 frames.</p>
 <p>ZIP bytes, ZIP central-directory metadata, ZIP crate types, compression
-selectors, and broad metadata knobs are not canonical V1 archive surface.
+selectors, and broad metadata knobs are not canonical V1 archive format surface.
 Normal operation no longer creates a full plaintext archive temporary file.
 The current archive workflow has no full plaintext archive temporary file.</p>
 <h2 id="current-cli-behavior"><a class="header" href="#current-cli-behavior">Current CLI Behavior</a></h2>
@@ -205,19 +205,33 @@ archive framing with a fixed archive policy.</p>
 manifest-first archive writer</li>
 <li>encrypts those archive bytes using the same canonical V1 stream encryption
 path used for normal files</li>
-<li>commits the final encrypted output and detached header through staged storage
-transaction semantics</li>
+<li>commits the final encrypted output and detached header through pair-aware
+staged storage transaction semantics</li>
 </ol>
+<p>Pack registers input directories, requested outputs, and generated output/header
+paths through the shared storage identity graph. Existing path roles reject final
+symlinks and symlinked parent prefixes before canonicalization, and generated
+outputs are checked against source roots before archive bytes are written.
+Delete-after-success cleanup for pack is bound to processed-source cleanup
+evidence captured for the selected source roots. Directory cleanup revalidates
+the root identity and the processed tree; a changed source tree is reported as
+cleanup refusal rather than deleting new user data.</p>
 <p>Pack still materializes the entry list and streams file contents through the
 archive writer, but it does not create a separate full plaintext archive
 temporary file before encryption.</p>
 <p>Storage transaction semantics here mean same-directory temporary files and
-staged flush/sync/persist before final placement. Dexios writes staged outputs,
-flushes them, calls <code>File::sync_all</code>, and then uses
-<code>tempfile::NamedTempFile::persist</code> or <code>persist_noclobber</code> according to the
-overwrite policy. Linked commits prepare every staged output before any output
-is persisted. If a later persist fails after an earlier artifact was committed,
-Dexios reports partial commit evidence; committed outputs are not rolled back.</p>
+staged flush/sync/fd-relative final placement. Dexios writes staged outputs,
+flushes them, calls <code>File::sync_all</code>, and then finalizes Unix targets through
+opened parent directories: <code>linkat</code> for create-new output and <code>renameat</code> for
+replace-at-commit output. Linked commits prepare every staged output before any
+output is persisted. If a later persist fails after an earlier artifact was
+committed, Dexios reports partial commit evidence; committed outputs are not
+rolled back.</p>
+<p>For detached pack output, pair-aware detached publication means the generated
+payload and generated detached header must both commit from the same linked
+operation before cleanup can run. Partial detached publication reports the
+committed and failed artifact state, source cleanup is denied after partial
+detached publication, and committed artifacts remain visible.</p>
 <p>Dexios syncs staged file contents and file metadata before persist, but it does
 not claim portable parent-directory durability across every filesystem or
 platform. This is no full power-failure proof.</p>
@@ -262,19 +276,27 @@ body frames, body-frame length mismatch, and ordered body-frame rules. Body
 frames must appear in manifest file-entry order; a body frame for a directory is
 rejected.</p>
 <p>ZIP bytes, ZIP central-directory metadata, ZIP crate types, compression
-selectors, and broad metadata knobs are not canonical V1 surface. Domain policy
-owns path normalization, traversal rejection, duplicate and prefix collision
-checks, selected-output filtering, target revalidation, and staged transaction
-commit.</p>
+selectors, and broad metadata knobs are not canonical V1 archive format surface.
+They are also not canonical V1 surface.
+Domain policy owns path normalization, traversal rejection, duplicate and prefix
+collision checks, selected-output filtering, target revalidation, and staged
+transaction commit.</p>
 <h2 id="current-unpacking"><a class="header" href="#current-unpacking">Current Unpacking</a></h2>
 <p>The current unpack flow is stricter than the historical docs:</p>
 <p>The public Rust API constructs unpack work through checked <code>UnpackIntent</code> state
-rather than raw request fields. The CLI still owns prompting and selected input
-paths; the domain layer keeps archive validation, path identity checks, staging,
-and transaction commit behavior.</p>
+rather than raw request fields. The CLI passes the raw archive path and optional
+detached-header path into this domain construction; the domain registers those
+sources as <code>Input</code> and <code>DetachedHeader</code>, validates them in the shared identity
+graph, and opens checked sources through
+<code>FileStorage::read_resolved_existing_no_follow</code>. On Unix, that boundary uses
+<code>O_NOFOLLOW</code> plus opened-file identity recheck; non-Unix behavior is limited by platform identity APIs and available tests. The CLI still owns prompting and
+selected archive entries; the domain layer keeps archive validation, output-root
+and target path identity checks, staging, and transaction commit behavior.</p>
 <ol>
-<li>construct checked unpack intent from opened input/header entries and the
-requested output root</li>
+<li>construct checked unpack intent from the raw archive path, optional
+detached-header path, and requested output root</li>
+<li>register and open archive/header sources through checked no-follow storage
+reads</li>
 <li>decrypt the packed file through the authenticated V1 stream reader</li>
 <li>read and validate the <code>DXAR</code> manifest before selected body staging</li>
 <li>normalize every archive path before writing anything to disk</li>
@@ -300,9 +322,10 @@ existing files.</p>
 <ul>
 <li>Packing hides original directory layout inside the encrypted payload, but the
 outer ciphertext still leaks overall file size.</li>
-<li>Unpack should still be treated as a risky operation on untrusted input, even
-though the current implementation has explicit path identity and path-safety
-checks.</li>
+<li>Unpack should still be treated as a risky operation on untrusted input.
+Current source/header identity and output path checks reject final symlinks,
+symlinked parent prefixes, and path aliases through the shared storage layer,
+but they are not a sandbox.</li>
 <li>Normal operation no longer creates a full plaintext archive temporary file.</li>
 <li>The current archive workflow has no full plaintext archive temporary file.</li>
 <li>Unpack-side plaintext exposure is scoped to selected staged file bodies and

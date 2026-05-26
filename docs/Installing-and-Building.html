@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-1a28b548.js";
+            window.path_to_searchindex_js = "searchindex-83857cf6.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-07f7ca76.js"></script>
@@ -217,17 +217,23 @@ cargo build -p dexios --profile release-lto
 bash scripts/verify_cli_surface.sh
 mdbook build
 git diff --exit-code -- docs
+git status --porcelain --untracked-files=all -- docs
+typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf
+git diff --exit-code -- spec/dexios-paper.pdf
 bash scripts/verify_repo_hygiene.sh
 git diff --check
-bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --allow-dirty --asset target/release-lto/dexios
+bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release-lto/dexios
 </code></pre>
 <p><code>mdbook build</code> writes the generated documentation site to <code>docs/</code> because
-<code>book.toml</code> sets <code>build-dir = "docs"</code>.</p>
+<code>book.toml</code> sets <code>build-dir = "docs"</code>. <code>typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf</code> rebuilds the source-backed current
+PDF from the tracked Typst source with deterministic PDF metadata.</p>
 <p>The gate checks for required tools before running the long workspace commands.
-Missing <code>cargo-audit</code>, <code>cargo-deny</code>, or <code>mdbook</code> fails with an install hint:</p>
+Missing <code>cargo-audit</code>, <code>cargo-deny</code>, <code>mdbook</code>, or <code>typst</code> fails with an install
+hint:</p>
 <pre><code class="language-bash">cargo install cargo-audit --locked --version 0.22.1
 cargo install cargo-deny --locked --version 0.19.6
 cargo install mdbook --locked
+# Install Typst from https://typst.app/docs/install/ or your operating system package manager.
 </code></pre>
 <p>The gate does not auto-install tools or otherwise mutate the maintainer
 environment.</p>
@@ -242,9 +248,15 @@ bash scripts/generate_release_manifest.sh \
   --asset target/release-lto/dexios
 </code></pre>
 <p>For release use, run the manifest command from a clean tracked working tree.
-Untracked local files are ignored by the dirty check. <code>--tag &lt;tag&gt;</code> requires the
-tag to point at the current commit. <code>--allow-dirty</code> is only for local dry runs
-where the manifest must explicitly record that tracked changes were present.</p>
+Without <code>--allow-dirty</code>, tracked working tree changes fail closed. Untracked
+local files are ignored by the dirty check. <code>--tag &lt;tag&gt;</code> requires the tag to
+point at the current commit. <code>--allow-dirty</code> is only for local dry runs where
+the manifest must explicitly record that tracked changes were present:</p>
+<pre><code class="language-bash">bash scripts/generate_release_manifest.sh \
+  --output target/release-evidence/release-manifest.md \
+  --allow-dirty \
+  --asset target/release-lto/dexios
+</code></pre>
 <p>The manifest records commit and tag status, tracked dirty state, <code>Cargo.lock</code>
 SHA256, <code>cargo metadata --format-version=1 --locked</code> evidence, tool versions,
 the verification command contract, and asset SHA256 hashes. The command contract
@@ -263,6 +275,12 @@ verification command before public claims are made.</p>
 <li>Linux and FreeBSD builds require <code>gcc</code>.</li>
 <li>The workspace currently uses Rust edition <code>2024</code>.</li>
 <li>The workspace MSRV is <code>1.88</code>.</li>
+<li>The legacy Nix package gate should plan against the current flake pin with
+Rust <code>1.88</code> or newer:</li>
+</ul>
+<pre><code class="language-bash">nix-build . -A defaultPackage.x86_64-linux --dry-run
+</code></pre>
+<ul>
 <li>Release workflows also use a dedicated <code>release-lto</code> profile for shipping artifacts.</li>
 </ul>
 <h2 id="precompiled-binaries"><a class="header" href="#precompiled-binaries">Precompiled Binaries</a></h2>
