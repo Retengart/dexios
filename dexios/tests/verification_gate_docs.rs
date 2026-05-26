@@ -4606,6 +4606,22 @@ fn phase20_release_metadata_gate_rejects_positive_overclaims() {
 // --- Phase 21 gate tests ---
 
 #[test]
+fn phase21_release_workflow_tool_pins_and_locked_build_are_source_gated() {
+    // CIGR-01, CIGR-03, D-01, D-07: release.yml build uses --locked; mdbook and
+    // typst-cli are version-pinned in the maintainer_gate job.
+
+    assert_all_contains(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        &[
+            "cargo build --locked --profile release-lto -p dexios",
+            "cargo install mdbook --locked --version 0.5.3",
+            "cargo install typst-cli --locked --version 0.14.2",
+        ],
+    );
+}
+
+#[test]
 fn phase21_locked_flag_and_lockfile_gate_are_source_gated() {
     // CIGR-01 / D-01 / D-02: cargo --locked usage is structurally asserted on
     // verify_phase_gate.sh (as established by Plan 02). No release.yml assertion

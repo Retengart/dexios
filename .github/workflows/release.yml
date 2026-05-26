@@ -74,7 +74,10 @@ jobs:
         run: cargo install cargo-deny --locked --version 0.19.6
 
       - name: Install mdBook
-        run: cargo install mdbook --locked
+        run: cargo install mdbook --locked --version 0.5.3
+
+      - name: Install typst
+        run: cargo install typst-cli --locked --version 0.14.2
 
       - name: Run maintainer verification gate
         run: bash scripts/verify_phase_gate.sh
@@ -119,7 +122,7 @@ jobs:
         run: rustup default ${{ matrix.rust }}
 
       - name: Build dexios release binary
-        run: cargo build --profile release-lto -p dexios
+        run: cargo build --locked --profile release-lto -p dexios
 
       - name: Rename release asset
         shell: bash
