@@ -56,21 +56,21 @@ run cargo clippy --workspace --all-targets --all-features --no-deps --locked
 run cargo test --locked -p dexios-core --test stream_v1 --release
 run cargo test --locked -p dexios-core --test v1_header --release
 run cargo test --locked -p dexios-domain --test pack_paths --release
-run cargo test --locked -p dexios-domain --test unpack --release
+run cargo test --locked -p dexios-domain --features test-support --test unpack_manifest_v1 --test unpack_path_identity --test unpack_commit_rollback --test unpack_symlink_revalidation --release
 run cargo test --locked -p dexios-domain --features test-support --test cleanup_receipts --test path_identity --release
 run cargo test --locked -p dexios-domain --test workflow_public_api --all-features --release
 run cargo test --locked -p dexios-domain --test archive_public_api --release
 run cargo test --locked -p dexios-domain --test workflow_errors --all-features --release
-run cargo test --locked -p dexios-domain --features test-support --test transactions --test cleanup_receipts --test detached_publication --release
-run cargo test --locked -p dexios --test encrypt_cli_regressions --test pack_cli_regressions --test delete_source_cli --test workflow_error_cli --test verification_gate_docs --release
-run cargo test --locked -p dexios-domain --features test-support --test workflow_public_api --test archive_public_api --test cleanup_receipts --test transactions --test workflow_errors --release
+run cargo test --locked -p dexios-domain --features test-support --test transactions_staged_output --test transactions_linked_publication --test transactions_failure_hooks --test cleanup_receipts --test detached_publication --release
+run cargo test --locked -p dexios --test encrypt_cli_regressions --test pack_cli_regressions --test delete_source_cli --test workflow_error_cli_boundary --test workflow_error_cli_archive --test workflow_error_cli_header_key --test verification_gate_docs --release
+run cargo test --locked -p dexios-domain --features test-support --test workflow_public_api --test archive_public_api --test cleanup_receipts --test transactions_staged_output --test transactions_linked_publication --test transactions_failure_hooks --test workflow_errors --release
 run cargo test --locked -p dexios-core --test public_api_footguns --release
-run cargo test --locked -p dexios-domain --test header_restore --test header_workflow_errors --test keyslots_v1 --test workflow_errors --release
+run cargo test --locked -p dexios-domain --test header_restore --test header_workflow_errors --test keyslots_intent_v1 --test keyslots_crypto_v1 --test keyslots_mutation_v1 --test workflow_errors --release
 run cargo test --locked -p dexios --test header_cli_regressions --test key_cli_regressions --test verification_gate_docs --release
 run cargo test --locked -p dexios --test pack_cli_regressions --release
 run cargo test --locked -p dexios --test unpack_cli_regressions --release
 run cargo test --locked -p dexios --test delete_source_cli --release
-run cargo test --locked -p dexios --test workflow_error_cli --release
+run cargo test --locked -p dexios --test workflow_error_cli_boundary --test workflow_error_cli_archive --test workflow_error_cli_header_key --release
 run cargo test --locked -p dexios --test 'verification_gate_*' --release
 run cargo test --locked -p dexios --test verification_gate_docs --release
 run cargo test --locked --workspace --all-features --release --verbose

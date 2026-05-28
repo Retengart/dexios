@@ -30,8 +30,8 @@ export CARGO_NET_OFFLINE=true
 run cargo test --locked --offline -p dexios-core --test v1_header --release
 run cargo test --locked --offline -p dexios-core --test stream_v1 --release
 run cargo test --locked --offline -p dexios-core --test key_derivation --release
-run cargo test --locked --offline -p dexios-domain --test keyslots_v1 --release
+run cargo test --locked --offline -p dexios-domain --test keyslots_intent_v1 --test keyslots_crypto_v1 --test keyslots_mutation_v1 --release
 run cargo test --locked --offline -p dexios-domain --test decrypt_workflow_errors --release
-run cargo test --locked --offline -p dexios-domain --test unpack --release
+run cargo test --locked --offline -p dexios-domain --features test-support --test unpack_manifest_v1 --test unpack_path_identity --test unpack_commit_rollback --test unpack_symlink_revalidation --release
 run cargo test --locked --offline -p dexios --test decrypt_cli_regressions --release
 run cargo test --locked --offline -p dexios --test unpack_cli_regressions --release

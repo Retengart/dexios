@@ -211,6 +211,49 @@ fn phase_gate_stays_independent_of_local_planning_state() {
 }
 
 #[test]
+fn phase_gate_uses_split_regression_targets_and_single_verification_gate_glob() {
+    assert_non_comment_line_count(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "run cargo test --locked -p dexios --test 'verification_gate_*' --release",
+        1,
+    );
+
+    for target in [
+        "keyslots_intent_v1",
+        "keyslots_crypto_v1",
+        "keyslots_mutation_v1",
+        "unpack_manifest_v1",
+        "unpack_path_identity",
+        "unpack_commit_rollback",
+        "unpack_symlink_revalidation",
+        "transactions_staged_output",
+        "transactions_linked_publication",
+        "transactions_failure_hooks",
+        "workflow_error_cli_boundary",
+        "workflow_error_cli_archive",
+        "workflow_error_cli_header_key",
+    ] {
+        assert_contains(
+            "scripts/verify_phase_gate.sh",
+            VERIFY_PHASE_GATE,
+            &format!("--test {target}"),
+        );
+    }
+
+    assert_non_comment_lines_exclude(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        &[
+            "--test keyslots_v1",
+            "--test unpack --release",
+            "--test transactions --",
+            "--test workflow_error_cli --",
+        ],
+    );
+}
+
+#[test]
 fn assurance_replay_script_is_bounded_offline_and_crate_owned() {
     assert_contains(
         "scripts/verify_assurance_replay.sh",
@@ -263,8 +306,8 @@ fn assurance_replay_script_is_bounded_offline_and_crate_owned() {
             &["decrypt_corrupted_stream_variants_never_commit_final_output"][..],
         ),
         (
-            "dexios-domain/tests/unpack.rs",
-            DEXIOS_DOMAIN_UNPACK_TESTS,
+            "dexios-domain/tests/unpack_commit_rollback.rs",
+            DEXIOS_DOMAIN_UNPACK_COMMIT_ROLLBACK_TESTS,
             &["unpack_corrupted_stream_never_extracts_outputs"][..],
         ),
         (
