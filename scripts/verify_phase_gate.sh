@@ -71,6 +71,7 @@ run cargo test --locked -p dexios --test pack_cli_regressions --release
 run cargo test --locked -p dexios --test unpack_cli_regressions --release
 run cargo test --locked -p dexios --test delete_source_cli --release
 run cargo test --locked -p dexios --test workflow_error_cli --release
+run cargo test --locked -p dexios --test 'verification_gate_*' --release
 run cargo test --locked -p dexios --test verification_gate_docs --release
 run cargo test --locked --workspace --all-features --release --verbose
 run bash scripts/verify_assurance_replay.sh
