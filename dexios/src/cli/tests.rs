@@ -1,3 +1,5 @@
+const CLI_ARGS_RS: &str = include_str!("args.rs");
+
 fn parse_ok<const N: usize>(args: [&str; N]) -> clap::ArgMatches {
     super::build_cli()
         .try_get_matches_from(args)
@@ -79,6 +81,33 @@ fn assert_invalid_auto_value_is_rejected<const N: usize>(args: [&str; N]) {
 #[test]
 fn cli_definition_passes_clap_debug_assertions() {
     super::build_cli().debug_assert();
+}
+
+#[test]
+fn shared_arg_factories_are_source_gated() {
+    for required in [
+        "input_arg",
+        "output_arg",
+        "keyfile_arg",
+        "force_arg",
+        "hash_arg",
+        "delete_input_arg",
+        "delete_source_arg",
+        "verbose_arg",
+        "recursive_arg",
+        "detached_header_output_arg",
+        "detached_header_input_arg",
+        "keyfile_old_arg",
+        "keyfile_new_arg",
+        "autogenerate_arg",
+        "super::validate_autogenerate_words",
+        "conflicts_with(conflict_target)",
+    ] {
+        assert!(
+            CLI_ARGS_RS.contains(required),
+            "dexios/src/cli/args.rs must contain {required:?}"
+        );
+    }
 }
 
 #[test]
