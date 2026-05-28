@@ -41,7 +41,9 @@ fn del_command() -> Command {
         .about("Delete a key from an encrypted file (for advanced users)")
         .arg_required_else_help(true)
         .arg(args::input_arg("The encrypted file/header file"))
-        .arg(args::keyfile_arg())
+        .arg(args::keyfile_arg_with_help(
+            "Use a keyfile to identify the key you want to delete",
+        ))
 }
 
 fn verify_command() -> Command {
@@ -49,7 +51,7 @@ fn verify_command() -> Command {
         .about("Verify that a key is correct")
         .arg_required_else_help(true)
         .arg(args::input_arg("The encrypted file/header file"))
-        .arg(args::keyfile_arg())
+        .arg(args::keyfile_arg_with_help("Verify a keyfile"))
 }
 
 fn autogenerate_new_key_arg(help: &'static str) -> Arg {

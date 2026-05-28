@@ -16,13 +16,17 @@ pub(super) fn output_arg(help: &'static str) -> Arg {
         .help(help)
 }
 
-pub(super) fn keyfile_arg() -> Arg {
+pub(super) fn keyfile_arg_with_help(help: &'static str) -> Arg {
     Arg::new("keyfile")
         .short('k')
         .long("keyfile")
         .value_name("file")
         .action(ArgAction::Set)
-        .help("Use a keyfile instead of a password")
+        .help(help)
+}
+
+pub(super) fn keyfile_arg() -> Arg {
+    keyfile_arg_with_help("Use a keyfile instead of a password")
 }
 
 pub(super) fn force_arg() -> Arg {

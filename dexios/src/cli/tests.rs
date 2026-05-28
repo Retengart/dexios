@@ -28,6 +28,16 @@ fn assert_parser_error<const N: usize>(
     );
 }
 
+fn help_text<const N: usize>(args: [&str; N]) -> String {
+    let error = super::build_cli()
+        .try_get_matches_from(args)
+        .expect_err("CLI help should be rendered as a clap error");
+
+    assert_eq!(error.kind(), clap::error::ErrorKind::DisplayHelp);
+
+    error.to_string()
+}
+
 fn assert_file_pair_command<const N: usize>(
     args: [&str; N],
     command: &str,
@@ -111,6 +121,7 @@ fn shared_arg_factories_are_source_gated() {
         "input_arg",
         "output_arg",
         "keyfile_arg",
+        "keyfile_arg_with_help",
         "force_arg",
         "hash_arg",
         "delete_input_arg",
@@ -165,7 +176,9 @@ fn nested_command_builders_are_split_by_family() {
         "Command::new(\"verify\")",
         "args::keyfile_old_arg()",
         "args::keyfile_new_arg()",
-        "args::keyfile_arg()",
+        "args::keyfile_arg_with_help(",
+        "Use a keyfile to identify the key you want to delete",
+        "Verify a keyfile",
         "conflicts_with(\"keyfile-new\")",
     ] {
         assert!(
@@ -539,6 +552,20 @@ fn key_del_command_accepts_input_and_keyfile() {
 }
 
 #[test]
+fn key_del_help_keeps_delete_keyfile_wording() {
+    let help = help_text(["dexios", "key", "del", "--help"]);
+
+    assert!(
+        help.contains("Use a keyfile to identify the key you want to delete"),
+        "key del help should keep the delete-specific keyfile text: {help}"
+    );
+    assert!(
+        !help.contains("Use a keyfile instead of a password"),
+        "key del help should not use the generic encrypt/decrypt keyfile text: {help}"
+    );
+}
+
+#[test]
 fn key_verify_command_accepts_input_and_keyfile() {
     let matches = parse_ok(["dexios", "key", "verify", "-k", "keyfile.bin", "cipher.enc"]);
 
@@ -552,6 +579,20 @@ fn key_verify_command_accepts_input_and_keyfile() {
     assert_eq!(
         verify.get_one::<String>("input").map(String::as_str),
         Some("cipher.enc")
+    );
+}
+
+#[test]
+fn key_verify_help_keeps_verify_keyfile_wording() {
+    let help = help_text(["dexios", "key", "verify", "--help"]);
+
+    assert!(
+        help.contains("Verify a keyfile"),
+        "key verify help should keep the verify-specific keyfile text: {help}"
+    );
+    assert!(
+        !help.contains("Use a keyfile instead of a password"),
+        "key verify help should not use the generic encrypt/decrypt keyfile text: {help}"
     );
 }
 
