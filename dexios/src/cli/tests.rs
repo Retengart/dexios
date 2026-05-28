@@ -88,6 +88,22 @@ fn cli_definition_passes_clap_debug_assertions() {
 }
 
 #[test]
+fn top_level_command_registration_order_is_stable() {
+    let cli = super::build_cli();
+    let command_names = cli
+        .get_subcommands()
+        .map(clap::Command::get_name)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        command_names.as_slice(),
+        [
+            "encrypt", "decrypt", "hash", "pack", "unpack", "key", "header"
+        ]
+    );
+}
+
+#[test]
 fn shared_arg_factories_are_source_gated() {
     for required in [
         "input_arg",

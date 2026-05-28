@@ -54,6 +54,9 @@ const DEXIOS_CLI_FIXTURE_MANIFEST: &str = include_str!("fixture_manifest.toml");
 const DEXIOS_MAIN_RS: &str = include_str!("../src/main.rs");
 const DEXIOS_CLI_RS: &str = include_str!("../src/cli.rs");
 const DEXIOS_CLI_TESTS_RS: &str = include_str!("../src/cli/tests.rs");
+const DEXIOS_CLI_COMMANDS_STREAM_RS: &str = include_str!("../src/cli/commands/stream.rs");
+const DEXIOS_CLI_COMMANDS_ARCHIVE_RS: &str = include_str!("../src/cli/commands/archive.rs");
+const DEXIOS_CLI_COMMANDS_HASH_RS: &str = include_str!("../src/cli/commands/hash.rs");
 const DEXIOS_GLOBAL_RS: &str = include_str!("../src/global.rs");
 const DEXIOS_STATES_RS: &str = include_str!("../src/global/states.rs");
 const DEXIOS_ENCRYPT_RS: &str = include_str!("../src/subcommands/encrypt.rs");
@@ -5053,5 +5056,124 @@ fn phase22_cli_parser_baseline_and_surface_gate_are_source_gated() {
         VERIFY_PHASE_GATE,
         "run bash scripts/verify_cli_surface.sh",
         1,
+    );
+}
+
+// --- Phase 23 gate tests ---
+
+#[test]
+fn phase23_top_level_cli_command_split_is_source_gated() {
+    // CLID-01, D-01 through D-04: top-level command builders stay in focused
+    // parser modules while build_cli remains the ordered assembly point.
+
+    assert_all_contains(
+        "dexios/src/cli/commands/stream.rs",
+        DEXIOS_CLI_COMMANDS_STREAM_RS,
+        &[
+            "fn encrypt_command() -> Command",
+            "fn decrypt_command() -> Command",
+            "Command::new(\"encrypt\")",
+            "Command::new(\"decrypt\")",
+            "args::delete_input_arg",
+            "args::autogenerate_arg",
+        ],
+    );
+    assert_all_contains(
+        "dexios/src/cli/commands/archive.rs",
+        DEXIOS_CLI_COMMANDS_ARCHIVE_RS,
+        &[
+            "fn pack_command() -> Command",
+            "fn unpack_command() -> Command",
+            "Command::new(\"pack\")",
+            "Command::new(\"unpack\")",
+            ".num_args(1..)",
+            "args::delete_source_arg",
+            "args::delete_input_arg",
+        ],
+    );
+    assert_all_contains(
+        "dexios/src/cli/commands/hash.rs",
+        DEXIOS_CLI_COMMANDS_HASH_RS,
+        &[
+            "fn hash_command() -> Command",
+            "Command::new(\"hash\")",
+            ".num_args(1..)",
+        ],
+    );
+    assert_all_contains(
+        "dexios/src/cli.rs",
+        DEXIOS_CLI_RS,
+        &[
+            "mod commands;",
+            "commands::stream::encrypt_command()",
+            "commands::stream::decrypt_command()",
+            "commands::hash::hash_command()",
+            "commands::archive::pack_command()",
+            "commands::archive::unpack_command()",
+            "Command::new(\"key\")",
+            "Command::new(\"header\")",
+        ],
+    );
+
+    assert_occurs_before(
+        "dexios/src/cli.rs",
+        DEXIOS_CLI_RS,
+        "commands::stream::encrypt_command()",
+        "commands::stream::decrypt_command()",
+    );
+    assert_occurs_before(
+        "dexios/src/cli.rs",
+        DEXIOS_CLI_RS,
+        "commands::stream::decrypt_command()",
+        "commands::hash::hash_command()",
+    );
+    assert_occurs_before(
+        "dexios/src/cli.rs",
+        DEXIOS_CLI_RS,
+        "commands::hash::hash_command()",
+        "commands::archive::pack_command()",
+    );
+    assert_occurs_before(
+        "dexios/src/cli.rs",
+        DEXIOS_CLI_RS,
+        "commands::archive::pack_command()",
+        "commands::archive::unpack_command()",
+    );
+    assert_occurs_before(
+        "dexios/src/cli.rs",
+        DEXIOS_CLI_RS,
+        "commands::archive::unpack_command()",
+        "Command::new(\"key\")",
+    );
+    assert_occurs_before(
+        "dexios/src/cli.rs",
+        DEXIOS_CLI_RS,
+        "Command::new(\"key\")",
+        "Command::new(\"header\")",
+    );
+
+    for moved_builder in [
+        "Command::new(\"encrypt\")",
+        "Command::new(\"decrypt\")",
+        "Command::new(\"hash\")",
+        "Command::new(\"pack\")",
+        "Command::new(\"unpack\")",
+    ] {
+        assert_not_contains("dexios/src/cli.rs", DEXIOS_CLI_RS, moved_builder);
+        assert_not_contains(
+            "dexios/src/subcommands.rs",
+            DEXIOS_SUBCOMMANDS_RS,
+            moved_builder,
+        );
+    }
+
+    assert_all_contains(
+        "dexios/src/cli/tests.rs",
+        DEXIOS_CLI_TESTS_RS,
+        &[
+            "top_level_command_registration_order_is_stable",
+            ".get_subcommands()",
+            "\"encrypt\", \"decrypt\", \"hash\", \"pack\", \"unpack\", \"key\", \"header\"",
+        ],
     );
 }
