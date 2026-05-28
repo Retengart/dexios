@@ -1,4 +1,8 @@
 const CLI_ARGS_RS: &str = include_str!("args.rs");
+const CLI_RS: &str = include_str!("../cli.rs");
+const CLI_STREAM_COMMANDS_RS: &str = include_str!("commands/stream.rs");
+const CLI_ARCHIVE_COMMANDS_RS: &str = include_str!("commands/archive.rs");
+const CLI_HASH_COMMANDS_RS: &str = include_str!("commands/hash.rs");
 
 fn parse_ok<const N: usize>(args: [&str; N]) -> clap::ArgMatches {
     super::build_cli()
@@ -106,6 +110,28 @@ fn shared_arg_factories_are_source_gated() {
         assert!(
             CLI_ARGS_RS.contains(required),
             "dexios/src/cli/args.rs must contain {required:?}"
+        );
+    }
+}
+
+#[test]
+fn top_level_command_builders_are_split_by_family() {
+    assert!(CLI_STREAM_COMMANDS_RS.contains("pub(super) fn encrypt_command() -> Command"));
+    assert!(CLI_STREAM_COMMANDS_RS.contains("pub(super) fn decrypt_command() -> Command"));
+    assert!(CLI_ARCHIVE_COMMANDS_RS.contains("pub(super) fn pack_command() -> Command"));
+    assert!(CLI_ARCHIVE_COMMANDS_RS.contains("pub(super) fn unpack_command() -> Command"));
+    assert!(CLI_HASH_COMMANDS_RS.contains("pub(super) fn hash_command() -> Command"));
+
+    for ordered_call in [
+        "commands::stream::encrypt_command()",
+        "commands::stream::decrypt_command()",
+        "commands::hash::hash_command()",
+        "commands::archive::pack_command()",
+        "commands::archive::unpack_command()",
+    ] {
+        assert!(
+            CLI_RS.contains(ordered_call),
+            "build_cli() must assemble top-level commands through {ordered_call}"
         );
     }
 }
