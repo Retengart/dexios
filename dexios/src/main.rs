@@ -71,3 +71,52 @@ fn run() -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[derive(Debug)]
+struct CliRoute<'a> {
+    _matches: &'a clap::ArgMatches,
+}
+
+#[cfg(test)]
+impl<'a> CliRoute<'a> {
+    fn from_matches(matches: &'a clap::ArgMatches) -> Result<Self> {
+        Ok(Self { _matches: matches })
+    }
+}
+
+#[cfg(test)]
+mod route_tests {
+    use clap::Command;
+
+    use super::CliRoute;
+
+    #[test]
+    fn cli_route_missing_top_level_command_is_adapter_error() {
+        let matches = Command::new("dexios")
+            .try_get_matches_from(["dexios"])
+            .expect("permissive synthetic command should parse without a subcommand");
+
+        let error = CliRoute::from_matches(&matches)
+            .expect_err("missing top-level route should be rejected by the adapter");
+        let message = error.to_string();
+
+        assert!(message.contains("internal CLI adapter error"));
+        assert!(message.contains("missing top-level command"));
+    }
+
+    #[test]
+    fn cli_route_unsupported_top_level_command_names_command() {
+        let matches = Command::new("dexios")
+            .subcommand(Command::new("unknown"))
+            .try_get_matches_from(["dexios", "unknown"])
+            .expect("synthetic command should parse unsupported adapter route");
+
+        let error = CliRoute::from_matches(&matches)
+            .expect_err("unsupported top-level route should be rejected by the adapter");
+        let message = error.to_string();
+
+        assert!(message.contains("internal CLI adapter error"));
+        assert!(message.contains("unknown"));
+    }
+}
