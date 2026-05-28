@@ -4,7 +4,7 @@
 use crate::global::states::{DeleteInput, DeleteSource, ForceMode, HashMode, HeaderLocation};
 use crate::global::structs::CryptoParams;
 use crate::global::structs::PackParams;
-use anyhow::{Context, Result};
+use anyhow::{Result, anyhow};
 use clap::ArgMatches;
 use core::kdf::Kdf;
 
@@ -13,8 +13,17 @@ use super::structs::KeyManipulationParams;
 
 pub fn get_params(name: &str, sub_matches: &ArgMatches) -> Result<Vec<String>> {
     let values = sub_matches
-        .get_many::<String>(name)
-        .with_context(|| format!("No {name} provided"))?
+        .try_get_many::<String>(name)
+        .map_err(|_| {
+            anyhow!(
+                "internal CLI adapter error: required repeated argument '{name}' unreadable after clap validation"
+            )
+        })?
+        .ok_or_else(|| {
+            anyhow!(
+                "internal CLI adapter error: required repeated argument '{name}' missing after clap validation"
+            )
+        })?
         .map(String::from)
         .collect();
     Ok(values)
@@ -22,10 +31,30 @@ pub fn get_params(name: &str, sub_matches: &ArgMatches) -> Result<Vec<String>> {
 
 pub fn get_param(name: &str, sub_matches: &ArgMatches) -> Result<String> {
     let value = sub_matches
-        .get_one::<String>(name)
-        .with_context(|| format!("No {name} provided"))?
+        .try_get_one::<String>(name)
+        .map_err(|_| {
+            anyhow!(
+                "internal CLI adapter error: required argument '{name}' unreadable after clap validation"
+            )
+        })?
+        .ok_or_else(|| {
+            anyhow!(
+                "internal CLI adapter error: required argument '{name}' missing after clap validation"
+            )
+        })?
         .clone();
     Ok(value)
+}
+
+pub fn get_optional_param<'a>(name: &str, sub_matches: &'a ArgMatches) -> Result<Option<&'a str>> {
+    sub_matches
+        .try_get_one::<String>(name)
+        .map(|value| value.map(String::as_str))
+        .map_err(|_| {
+            anyhow!(
+                "internal CLI adapter error: optional argument '{name}' unreadable after clap validation"
+            )
+        })
 }
 
 // the main parameter handler for encrypt/decrypt
@@ -48,15 +77,9 @@ pub fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
         DeleteInput::Retain
     };
 
-    let header_location = if sub_matches.get_one::<String>("header").is_some() {
-        HeaderLocation::Detached(
-            sub_matches
-                .get_one::<String>("header")
-                .context("No header/invalid text provided")?
-                .clone(),
-        )
-    } else {
-        HeaderLocation::Embedded
+    let header_location = match get_optional_param("header", sub_matches)? {
+        Some(header) => HeaderLocation::Detached(header.to_owned()),
+        None => HeaderLocation::Embedded,
     };
 
     let kdf = kdf(sub_matches);
@@ -88,15 +111,9 @@ pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams
 
     let force = forcemode(sub_matches);
 
-    let header_location = if sub_matches.get_one::<String>("header").is_some() {
-        HeaderLocation::Detached(
-            sub_matches
-                .get_one::<String>("header")
-                .context("No header/invalid text provided")?
-                .clone(),
-        )
-    } else {
-        HeaderLocation::Embedded
+    let header_location = match get_optional_param("header", sub_matches)? {
+        Some(header) => HeaderLocation::Detached(header.to_owned()),
+        None => HeaderLocation::Embedded,
     };
 
     let kdf = kdf(sub_matches);
@@ -206,11 +223,7 @@ mod tests {
     #[test]
     fn repeated_parameter_missing_returns_internal_adapter_error() {
         let matches = Command::new("synthetic")
-            .arg(
-                Arg::new("input")
-                    .action(ArgAction::Append)
-                    .num_args(1..),
-            )
+            .arg(Arg::new("input").action(ArgAction::Append).num_args(1..))
             .try_get_matches_from(["synthetic"])
             .expect("synthetic matches should parse");
 
