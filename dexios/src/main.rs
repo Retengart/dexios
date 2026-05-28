@@ -121,4 +121,65 @@ mod route_tests {
         assert!(message.contains("internal CLI adapter error"));
         assert!(message.contains("unknown"));
     }
+
+    fn synthetic_nested_cli(parent: &'static str, leaf: Option<&'static str>) -> Command {
+        let parent_command = match leaf {
+            Some(leaf) => Command::new(parent).subcommand(Command::new(leaf)),
+            None => Command::new(parent),
+        };
+
+        Command::new("dexios").subcommand(parent_command)
+    }
+
+    fn dispatch_error<const N: usize>(command: Command, args: [&str; N]) -> String {
+        let matches = command
+            .try_get_matches_from(args)
+            .expect("synthetic command should parse adapter route state");
+
+        let error = CliRoute::from_matches(&matches)
+            .and_then(|route| route.dispatch())
+            .expect_err("adapter route state should be rejected");
+
+        error.to_string()
+    }
+
+    #[test]
+    fn nested_route_missing_header_leaf_is_adapter_error() {
+        let message = dispatch_error(synthetic_nested_cli("header", None), ["dexios", "header"]);
+
+        assert!(message.contains("internal CLI adapter error"));
+        assert!(message.contains("missing header command"));
+    }
+
+    #[test]
+    fn nested_route_unsupported_header_leaf_names_command() {
+        let message = dispatch_error(
+            synthetic_nested_cli("header", Some("unknown-header")),
+            ["dexios", "header", "unknown-header"],
+        );
+
+        assert!(message.contains("internal CLI adapter error"));
+        assert!(message.contains("unsupported header command"));
+        assert!(message.contains("unknown-header"));
+    }
+
+    #[test]
+    fn nested_route_missing_key_leaf_is_adapter_error() {
+        let message = dispatch_error(synthetic_nested_cli("key", None), ["dexios", "key"]);
+
+        assert!(message.contains("internal CLI adapter error"));
+        assert!(message.contains("missing key command"));
+    }
+
+    #[test]
+    fn nested_route_unsupported_key_leaf_names_command() {
+        let message = dispatch_error(
+            synthetic_nested_cli("key", Some("unknown-key")),
+            ["dexios", "key", "unknown-key"],
+        );
+
+        assert!(message.contains("internal CLI adapter error"));
+        assert!(message.contains("unsupported key command"));
+        assert!(message.contains("unknown-key"));
+    }
 }
