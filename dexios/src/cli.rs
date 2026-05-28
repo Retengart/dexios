@@ -515,6 +515,48 @@ pub fn get_matches() -> clap::ArgMatches {
 
 #[cfg(test)]
 mod tests {
+    fn parse_ok<const N: usize>(args: [&str; N]) -> clap::ArgMatches {
+        super::build_cli()
+            .try_get_matches_from(args)
+            .expect("CLI should parse")
+    }
+
+    fn assert_parser_error<const N: usize>(
+        args: [&str; N],
+        expected_kind: clap::error::ErrorKind,
+        expected_text: &str,
+    ) {
+        let error = super::build_cli()
+            .try_get_matches_from(args)
+            .expect_err("CLI input should be rejected");
+
+        assert_eq!(error.kind(), expected_kind);
+        assert!(
+            error.to_string().contains(expected_text),
+            "error should contain {expected_text}: {error}"
+        );
+    }
+
+    fn assert_file_pair_command<const N: usize>(
+        args: [&str; N],
+        command: &str,
+        input: &str,
+        output: &str,
+    ) {
+        let matches = parse_ok(args);
+        let (name, sub) = matches.subcommand().expect("subcommand");
+
+        assert_eq!(name, command);
+        assert_eq!(
+            sub.get_one::<String>("input").map(String::as_str),
+            Some(input)
+        );
+        assert_eq!(
+            sub.get_one::<String>("output").map(String::as_str),
+            Some(output)
+        );
+    }
+
     fn assert_unknown_argument_is_rejected<const N: usize>(args: [&str; N], rejected: &str) {
         let error = super::build_cli()
             .try_get_matches_from(args)
@@ -567,11 +609,9 @@ mod tests {
 
     #[test]
     fn encrypt_command_accepts_header_and_auto() {
-        let matches = super::build_cli()
-            .try_get_matches_from([
-                "dexios", "encrypt", "--header", "file.hdr", "--auto=7", "in.bin", "out.enc",
-            ])
-            .expect("CLI should parse");
+        let matches = parse_ok([
+            "dexios", "encrypt", "--header", "file.hdr", "--auto=7", "in.bin", "out.enc",
+        ]);
 
         let (name, sub) = matches.subcommand().expect("subcommand");
         assert_eq!(name, "encrypt");
@@ -595,9 +635,7 @@ mod tests {
 
     #[test]
     fn encrypt_auto_without_value_defaults_to_seven_words() {
-        let matches = super::build_cli()
-            .try_get_matches_from(["dexios", "encrypt", "--auto", "in.bin", "out.enc"])
-            .expect("CLI should parse");
+        let matches = parse_ok(["dexios", "encrypt", "--auto", "in.bin", "out.enc"]);
         let (_, sub) = matches.subcommand().expect("subcommand");
 
         assert_eq!(
@@ -686,9 +724,7 @@ mod tests {
 
     #[test]
     fn hash_command_accepts_multiple_inputs() {
-        let matches = super::build_cli()
-            .try_get_matches_from(["dexios", "hash", "one.bin", "two.bin"])
-            .expect("CLI should parse");
+        let matches = parse_ok(["dexios", "hash", "one.bin", "two.bin"]);
 
         let (name, sub) = matches.subcommand().expect("subcommand");
         assert_eq!(name, "hash");
@@ -702,9 +738,7 @@ mod tests {
 
     #[test]
     fn pack_command_accepts_multiple_paths_without_compression_selector() {
-        let matches = super::build_cli()
-            .try_get_matches_from(["dexios", "pack", "dir-a", "dir-b", "archive.dex"])
-            .expect("CLI should parse");
+        let matches = parse_ok(["dexios", "pack", "dir-a", "dir-b", "archive.dex"]);
 
         let (name, sub) = matches.subcommand().expect("subcommand");
         assert_eq!(name, "pack");
@@ -722,9 +756,7 @@ mod tests {
 
     #[test]
     fn pack_auto_without_value_defaults_to_seven_words() {
-        let matches = super::build_cli()
-            .try_get_matches_from(["dexios", "pack", "--auto", "dir-a", "archive.dex"])
-            .expect("CLI should parse");
+        let matches = parse_ok(["dexios", "pack", "--auto", "dir-a", "archive.dex"]);
         let (_, sub) = matches.subcommand().expect("subcommand");
 
         assert_eq!(
@@ -742,27 +774,19 @@ mod tests {
 
     #[test]
     fn current_delete_after_success_flags_parse() {
-        let encrypt = super::build_cli()
-            .try_get_matches_from(["dexios", "encrypt", "--delete-input", "in.bin", "out.enc"])
-            .expect("encrypt --delete-input should parse");
+        let encrypt = parse_ok(["dexios", "encrypt", "--delete-input", "in.bin", "out.enc"]);
         let (_, encrypt) = encrypt.subcommand().expect("encrypt subcommand");
         assert!(encrypt.get_flag("delete-input"));
 
-        let decrypt = super::build_cli()
-            .try_get_matches_from(["dexios", "decrypt", "--delete-input", "in.enc", "out.bin"])
-            .expect("decrypt --delete-input should parse");
+        let decrypt = parse_ok(["dexios", "decrypt", "--delete-input", "in.enc", "out.bin"]);
         let (_, decrypt) = decrypt.subcommand().expect("decrypt subcommand");
         assert!(decrypt.get_flag("delete-input"));
 
-        let pack = super::build_cli()
-            .try_get_matches_from(["dexios", "pack", "--delete-source", "dir-a", "archive.dex"])
-            .expect("pack --delete-source should parse");
+        let pack = parse_ok(["dexios", "pack", "--delete-source", "dir-a", "archive.dex"]);
         let (_, pack) = pack.subcommand().expect("pack subcommand");
         assert!(pack.get_flag("delete-source"));
 
-        let unpack = super::build_cli()
-            .try_get_matches_from(["dexios", "unpack", "--delete-input", "archive.dex", "out"])
-            .expect("unpack --delete-input should parse");
+        let unpack = parse_ok(["dexios", "unpack", "--delete-input", "archive.dex", "out"]);
         let (_, unpack) = unpack.subcommand().expect("unpack subcommand");
         assert!(unpack.get_flag("delete-input"));
     }
@@ -782,18 +806,16 @@ mod tests {
 
     #[test]
     fn key_add_command_accepts_old_and_new_keyfiles() {
-        let matches = super::build_cli()
-            .try_get_matches_from([
-                "dexios",
-                "key",
-                "add",
-                "-k",
-                "old.key",
-                "-n",
-                "new.key",
-                "cipher.enc",
-            ])
-            .expect("CLI should parse");
+        let matches = parse_ok([
+            "dexios",
+            "key",
+            "add",
+            "-k",
+            "old.key",
+            "-n",
+            "new.key",
+            "cipher.enc",
+        ]);
 
         let (name, sub) = matches.subcommand().expect("subcommand");
         assert_eq!(name, "key");
@@ -814,9 +836,7 @@ mod tests {
 
     #[test]
     fn key_add_auto_without_value_defaults_to_seven_words() {
-        let matches = super::build_cli()
-            .try_get_matches_from(["dexios", "key", "add", "--auto", "cipher.enc"])
-            .expect("CLI should parse");
+        let matches = parse_ok(["dexios", "key", "add", "--auto", "cipher.enc"]);
         let (_, sub) = matches.subcommand().expect("subcommand");
         let add = sub.subcommand_matches("add").expect("key add");
 
@@ -835,18 +855,16 @@ mod tests {
 
     #[test]
     fn key_change_command_accepts_old_and_new_keyfiles() {
-        let matches = super::build_cli()
-            .try_get_matches_from([
-                "dexios",
-                "key",
-                "change",
-                "-k",
-                "old.key",
-                "-n",
-                "new.key",
-                "cipher.enc",
-            ])
-            .expect("CLI should parse");
+        let matches = parse_ok([
+            "dexios",
+            "key",
+            "change",
+            "-k",
+            "old.key",
+            "-n",
+            "new.key",
+            "cipher.enc",
+        ]);
 
         let (name, sub) = matches.subcommand().expect("subcommand");
         assert_eq!(name, "key");
@@ -867,9 +885,7 @@ mod tests {
 
     #[test]
     fn key_change_auto_without_value_defaults_to_seven_words() {
-        let matches = super::build_cli()
-            .try_get_matches_from(["dexios", "key", "change", "--auto", "cipher.enc"])
-            .expect("CLI should parse");
+        let matches = parse_ok(["dexios", "key", "change", "--auto", "cipher.enc"]);
         let (_, sub) = matches.subcommand().expect("subcommand");
         let change = sub.subcommand_matches("change").expect("key change");
 
@@ -898,9 +914,7 @@ mod tests {
 
     #[test]
     fn key_del_command_accepts_input_and_keyfile() {
-        let matches = super::build_cli()
-            .try_get_matches_from(["dexios", "key", "del", "-k", "keyfile.bin", "cipher.enc"])
-            .expect("CLI should parse");
+        let matches = parse_ok(["dexios", "key", "del", "-k", "keyfile.bin", "cipher.enc"]);
 
         let (name, sub) = matches.subcommand().expect("subcommand");
         assert_eq!(name, "key");
@@ -917,9 +931,7 @@ mod tests {
 
     #[test]
     fn key_verify_command_accepts_input_and_keyfile() {
-        let matches = super::build_cli()
-            .try_get_matches_from(["dexios", "key", "verify", "-k", "keyfile.bin", "cipher.enc"])
-            .expect("CLI should parse");
+        let matches = parse_ok(["dexios", "key", "verify", "-k", "keyfile.bin", "cipher.enc"]);
 
         let (name, sub) = matches.subcommand().expect("subcommand");
         assert_eq!(name, "key");
@@ -936,9 +948,7 @@ mod tests {
 
     #[test]
     fn header_dump_command_accepts_input_output_and_force() {
-        let matches = super::build_cli()
-            .try_get_matches_from(["dexios", "header", "dump", "-f", "cipher.enc", "dump.hdr"])
-            .expect("CLI should parse");
+        let matches = parse_ok(["dexios", "header", "dump", "-f", "cipher.enc", "dump.hdr"]);
 
         let (name, sub) = matches.subcommand().expect("subcommand");
         assert_eq!(name, "header");
@@ -956,16 +966,14 @@ mod tests {
 
     #[test]
     fn header_restore_command_accepts_input_and_output() {
-        let matches = super::build_cli()
-            .try_get_matches_from([
-                "dexios",
-                "header",
-                "restore",
-                "--force",
-                "dump.hdr",
-                "cipher.enc",
-            ])
-            .expect("CLI should parse");
+        let matches = parse_ok([
+            "dexios",
+            "header",
+            "restore",
+            "--force",
+            "dump.hdr",
+            "cipher.enc",
+        ]);
 
         let (name, sub) = matches.subcommand().expect("subcommand");
         assert_eq!(name, "header");
@@ -983,9 +991,7 @@ mod tests {
 
     #[test]
     fn header_strip_command_accepts_input() {
-        let matches = super::build_cli()
-            .try_get_matches_from(["dexios", "header", "strip", "--force", "cipher.enc"])
-            .expect("CLI should parse");
+        let matches = parse_ok(["dexios", "header", "strip", "--force", "cipher.enc"]);
 
         let (name, sub) = matches.subcommand().expect("subcommand");
         assert_eq!(name, "header");
@@ -999,9 +1005,7 @@ mod tests {
 
     #[test]
     fn header_details_command_accepts_input() {
-        let matches = super::build_cli()
-            .try_get_matches_from(["dexios", "header", "details", "cipher.enc"])
-            .expect("CLI should parse");
+        let matches = parse_ok(["dexios", "header", "details", "cipher.enc"]);
 
         let (name, sub) = matches.subcommand().expect("subcommand");
         assert_eq!(name, "header");
@@ -1009,6 +1013,240 @@ mod tests {
         assert_eq!(
             details.get_one::<String>("input").map(String::as_str),
             Some("cipher.enc")
+        );
+    }
+
+    #[test]
+    fn top_level_short_flags_resolve_to_commands() {
+        assert_file_pair_command(
+            ["dexios", "-e", "in.bin", "out.enc"],
+            "encrypt",
+            "in.bin",
+            "out.enc",
+        );
+        assert_file_pair_command(
+            ["dexios", "-d", "in.enc", "out.bin"],
+            "decrypt",
+            "in.enc",
+            "out.bin",
+        );
+        assert_file_pair_command(
+            ["dexios", "-u", "archive.dex", "out"],
+            "unpack",
+            "archive.dex",
+            "out",
+        );
+
+        let matches = parse_ok(["dexios", "-p", "dir-a", "archive.dex"]);
+        let (name, sub) = matches.subcommand().expect("subcommand");
+        assert_eq!(name, "pack");
+        let values = sub
+            .get_many::<String>("input")
+            .expect("input paths")
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(values, ["dir-a"]);
+        assert_eq!(
+            sub.get_one::<String>("output").map(String::as_str),
+            Some("archive.dex")
+        );
+    }
+
+    #[test]
+    fn shared_options_parse_across_command_families() {
+        let encrypt = parse_ok([
+            "dexios",
+            "encrypt",
+            "-k",
+            "key.bin",
+            "--header",
+            "file.hdr",
+            "-f",
+            "-H",
+            "--delete-input",
+            "in.bin",
+            "out.enc",
+        ]);
+        let (_, encrypt) = encrypt.subcommand().expect("encrypt subcommand");
+        assert_eq!(
+            encrypt.get_one::<String>("keyfile").map(String::as_str),
+            Some("key.bin")
+        );
+        assert_eq!(
+            encrypt.get_one::<String>("header").map(String::as_str),
+            Some("file.hdr")
+        );
+        assert!(encrypt.get_flag("force"));
+        assert!(encrypt.get_flag("hash"));
+        assert!(encrypt.get_flag("delete-input"));
+
+        let decrypt = parse_ok([
+            "dexios",
+            "decrypt",
+            "-k",
+            "key.bin",
+            "--header",
+            "file.hdr",
+            "-f",
+            "-H",
+            "--delete-input",
+            "in.enc",
+            "out.bin",
+        ]);
+        let (_, decrypt) = decrypt.subcommand().expect("decrypt subcommand");
+        assert_eq!(
+            decrypt.get_one::<String>("keyfile").map(String::as_str),
+            Some("key.bin")
+        );
+        assert_eq!(
+            decrypt.get_one::<String>("header").map(String::as_str),
+            Some("file.hdr")
+        );
+        assert!(decrypt.get_flag("force"));
+        assert!(decrypt.get_flag("hash"));
+        assert!(decrypt.get_flag("delete-input"));
+
+        let pack = parse_ok([
+            "dexios",
+            "pack",
+            "-k",
+            "key.bin",
+            "--header",
+            "pack.hdr",
+            "-f",
+            "-H",
+            "--delete-source",
+            "-v",
+            "-r",
+            "dir-a",
+            "dir-b",
+            "archive.dex",
+        ]);
+        let (_, pack) = pack.subcommand().expect("pack subcommand");
+        let inputs = pack
+            .get_many::<String>("input")
+            .expect("input paths")
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(inputs, ["dir-a", "dir-b"]);
+        assert_eq!(
+            pack.get_one::<String>("output").map(String::as_str),
+            Some("archive.dex")
+        );
+        assert_eq!(
+            pack.get_one::<String>("keyfile").map(String::as_str),
+            Some("key.bin")
+        );
+        assert_eq!(
+            pack.get_one::<String>("header").map(String::as_str),
+            Some("pack.hdr")
+        );
+        assert!(pack.get_flag("force"));
+        assert!(pack.get_flag("hash"));
+        assert!(pack.get_flag("delete-source"));
+        assert!(pack.get_flag("verbose"));
+        assert!(pack.get_flag("recursive"));
+
+        let unpack = parse_ok([
+            "dexios",
+            "unpack",
+            "-k",
+            "key.bin",
+            "--header",
+            "pack.hdr",
+            "-f",
+            "-H",
+            "--delete-input",
+            "-v",
+            "archive.dex",
+            "out",
+        ]);
+        let (_, unpack) = unpack.subcommand().expect("unpack subcommand");
+        assert_eq!(
+            unpack.get_one::<String>("keyfile").map(String::as_str),
+            Some("key.bin")
+        );
+        assert_eq!(
+            unpack.get_one::<String>("header").map(String::as_str),
+            Some("pack.hdr")
+        );
+        assert!(unpack.get_flag("force"));
+        assert!(unpack.get_flag("hash"));
+        assert!(unpack.get_flag("delete-input"));
+        assert!(unpack.get_flag("verbose"));
+    }
+
+    #[test]
+    fn auto_generation_conflicts_with_keyfiles() {
+        assert_parser_error(
+            [
+                "dexios", "encrypt", "--auto=7", "-k", "key.bin", "in.bin", "out.enc",
+            ],
+            clap::error::ErrorKind::ArgumentConflict,
+            "keyfile",
+        );
+        assert_parser_error(
+            [
+                "dexios",
+                "pack",
+                "--auto=7",
+                "-k",
+                "key.bin",
+                "dir-a",
+                "archive.dex",
+            ],
+            clap::error::ErrorKind::ArgumentConflict,
+            "keyfile",
+        );
+        assert_parser_error(
+            [
+                "dexios",
+                "key",
+                "add",
+                "--auto=7",
+                "-n",
+                "new.key",
+                "cipher.enc",
+            ],
+            clap::error::ErrorKind::ArgumentConflict,
+            "keyfile-new",
+        );
+        assert_parser_error(
+            [
+                "dexios",
+                "key",
+                "change",
+                "--auto=7",
+                "-n",
+                "new.key",
+                "cipher.enc",
+            ],
+            clap::error::ErrorKind::ArgumentConflict,
+            "keyfile-new",
+        );
+    }
+
+    #[test]
+    fn missing_required_subcommands_are_rejected() {
+        let top_level = super::build_cli()
+            .try_get_matches_from(["dexios"])
+            .expect_err("top-level command should be required");
+        assert_missing_command_shape(top_level);
+
+        for args in [["dexios", "key"], ["dexios", "header"]] {
+            let error = super::build_cli()
+                .try_get_matches_from(args)
+                .expect_err("missing command shape should be rejected by clap");
+            assert_missing_command_shape(error);
+        }
+    }
+
+    fn assert_missing_command_shape(error: clap::Error) {
+        let kind = format!("{:?}", error.kind());
+
+        assert!(
+            kind.contains("DisplayHelp") || kind.contains("Missing"),
+            "unexpected error kind: {kind} ({error})"
         );
     }
 }
