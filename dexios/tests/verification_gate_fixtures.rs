@@ -263,9 +263,9 @@ fn canonical_v1_assurance_replay_includes_phase3_evidence() {
         "cargo test --locked --offline -p dexios-core --test v1_header --release",
         "cargo test --locked --offline -p dexios-core --test stream_v1 --release",
         "cargo test --locked --offline -p dexios-core --test key_derivation --release",
-        "cargo test --locked --offline -p dexios-domain --test keyslots_v1 --release",
+        "cargo test --locked --offline -p dexios-domain --test keyslots_intent_v1 --test keyslots_crypto_v1 --test keyslots_mutation_v1 --release",
         "cargo test --locked --offline -p dexios-domain --test decrypt_workflow_errors --release",
-        "cargo test --locked --offline -p dexios-domain --test unpack --release",
+        "cargo test --locked --offline -p dexios-domain --features test-support --test unpack_manifest_v1 --test unpack_path_identity --test unpack_commit_rollback --test unpack_symlink_revalidation --release",
     ] {
         assert_non_comment_line_count(
             "scripts/verify_assurance_replay.sh",
@@ -288,13 +288,13 @@ fn phase05_manifest_archive_and_cli_gate_is_source_gated() {
         "run cargo test --locked -p dexios-core --test stream_v1 --release",
         "run cargo test --locked -p dexios-core --test v1_header --release",
         "run cargo test --locked -p dexios-domain --test pack_paths --release",
-        "run cargo test --locked -p dexios-domain --test unpack --release",
+        "run cargo test --locked -p dexios-domain --features test-support --test unpack_manifest_v1 --test unpack_path_identity --test unpack_commit_rollback --test unpack_symlink_revalidation --release",
         "run cargo test --locked -p dexios-domain --test archive_public_api --release",
         "run cargo test --locked -p dexios-domain --test workflow_errors --all-features --release",
         "run cargo test --locked -p dexios --test pack_cli_regressions --release",
         "run cargo test --locked -p dexios --test unpack_cli_regressions --release",
         "run cargo test --locked -p dexios --test delete_source_cli --release",
-        "run cargo test --locked -p dexios --test workflow_error_cli --release",
+        "run cargo test --locked -p dexios --test workflow_error_cli_boundary --test workflow_error_cli_archive --test workflow_error_cli_header_key --release",
         "run cargo test --locked -p dexios --test verification_gate_docs --release",
     ];
     for command in focused_commands {
@@ -329,8 +329,8 @@ fn phase05_manifest_archive_and_cli_gate_is_source_gated() {
             "ManifestFirstPayload::parse",
         ),
         (
-            "dexios-domain/tests/unpack.rs",
-            DEXIOS_DOMAIN_UNPACK_TESTS,
+            "dexios-domain/tests/support/unpack_v1.rs",
+            DEXIOS_DOMAIN_UNPACK_SUPPORT,
             "write_manifest_archive_with_entries",
         ),
         (
@@ -354,21 +354,21 @@ fn phase05_manifest_archive_and_cli_gate_is_source_gated() {
             "write_manifest_archive_with_entries",
         ),
         (
-            "dexios/tests/workflow_error_cli.rs",
-            DEXIOS_WORKFLOW_ERROR_CLI_TESTS,
+            "dexios/tests/support/workflow_error_cli.rs",
+            DEXIOS_WORKFLOW_ERROR_CLI_SUPPORT,
             "write_manifest_archive_with_entries",
         ),
     ] {
         assert_contains(source_name, source, required);
     }
     assert_contains(
-        "dexios/tests/workflow_error_cli.rs",
-        DEXIOS_WORKFLOW_ERROR_CLI_TESTS,
+        "dexios/tests/workflow_error_cli_archive.rs",
+        DEXIOS_WORKFLOW_ERROR_CLI_ARCHIVE_TESTS,
         "legacy raw archive payload must fail as a terse archive class",
     );
     assert_contains(
-        "dexios/tests/workflow_error_cli.rs",
-        DEXIOS_WORKFLOW_ERROR_CLI_TESTS,
+        "dexios/tests/support/workflow_error_cli.rs",
+        DEXIOS_WORKFLOW_ERROR_CLI_SUPPORT,
         "PayloadError",
     );
 
@@ -386,8 +386,12 @@ fn phase05_manifest_archive_and_cli_gate_is_source_gated() {
             DEXIOS_DELETE_SOURCE_CLI_TESTS,
         ),
         (
-            "dexios/tests/workflow_error_cli.rs",
-            DEXIOS_WORKFLOW_ERROR_CLI_TESTS,
+            "dexios/tests/workflow_error_cli_archive.rs",
+            DEXIOS_WORKFLOW_ERROR_CLI_ARCHIVE_TESTS,
+        ),
+        (
+            "dexios/tests/support/workflow_error_cli.rs",
+            DEXIOS_WORKFLOW_ERROR_CLI_SUPPORT,
         ),
     ] {
         assert_not_contains(source_name, source, "write_zip_with_entries");

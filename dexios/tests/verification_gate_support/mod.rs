@@ -54,8 +54,16 @@ pub(crate) const DEXIOS_DOMAIN_DECRYPT_WORKFLOW_ERROR_TESTS: &str =
     include_str!("../../../dexios-domain/tests/decrypt_workflow_errors.rs");
 pub(crate) const DEXIOS_DOMAIN_PACK_PATHS_TESTS: &str =
     include_str!("../../../dexios-domain/tests/pack_paths.rs");
-pub(crate) const DEXIOS_DOMAIN_UNPACK_TESTS: &str =
-    include_str!("../../../dexios-domain/tests/unpack.rs");
+pub(crate) const DEXIOS_DOMAIN_UNPACK_MANIFEST_TESTS: &str =
+    include_str!("../../../dexios-domain/tests/unpack_manifest_v1.rs");
+pub(crate) const DEXIOS_DOMAIN_UNPACK_PATH_IDENTITY_TESTS: &str =
+    include_str!("../../../dexios-domain/tests/unpack_path_identity.rs");
+pub(crate) const DEXIOS_DOMAIN_UNPACK_COMMIT_ROLLBACK_TESTS: &str =
+    include_str!("../../../dexios-domain/tests/unpack_commit_rollback.rs");
+pub(crate) const DEXIOS_DOMAIN_UNPACK_SYMLINK_REVALIDATION_TESTS: &str =
+    include_str!("../../../dexios-domain/tests/unpack_symlink_revalidation.rs");
+pub(crate) const DEXIOS_DOMAIN_UNPACK_SUPPORT: &str =
+    include_str!("../../../dexios-domain/tests/support/unpack_v1.rs");
 pub(crate) const DEXIOS_ENCRYPT_CLI_REGRESSION_TESTS: &str =
     include_str!("../encrypt_cli_regressions.rs");
 pub(crate) const DEXIOS_PACK_CLI_REGRESSION_TESTS: &str =
@@ -128,12 +136,22 @@ pub(crate) const DEXIOS_DOMAIN_HEADER_RESTORE_RS: &str =
 pub(crate) const DEXIOS_DOMAIN_KEY_RS: &str = include_str!("../../../dexios-domain/src/key.rs");
 pub(crate) const DEXIOS_DOMAIN_PATH_IDENTITY_TESTS: &str =
     include_str!("../../../dexios-domain/tests/path_identity.rs");
-pub(crate) const DEXIOS_DOMAIN_TRANSACTION_TESTS: &str =
-    include_str!("../../../dexios-domain/tests/transactions.rs");
+pub(crate) const DEXIOS_DOMAIN_TRANSACTIONS_STAGED_OUTPUT_TESTS: &str =
+    include_str!("../../../dexios-domain/tests/transactions_staged_output.rs");
+pub(crate) const DEXIOS_DOMAIN_TRANSACTIONS_LINKED_PUBLICATION_TESTS: &str =
+    include_str!("../../../dexios-domain/tests/transactions_linked_publication.rs");
+pub(crate) const DEXIOS_DOMAIN_TRANSACTIONS_FAILURE_HOOKS_TESTS: &str =
+    include_str!("../../../dexios-domain/tests/transactions_failure_hooks.rs");
 pub(crate) const DEXIOS_DOMAIN_HEADER_RESTORE_TESTS: &str =
     include_str!("../../../dexios-domain/tests/header_restore.rs");
-pub(crate) const DEXIOS_DOMAIN_KEYSLOTS_TESTS: &str =
-    include_str!("../../../dexios-domain/tests/keyslots_v1.rs");
+pub(crate) const DEXIOS_DOMAIN_KEYSLOTS_INTENT_TESTS: &str =
+    include_str!("../../../dexios-domain/tests/keyslots_intent_v1.rs");
+pub(crate) const DEXIOS_DOMAIN_KEYSLOTS_CRYPTO_TESTS: &str =
+    include_str!("../../../dexios-domain/tests/keyslots_crypto_v1.rs");
+pub(crate) const DEXIOS_DOMAIN_KEYSLOTS_MUTATION_TESTS: &str =
+    include_str!("../../../dexios-domain/tests/keyslots_mutation_v1.rs");
+pub(crate) const DEXIOS_DOMAIN_KEYSLOTS_SUPPORT: &str =
+    include_str!("../../../dexios-domain/tests/support/keyslots_v1.rs");
 pub(crate) const DEXIOS_DOMAIN_CLEANUP_RECEIPTS_TESTS: &str =
     include_str!("../../../dexios-domain/tests/cleanup_receipts.rs");
 pub(crate) const DEXIOS_DOMAIN_DETACHED_PUBLICATION_TESTS: &str =
@@ -144,7 +162,14 @@ pub(crate) const DEXIOS_DOMAIN_WORKFLOW_PUBLIC_API_TESTS: &str =
     include_str!("../../../dexios-domain/tests/workflow_public_api.rs");
 pub(crate) const DEXIOS_DOMAIN_ARCHIVE_PUBLIC_API_TESTS: &str =
     include_str!("../../../dexios-domain/tests/archive_public_api.rs");
-pub(crate) const DEXIOS_WORKFLOW_ERROR_CLI_TESTS: &str = include_str!("../workflow_error_cli.rs");
+pub(crate) const DEXIOS_WORKFLOW_ERROR_CLI_BOUNDARY_TESTS: &str =
+    include_str!("../workflow_error_cli_boundary.rs");
+pub(crate) const DEXIOS_WORKFLOW_ERROR_CLI_ARCHIVE_TESTS: &str =
+    include_str!("../workflow_error_cli_archive.rs");
+pub(crate) const DEXIOS_WORKFLOW_ERROR_CLI_HEADER_KEY_TESTS: &str =
+    include_str!("../workflow_error_cli_header_key.rs");
+pub(crate) const DEXIOS_WORKFLOW_ERROR_CLI_SUPPORT: &str =
+    include_str!("../support/workflow_error_cli.rs");
 pub(crate) const DEXIOS_HEADER_CLI_REGRESSION_TESTS: &str =
     include_str!("../header_cli_regressions.rs");
 pub(crate) const DEXIOS_KEY_CLI_REGRESSION_TESTS: &str = include_str!("../key_cli_regressions.rs");
@@ -190,9 +215,9 @@ pub(crate) const ASSURANCE_REPLAY_COMMANDS: &[&str] = &[
     "cargo test --locked --offline -p dexios-core --test v1_header --release",
     "cargo test --locked --offline -p dexios-core --test stream_v1 --release",
     "cargo test --locked --offline -p dexios-core --test key_derivation --release",
-    "cargo test --locked --offline -p dexios-domain --test keyslots_v1 --release",
+    "cargo test --locked --offline -p dexios-domain --test keyslots_intent_v1 --test keyslots_crypto_v1 --test keyslots_mutation_v1 --release",
     "cargo test --locked --offline -p dexios-domain --test decrypt_workflow_errors --release",
-    "cargo test --locked --offline -p dexios-domain --test unpack --release",
+    "cargo test --locked --offline -p dexios-domain --features test-support --test unpack_manifest_v1 --test unpack_path_identity --test unpack_commit_rollback --test unpack_symlink_revalidation --release",
     "cargo test --locked --offline -p dexios --test decrypt_cli_regressions --release",
     "cargo test --locked --offline -p dexios --test unpack_cli_regressions --release",
 ];

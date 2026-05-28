@@ -110,7 +110,7 @@ fn phase19_public_api_authority_contract_is_source_gated() {
     }
 
     for command in [
-        "run cargo test --locked -p dexios-domain --features test-support --test workflow_public_api --test archive_public_api --test cleanup_receipts --test transactions --test workflow_errors --release",
+        "run cargo test --locked -p dexios-domain --features test-support --test workflow_public_api --test archive_public_api --test cleanup_receipts --test transactions_staged_output --test transactions_linked_publication --test transactions_failure_hooks --test workflow_errors --release",
         "run cargo test --locked -p dexios-core --test public_api_footguns --release",
         "run cargo test --locked -p dexios --test verification_gate_docs --release",
     ] {
@@ -215,12 +215,20 @@ fn phase15_storage_identity_source_boundaries_are_source_gated() {
         "unpack_intent_rejects_archive_input_with_symlinked_parent_before_parsing",
         "unpack_rejects_symlinked_intermediate_output_paths",
         "unpack_rejects_symlinked_output_directory_prefix",
+    ] {
+        assert_contains(
+            "dexios-domain/tests/unpack_symlink_revalidation.rs",
+            DEXIOS_DOMAIN_UNPACK_SYMLINK_REVALIDATION_TESTS,
+            required,
+        );
+    }
+    for required in [
         "unpack_rejects_entry_that_aliases_encrypted_input_archive",
         "unpack_rejects_entry_that_aliases_detached_header",
     ] {
         assert_contains(
-            "dexios-domain/tests/unpack.rs",
-            DEXIOS_DOMAIN_UNPACK_TESTS,
+            "dexios-domain/tests/unpack_path_identity.rs",
+            DEXIOS_DOMAIN_UNPACK_PATH_IDENTITY_TESTS,
             required,
         );
     }
@@ -468,14 +476,14 @@ fn phase17_detached_payload_header_publication_is_source_gated() {
         "post_commit_sync_detached_publication_failure_is_not_clean_success",
     ] {
         assert_contains(
-            "dexios-domain/tests/transactions.rs",
-            DEXIOS_DOMAIN_TRANSACTION_TESTS,
+            "dexios-domain/tests/transactions_linked_publication.rs",
+            DEXIOS_DOMAIN_TRANSACTIONS_LINKED_PUBLICATION_TESTS,
             required,
         );
     }
     assert_contains(
-        "dexios-domain/tests/transactions.rs",
-        DEXIOS_DOMAIN_TRANSACTION_TESTS,
+        "dexios-domain/tests/transactions_linked_publication.rs",
+        DEXIOS_DOMAIN_TRANSACTIONS_LINKED_PUBLICATION_TESTS,
         "TransactionError::PostCommitSync",
     );
 
@@ -510,8 +518,8 @@ fn phase17_detached_payload_header_publication_is_source_gated() {
                     DEXIOS_DELETE_SOURCE_CLI_TESTS,
                 ),
                 (
-                    "dexios/tests/workflow_error_cli.rs",
-                    DEXIOS_WORKFLOW_ERROR_CLI_TESTS,
+                    "dexios/tests/workflow_error_cli_boundary.rs",
+                    DEXIOS_WORKFLOW_ERROR_CLI_BOUNDARY_TESTS,
                 ),
                 (
                     "dexios/tests/encrypt_cli_regressions.rs",
@@ -554,8 +562,8 @@ fn phase17_detached_payload_header_publication_is_source_gated() {
     }
 
     for command in [
-        "run cargo test --locked -p dexios-domain --features test-support --test transactions --test cleanup_receipts --test detached_publication --release",
-        "run cargo test --locked -p dexios --test encrypt_cli_regressions --test pack_cli_regressions --test delete_source_cli --test workflow_error_cli --test verification_gate_docs --release",
+        "run cargo test --locked -p dexios-domain --features test-support --test transactions_staged_output --test transactions_linked_publication --test transactions_failure_hooks --test cleanup_receipts --test detached_publication --release",
+        "run cargo test --locked -p dexios --test encrypt_cli_regressions --test pack_cli_regressions --test delete_source_cli --test workflow_error_cli_boundary --test workflow_error_cli_archive --test workflow_error_cli_header_key --test verification_gate_docs --release",
     ] {
         assert_non_comment_line_count(
             "scripts/verify_phase_gate.sh",
@@ -667,8 +675,8 @@ fn phase18_header_and_key_mutation_guards_are_source_gated() {
         );
     }
     assert_contains(
-        "dexios-domain/tests/keyslots_v1.rs",
-        DEXIOS_DOMAIN_KEYSLOTS_TESTS,
+        "dexios-domain/tests/keyslots_intent_v1.rs",
+        DEXIOS_DOMAIN_KEYSLOTS_INTENT_TESTS,
         "key_add_rejects_target_replacement_after_old_key_proof",
     );
 
@@ -721,7 +729,7 @@ fn phase18_header_and_key_mutation_guards_are_source_gated() {
     }
 
     for command in [
-        "run cargo test --locked -p dexios-domain --test header_restore --test header_workflow_errors --test keyslots_v1 --test workflow_errors --release",
+        "run cargo test --locked -p dexios-domain --test header_restore --test header_workflow_errors --test keyslots_intent_v1 --test keyslots_crypto_v1 --test keyslots_mutation_v1 --test workflow_errors --release",
         "run cargo test --locked -p dexios --test header_cli_regressions --test key_cli_regressions --test verification_gate_docs --release",
     ] {
         assert_non_comment_line_count(
@@ -1064,8 +1072,8 @@ fn phase10_domain_api_and_error_cleanup_is_source_gated() {
         "keyslot",
     ] {
         assert_contains(
-            "dexios/tests/workflow_error_cli.rs",
-            DEXIOS_WORKFLOW_ERROR_CLI_TESTS,
+            "dexios/tests/workflow_error_cli_boundary.rs",
+            DEXIOS_WORKFLOW_ERROR_CLI_BOUNDARY_TESTS,
             required,
         );
     }
@@ -1482,8 +1490,8 @@ fn phase12_unpack_directory_rollback_contract_is_source_gated() {
         "FailurePoint::Persist",
     ] {
         assert_contains(
-            "dexios-domain/tests/unpack.rs",
-            DEXIOS_DOMAIN_UNPACK_TESTS,
+            "dexios-domain/tests/unpack_commit_rollback.rs",
+            DEXIOS_DOMAIN_UNPACK_COMMIT_ROLLBACK_TESTS,
             required,
         );
     }
