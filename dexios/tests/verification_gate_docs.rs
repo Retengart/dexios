@@ -61,6 +61,7 @@ const DEXIOS_CLI_COMMANDS_HASH_RS: &str = include_str!("../src/cli/commands/hash
 const DEXIOS_CLI_COMMANDS_KEY_RS: &str = include_str!("../src/cli/commands/key.rs");
 const DEXIOS_CLI_COMMANDS_HEADER_RS: &str = include_str!("../src/cli/commands/header.rs");
 const DEXIOS_GLOBAL_RS: &str = include_str!("../src/global.rs");
+const DEXIOS_PARAMETERS_RS: &str = include_str!("../src/global/parameters.rs");
 const DEXIOS_STATES_RS: &str = include_str!("../src/global/states.rs");
 const DEXIOS_ENCRYPT_RS: &str = include_str!("../src/subcommands/encrypt.rs");
 const DEXIOS_DECRYPT_RS: &str = include_str!("../src/subcommands/decrypt.rs");
@@ -5223,5 +5224,88 @@ fn phase23_cli_command_split_is_source_gated() {
             ".get_subcommands()",
             "\"encrypt\", \"decrypt\", \"hash\", \"pack\", \"unpack\", \"key\", \"header\"",
         ],
+    );
+}
+
+// --- Phase 24 gate tests ---
+
+#[test]
+fn phase24_cli_routing_and_parameter_extraction_are_source_gated() {
+    // CLIR-01/CLIR-02/PARM-01, D-01 through D-16: routing stays adapter-local
+    // and fallible, nested header/key adapters receive leaf matches, and
+    // parameter extraction errors remain explicit instead of silently falling
+    // through to success or key-source fallback.
+
+    assert_all_contains(
+        "dexios/src/main.rs",
+        DEXIOS_MAIN_RS,
+        &[
+            "CliRoute::from_matches(&matches)?.dispatch()",
+            "enum CliRoute<'a>",
+            "enum HeaderRoute<'a>",
+            "enum KeyRoute<'a>",
+            "HeaderRoute::from_matches(sub_matches)?",
+            "KeyRoute::from_matches(sub_matches)?",
+            "internal CLI adapter error",
+        ],
+    );
+    assert_not_contains("dexios/src/main.rs", DEXIOS_MAIN_RS, "_ => (),");
+
+    for nested_unwrap in [
+        "subcommand_matches(\"dump\").unwrap()",
+        "subcommand_matches(\"restore\").unwrap()",
+        "subcommand_matches(\"strip\").unwrap()",
+        "subcommand_matches(\"details\").unwrap()",
+        "subcommand_matches(\"change\").unwrap()",
+        "subcommand_matches(\"add\").unwrap()",
+        "subcommand_matches(\"del\").unwrap()",
+        "subcommand_matches(\"verify\").unwrap()",
+    ] {
+        assert_not_contains(
+            "dexios/src/subcommands.rs",
+            DEXIOS_SUBCOMMANDS_RS,
+            nested_unwrap,
+        );
+    }
+
+    assert_all_contains(
+        "dexios/src/global/parameters.rs",
+        DEXIOS_PARAMETERS_RS,
+        &[
+            "pub fn get_optional_param",
+            "try_get_one::<String>(name)",
+            "try_get_many::<String>(name)",
+            "internal CLI adapter error: required argument",
+            "internal CLI adapter error: required repeated argument",
+            "internal CLI adapter error: optional argument",
+            "get_optional_param(\"header\", sub_matches)?",
+            "required_parameter_missing_returns_internal_adapter_error",
+            "repeated_parameter_missing_returns_internal_adapter_error",
+            "optional_parameter_absent_returns_none",
+            "optional_parameter_present_returns_borrowed_value",
+            "optional_parameter_mismatched_access_returns_internal_adapter_error",
+        ],
+    );
+
+    assert_all_contains(
+        "dexios/src/global/states.rs",
+        DEXIOS_STATES_RS,
+        &[
+            "get_optional_param(keyfile_descriptor, sub_matches)?",
+            "get_optional_param(\"autogenerate\", sub_matches)?",
+            "key_source_true_absence_preserves_user_fallback",
+            "key_source_unreadable_keyfile_returns_adapter_error_before_fallback",
+            "key_source_unreadable_autogenerate_returns_adapter_error_before_fallback",
+        ],
+    );
+    assert_not_contains(
+        "dexios/src/global/states.rs",
+        DEXIOS_STATES_RS,
+        ".try_get_one::<String>(keyfile_descriptor)\n            .ok()\n            .flatten()",
+    );
+    assert_not_contains(
+        "dexios/src/global/states.rs",
+        DEXIOS_STATES_RS,
+        ".try_get_one::<String>(\"autogenerate\")\n            .ok()\n            .flatten()",
     );
 }

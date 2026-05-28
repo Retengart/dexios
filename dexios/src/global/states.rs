@@ -219,6 +219,7 @@ impl KeyParams {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::{Arg, Command, value_parser};
     use core::key::PassphraseWordCount;
 
     const DISCLOSURE_PREFIX: &str = "Your generated passphrase is intentionally shown here and may be captured by terminal scrollback or logs: ";
@@ -313,5 +314,92 @@ mod tests {
                 "invalid count error must not include generated-passphrase disclosure"
             );
         }
+    }
+
+    #[test]
+    fn key_source_true_absence_preserves_user_fallback() {
+        let matches = Command::new("synthetic")
+            .arg(Arg::new("keyfile").long("keyfile"))
+            .arg(Arg::new("autogenerate").long("auto"))
+            .try_get_matches_from(["synthetic"])
+            .expect("synthetic matches should parse");
+
+        let key = Key::init(
+            &matches,
+            &KeyParams {
+                user: true,
+                env: false,
+                autogenerate: true,
+                keyfile: true,
+            },
+            "keyfile",
+        )
+        .expect("true optional absence should still fall back to user");
+
+        assert_eq!(key, Key::User);
+    }
+
+    #[test]
+    fn key_source_unreadable_keyfile_returns_adapter_error_before_fallback() {
+        let matches = Command::new("synthetic")
+            .arg(
+                Arg::new("keyfile")
+                    .long("keyfile")
+                    .value_parser(value_parser!(u16)),
+            )
+            .arg(Arg::new("autogenerate").long("auto"))
+            .try_get_matches_from(["synthetic", "--keyfile", "7"])
+            .expect("synthetic matches should parse");
+
+        let error = Key::init(
+            &matches,
+            &KeyParams {
+                user: true,
+                env: true,
+                autogenerate: true,
+                keyfile: true,
+            },
+            "keyfile",
+        )
+        .expect_err("unreadable keyfile access should fail before fallback");
+
+        assert!(
+            error.to_string().contains(
+                "internal CLI adapter error: optional argument 'keyfile' unreadable after clap validation"
+            ),
+            "error should name the unreadable keyfile adapter access: {error}"
+        );
+    }
+
+    #[test]
+    fn key_source_unreadable_autogenerate_returns_adapter_error_before_fallback() {
+        let matches = Command::new("synthetic")
+            .arg(Arg::new("keyfile").long("keyfile"))
+            .arg(
+                Arg::new("autogenerate")
+                    .long("auto")
+                    .value_parser(value_parser!(u16)),
+            )
+            .try_get_matches_from(["synthetic", "--auto", "7"])
+            .expect("synthetic matches should parse");
+
+        let error = Key::init(
+            &matches,
+            &KeyParams {
+                user: true,
+                env: true,
+                autogenerate: true,
+                keyfile: true,
+            },
+            "keyfile",
+        )
+        .expect_err("unreadable autogenerate access should fail before fallback");
+
+        assert!(
+            error.to_string().contains(
+                "internal CLI adapter error: optional argument 'autogenerate' unreadable after clap validation"
+            ),
+            "error should name the unreadable autogenerate adapter access: {error}"
+        );
     }
 }
