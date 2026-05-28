@@ -53,6 +53,7 @@ const DEXIOS_DOMAIN_FIXTURE_MANIFEST: &str =
 const DEXIOS_CLI_FIXTURE_MANIFEST: &str = include_str!("fixture_manifest.toml");
 const DEXIOS_MAIN_RS: &str = include_str!("../src/main.rs");
 const DEXIOS_CLI_RS: &str = include_str!("../src/cli.rs");
+const DEXIOS_CLI_TESTS_RS: &str = include_str!("../src/cli/tests.rs");
 const DEXIOS_GLOBAL_RS: &str = include_str!("../src/global.rs");
 const DEXIOS_STATES_RS: &str = include_str!("../src/global/states.rs");
 const DEXIOS_ENCRYPT_RS: &str = include_str!("../src/subcommands/encrypt.rs");
@@ -5009,8 +5010,8 @@ fn phase22_cli_parser_baseline_and_surface_gate_are_source_gated() {
     // smoke harness wired into maintainer and pull-request paths.
 
     assert_all_contains(
-        "dexios/src/cli.rs",
-        DEXIOS_CLI_RS,
+        "dexios/src/cli/tests.rs",
+        DEXIOS_CLI_TESTS_RS,
         &[
             "cli_definition_passes_clap_debug_assertions",
             "try_get_matches_from",
