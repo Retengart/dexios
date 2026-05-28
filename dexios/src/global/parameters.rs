@@ -185,7 +185,87 @@ pub fn key_manipulation_params(sub_matches: &ArgMatches) -> Result<KeyManipulati
 mod tests {
     use super::*;
     use crate::cli::build_cli;
+    use clap::{Arg, ArgAction, Command, value_parser};
     use core::key::PassphraseWordCount;
+
+    #[test]
+    fn required_parameter_missing_returns_internal_adapter_error() {
+        let matches = Command::new("synthetic")
+            .arg(Arg::new("input"))
+            .try_get_matches_from(["synthetic"])
+            .expect("synthetic matches should parse");
+
+        let error = get_param("input", &matches).expect_err("missing required parameter");
+
+        assert_eq!(
+            error.to_string(),
+            "internal CLI adapter error: required argument 'input' missing after clap validation"
+        );
+    }
+
+    #[test]
+    fn repeated_parameter_missing_returns_internal_adapter_error() {
+        let matches = Command::new("synthetic")
+            .arg(
+                Arg::new("input")
+                    .action(ArgAction::Append)
+                    .num_args(1..),
+            )
+            .try_get_matches_from(["synthetic"])
+            .expect("synthetic matches should parse");
+
+        let error = get_params("input", &matches).expect_err("missing repeated parameter");
+
+        assert_eq!(
+            error.to_string(),
+            "internal CLI adapter error: required repeated argument 'input' missing after clap validation"
+        );
+    }
+
+    #[test]
+    fn optional_parameter_absent_returns_none() {
+        let matches = Command::new("synthetic")
+            .arg(Arg::new("header").long("header"))
+            .try_get_matches_from(["synthetic"])
+            .expect("synthetic matches should parse");
+
+        let value = get_optional_param("header", &matches).expect("optional parameter");
+
+        assert_eq!(value, None);
+    }
+
+    #[test]
+    fn optional_parameter_present_returns_borrowed_value() {
+        let matches = Command::new("synthetic")
+            .arg(Arg::new("header").long("header"))
+            .try_get_matches_from(["synthetic", "--header", "file.hdr"])
+            .expect("synthetic matches should parse");
+
+        let value = get_optional_param("header", &matches).expect("optional parameter");
+
+        assert_eq!(value, Some("file.hdr"));
+    }
+
+    #[test]
+    fn optional_parameter_mismatched_access_returns_internal_adapter_error() {
+        let matches = Command::new("synthetic")
+            .arg(
+                Arg::new("header")
+                    .long("header")
+                    .value_parser(value_parser!(u16)),
+            )
+            .try_get_matches_from(["synthetic", "--header", "7"])
+            .expect("synthetic matches should parse");
+
+        let error = get_optional_param("header", &matches).expect_err("mismatched optional access");
+
+        assert!(
+            error.to_string().contains(
+                "internal CLI adapter error: optional argument 'header' unreadable after clap validation"
+            ),
+            "error should explain optional adapter access failure: {error}"
+        );
+    }
 
     #[test]
     fn decrypt_key_init_falls_back_to_user_without_autogenerate_arg() {
