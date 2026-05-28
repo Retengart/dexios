@@ -417,7 +417,7 @@ pub(crate) fn phase15_safety_contract_issues(source: &str) -> Vec<&'static str> 
             "missing path identity test authority",
         ),
         (
-            "dexios-domain/tests/unpack.rs",
+            "dexios-domain/tests/unpack_path_identity.rs",
             "missing unpack identity regression authority",
         ),
         (

@@ -34,7 +34,10 @@ const CLI_ERRORS: &str = include_str!("../../dexios/src/subcommands/errors.rs");
 
 const DOMAIN_WORKFLOW_ERRORS_TESTS: &str = include_str!("workflow_errors.rs");
 const DOMAIN_HEADER_RESTORE_TESTS: &str = include_str!("header_restore.rs");
-const DOMAIN_KEYSLOTS_TESTS: &str = include_str!("keyslots_v1.rs");
+const DOMAIN_KEYSLOTS_INTENT_TESTS: &str = include_str!("keyslots_intent_v1.rs");
+const DOMAIN_KEYSLOTS_CRYPTO_TESTS: &str = include_str!("keyslots_crypto_v1.rs");
+const DOMAIN_KEYSLOTS_MUTATION_TESTS: &str = include_str!("keyslots_mutation_v1.rs");
+const DOMAIN_KEYSLOTS_SUPPORT: &str = include_str!("support/keyslots_v1.rs");
 
 #[derive(Clone, Copy)]
 struct Source<'a> {
@@ -156,8 +159,20 @@ fn d05_policy_sources() -> Vec<Source<'static>> {
             text: DOMAIN_HEADER_RESTORE_TESTS,
         },
         Source {
-            path: "dexios-domain/tests/keyslots_v1.rs",
-            text: DOMAIN_KEYSLOTS_TESTS,
+            path: "dexios-domain/tests/keyslots_intent_v1.rs",
+            text: DOMAIN_KEYSLOTS_INTENT_TESTS,
+        },
+        Source {
+            path: "dexios-domain/tests/keyslots_crypto_v1.rs",
+            text: DOMAIN_KEYSLOTS_CRYPTO_TESTS,
+        },
+        Source {
+            path: "dexios-domain/tests/keyslots_mutation_v1.rs",
+            text: DOMAIN_KEYSLOTS_MUTATION_TESTS,
+        },
+        Source {
+            path: "dexios-domain/tests/support/keyslots_v1.rs",
+            text: DOMAIN_KEYSLOTS_SUPPORT,
         },
         Source {
             path: "dexios-domain/src/storage/mod.rs",

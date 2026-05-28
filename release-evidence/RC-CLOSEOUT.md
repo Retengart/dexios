@@ -16,10 +16,10 @@ evidence.
 
 | Blocker ID | Failure Class | Regression Test(s) | Docs/Source Gate(s) | CI/Release Check(s) | Audit/Hygiene Check(s) |
 |------------|--------------|-------------------|--------------------|--------------------|----------------------|
-| PATH-01..04 | symlink/parent-prefix rejection | `dexios-domain/tests/path_identity.rs`, `dexios-domain/tests/unpack.rs`, `dexios/tests/pack_cli_regressions.rs`, `dexios/tests/unpack_cli_regressions.rs` | `book/src/Safety-Contract.md` STOR-002 | `unit_tests.yml` (linux/macos/windows) | `verify_repo_hygiene.sh` |
+| PATH-01..04 | symlink/parent-prefix rejection | `dexios-domain/tests/path_identity.rs`, `dexios-domain/tests/unpack_path_identity.rs`, `dexios-domain/tests/unpack_symlink_revalidation.rs`, `dexios/tests/pack_cli_regressions.rs`, `dexios/tests/unpack_cli_regressions.rs` | `book/src/Safety-Contract.md` STOR-002 | `unit_tests.yml` (linux/macos/windows) | `verify_repo_hygiene.sh` |
 | DASI-01..04 | delete-after-success cleanup | `dexios-domain/tests/cleanup_receipts.rs`, `dexios/tests/delete_source_cli.rs` | `book/src/technical-details/Secure-Erase.md`, `book/src/Safety-Contract.md` STOR-004 | `dexios-tests.yml` | `verify_repo_hygiene.sh` |
 | DETP-01..04 | detached partial pair | `dexios-domain/tests/detached_publication.rs`, `dexios/tests/encrypt_cli_regressions.rs`, `dexios/tests/pack_cli_regressions.rs` | `book/src/Safety-Contract.md` STOR-005 | `dexios-tests.yml` | `verify_repo_hygiene.sh` |
-| HDRM-01..04 | header/key mutation freshness | `dexios-domain/tests/header_restore.rs`, `dexios-domain/tests/keyslots_v1.rs`, `dexios/tests/header_cli_regressions.rs`, `dexios/tests/key_cli_regressions.rs` | `book/src/Safety-Contract.md` STOR-006 | `unit_tests.yml` | `verify_repo_hygiene.sh` |
+| HDRM-01..04 | header/key mutation freshness | `dexios-domain/tests/header_restore.rs`, `dexios-domain/tests/keyslots_intent_v1.rs`, `dexios-domain/tests/keyslots_mutation_v1.rs`, `dexios/tests/header_cli_regressions.rs`, `dexios/tests/key_cli_regressions.rs` | `book/src/Safety-Contract.md` STOR-006 | `unit_tests.yml` | `verify_repo_hygiene.sh` |
 | APIF-01..04 | public API footguns | `dexios-core/tests/public_api_footguns.rs`, `dexios-domain/tests/workflow_public_api.rs`, `dexios-domain/tests/archive_public_api.rs` | `book/src/Safety-Contract.md` API-002 | `unit_tests.yml` | `verify_repo_hygiene.sh` |
 | DOCS-01..04 | documentation/spec fidelity | `dexios/tests/verification_gate_docs.rs` (55+ tests, phases 14-20) | All `book/src/*.md` source gates | `docs.yml`, `cargo-build.yml` | `verify_repo_hygiene.sh`, `cargo audit --deny warnings`, `cargo deny check` |
 | CIGR-01..05 | CI/release gate hardening | `dexios/tests/verification_gate_docs.rs` Phase 21 tests: `phase21_locked_flag_and_lockfile_gate_are_source_gated` (CIGR-01), `phase21_permissions_and_job_ordering_are_source_gated` (CIGR-02 / D-09 / D-10), `phase21_tool_version_pins_are_source_gated` + `phase21_release_workflow_tool_pins_and_locked_build_are_source_gated` (CIGR-03), `phase21_release_workflow_asset_set_contract_is_source_gated` (CIGR-04), `phase21_windows_ci_coverage_is_source_gated` (CIGR-05) | `book/src/Safety-Contract.md`, `book/src/Installing-and-Building.md` | `release.yml` (`validate_tag -> maintainer_gate -> build -> publish`), `unit_tests.yml` (windows-latest) | `cargo audit --deny warnings`, `cargo deny check`, `verify_repo_hygiene.sh` |
@@ -33,7 +33,7 @@ table below records the class, covered status, and the specific test(s) that clo
 | Failure Class | Status | Concrete Test(s) |
 |--------------|--------|-----------------|
 | Symlink delete | Covered | `cleanup_receipt_from_processed_source_refuses_replaced_file` in `dexios-domain/tests/cleanup_receipts.rs` |
-| Symlinked-parent output | Covered | `unpack_rejects_symlinked_output_directory_prefix` in `dexios-domain/tests/unpack.rs`; `identity_rejects_existing_roles_with_symlinked_parent_prefixes` in `dexios-domain/tests/path_identity.rs` |
+| Symlinked-parent output | Covered | `unpack_rejects_symlinked_output_directory_prefix` in `dexios-domain/tests/unpack_symlink_revalidation.rs`; `identity_rejects_existing_roles_with_symlinked_parent_prefixes` in `dexios-domain/tests/path_identity.rs` |
 | Detached partial pair | Covered | `dexios-domain/tests/detached_publication.rs`; `phase17_detached_payload_header_publication_is_source_gated` in `dexios/tests/verification_gate_docs.rs` |
 | Header mutation race | Covered | `dexios-domain/tests/header_restore.rs` tests; `phase18_*` tests in `dexios/tests/verification_gate_docs.rs` |
 | Stale docs | Covered | 55+ existing source-gate tests (phases 14-20) in `dexios/tests/verification_gate_docs.rs` |
@@ -60,10 +60,10 @@ The matrix records docs/spec freshness as a gate, not as part of the published a
   tree; overwrite behaviour depends on the filesystem and OS. No claim is made that this
   erases data from physical storage.
 
-- **Unpack plaintext temporary exposure:** The V1 unpack architecture requires a seekable
-  plaintext temporary ZIP before entry extraction. This exposure is documented in
-  `book/src/technical-details/Secure-Erase.md` and bounded to the filesystem and the unpack
-  duration. It is not eliminated.
+- **Unpack plaintext temporary exposure:** V1 manifest unpack can stage selected decrypted
+  file bodies in ordinary filesystem temporary/staged files. This exposure is documented in
+  `book/src/technical-details/Secure-Erase.md`, scoped to selected outputs, and does not
+  claim secure erase or physical sanitization.
 
 - **Detached partial publication:** Detached-header mode reports errors with evidence when
   partial publication occurs; it does not perform recovery or rollback of already-committed
@@ -80,7 +80,8 @@ The matrix records docs/spec freshness as a gate, not as part of the published a
 - **Symlink rejection tests:** Symlink rejection tests use Unix-only POSIX `lstat` semantics
   (`std::os::unix::fs::symlink`). The `#[cfg(unix)]` arms in
   `dexios-domain/tests/path_identity.rs`, `dexios-domain/tests/cleanup_receipts.rs`,
-  `dexios-domain/tests/header_restore.rs`, and `dexios-domain/tests/keyslots_v1.rs` are
+  `dexios-domain/tests/header_restore.rs`, `dexios-domain/tests/keyslots_intent_v1.rs`,
+  and `dexios-domain/tests/keyslots_mutation_v1.rs` are
   excluded on Windows by design — this is the honest behaviour, not a test gap.
 
 - **Same-inode identity:** Unix same-inode identity uses the `(dev, ino)` pair from POSIX
@@ -128,7 +129,7 @@ identified in Phase 21 research. The verdict for each boundary:
 | Boundary | Existing Coverage | Proptest Adds Value? | Verdict |
 |----------|-------------------|---------------------|---------|
 | V1 header/AAD parse | `dexios-core/tests/stream_v1.rs` + `dexios-core/tests/v1_header.rs` + assurance-replay fixtures | Fixtures cover all legal/illegal discriminators exhaustively | Not justified — example tests sufficient |
-| KDF metadata parsing | `dexios-core/tests/key_derivation.rs`, `dexios-domain/tests/keyslots_v1.rs` | Known variants fully enumerated | Not justified — example tests sufficient |
+| KDF metadata parsing | `dexios-core/tests/key_derivation.rs`, `dexios-domain/tests/keyslots_crypto_v1.rs` | Known variants fully enumerated | Not justified — example tests sufficient |
 | Archive path normalization | `dexios-domain/tests/pack_paths.rs` (relative paths, traversal) + `dexios-domain/tests/path_identity.rs` | Property test could find novel traversal sequences | Not justified — `pack_paths.rs` and `path_identity.rs` already cover the known traversal cases |
 | Detached metadata | `dexios-domain/tests/detached_publication.rs` | Covers partial states by construction | Not justified — state machine is discrete |
 | Stream chunking boundaries | `dexios-core/tests/stream_v1.rs` boundary matrix, truncation/duplication tests | Very thorough existing boundary matrix | Not justified — example tests sufficient |

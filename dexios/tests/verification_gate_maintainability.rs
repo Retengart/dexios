@@ -36,8 +36,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios-domain/tests/workflow_public_api.rs",
         category: "domain workflow public API evidence",
         rationale: "Phase 25 carry-forward source/API authority evidence per D-12.",
-        current_lines: 1828,
-        cap: 1828,
+        current_lines: 1843,
+        cap: 1843,
     },
     FileSizeException {
         path: "dexios/tests/verification_gate_source.rs",
