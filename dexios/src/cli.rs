@@ -14,9 +14,7 @@ fn validate_autogenerate_words(words: &str) -> Result<String, String> {
     Ok(words.to_owned())
 }
 
-// this assembles the clap subcommands and arguments
-// it returns the ArgMatches so that a match statement can send everything to the correct place
-#[allow(clippy::too_many_lines)]
+// this assembles the clap subcommands and arguments for get_matches()
 pub fn build_cli() -> Command {
     Command::new("dexios")
         .version(clap::crate_version!())
