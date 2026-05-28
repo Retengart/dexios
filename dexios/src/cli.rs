@@ -1,6 +1,7 @@
 use clap::{Arg, ArgAction, Command};
 use core::key::PassphraseWordCount;
 
+mod args;
 pub mod prompt;
 
 fn validate_autogenerate_words(words: &str) -> Result<String, String> {
@@ -20,120 +21,32 @@ pub fn build_cli() -> Command {
     let encrypt = Command::new("encrypt")
         .short_flag('e')
         .about("Encrypt a file")
-        .arg(
-            Arg::new("input")
-                .value_name("input")
-                .action(ArgAction::Set)
-                .required(true)
-                .help("The file to encrypt"),
-        )
-        .arg(
-            Arg::new("output")
-                .value_name("output")
-                .action(ArgAction::Set)
-                .required(true)
-                .help("The output file"),
-        )
-        .arg(
-            Arg::new("keyfile")
-                .short('k')
-                .long("keyfile")
-                .value_name("file")
-                .action(ArgAction::Set)
-                .help("Use a keyfile instead of a password"),
-        )
-        .arg(
-            Arg::new("delete-input")
-                .long("delete-input")
-                .action(ArgAction::SetTrue)
-                .help("Delete the input file after a successful encrypt"),
-        )
-        .arg(
-            Arg::new("hash")
-                .short('H')
-                .long("hash")
-                .action(ArgAction::SetTrue)
-                .help("Return a BLAKE3 hash of the encrypted file"),
-        )
-        .arg(
-            Arg::new("autogenerate")
-                .long("auto")
-                .value_name("# of words")
-                .num_args(0..=1)
-                .default_missing_value("7")
-                .value_parser(validate_autogenerate_words)
-                .action(ArgAction::Set)
-                .require_equals(true)
-                .help("Autogenerate a passphrase (default is 7 words)")
-                .conflicts_with("keyfile"),
-        )
-        .arg(
-            Arg::new("header")
-                .long("header")
-                .value_name("file")
-                .action(ArgAction::Set)
-                .help("Store the header separately from the file"),
-        )
-        .arg(
-            Arg::new("force")
-                .short('f')
-                .long("force")
-                .action(ArgAction::SetTrue)
-                .help("Force all actions"),
-        );
+        .arg(args::input_arg("The file to encrypt"))
+        .arg(args::output_arg("The output file"))
+        .arg(args::keyfile_arg())
+        .arg(args::delete_input_arg(
+            "Delete the input file after a successful encrypt",
+        ))
+        .arg(args::hash_arg())
+        .arg(args::autogenerate_arg(
+            "Autogenerate a passphrase (default is 7 words)",
+            "keyfile",
+        ))
+        .arg(args::detached_header_output_arg())
+        .arg(args::force_arg());
 
     let decrypt = Command::new("decrypt")
         .short_flag('d')
         .about("Decrypt a file")
-        .arg(
-            Arg::new("input")
-                .value_name("input")
-                .action(ArgAction::Set)
-                .required(true)
-                .help("The file to decrypt"),
-        )
-        .arg(
-            Arg::new("output")
-                .value_name("output")
-                .action(ArgAction::Set)
-                .required(true)
-                .help("The output file"),
-        )
-        .arg(
-            Arg::new("keyfile")
-                .short('k')
-                .long("keyfile")
-                .value_name("file")
-                .action(ArgAction::Set)
-                .help("Use a keyfile instead of a password"),
-        )
-        .arg(
-            Arg::new("header")
-                .long("header")
-                .value_name("file")
-                .action(ArgAction::Set)
-                .help("Use a header file that was dumped"),
-        )
-        .arg(
-            Arg::new("delete-input")
-                .long("delete-input")
-                .action(ArgAction::SetTrue)
-                .help("Delete the input file after a successful decrypt"),
-        )
-        .arg(
-            Arg::new("hash")
-                .short('H')
-                .long("hash")
-                .action(ArgAction::SetTrue)
-                .help("Return a BLAKE3 hash of the encrypted file"),
-        )
-        .arg(
-            Arg::new("force")
-                .short('f')
-                .long("force")
-                .action(ArgAction::SetTrue)
-                .help("Force all actions"),
-        );
+        .arg(args::input_arg("The file to decrypt"))
+        .arg(args::output_arg("The output file"))
+        .arg(args::keyfile_arg())
+        .arg(args::detached_header_input_arg())
+        .arg(args::delete_input_arg(
+            "Delete the input file after a successful decrypt",
+        ))
+        .arg(args::hash_arg())
+        .arg(args::force_arg());
 
     Command::new("dexios")
         .version(clap::crate_version!())
@@ -155,240 +68,77 @@ pub fn build_cli() -> Command {
         )
         .subcommand(
             Command::new("pack")
-            .about("Pack and encrypt an entire directory")
-            .short_flag('p')
-            .arg(
-                Arg::new("input")
-                    .value_name("input")
-                    .action(ArgAction::Set)
-                    .num_args(1..)
-                    .required(true)
-                    .help("The directory to encrypt"),
-            )
-            .arg(
-                Arg::new("output")
-                    .value_name("output")
-                    .action(ArgAction::Set)
-                    .required(true)
-                    .help("The output file"),
-            )
-            .arg(
-                Arg::new("delete-source")
-                    .long("delete-source")
-                    .action(ArgAction::SetTrue)
-                    .help("Delete the source directories after a successful pack")
-            )
-            .arg(
-                Arg::new("verbose")
-                    .short('v')
-                    .long("verbose")
-                    .action(ArgAction::SetTrue)
-                    .help("Show a detailed output"),
-            )
-            .arg(
-                Arg::new("autogenerate")
-                    .long("auto")
-                    .value_name("# of words")
-                    .num_args(0..=1)
-                    .default_missing_value("7")
-                    .value_parser(validate_autogenerate_words)
-                    .action(ArgAction::Set)
-                    .require_equals(true)
-                    .help("Autogenerate a passphrase (default is 7 words)")
-                    .conflicts_with("keyfile"),
-            )
-            .arg(
-                Arg::new("header")
-                    .long("header")
-                    .value_name("file")
-                    .action(ArgAction::Set)
-                    .help("Store the header separately from the file"),
-            )
-            .arg(
-                Arg::new("recursive")
-                    .short('r')
-                    .long("recursive")
-                    .action(ArgAction::SetTrue)
-                    .help("Pack directories recursively (default behavior; retained for compatibility)"),
-            )
-            .arg(
-                Arg::new("keyfile")
-                    .short('k')
-                    .long("keyfile")
-                    .value_name("file")
-                    .action(ArgAction::Set)
-                    .help("Use a keyfile instead of a password"),
-            )
-            .arg(
-                Arg::new("hash")
-                    .short('H')
-                    .long("hash")
-                    .action(ArgAction::SetTrue)
-                    .help("Return a BLAKE3 hash of the encrypted file"),
-            )
-            .arg(
-                Arg::new("force")
-                    .short('f')
-                    .long("force")
-                    .action(ArgAction::SetTrue)
-                    .help("Force all actions"),
-            )
+                .about("Pack and encrypt an entire directory")
+                .short_flag('p')
+                .arg(
+                    Arg::new("input")
+                        .value_name("input")
+                        .action(ArgAction::Set)
+                        .num_args(1..)
+                        .required(true)
+                        .help("The directory to encrypt"),
+                )
+                .arg(args::output_arg("The output file"))
+                .arg(args::delete_source_arg())
+                .arg(args::verbose_arg())
+                .arg(args::autogenerate_arg(
+                    "Autogenerate a passphrase (default is 7 words)",
+                    "keyfile",
+                ))
+                .arg(args::detached_header_output_arg())
+                .arg(args::recursive_arg())
+                .arg(args::keyfile_arg())
+                .arg(args::hash_arg())
+                .arg(args::force_arg()),
         )
         .subcommand(
             Command::new("unpack")
                 .short_flag('u')
                 .about("Unpack a previously-packed file")
-                .arg(
-                    Arg::new("input")
-                        .value_name("input")
-                        .action(ArgAction::Set)
-                        .required(true)
-                        .help("The file to decrypt"),
-                )
-                .arg(
-                    Arg::new("output")
-                        .value_name("output")
-                        .action(ArgAction::Set)
-                        .required(true)
-                        .help("The output file"),
-                )
-                .arg(
-                    Arg::new("keyfile")
-                        .short('k')
-                        .long("keyfile")
-                        .value_name("file")
-                        .action(ArgAction::Set)
-                        .help("Use a keyfile instead of a password"),
-                )
-                .arg(
-                    Arg::new("header")
-                        .long("header")
-                        .value_name("file")
-                        .action(ArgAction::Set)
-                        .help("Use a header file that was dumped"),
-                )
-                .arg(
-                    Arg::new("delete-input")
-                        .long("delete-input")
-                        .action(ArgAction::SetTrue)
-                        .help("Delete the encrypted input after a successful unpack"),
-                )
-                .arg(
-                    Arg::new("verbose")
-                        .short('v')
-                        .long("verbose")
-                        .action(ArgAction::SetTrue)
-                        .help("Show a detailed output"),
-                )
-                .arg(
-                    Arg::new("hash")
-                        .short('H')
-                        .long("hash")
-                        .action(ArgAction::SetTrue)
-                        .help("Return a BLAKE3 hash of the encrypted file"),
-                )
-                .arg(
-                    Arg::new("force")
-                        .short('f')
-                        .long("force")
-                        .action(ArgAction::SetTrue)
-                        .help("Force all actions"),
-                )
+                .arg(args::input_arg("The file to decrypt"))
+                .arg(args::output_arg("The output file"))
+                .arg(args::keyfile_arg())
+                .arg(args::detached_header_input_arg())
+                .arg(args::delete_input_arg(
+                    "Delete the encrypted input after a successful unpack",
+                ))
+                .arg(args::verbose_arg())
+                .arg(args::hash_arg())
+                .arg(args::force_arg()),
         )
-        .subcommand(Command::new("key")
+        .subcommand(
+            Command::new("key")
                 .about("Manipulate keys within the header (for advanced users")
                 .subcommand_required(true)
                 .subcommand(
                     Command::new("change")
                         .about("Change an encrypted file's key")
                         .arg_required_else_help(true)
-                        .arg(
-                            Arg::new("input")
-                                .value_name("input")
-                                .action(ArgAction::Set)
-                                .required(true)
-                                .help("The encrypted file/header file"),
-                        )
-                        .arg(
-                            Arg::new("autogenerate")
-                                .long("auto")
-                                .value_name("# of words")
-                                .num_args(0..=1)
-                                .default_missing_value("7")
-                                .value_parser(validate_autogenerate_words)
-                                .action(ArgAction::Set)
-                                .require_equals(true)
-                                .help("Autogenerate a passphrase (default is 7 words)")
-                                .conflicts_with("keyfile-new"),
-                        )
-                        .arg(
-                            Arg::new("keyfile-old")
-                                .short('k')
-                                .long("keyfile-old")
-                                .value_name("file")
-                                .action(ArgAction::Set)
-                                .help("Use an old keyfile to decrypt the master key"),
-                        )
-                        .arg(
-                            Arg::new("keyfile-new")
-                                .short('n')
-                                .long("keyfile-new")
-                                .value_name("file")
-                                .action(ArgAction::Set)
-                                .help("Use a keyfile as the new key"),
-                        ),
+                        .arg(args::input_arg("The encrypted file/header file"))
+                        .arg(args::autogenerate_arg(
+                            "Autogenerate a passphrase (default is 7 words)",
+                            "keyfile-new",
+                        ))
+                        .arg(args::keyfile_old_arg())
+                        .arg(args::keyfile_new_arg()),
                 )
                 .subcommand(
                     Command::new("add")
                         .about("Add a key to an encrypted file")
                         .arg_required_else_help(true)
-                        .arg(
-                            Arg::new("input")
-                                .value_name("input")
-                                .action(ArgAction::Set)
-                                .required(true)
-                                .help("The encrypted file/header file"),
-                        )
-                        .arg(
-                            Arg::new("autogenerate")
-                                .long("auto")
-                                .value_name("# of words")
-                                .num_args(0..=1)
-                                .default_missing_value("7")
-                                .value_parser(validate_autogenerate_words)
-                                .action(ArgAction::Set)
-                                .require_equals(true)
-                                .help("Autogenerate a passphrase for the new key")
-                                .conflicts_with("keyfile-new"),
-                        )
-                        .arg(
-                            Arg::new("keyfile-old")
-                                .short('k')
-                                .long("keyfile-old")
-                                .value_name("file")
-                                .action(ArgAction::Set)
-                                .help("Use an old keyfile to decrypt the master key"),
-                        )
-                        .arg(
-                            Arg::new("keyfile-new")
-                                .short('n')
-                                .long("keyfile-new")
-                                .value_name("file")
-                                .action(ArgAction::Set)
-                                .help("Use a keyfile as the new key"),
-                        ),
+                        .arg(args::input_arg("The encrypted file/header file"))
+                        .arg(args::autogenerate_arg(
+                            "Autogenerate a passphrase for the new key",
+                            "keyfile-new",
+                        ))
+                        .arg(args::keyfile_old_arg())
+                        .arg(args::keyfile_new_arg()),
                 )
                 .subcommand(
                     Command::new("del")
                         .about("Delete a key from an encrypted file (for advanced users)")
                         .arg_required_else_help(true)
-                        .arg(
-                            Arg::new("input")
-                                .value_name("input")
-                                .action(ArgAction::Set)
-                                .required(true)
-                                .help("The encrypted file/header file"),
-                        )
+                        .arg(args::input_arg("The encrypted file/header file"))
                         .arg(
                             Arg::new("keyfile")
                                 .short('k')
@@ -402,13 +152,7 @@ pub fn build_cli() -> Command {
                     Command::new("verify")
                         .about("Verify that a key is correct")
                         .arg_required_else_help(true)
-                        .arg(
-                            Arg::new("input")
-                                .value_name("input")
-                                .action(ArgAction::Set)
-                                .required(true)
-                                .help("The encrypted file/header file"),
-                        )
+                        .arg(args::input_arg("The encrypted file/header file"))
                         .arg(
                             Arg::new("keyfile")
                                 .short('k')
@@ -417,8 +161,8 @@ pub fn build_cli() -> Command {
                                 .action(ArgAction::Set)
                                 .help("Verify a keyfile"),
                         ),
-                )
-         )
+                ),
+        )
         .subcommand(
             Command::new("header")
                 .about("Manipulate encrypted headers (for advanced users)")
@@ -427,84 +171,30 @@ pub fn build_cli() -> Command {
                     Command::new("dump")
                         .about("Dump a header")
                         .arg_required_else_help(true)
-                        .arg(
-                            Arg::new("input")
-                                .value_name("input")
-                                .action(ArgAction::Set)
-                                .required(true)
-                                .help("The encrypted file"),
-                        )
-                        .arg(
-                            Arg::new("output")
-                                .value_name("output")
-                                .action(ArgAction::Set)
-                                .required(true)
-                                .help("The output file"),
-                        )
-                        .arg(
-                            Arg::new("force")
-                                .short('f')
-                                .long("force")
-                                .action(ArgAction::SetTrue)
-                                .help("Force all actions"),
-                        ),
+                        .arg(args::input_arg("The encrypted file"))
+                        .arg(args::output_arg("The output file"))
+                        .arg(args::force_arg()),
                 )
                 .subcommand(
                     Command::new("restore")
                         .about("Restore a header")
                         .arg_required_else_help(true)
-                        .arg(
-                            Arg::new("input")
-                                .value_name("input")
-                                .action(ArgAction::Set)
-                                .required(true)
-                                .help("The dumped header file"),
-                        )
-                        .arg(
-                            Arg::new("output")
-                                .value_name("output")
-                                .action(ArgAction::Set)
-                                .required(true)
-                                .help("The encrypted file"),
-                        )
-                        .arg(
-                            Arg::new("force")
-                                .short('f')
-                                .long("force")
-                                .action(ArgAction::SetTrue)
-                                .help("Force all actions"),
-                        ),
+                        .arg(args::input_arg("The dumped header file"))
+                        .arg(args::output_arg("The encrypted file"))
+                        .arg(args::force_arg()),
                 )
                 .subcommand(
                     Command::new("strip")
                         .about("Strip a header")
                         .arg_required_else_help(true)
-                        .arg(
-                            Arg::new("input")
-                                .value_name("input")
-                                .action(ArgAction::Set)
-                                .required(true)
-                                .help("The encrypted file"),
-                        )
-                        .arg(
-                            Arg::new("force")
-                                .short('f')
-                                .long("force")
-                                .action(ArgAction::SetTrue)
-                                .help("Force all actions"),
-                        ),
+                        .arg(args::input_arg("The encrypted file"))
+                        .arg(args::force_arg()),
                 )
                 .subcommand(
                     Command::new("details")
                         .about("Show details of a header")
                         .arg_required_else_help(true)
-                        .arg(
-                            Arg::new("input")
-                                .value_name("input")
-                                .action(ArgAction::Set)
-                                .required(true)
-                                .help("The encrypted/header file"),
-                        ),
+                        .arg(args::input_arg("The encrypted/header file")),
                 ),
         )
 }
