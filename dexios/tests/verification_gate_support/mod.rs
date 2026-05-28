@@ -8,17 +8,23 @@ pub(crate) const SPEC_FORMAT_REFERENCE: &str = include_str!("../../../spec/dexio
 pub(crate) const USAGE_EXAMPLES: &str = include_str!("../../../book/src/Usage-Examples.md");
 pub(crate) const DIRECTORY_PACKING: &str =
     include_str!("../../../book/src/technical-details/Directory-Packing.md");
-pub(crate) const SECURE_ERASE: &str = include_str!("../../../book/src/technical-details/Secure-Erase.md");
-pub(crate) const GENERATED_SAFETY_CONTRACT: &str = include_str!("../../../docs/Safety-Contract.html");
+pub(crate) const SECURE_ERASE: &str =
+    include_str!("../../../book/src/technical-details/Secure-Erase.md");
+pub(crate) const GENERATED_SAFETY_CONTRACT: &str =
+    include_str!("../../../docs/Safety-Contract.html");
 pub(crate) const GENERATED_DIRECTORY_PACKING: &str =
     include_str!("../../../docs/technical-details/Directory-Packing.html");
-pub(crate) const GENERATED_SECURE_ERASE: &str = include_str!("../../../docs/technical-details/Secure-Erase.html");
-pub(crate) const INSTALLING_AND_BUILDING: &str = include_str!("../../../book/src/Installing-and-Building.md");
+pub(crate) const GENERATED_SECURE_ERASE: &str =
+    include_str!("../../../docs/technical-details/Secure-Erase.html");
+pub(crate) const INSTALLING_AND_BUILDING: &str =
+    include_str!("../../../book/src/Installing-and-Building.md");
 pub(crate) const AUDITING: &str = include_str!("../../../book/src/dexios-core/Auditing.md");
 pub(crate) const HEADERS: &str = include_str!("../../../book/src/dexios-core/Headers.md");
 pub(crate) const ENCRYPTION: &str = include_str!("../../../book/src/dexios-core/Encryption.md");
-pub(crate) const PASSWORD_HASHING: &str = include_str!("../../../book/src/dexios-core/Password-Hashing.md");
-pub(crate) const PROTECTED_WRAPPER: &str = include_str!("../../../book/src/dexios-core/Protected-Wrapper.md");
+pub(crate) const PASSWORD_HASHING: &str =
+    include_str!("../../../book/src/dexios-core/Password-Hashing.md");
+pub(crate) const PROTECTED_WRAPPER: &str =
+    include_str!("../../../book/src/dexios-core/Protected-Wrapper.md");
 pub(crate) const KEYS: &str = include_str!("../../../book/src/technical-details/Keys.md");
 pub(crate) const SECURITY_MD: &str = include_str!("../../../SECURITY.md");
 pub(crate) const SECURITY_POLICY: &str = include_str!("../../../book/src/Security-Policy.md");
@@ -31,22 +37,33 @@ pub(crate) const DEXIOS_CARGO_TOML: &str = include_str!("../../../dexios/Cargo.t
 pub(crate) const GITIGNORE: &str = include_str!("../../../.gitignore");
 pub(crate) const DENY_TOML: &str = include_str!("../../../deny.toml");
 pub(crate) const VERIFY_PHASE_GATE: &str = include_str!("../../../scripts/verify_phase_gate.sh");
-pub(crate) const VERIFY_ASSURANCE_REPLAY: &str = include_str!("../../../scripts/verify_assurance_replay.sh");
+pub(crate) const VERIFY_ASSURANCE_REPLAY: &str =
+    include_str!("../../../scripts/verify_assurance_replay.sh");
 pub(crate) const VERIFY_CLI_SURFACE: &str = include_str!("../../../scripts/verify_cli_surface.sh");
-pub(crate) const VERIFY_REPO_HYGIENE: &str = include_str!("../../../scripts/verify_repo_hygiene.sh");
-pub(crate) const MEASURE_PERFORMANCE_GATE: &str = include_str!("../../../scripts/measure_performance_gate.sh");
-pub(crate) const GENERATE_RELEASE_MANIFEST: &str = include_str!("../../../scripts/generate_release_manifest.sh");
-pub(crate) const DEXIOS_CORE_STREAM_V1_TESTS: &str = include_str!("../../../dexios-core/tests/stream_v1.rs");
-pub(crate) const DEXIOS_CORE_V1_HEADER_TESTS: &str = include_str!("../../../dexios-core/tests/v1_header.rs");
+pub(crate) const VERIFY_REPO_HYGIENE: &str =
+    include_str!("../../../scripts/verify_repo_hygiene.sh");
+pub(crate) const MEASURE_PERFORMANCE_GATE: &str =
+    include_str!("../../../scripts/measure_performance_gate.sh");
+pub(crate) const GENERATE_RELEASE_MANIFEST: &str =
+    include_str!("../../../scripts/generate_release_manifest.sh");
+pub(crate) const DEXIOS_CORE_STREAM_V1_TESTS: &str =
+    include_str!("../../../dexios-core/tests/stream_v1.rs");
+pub(crate) const DEXIOS_CORE_V1_HEADER_TESTS: &str =
+    include_str!("../../../dexios-core/tests/v1_header.rs");
 pub(crate) const DEXIOS_DOMAIN_DECRYPT_WORKFLOW_ERROR_TESTS: &str =
     include_str!("../../../dexios-domain/tests/decrypt_workflow_errors.rs");
 pub(crate) const DEXIOS_DOMAIN_PACK_PATHS_TESTS: &str =
     include_str!("../../../dexios-domain/tests/pack_paths.rs");
-pub(crate) const DEXIOS_DOMAIN_UNPACK_TESTS: &str = include_str!("../../../dexios-domain/tests/unpack.rs");
-pub(crate) const DEXIOS_ENCRYPT_CLI_REGRESSION_TESTS: &str = include_str!("../encrypt_cli_regressions.rs");
-pub(crate) const DEXIOS_PACK_CLI_REGRESSION_TESTS: &str = include_str!("../pack_cli_regressions.rs");
-pub(crate) const DEXIOS_DECRYPT_CLI_REGRESSION_TESTS: &str = include_str!("../decrypt_cli_regressions.rs");
-pub(crate) const DEXIOS_UNPACK_CLI_REGRESSION_TESTS: &str = include_str!("../unpack_cli_regressions.rs");
+pub(crate) const DEXIOS_DOMAIN_UNPACK_TESTS: &str =
+    include_str!("../../../dexios-domain/tests/unpack.rs");
+pub(crate) const DEXIOS_ENCRYPT_CLI_REGRESSION_TESTS: &str =
+    include_str!("../encrypt_cli_regressions.rs");
+pub(crate) const DEXIOS_PACK_CLI_REGRESSION_TESTS: &str =
+    include_str!("../pack_cli_regressions.rs");
+pub(crate) const DEXIOS_DECRYPT_CLI_REGRESSION_TESTS: &str =
+    include_str!("../decrypt_cli_regressions.rs");
+pub(crate) const DEXIOS_UNPACK_CLI_REGRESSION_TESTS: &str =
+    include_str!("../unpack_cli_regressions.rs");
 pub(crate) const DEXIOS_DELETE_SOURCE_CLI_TESTS: &str = include_str!("../delete_source_cli.rs");
 pub(crate) const DEXIOS_CORE_FIXTURE_MANIFEST: &str =
     include_str!("../../../dexios-core/tests/testdata/fixture_manifest.toml");
@@ -57,39 +74,55 @@ pub(crate) const DEXIOS_MAIN_RS: &str = include_str!("../../src/main.rs");
 pub(crate) const DEXIOS_CLI_RS: &str = include_str!("../../src/cli.rs");
 pub(crate) const DEXIOS_CLI_ARGS_RS: &str = include_str!("../../src/cli/args.rs");
 pub(crate) const DEXIOS_CLI_TESTS_RS: &str = include_str!("../../src/cli/tests.rs");
-pub(crate) const DEXIOS_CLI_COMMANDS_STREAM_RS: &str = include_str!("../../src/cli/commands/stream.rs");
-pub(crate) const DEXIOS_CLI_COMMANDS_ARCHIVE_RS: &str = include_str!("../../src/cli/commands/archive.rs");
+pub(crate) const DEXIOS_CLI_COMMANDS_STREAM_RS: &str =
+    include_str!("../../src/cli/commands/stream.rs");
+pub(crate) const DEXIOS_CLI_COMMANDS_ARCHIVE_RS: &str =
+    include_str!("../../src/cli/commands/archive.rs");
 pub(crate) const DEXIOS_CLI_COMMANDS_HASH_RS: &str = include_str!("../../src/cli/commands/hash.rs");
 pub(crate) const DEXIOS_CLI_COMMANDS_KEY_RS: &str = include_str!("../../src/cli/commands/key.rs");
-pub(crate) const DEXIOS_CLI_COMMANDS_HEADER_RS: &str = include_str!("../../src/cli/commands/header.rs");
+pub(crate) const DEXIOS_CLI_COMMANDS_HEADER_RS: &str =
+    include_str!("../../src/cli/commands/header.rs");
 pub(crate) const DEXIOS_GLOBAL_RS: &str = include_str!("../../src/global.rs");
 pub(crate) const DEXIOS_PARAMETERS_RS: &str = include_str!("../../src/global/parameters.rs");
 pub(crate) const DEXIOS_STATES_RS: &str = include_str!("../../src/global/states.rs");
 pub(crate) const DEXIOS_ENCRYPT_RS: &str = include_str!("../../src/subcommands/encrypt.rs");
 pub(crate) const DEXIOS_DECRYPT_RS: &str = include_str!("../../src/subcommands/decrypt.rs");
 pub(crate) const DEXIOS_UNPACK_RS: &str = include_str!("../../src/subcommands/unpack.rs");
-pub(crate) const DEXIOS_SUBCOMMAND_ERRORS_RS: &str = include_str!("../../src/subcommands/errors.rs");
+pub(crate) const DEXIOS_SUBCOMMAND_ERRORS_RS: &str =
+    include_str!("../../src/subcommands/errors.rs");
 pub(crate) const DEXIOS_CORE_LIB_RS: &str = include_str!("../../../dexios-core/src/lib.rs");
 pub(crate) const DEXIOS_CORE_KEY_RS: &str = include_str!("../../../dexios-core/src/key.rs");
-pub(crate) const DEXIOS_CORE_PROTECTED_RS: &str = include_str!("../../../dexios-core/src/protected.rs");
+pub(crate) const DEXIOS_CORE_PROTECTED_RS: &str =
+    include_str!("../../../dexios-core/src/protected.rs");
 pub(crate) const DEXIOS_CORE_STREAM_RS: &str = include_str!("../../../dexios-core/src/stream.rs");
 pub(crate) const DEXIOS_DOMAIN_LIB_RS: &str = include_str!("../../../dexios-domain/src/lib.rs");
 pub(crate) const DEXIOS_DOMAIN_WORKFLOW_ERROR_RS: &str =
     include_str!("../../../dexios-domain/src/workflow_error.rs");
-pub(crate) const DEXIOS_DOMAIN_ARCHIVE_RS: &str = include_str!("../../../dexios-domain/src/archive.rs");
-pub(crate) const DEXIOS_DOMAIN_ENCRYPT_RS: &str = include_str!("../../../dexios-domain/src/encrypt.rs");
+pub(crate) const DEXIOS_DOMAIN_ARCHIVE_RS: &str =
+    include_str!("../../../dexios-domain/src/archive.rs");
+pub(crate) const DEXIOS_DOMAIN_ENCRYPT_RS: &str =
+    include_str!("../../../dexios-domain/src/encrypt.rs");
 pub(crate) const DEXIOS_DOMAIN_PACK_RS: &str = include_str!("../../../dexios-domain/src/pack.rs");
-pub(crate) const DEXIOS_DOMAIN_DECRYPT_RS: &str = include_str!("../../../dexios-domain/src/decrypt.rs");
-pub(crate) const DEXIOS_DOMAIN_UNPACK_RS: &str = include_str!("../../../dexios-domain/src/unpack.rs");
-pub(crate) const DEXIOS_DOMAIN_IDENTITY_RS: &str = include_str!("../../../dexios-domain/src/storage/identity.rs");
-pub(crate) const DEXIOS_DOMAIN_STORAGE_RS: &str = include_str!("../../../dexios-domain/src/storage/mod.rs");
-pub(crate) const DEXIOS_DOMAIN_MUTATION_RS: &str = include_str!("../../../dexios-domain/src/storage/mutation.rs");
-pub(crate) const DEXIOS_DOMAIN_CLEANUP_RS: &str = include_str!("../../../dexios-domain/src/storage/cleanup.rs");
+pub(crate) const DEXIOS_DOMAIN_DECRYPT_RS: &str =
+    include_str!("../../../dexios-domain/src/decrypt.rs");
+pub(crate) const DEXIOS_DOMAIN_UNPACK_RS: &str =
+    include_str!("../../../dexios-domain/src/unpack.rs");
+pub(crate) const DEXIOS_DOMAIN_IDENTITY_RS: &str =
+    include_str!("../../../dexios-domain/src/storage/identity.rs");
+pub(crate) const DEXIOS_DOMAIN_STORAGE_RS: &str =
+    include_str!("../../../dexios-domain/src/storage/mod.rs");
+pub(crate) const DEXIOS_DOMAIN_MUTATION_RS: &str =
+    include_str!("../../../dexios-domain/src/storage/mutation.rs");
+pub(crate) const DEXIOS_DOMAIN_CLEANUP_RS: &str =
+    include_str!("../../../dexios-domain/src/storage/cleanup.rs");
 pub(crate) const DEXIOS_DOMAIN_TRANSACTION_RS: &str =
     include_str!("../../../dexios-domain/src/storage/transaction.rs");
-pub(crate) const DEXIOS_DOMAIN_TEMP_RS: &str = include_str!("../../../dexios-domain/src/storage/temp.rs");
-pub(crate) const DEXIOS_DOMAIN_HEADER_RS: &str = include_str!("../../../dexios-domain/src/header.rs");
-pub(crate) const DEXIOS_DOMAIN_HEADER_STRIP_RS: &str = include_str!("../../../dexios-domain/src/header/strip.rs");
+pub(crate) const DEXIOS_DOMAIN_TEMP_RS: &str =
+    include_str!("../../../dexios-domain/src/storage/temp.rs");
+pub(crate) const DEXIOS_DOMAIN_HEADER_RS: &str =
+    include_str!("../../../dexios-domain/src/header.rs");
+pub(crate) const DEXIOS_DOMAIN_HEADER_STRIP_RS: &str =
+    include_str!("../../../dexios-domain/src/header/strip.rs");
 pub(crate) const DEXIOS_DOMAIN_HEADER_RESTORE_RS: &str =
     include_str!("../../../dexios-domain/src/header/restore.rs");
 pub(crate) const DEXIOS_DOMAIN_KEY_RS: &str = include_str!("../../../dexios-domain/src/key.rs");
@@ -99,7 +132,8 @@ pub(crate) const DEXIOS_DOMAIN_TRANSACTION_TESTS: &str =
     include_str!("../../../dexios-domain/tests/transactions.rs");
 pub(crate) const DEXIOS_DOMAIN_HEADER_RESTORE_TESTS: &str =
     include_str!("../../../dexios-domain/tests/header_restore.rs");
-pub(crate) const DEXIOS_DOMAIN_KEYSLOTS_TESTS: &str = include_str!("../../../dexios-domain/tests/keyslots_v1.rs");
+pub(crate) const DEXIOS_DOMAIN_KEYSLOTS_TESTS: &str =
+    include_str!("../../../dexios-domain/tests/keyslots_v1.rs");
 pub(crate) const DEXIOS_DOMAIN_CLEANUP_RECEIPTS_TESTS: &str =
     include_str!("../../../dexios-domain/tests/cleanup_receipts.rs");
 pub(crate) const DEXIOS_DOMAIN_DETACHED_PUBLICATION_TESTS: &str =
@@ -111,18 +145,24 @@ pub(crate) const DEXIOS_DOMAIN_WORKFLOW_PUBLIC_API_TESTS: &str =
 pub(crate) const DEXIOS_DOMAIN_ARCHIVE_PUBLIC_API_TESTS: &str =
     include_str!("../../../dexios-domain/tests/archive_public_api.rs");
 pub(crate) const DEXIOS_WORKFLOW_ERROR_CLI_TESTS: &str = include_str!("../workflow_error_cli.rs");
-pub(crate) const DEXIOS_HEADER_CLI_REGRESSION_TESTS: &str = include_str!("../header_cli_regressions.rs");
+pub(crate) const DEXIOS_HEADER_CLI_REGRESSION_TESTS: &str =
+    include_str!("../header_cli_regressions.rs");
 pub(crate) const DEXIOS_KEY_CLI_REGRESSION_TESTS: &str = include_str!("../key_cli_regressions.rs");
 pub(crate) const DEXIOS_SUBCOMMANDS_RS: &str = include_str!("../../src/subcommands.rs");
 pub(crate) const DEXIOS_PACK_RS: &str = include_str!("../../src/subcommands/pack.rs");
 pub(crate) const AUDIT_WORKFLOW: &str = include_str!("../../../.github/workflows/audit.yml");
-pub(crate) const BUILD_NIX_WORKFLOW: &str = include_str!("../../../.github/workflows/build_nix.yml");
-pub(crate) const CARGO_BUILD_WORKFLOW: &str = include_str!("../../../.github/workflows/cargo-build.yml");
-pub(crate) const CLI_SURFACE_WORKFLOW: &str = include_str!("../../../.github/workflows/cli-surface.yml");
+pub(crate) const BUILD_NIX_WORKFLOW: &str =
+    include_str!("../../../.github/workflows/build_nix.yml");
+pub(crate) const CARGO_BUILD_WORKFLOW: &str =
+    include_str!("../../../.github/workflows/cargo-build.yml");
+pub(crate) const CLI_SURFACE_WORKFLOW: &str =
+    include_str!("../../../.github/workflows/cli-surface.yml");
 pub(crate) const DOCS_WORKFLOW: &str = include_str!("../../../.github/workflows/docs.yml");
-pub(crate) const DEXIOS_TESTS_WORKFLOW: &str = include_str!("../../../.github/workflows/dexios-tests.yml");
+pub(crate) const DEXIOS_TESTS_WORKFLOW: &str =
+    include_str!("../../../.github/workflows/dexios-tests.yml");
 pub(crate) const RELEASE_WORKFLOW: &str = include_str!("../../../.github/workflows/release.yml");
-pub(crate) const UNIT_TESTS_WORKFLOW: &str = include_str!("../../../.github/workflows/unit_tests.yml");
+pub(crate) const UNIT_TESTS_WORKFLOW: &str =
+    include_str!("../../../.github/workflows/unit_tests.yml");
 pub(crate) const PERFORMANCE_NOTES: &str =
     include_str!("../../../book/src/technical-details/Performance-Notes.md");
 pub(crate) const RC_CLOSEOUT: &str = include_str!("../../../release-evidence/RC-CLOSEOUT.md");
@@ -470,7 +510,10 @@ pub(crate) fn phase15_platform_parity_issues(
     issues
 }
 
-pub(crate) fn phase15_cleanup_authorization_issues(_source_name: &str, source: &str) -> Vec<&'static str> {
+pub(crate) fn phase15_cleanup_authorization_issues(
+    _source_name: &str,
+    source: &str,
+) -> Vec<&'static str> {
     let normalized = source.to_ascii_lowercase();
     let mut issues = Vec::new();
 
@@ -498,7 +541,11 @@ pub(crate) fn assert_all_contains(source_name: &str, source: &str, needles: &[&s
     }
 }
 
-pub(crate) fn assert_non_comment_lines_exclude(source_name: &str, source: &str, forbidden: &[&str]) {
+pub(crate) fn assert_non_comment_lines_exclude(
+    source_name: &str,
+    source: &str,
+    forbidden: &[&str],
+) {
     for (line_number, line) in source.lines().enumerate() {
         if !is_non_comment_line(line) {
             continue;
@@ -561,7 +608,11 @@ pub(crate) fn normalized_rust_production_section(
     normalized_rust_production_source(&source[start_index..end_index])
 }
 
-pub(crate) fn assert_rust_production_source_excludes(source_name: &str, source: &str, forbidden: &[&str]) {
+pub(crate) fn assert_rust_production_source_excludes(
+    source_name: &str,
+    source: &str,
+    forbidden: &[&str],
+) {
     let normalized = normalized_rust_production_source(source);
 
     for needle in forbidden {
@@ -641,7 +692,11 @@ pub(crate) fn normalized_section_order_indices(
     indices
 }
 
-pub(crate) fn assert_normalized_section_order(source_name: &str, normalized: &str, expected_order: &[&str]) {
+pub(crate) fn assert_normalized_section_order(
+    source_name: &str,
+    normalized: &str,
+    expected_order: &[&str],
+) {
     normalized_section_order_indices(source_name, normalized, expected_order);
 }
 
@@ -674,7 +729,11 @@ pub(crate) fn assert_corpus_contains(corpus_name: &str, sources: &[(&str, &str)]
     );
 }
 
-pub(crate) fn assert_corpus_markdown_text_contains(corpus_name: &str, sources: &[(&str, &str)], needle: &str) {
+pub(crate) fn assert_corpus_markdown_text_contains(
+    corpus_name: &str,
+    sources: &[(&str, &str)],
+    needle: &str,
+) {
     assert!(
         sources
             .iter()
@@ -701,7 +760,12 @@ pub(crate) fn assert_occurs_before(source_name: &str, source: &str, earlier: &st
     );
 }
 
-pub(crate) fn assert_non_comment_line_count(source_name: &str, source: &str, needle: &str, expected: usize) {
+pub(crate) fn assert_non_comment_line_count(
+    source_name: &str,
+    source: &str,
+    needle: &str,
+    expected: usize,
+) {
     let count = source
         .lines()
         .filter(|line| is_non_comment_line(line) && line.trim() == needle)
@@ -763,7 +827,12 @@ pub(crate) fn required_manifest_field<'a>(
     value
 }
 
-pub(crate) fn assert_manifest_row(source_name: &str, rows: &[toml::Value], row_id: &str, requirement: &str) {
+pub(crate) fn assert_manifest_row(
+    source_name: &str,
+    rows: &[toml::Value],
+    row_id: &str,
+    requirement: &str,
+) {
     let matches = rows
         .iter()
         .filter(|row| row.get("id").and_then(|value| value.as_str()) == Some(row_id))
@@ -814,13 +883,21 @@ pub(crate) fn assert_manifest_row(source_name: &str, rows: &[toml::Value], row_i
     );
 }
 
-pub(crate) fn assert_manifest_has_no_dependency_package(source_name: &str, source: &str, package: &str) {
+pub(crate) fn assert_manifest_has_no_dependency_package(
+    source_name: &str,
+    source: &str,
+    package: &str,
+) {
     let manifest: toml::Value =
         toml::from_str(source).unwrap_or_else(|error| panic!("{source_name} must parse: {error}"));
     inspect_manifest_tables_for_package(source_name, &manifest, package);
 }
 
-pub(crate) fn inspect_manifest_tables_for_package(source_name: &str, value: &toml::Value, package: &str) {
+pub(crate) fn inspect_manifest_tables_for_package(
+    source_name: &str,
+    value: &toml::Value,
+    package: &str,
+) {
     let Some(table) = value.as_table() else {
         return;
     };
@@ -837,7 +914,11 @@ pub(crate) fn inspect_manifest_tables_for_package(source_name: &str, value: &tom
     }
 }
 
-pub(crate) fn inspect_dependency_table_for_package(source_name: &str, value: &toml::Value, package: &str) {
+pub(crate) fn inspect_dependency_table_for_package(
+    source_name: &str,
+    value: &toml::Value,
+    package: &str,
+) {
     let Some(table) = value.as_table() else {
         return;
     };
@@ -881,4 +962,3 @@ pub(crate) fn is_non_comment_line(line: &str) -> bool {
     let trimmed = line.trim_start();
     !trimmed.is_empty() && !trimmed.starts_with('#')
 }
-
