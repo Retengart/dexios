@@ -3,6 +3,8 @@ const CLI_RS: &str = include_str!("../cli.rs");
 const CLI_STREAM_COMMANDS_RS: &str = include_str!("commands/stream.rs");
 const CLI_ARCHIVE_COMMANDS_RS: &str = include_str!("commands/archive.rs");
 const CLI_HASH_COMMANDS_RS: &str = include_str!("commands/hash.rs");
+const CLI_KEY_COMMANDS_RS: &str = include_str!("commands/key.rs");
+const CLI_HEADER_COMMANDS_RS: &str = include_str!("commands/header.rs");
 
 fn parse_ok<const N: usize>(args: [&str; N]) -> clap::ArgMatches {
     super::build_cli()
@@ -148,6 +150,59 @@ fn top_level_command_builders_are_split_by_family() {
         assert!(
             CLI_RS.contains(ordered_call),
             "build_cli() must assemble top-level commands through {ordered_call}"
+        );
+    }
+}
+
+#[test]
+fn nested_command_builders_are_split_by_family() {
+    assert!(CLI_KEY_COMMANDS_RS.contains("fn key_command() -> Command"));
+    for required in [
+        "Command::new(\"key\")",
+        "Command::new(\"change\")",
+        "Command::new(\"add\")",
+        "Command::new(\"del\")",
+        "Command::new(\"verify\")",
+        "args::keyfile_old_arg()",
+        "args::keyfile_new_arg()",
+        "args::keyfile_arg()",
+        "conflicts_with(\"keyfile-new\")",
+    ] {
+        assert!(
+            CLI_KEY_COMMANDS_RS.contains(required),
+            "dexios/src/cli/commands/key.rs must contain {required:?}"
+        );
+    }
+
+    assert!(CLI_HEADER_COMMANDS_RS.contains("fn header_command() -> Command"));
+    for required in [
+        "Command::new(\"header\")",
+        "Command::new(\"dump\")",
+        "Command::new(\"restore\")",
+        "Command::new(\"strip\")",
+        "Command::new(\"details\")",
+        "args::force_arg()",
+    ] {
+        assert!(
+            CLI_HEADER_COMMANDS_RS.contains(required),
+            "dexios/src/cli/commands/header.rs must contain {required:?}"
+        );
+    }
+
+    for ordered_call in [
+        "commands::key::key_command()",
+        "commands::header::header_command()",
+    ] {
+        assert!(
+            CLI_RS.contains(ordered_call),
+            "build_cli() must assemble nested commands through {ordered_call}"
+        );
+    }
+
+    for moved_builder in ["Command::new(\"key\")", "Command::new(\"header\")"] {
+        assert!(
+            !CLI_RS.contains(moved_builder),
+            "build_cli() should not inline nested builder {moved_builder:?}"
         );
     }
 }
