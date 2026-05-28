@@ -7,6 +7,7 @@ use clap::ArgMatches;
 use core::protected::Protected;
 
 use crate::cli::prompt::get_password;
+use crate::global::parameters::get_optional_param;
 use crate::warn;
 use core::key::{PassphraseWordCount, generate_passphrase};
 
@@ -177,16 +178,8 @@ impl Key {
         params: &KeyParams,
         keyfile_descriptor: &str,
     ) -> Result<Self> {
-        let keyfile = sub_matches
-            .try_get_one::<String>(keyfile_descriptor)
-            .ok()
-            .flatten()
-            .map(String::as_str);
-        let autogenerate = sub_matches
-            .try_get_one::<String>("autogenerate")
-            .ok()
-            .flatten()
-            .map(String::as_str);
+        let keyfile = get_optional_param(keyfile_descriptor, sub_matches)?;
+        let autogenerate = get_optional_param("autogenerate", sub_matches)?;
 
         Self::resolve_key_source(
             keyfile,
