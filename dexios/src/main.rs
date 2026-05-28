@@ -31,8 +31,8 @@ enum CliRoute<'a> {
     Pack(&'a ArgMatches),
     Unpack(&'a ArgMatches),
     Hash(&'a ArgMatches),
-    Header(&'a ArgMatches),
-    Key(&'a ArgMatches),
+    Header(HeaderRoute<'a>),
+    Key(KeyRoute<'a>),
 }
 
 impl<'a> CliRoute<'a> {
@@ -43,8 +43,10 @@ impl<'a> CliRoute<'a> {
             Some(("pack", sub_matches)) => Ok(Self::Pack(sub_matches)),
             Some(("unpack", sub_matches)) => Ok(Self::Unpack(sub_matches)),
             Some(("hash", sub_matches)) => Ok(Self::Hash(sub_matches)),
-            Some(("header", sub_matches)) => Ok(Self::Header(sub_matches)),
-            Some(("key", sub_matches)) => Ok(Self::Key(sub_matches)),
+            Some(("header", sub_matches)) => {
+                Ok(Self::Header(HeaderRoute::from_matches(sub_matches)?))
+            }
+            Some(("key", sub_matches)) => Ok(Self::Key(KeyRoute::from_matches(sub_matches)?)),
             Some((name, _)) => anyhow::bail!(
                 "internal CLI adapter error: unsupported top-level command '{name}' after clap validation"
             ),
@@ -61,29 +63,77 @@ impl<'a> CliRoute<'a> {
             Self::Pack(sub_matches) => subcommands::pack(sub_matches),
             Self::Unpack(sub_matches) => subcommands::unpack(sub_matches),
             Self::Hash(sub_matches) => subcommands::hash_stream(sub_matches),
-            Self::Header(sub_matches) => dispatch_header(sub_matches),
-            Self::Key(sub_matches) => dispatch_key(sub_matches),
+            Self::Header(route) => route.dispatch(),
+            Self::Key(route) => route.dispatch(),
         }
     }
 }
 
-fn dispatch_header(sub_matches: &ArgMatches) -> Result<()> {
-    match sub_matches.subcommand() {
-        Some(("dump", _)) => subcommands::header_dump(sub_matches),
-        Some(("restore", _)) => subcommands::header_restore(sub_matches),
-        Some(("strip", _)) => subcommands::header_strip(sub_matches),
-        Some(("details", _)) => subcommands::header_details(sub_matches),
-        _ => Ok(()),
+#[derive(Debug)]
+enum HeaderRoute<'a> {
+    Dump(&'a ArgMatches),
+    Restore(&'a ArgMatches),
+    Strip(&'a ArgMatches),
+    Details(&'a ArgMatches),
+}
+
+impl<'a> HeaderRoute<'a> {
+    fn from_matches(matches: &'a ArgMatches) -> Result<Self> {
+        match matches.subcommand() {
+            Some(("dump", sub_matches)) => Ok(Self::Dump(sub_matches)),
+            Some(("restore", sub_matches)) => Ok(Self::Restore(sub_matches)),
+            Some(("strip", sub_matches)) => Ok(Self::Strip(sub_matches)),
+            Some(("details", sub_matches)) => Ok(Self::Details(sub_matches)),
+            Some((name, _)) => anyhow::bail!(
+                "internal CLI adapter error: unsupported header command '{name}' after clap validation"
+            ),
+            None => anyhow::bail!(
+                "internal CLI adapter error: missing header command after clap validation"
+            ),
+        }
+    }
+
+    fn dispatch(self) -> Result<()> {
+        match self {
+            Self::Dump(sub_matches) => subcommands::header_dump(sub_matches),
+            Self::Restore(sub_matches) => subcommands::header_restore(sub_matches),
+            Self::Strip(sub_matches) => subcommands::header_strip(sub_matches),
+            Self::Details(sub_matches) => subcommands::header_details(sub_matches),
+        }
     }
 }
 
-fn dispatch_key(sub_matches: &ArgMatches) -> Result<()> {
-    match sub_matches.subcommand() {
-        Some(("change", _)) => subcommands::key_change(sub_matches),
-        Some(("add", _)) => subcommands::key_add(sub_matches),
-        Some(("del", _)) => subcommands::key_del(sub_matches),
-        Some(("verify", _)) => subcommands::key_verify(sub_matches),
-        _ => Ok(()),
+#[derive(Debug)]
+enum KeyRoute<'a> {
+    Change(&'a ArgMatches),
+    Add(&'a ArgMatches),
+    Del(&'a ArgMatches),
+    Verify(&'a ArgMatches),
+}
+
+impl<'a> KeyRoute<'a> {
+    fn from_matches(matches: &'a ArgMatches) -> Result<Self> {
+        match matches.subcommand() {
+            Some(("change", sub_matches)) => Ok(Self::Change(sub_matches)),
+            Some(("add", sub_matches)) => Ok(Self::Add(sub_matches)),
+            Some(("del", sub_matches)) => Ok(Self::Del(sub_matches)),
+            Some(("verify", sub_matches)) => Ok(Self::Verify(sub_matches)),
+            Some((name, _)) => anyhow::bail!(
+                "internal CLI adapter error: unsupported key command '{name}' after clap validation"
+            ),
+            None => anyhow::bail!(
+                "internal CLI adapter error: missing key command after clap validation"
+            ),
+        }
+    }
+
+    fn dispatch(self) -> Result<()> {
+        match self {
+            Self::Change(sub_matches) => subcommands::key_change(sub_matches),
+            Self::Add(sub_matches) => subcommands::key_add(sub_matches),
+            Self::Del(sub_matches) => subcommands::key_del(sub_matches),
+            Self::Verify(sub_matches) => subcommands::key_verify(sub_matches),
+        }
     }
 }
 

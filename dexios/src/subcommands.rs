@@ -160,66 +160,55 @@ pub fn hash_stream(sub_matches: &ArgMatches) -> Result<()> {
 }
 
 pub fn header_dump(sub_matches: &ArgMatches) -> Result<()> {
-    let sub_matches_dump = sub_matches.subcommand_matches("dump").unwrap();
-    let force = forcemode(sub_matches_dump);
+    let force = forcemode(sub_matches);
 
     header::dump(
-        &get_param("input", sub_matches_dump)?,
-        &get_param("output", sub_matches_dump)?,
+        &get_param("input", sub_matches)?,
+        &get_param("output", sub_matches)?,
         force,
     )
 }
 
 pub fn header_restore(sub_matches: &ArgMatches) -> Result<()> {
-    let sub_matches_restore = sub_matches.subcommand_matches("restore").unwrap();
-    let force = forcemode(sub_matches_restore);
+    let force = forcemode(sub_matches);
 
     header::restore(
-        &get_param("input", sub_matches_restore)?,
-        &get_param("output", sub_matches_restore)?,
+        &get_param("input", sub_matches)?,
+        &get_param("output", sub_matches)?,
         force,
     )
 }
 
 pub fn header_strip(sub_matches: &ArgMatches) -> Result<()> {
-    let sub_matches_strip = sub_matches.subcommand_matches("strip").unwrap();
-    let force = forcemode(sub_matches_strip);
+    let force = forcemode(sub_matches);
 
-    header::strip(&get_param("input", sub_matches_strip)?, force)
+    header::strip(&get_param("input", sub_matches)?, force)
 }
 
 pub fn header_details(sub_matches: &ArgMatches) -> Result<()> {
-    let sub_matches_details = sub_matches.subcommand_matches("details").unwrap();
-
-    header::details(&get_param("input", sub_matches_details)?)
+    header::details(&get_param("input", sub_matches)?)
 }
 
 pub fn key_change(sub_matches: &ArgMatches) -> Result<()> {
-    let sub_matches_change_key = sub_matches.subcommand_matches("change").unwrap();
+    let params = key_manipulation_params(sub_matches)?;
 
-    let params = key_manipulation_params(sub_matches_change_key)?;
-
-    key::change(&get_param("input", sub_matches_change_key)?, &params)
+    key::change(&get_param("input", sub_matches)?, &params)
 }
 
 pub fn key_add(sub_matches: &ArgMatches) -> Result<()> {
-    let sub_matches_add_key = sub_matches.subcommand_matches("add").unwrap();
+    let params = key_manipulation_params(sub_matches)?;
 
-    let params = key_manipulation_params(sub_matches_add_key)?;
-
-    key::add(&get_param("input", sub_matches_add_key)?, &params)
+    key::add(&get_param("input", sub_matches)?, &params)
 }
 
 pub fn key_del(sub_matches: &ArgMatches) -> Result<()> {
-    let sub_matches_del_key = sub_matches.subcommand_matches("del").unwrap();
-    let key = Key::init(sub_matches_del_key, &KeyParams::default(), "keyfile")?;
+    let key = Key::init(sub_matches, &KeyParams::default(), "keyfile")?;
 
-    key::delete(&get_param("input", sub_matches_del_key)?, &key)
+    key::delete(&get_param("input", sub_matches)?, &key)
 }
 
 pub fn key_verify(sub_matches: &ArgMatches) -> Result<()> {
-    let sub_matches_verify_key = sub_matches.subcommand_matches("verify").unwrap();
-    let key = Key::init(sub_matches_verify_key, &KeyParams::default(), "keyfile")?;
+    let key = Key::init(sub_matches, &KeyParams::default(), "keyfile")?;
 
-    key::verify(&get_param("input", sub_matches_verify_key)?, &key)
+    key::verify(&get_param("input", sub_matches)?, &key)
 }
