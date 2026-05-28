@@ -53,10 +53,13 @@ const DEXIOS_DOMAIN_FIXTURE_MANIFEST: &str =
 const DEXIOS_CLI_FIXTURE_MANIFEST: &str = include_str!("fixture_manifest.toml");
 const DEXIOS_MAIN_RS: &str = include_str!("../src/main.rs");
 const DEXIOS_CLI_RS: &str = include_str!("../src/cli.rs");
+const DEXIOS_CLI_ARGS_RS: &str = include_str!("../src/cli/args.rs");
 const DEXIOS_CLI_TESTS_RS: &str = include_str!("../src/cli/tests.rs");
 const DEXIOS_CLI_COMMANDS_STREAM_RS: &str = include_str!("../src/cli/commands/stream.rs");
 const DEXIOS_CLI_COMMANDS_ARCHIVE_RS: &str = include_str!("../src/cli/commands/archive.rs");
 const DEXIOS_CLI_COMMANDS_HASH_RS: &str = include_str!("../src/cli/commands/hash.rs");
+const DEXIOS_CLI_COMMANDS_KEY_RS: &str = include_str!("../src/cli/commands/key.rs");
+const DEXIOS_CLI_COMMANDS_HEADER_RS: &str = include_str!("../src/cli/commands/header.rs");
 const DEXIOS_GLOBAL_RS: &str = include_str!("../src/global.rs");
 const DEXIOS_STATES_RS: &str = include_str!("../src/global/states.rs");
 const DEXIOS_ENCRYPT_RS: &str = include_str!("../src/subcommands/encrypt.rs");
@@ -5062,9 +5065,11 @@ fn phase22_cli_parser_baseline_and_surface_gate_are_source_gated() {
 // --- Phase 23 gate tests ---
 
 #[test]
-fn phase23_top_level_cli_command_split_is_source_gated() {
-    // CLID-01, D-01 through D-04: top-level command builders stay in focused
-    // parser modules while build_cli remains the ordered assembly point.
+fn phase23_cli_command_split_is_source_gated() {
+    // CLID-01/CLID-02, D-01 through D-15: command builders and shared option
+    // helpers stay in focused parser modules while build_cli remains the
+    // ordered assembly point without retaining the old oversized-builder lint
+    // allowance.
 
     assert_all_contains(
         "dexios/src/cli/commands/stream.rs",
@@ -5101,6 +5106,42 @@ fn phase23_top_level_cli_command_split_is_source_gated() {
         ],
     );
     assert_all_contains(
+        "dexios/src/cli/args.rs",
+        DEXIOS_CLI_ARGS_RS,
+        &[
+            "autogenerate_arg",
+            "detached_header_output_arg",
+            "detached_header_input_arg",
+            "keyfile_old_arg",
+            "keyfile_new_arg",
+        ],
+    );
+    assert_all_contains(
+        "dexios/src/cli/commands/key.rs",
+        DEXIOS_CLI_COMMANDS_KEY_RS,
+        &[
+            "fn key_command() -> Command",
+            "Command::new(\"key\")",
+            "Command::new(\"change\")",
+            "Command::new(\"add\")",
+            "Command::new(\"del\")",
+            "Command::new(\"verify\")",
+            "conflicts_with(\"keyfile-new\")",
+        ],
+    );
+    assert_all_contains(
+        "dexios/src/cli/commands/header.rs",
+        DEXIOS_CLI_COMMANDS_HEADER_RS,
+        &[
+            "fn header_command() -> Command",
+            "Command::new(\"header\")",
+            "Command::new(\"dump\")",
+            "Command::new(\"restore\")",
+            "Command::new(\"strip\")",
+            "Command::new(\"details\")",
+        ],
+    );
+    assert_all_contains(
         "dexios/src/cli.rs",
         DEXIOS_CLI_RS,
         &[
@@ -5110,9 +5151,14 @@ fn phase23_top_level_cli_command_split_is_source_gated() {
             "commands::hash::hash_command()",
             "commands::archive::pack_command()",
             "commands::archive::unpack_command()",
-            "Command::new(\"key\")",
-            "Command::new(\"header\")",
+            "commands::key::key_command()",
+            "commands::header::header_command()",
         ],
+    );
+    assert_not_contains(
+        "dexios/src/cli.rs",
+        DEXIOS_CLI_RS,
+        "#[allow(clippy::too_many_lines)]",
     );
 
     assert_occurs_before(
@@ -5143,13 +5189,13 @@ fn phase23_top_level_cli_command_split_is_source_gated() {
         "dexios/src/cli.rs",
         DEXIOS_CLI_RS,
         "commands::archive::unpack_command()",
-        "Command::new(\"key\")",
+        "commands::key::key_command()",
     );
     assert_occurs_before(
         "dexios/src/cli.rs",
         DEXIOS_CLI_RS,
-        "Command::new(\"key\")",
-        "Command::new(\"header\")",
+        "commands::key::key_command()",
+        "commands::header::header_command()",
     );
 
     for moved_builder in [
@@ -5158,6 +5204,8 @@ fn phase23_top_level_cli_command_split_is_source_gated() {
         "Command::new(\"hash\")",
         "Command::new(\"pack\")",
         "Command::new(\"unpack\")",
+        "Command::new(\"key\")",
+        "Command::new(\"header\")",
     ] {
         assert_not_contains("dexios/src/cli.rs", DEXIOS_CLI_RS, moved_builder);
         assert_not_contains(
