@@ -4999,3 +4999,58 @@ fn phase21_windows_ci_coverage_is_source_gated() {
         &["windows-latest"],
     );
 }
+
+// --- Phase 22 gate tests ---
+
+#[test]
+fn phase22_cli_parser_baseline_and_surface_gate_are_source_gated() {
+    // MGAT-02, D-04 through D-06, D-14 through D-16: parser fixtures cover the
+    // clap command graph, while the script and CI gates keep the built-binary
+    // smoke harness wired into maintainer and pull-request paths.
+
+    assert_all_contains(
+        "dexios/src/cli.rs",
+        DEXIOS_CLI_RS,
+        &[
+            "cli_definition_passes_clap_debug_assertions",
+            "try_get_matches_from",
+            "top_level_short_flags_resolve_to_commands",
+            "shared_options_parse_across_command_families",
+            "auto_generation_conflicts_with_keyfiles",
+            "missing_required_subcommands_are_rejected",
+            "clap::error::ErrorKind::ArgumentConflict",
+            "clap::error::ErrorKind::UnknownArgument",
+            "clap::error::ErrorKind::InvalidSubcommand",
+            "clap::error::ErrorKind::ValueValidation",
+            "--auto=7",
+            "keyfile-new",
+        ],
+    );
+
+    assert_all_contains(
+        "scripts/verify_cli_surface.sh",
+        VERIFY_CLI_SURFACE,
+        &[
+            "case_removed_token_source_gate",
+            "case_removed_cli_surface_rejected",
+            "expect_rejected",
+            "run_case \"removed CLI surface rejected\" case_removed_cli_surface_rejected",
+            "case_encrypt_decrypt_env_hash_delete_input",
+            "case_encrypt_decrypt_keyfile_detached_defaults",
+            "case_pack_unpack_complex_success_path",
+        ],
+    );
+
+    assert_occurs_before(
+        ".github/workflows/cli-surface.yml",
+        CLI_SURFACE_WORKFLOW,
+        "run: cargo build -p dexios --profile release-lto",
+        "bash scripts/verify_cli_surface.sh",
+    );
+    assert_non_comment_line_count(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "run bash scripts/verify_cli_surface.sh",
+        1,
+    );
+}
