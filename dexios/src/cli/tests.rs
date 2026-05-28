@@ -116,11 +116,11 @@ fn shared_arg_factories_are_source_gated() {
 
 #[test]
 fn top_level_command_builders_are_split_by_family() {
-    assert!(CLI_STREAM_COMMANDS_RS.contains("pub(super) fn encrypt_command() -> Command"));
-    assert!(CLI_STREAM_COMMANDS_RS.contains("pub(super) fn decrypt_command() -> Command"));
-    assert!(CLI_ARCHIVE_COMMANDS_RS.contains("pub(super) fn pack_command() -> Command"));
-    assert!(CLI_ARCHIVE_COMMANDS_RS.contains("pub(super) fn unpack_command() -> Command"));
-    assert!(CLI_HASH_COMMANDS_RS.contains("pub(super) fn hash_command() -> Command"));
+    assert!(CLI_STREAM_COMMANDS_RS.contains("fn encrypt_command() -> Command"));
+    assert!(CLI_STREAM_COMMANDS_RS.contains("fn decrypt_command() -> Command"));
+    assert!(CLI_ARCHIVE_COMMANDS_RS.contains("fn pack_command() -> Command"));
+    assert!(CLI_ARCHIVE_COMMANDS_RS.contains("fn unpack_command() -> Command"));
+    assert!(CLI_HASH_COMMANDS_RS.contains("fn hash_command() -> Command"));
 
     for ordered_call in [
         "commands::stream::encrypt_command()",

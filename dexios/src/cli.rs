@@ -2,6 +2,7 @@ use clap::{Arg, ArgAction, Command};
 use core::key::PassphraseWordCount;
 
 mod args;
+mod commands;
 pub mod prompt;
 
 fn validate_autogenerate_words(words: &str) -> Result<String, String> {
@@ -13,99 +14,21 @@ fn validate_autogenerate_words(words: &str) -> Result<String, String> {
     Ok(words.to_owned())
 }
 
-// this defines all of the clap subcommands and arguments
-// it's long, and clunky, but i feel that's just the nature of the clap builder api
+// this assembles the clap subcommands and arguments
 // it returns the ArgMatches so that a match statement can send everything to the correct place
 #[allow(clippy::too_many_lines)]
 pub fn build_cli() -> Command {
-    let encrypt = Command::new("encrypt")
-        .short_flag('e')
-        .about("Encrypt a file")
-        .arg(args::input_arg("The file to encrypt"))
-        .arg(args::output_arg("The output file"))
-        .arg(args::keyfile_arg())
-        .arg(args::delete_input_arg(
-            "Delete the input file after a successful encrypt",
-        ))
-        .arg(args::hash_arg())
-        .arg(args::autogenerate_arg(
-            "Autogenerate a passphrase (default is 7 words)",
-            "keyfile",
-        ))
-        .arg(args::detached_header_output_arg())
-        .arg(args::force_arg());
-
-    let decrypt = Command::new("decrypt")
-        .short_flag('d')
-        .about("Decrypt a file")
-        .arg(args::input_arg("The file to decrypt"))
-        .arg(args::output_arg("The output file"))
-        .arg(args::keyfile_arg())
-        .arg(args::detached_header_input_arg())
-        .arg(args::delete_input_arg(
-            "Delete the input file after a successful decrypt",
-        ))
-        .arg(args::hash_arg())
-        .arg(args::force_arg());
-
     Command::new("dexios")
         .version(clap::crate_version!())
         .author(clap::crate_authors!("\n"))
         .about("Secure, fast and modern command-line encryption of files.")
         .subcommand_required(true)
         .arg_required_else_help(true)
-        .subcommand(encrypt.clone())
-        .subcommand(decrypt.clone())
-        .subcommand(
-            Command::new("hash").about("Hash files with BLAKE3").arg(
-                Arg::new("input")
-                    .value_name("input")
-                    .action(ArgAction::Set)
-                    .required(true)
-                    .help("The file(s) to hash")
-                    .num_args(1..),
-            ),
-        )
-        .subcommand(
-            Command::new("pack")
-                .about("Pack and encrypt an entire directory")
-                .short_flag('p')
-                .arg(
-                    Arg::new("input")
-                        .value_name("input")
-                        .action(ArgAction::Set)
-                        .num_args(1..)
-                        .required(true)
-                        .help("The directory to encrypt"),
-                )
-                .arg(args::output_arg("The output file"))
-                .arg(args::delete_source_arg())
-                .arg(args::verbose_arg())
-                .arg(args::autogenerate_arg(
-                    "Autogenerate a passphrase (default is 7 words)",
-                    "keyfile",
-                ))
-                .arg(args::detached_header_output_arg())
-                .arg(args::recursive_arg())
-                .arg(args::keyfile_arg())
-                .arg(args::hash_arg())
-                .arg(args::force_arg()),
-        )
-        .subcommand(
-            Command::new("unpack")
-                .short_flag('u')
-                .about("Unpack a previously-packed file")
-                .arg(args::input_arg("The file to decrypt"))
-                .arg(args::output_arg("The output file"))
-                .arg(args::keyfile_arg())
-                .arg(args::detached_header_input_arg())
-                .arg(args::delete_input_arg(
-                    "Delete the encrypted input after a successful unpack",
-                ))
-                .arg(args::verbose_arg())
-                .arg(args::hash_arg())
-                .arg(args::force_arg()),
-        )
+        .subcommand(commands::stream::encrypt_command())
+        .subcommand(commands::stream::decrypt_command())
+        .subcommand(commands::hash::hash_command())
+        .subcommand(commands::archive::pack_command())
+        .subcommand(commands::archive::unpack_command())
         .subcommand(
             Command::new("key")
                 .about("Manipulate keys within the header (for advanced users")
