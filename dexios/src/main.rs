@@ -2,6 +2,7 @@
 #![warn(clippy::all)]
 
 use anyhow::Result;
+use clap::ArgMatches;
 
 mod cli;
 mod global;
@@ -20,68 +21,69 @@ fn main() {
 
 fn run() -> Result<()> {
     let matches = cli::get_matches();
-
-    match matches.subcommand() {
-        Some(("encrypt", sub_matches)) => {
-            subcommands::encrypt(sub_matches)?;
-        }
-        Some(("decrypt", sub_matches)) => {
-            subcommands::decrypt(sub_matches)?;
-        }
-        Some(("pack", sub_matches)) => {
-            subcommands::pack(sub_matches)?;
-        }
-        Some(("unpack", sub_matches)) => {
-            subcommands::unpack(sub_matches)?;
-        }
-        Some(("hash", sub_matches)) => {
-            subcommands::hash_stream(sub_matches)?;
-        }
-        Some(("header", sub_matches)) => match sub_matches.subcommand() {
-            Some(("dump", _)) => {
-                subcommands::header_dump(sub_matches)?;
-            }
-            Some(("restore", _)) => {
-                subcommands::header_restore(sub_matches)?;
-            }
-            Some(("strip", _)) => {
-                subcommands::header_strip(sub_matches)?;
-            }
-            Some(("details", _)) => {
-                subcommands::header_details(sub_matches)?;
-            }
-            _ => (),
-        },
-        Some(("key", sub_matches)) => match sub_matches.subcommand() {
-            Some(("change", _)) => {
-                subcommands::key_change(sub_matches)?;
-            }
-            Some(("add", _)) => {
-                subcommands::key_add(sub_matches)?;
-            }
-            Some(("del", _)) => {
-                subcommands::key_del(sub_matches)?;
-            }
-            Some(("verify", _)) => {
-                subcommands::key_verify(sub_matches)?;
-            }
-            _ => (),
-        },
-        _ => (),
-    }
-    Ok(())
+    CliRoute::from_matches(&matches)?.dispatch()
 }
 
-#[cfg(test)]
 #[derive(Debug)]
-struct CliRoute<'a> {
-    _matches: &'a clap::ArgMatches,
+enum CliRoute<'a> {
+    Encrypt(&'a ArgMatches),
+    Decrypt(&'a ArgMatches),
+    Pack(&'a ArgMatches),
+    Unpack(&'a ArgMatches),
+    Hash(&'a ArgMatches),
+    Header(&'a ArgMatches),
+    Key(&'a ArgMatches),
 }
 
-#[cfg(test)]
 impl<'a> CliRoute<'a> {
-    fn from_matches(matches: &'a clap::ArgMatches) -> Result<Self> {
-        Ok(Self { _matches: matches })
+    fn from_matches(matches: &'a ArgMatches) -> Result<Self> {
+        match matches.subcommand() {
+            Some(("encrypt", sub_matches)) => Ok(Self::Encrypt(sub_matches)),
+            Some(("decrypt", sub_matches)) => Ok(Self::Decrypt(sub_matches)),
+            Some(("pack", sub_matches)) => Ok(Self::Pack(sub_matches)),
+            Some(("unpack", sub_matches)) => Ok(Self::Unpack(sub_matches)),
+            Some(("hash", sub_matches)) => Ok(Self::Hash(sub_matches)),
+            Some(("header", sub_matches)) => Ok(Self::Header(sub_matches)),
+            Some(("key", sub_matches)) => Ok(Self::Key(sub_matches)),
+            Some((name, _)) => anyhow::bail!(
+                "internal CLI adapter error: unsupported top-level command '{name}' after clap validation"
+            ),
+            None => anyhow::bail!(
+                "internal CLI adapter error: missing top-level command after clap validation"
+            ),
+        }
+    }
+
+    fn dispatch(self) -> Result<()> {
+        match self {
+            Self::Encrypt(sub_matches) => subcommands::encrypt(sub_matches),
+            Self::Decrypt(sub_matches) => subcommands::decrypt(sub_matches),
+            Self::Pack(sub_matches) => subcommands::pack(sub_matches),
+            Self::Unpack(sub_matches) => subcommands::unpack(sub_matches),
+            Self::Hash(sub_matches) => subcommands::hash_stream(sub_matches),
+            Self::Header(sub_matches) => dispatch_header(sub_matches),
+            Self::Key(sub_matches) => dispatch_key(sub_matches),
+        }
+    }
+}
+
+fn dispatch_header(sub_matches: &ArgMatches) -> Result<()> {
+    match sub_matches.subcommand() {
+        Some(("dump", _)) => subcommands::header_dump(sub_matches),
+        Some(("restore", _)) => subcommands::header_restore(sub_matches),
+        Some(("strip", _)) => subcommands::header_strip(sub_matches),
+        Some(("details", _)) => subcommands::header_details(sub_matches),
+        _ => Ok(()),
+    }
+}
+
+fn dispatch_key(sub_matches: &ArgMatches) -> Result<()> {
+    match sub_matches.subcommand() {
+        Some(("change", _)) => subcommands::key_change(sub_matches),
+        Some(("add", _)) => subcommands::key_add(sub_matches),
+        Some(("del", _)) => subcommands::key_del(sub_matches),
+        Some(("verify", _)) => subcommands::key_verify(sub_matches),
+        _ => Ok(()),
     }
 }
 
