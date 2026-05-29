@@ -6,6 +6,7 @@ use crate::global::structs::CryptoParams;
 use crate::global::structs::PackParams;
 use anyhow::{Result, anyhow};
 use clap::ArgMatches;
+use clap::parser::MatchesError;
 use core::kdf::Kdf;
 
 use super::states::{DirectoryMode, Key, KeyParams, PrintMode};
@@ -47,14 +48,19 @@ pub fn get_param(name: &str, sub_matches: &ArgMatches) -> Result<String> {
 }
 
 pub fn get_optional_param<'a>(name: &str, sub_matches: &'a ArgMatches) -> Result<Option<&'a str>> {
-    sub_matches
-        .try_get_one::<String>(name)
-        .map(|value| value.map(String::as_str))
-        .map_err(|_| {
-            anyhow!(
-                "internal CLI adapter error: optional argument '{name}' unreadable after clap validation"
-            )
-        })
+    match sub_matches.try_get_one::<String>(name) {
+        Ok(value) => Ok(value.map(String::as_str)),
+        // An OPTIONAL argument that isn't defined for this subcommand is legitimately
+        // *absent*, which is exactly what an optional getter should report. clap only
+        // detects this (via `try_get_one`) in debug builds — release returns `Ok(None)`
+        // — so without this arm `Key::init` reading `autogenerate` would fail in debug
+        // for every subcommand that doesn't define it (key del/verify, decrypt).
+        // `MatchesError` and its `UnknownArgument` variant are both `#[non_exhaustive]`.
+        Err(MatchesError::UnknownArgument { .. }) => Ok(None),
+        Err(_) => Err(anyhow!(
+            "internal CLI adapter error: optional argument '{name}' unreadable after clap validation"
+        )),
+    }
 }
 
 // the main parameter handler for encrypt/decrypt
@@ -258,6 +264,25 @@ mod tests {
         let value = get_optional_param("header", &matches).expect("optional parameter");
 
         assert_eq!(value, Some("file.hdr"));
+    }
+
+    #[test]
+    fn optional_parameter_undefined_for_subcommand_returns_none() {
+        // `autogenerate` is only defined for encrypt/key add/key change/pack, but
+        // `Key::init` reads it for every subcommand routed through it (key del/verify,
+        // decrypt). clap's undefined-arg detection in `try_get_one` is debug-only:
+        // in release it returns `Ok(None)`, in debug it returns
+        // `Err(MatchesError::UnknownArgument {..})`. An undefined OPTIONAL argument is
+        // legitimately absent, so the optional getter must report `None` in BOTH profiles.
+        let matches = Command::new("synthetic")
+            .arg(Arg::new("input"))
+            .try_get_matches_from(["synthetic"])
+            .expect("synthetic matches should parse");
+
+        let value =
+            get_optional_param("autogenerate", &matches).expect("undefined optional argument");
+
+        assert_eq!(value, None);
     }
 
     #[test]
