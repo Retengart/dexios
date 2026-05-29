@@ -282,8 +282,9 @@ pub(crate) fn all_keyslots_have_unsupported_kdf(keyslots: &V1Keyslots) -> Option
         .then_some([0xDF, 0x02])
 }
 
-// TODO(brxken128): make this available in the core
-pub fn encrypt_master_key(
+// Crate-private: external callers must not be able to supply a reused keyslot nonce.
+// The public, contract-bearing wrap API is `dexios_core::cipher::wrap_v1_master_key`.
+pub(crate) fn encrypt_master_key(
     header: &V1Header,
     index: V1KeyslotIndex,
     master_key: &MasterKey,

@@ -59,6 +59,17 @@ impl Display for CipherError {
 
 impl std::error::Error for CipherError {}
 
+/// Wraps `master_key` under `wrapping_key` with XChaCha20-Poly1305 and the
+/// slot-scoped `aad`.
+///
+/// # Nonce uniqueness (safety contract)
+///
+/// `nonce` MUST be unique for every `(wrapping_key, master_key)` pairing. Reusing a
+/// nonce under the same derived wrapping key while wrapping different master keys
+/// leaks the XOR of the two key streams and breaks Poly1305 integrity. Callers MUST
+/// source `nonce` from [`crate::primitives::gen_keyslot_nonce`] (a fresh 24-byte
+/// CSPRNG value) for every keyslot. Dexios's own workflows pair a fresh
+/// `gen_keyslot_nonce()` with a fresh salt for every slot mutation.
 pub fn wrap_v1_master_key(
     wrapping_key: WrappingKey,
     master_key: &MasterKey,
@@ -79,6 +90,13 @@ pub fn wrap_v1_master_key(
         .map_err(|_| CipherError::InvalidEncryptedMasterKeyLength(encrypted.len()))
 }
 
+/// Unwraps a master key produced by [`wrap_v1_master_key`].
+///
+/// # Nonce uniqueness
+///
+/// `nonce` MUST be the exact unique nonce used at wrap time; it is bound into the
+/// XChaCha20-Poly1305 authentication and any mismatch fails with
+/// [`CipherError::Authentication`].
 pub fn unwrap_v1_master_key(
     wrapping_key: WrappingKey,
     encrypted_master_key: &EncryptedMasterKey,
