@@ -355,7 +355,7 @@ where
             .staged_output_mut(output_index)
             .ok_or(Error::EncryptFile)?
             .with_writer_result(|writer| encrypt_payload(reader, writer, master_key, &header))
-            .map_err(map_encrypt_staged_write_error)?;
+            .map_err(map_encrypt_staged_write_error_detached)?;
 
         transaction
             .commit_all()
@@ -497,6 +497,15 @@ fn map_encrypt_staged_write_error(error: StagedWriteError<Error>) -> Error {
     match error {
         StagedWriteError::Operation(error) => error,
         StagedWriteError::Transaction(error) => map_encrypt_transaction_error(error),
+    }
+}
+
+// On the detached path a mid-payload staged-write transaction failure must classify as a
+// detached-publication failure, matching commit_all's mapping (encrypt-1).
+fn map_encrypt_staged_write_error_detached(error: StagedWriteError<Error>) -> Error {
+    match error {
+        StagedWriteError::Operation(error) => error,
+        StagedWriteError::Transaction(error) => map_detached_publication_transaction_error(error),
     }
 }
 
