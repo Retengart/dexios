@@ -7,6 +7,7 @@ use crate::{
 };
 
 use core::protected::Protected;
+use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
 // this handles user-interactivity, specifically getting a "yes" or "no" answer from the user
@@ -88,7 +89,8 @@ where
 
         let input_validation = read_zeroizing_password("Confirm password: ", &mut prompt_password)?;
 
-        if input.as_str() == input_validation.as_str() && !input.is_empty() {
+        let matches: bool = input.as_bytes().ct_eq(input_validation.as_bytes()).into();
+        if matches && !input.is_empty() {
             return Ok(protected_from_zeroizing_string(&input));
         } else if input.is_empty() {
             warn!("Password cannot be empty, please try again.");
