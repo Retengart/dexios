@@ -144,3 +144,13 @@ Detached-header encryption outputs usually do not reserve a zeroed 512-byte
 prefix in the payload file, so restore remains a recovery operation for
 previously stripped embedded artifacts rather than a normal detached-header
 workflow.
+
+## Header restore is not payload-bound
+
+`header restore` validates only that the detached header is a structurally well-formed
+canonical V1 header and that the target is a stripped artifact. It performs **no**
+cryptographic binding between the header and the payload: V1 stores no payload MAC in
+the header, so binding would require a trial decrypt with the key. Restoring the wrong
+header for a file therefore succeeds structurally but leaves the payload undecryptable,
+and the CLI warns about this after a successful restore. Keep a dumped header paired
+with the exact file it was dumped from.

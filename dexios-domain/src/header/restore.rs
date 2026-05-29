@@ -47,6 +47,16 @@ impl RestoreIntent {
     }
 }
 
+/// Restores a detached header into a stripped embedded artifact.
+///
+/// # Not payload-bound
+///
+/// This validates only that the detached header is a structurally well-formed canonical
+/// V1 header and that the target is a stripped artifact; it performs **no** cryptographic
+/// binding between the header and the payload. V1 stores no payload MAC in the header, so
+/// binding would require a trial decrypt with the key. Restoring the wrong header for a
+/// file therefore succeeds structurally but leaves the payload undecryptable — callers
+/// should warn the user (the CLI does).
 pub fn execute(intent: RestoreIntent) -> Result<CommitReceipt, Error> {
     let RestoreIntent {
         header_target,

@@ -103,6 +103,11 @@ pub fn restore(input: &str, output: &str, force: ForceMode) -> Result<()> {
     let _receipt =
         domain::header::restore::execute_transactional(intent).map_err(map_header_error)?;
 
+    crate::warn!(
+        "Restored header was validated for structure only, not against the payload. \
+         If this is not the file's original header, decryption will fail authentication."
+    );
+
     Ok(())
 }
 
