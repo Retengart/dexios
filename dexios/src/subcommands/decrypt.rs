@@ -1,5 +1,3 @@
-use std::process::exit;
-
 use crate::cli::prompt::overwrite_check;
 use crate::global::states::{DeleteInput, ForceMode, HeaderLocation, PasswordState};
 use crate::global::structs::CryptoParams;
@@ -46,7 +44,7 @@ pub fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> Result<(
     let output_exists = existing_path(output);
     reject_stdin_keyfile_prompt_conflict(params, output_exists)?;
     if !overwrite_check_if_needed(output, output_exists, params.force)? {
-        exit(0);
+        return Ok(());
     }
 
     let raw_key = params.key.get_secret(&PasswordState::Direct)?;

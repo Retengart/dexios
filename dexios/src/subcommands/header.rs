@@ -75,7 +75,7 @@ pub fn details(input: &str) -> Result<()> {
 pub fn dump(input: &str, output: &str, force: ForceMode) -> Result<()> {
     let output_exists = existing_path(output);
     if !overwrite_check_if_needed(output, output_exists, force)? {
-        std::process::exit(0);
+        return Ok(());
     }
 
     let intent =
