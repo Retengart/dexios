@@ -107,6 +107,45 @@ fn reorder_normal_chunks(bytes: &mut [u8]) {
     first.swap_with_slice(second);
 }
 
+// fs-5: committed plaintext outputs are published owner-only (0o600) as a deliberate
+// defense-in-depth choice (see book/src/Threat-Model.md), not the umask default.
+#[cfg(unix)]
+#[test]
+fn decrypted_output_is_published_owner_only_0o600() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let test_dir = TestDir::new("decrypt-output-mode");
+    fs::write(test_dir.path().join("plain.txt"), b"secret plaintext").unwrap();
+
+    let enc = run_cli(
+        test_dir.path(),
+        CORRECT_PASSWORD,
+        &["encrypt", "--force", "plain.txt", "plain.enc"],
+    );
+    assert!(
+        enc.status.success(),
+        "encrypt failed: {}",
+        stderr(&enc)
+    );
+
+    let dec = run_cli(
+        test_dir.path(),
+        CORRECT_PASSWORD,
+        &["decrypt", "--force", "plain.enc", "plain.out"],
+    );
+    assert!(dec.status.success(), "decrypt failed: {}", stderr(&dec));
+
+    let mode = fs::metadata(test_dir.path().join("plain.out"))
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(
+        mode, 0o600,
+        "decrypted plaintext must be published owner-only (0o600), got {mode:o}"
+    );
+}
+
 #[test]
 fn decrypt_cli_corrupted_stream_variants_preserve_existing_output() {
     let test_dir = TestDir::new("decrypt-cli-corrupted-stream");
