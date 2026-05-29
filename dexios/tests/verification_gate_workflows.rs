@@ -6,6 +6,23 @@ use verification_gate_support::*;
 // --- Phase 21 gate tests ---
 
 #[test]
+fn cargo_build_workflow_lints_production_default_feature_build() {
+    // Audit-closure regression guard (quality-3): the `--all-features` clippy job
+    // exempts feature-gated-private items as *exported* API (`unreachable_pub`,
+    // `trivially_copy_pass_by_ref`), masking warnings that only surface in the
+    // production (default-feature) build — e.g. the storage failure-injection seam
+    // in dexios-domain/src/storage/test_support.rs. CI must therefore also lint the
+    // default-feature lib+bins under `-D warnings`. No `--all-targets` here: that
+    // would pull in the `test-support`-gated integration tests, which do not compile
+    // without the feature.
+    assert_contains(
+        ".github/workflows/cargo-build.yml",
+        CARGO_BUILD_WORKFLOW,
+        "cargo clippy --locked --workspace --no-deps -- -D warnings",
+    );
+}
+
+#[test]
 fn ci_workflows_keep_audit_and_docs_fresh() {
     for required in [
         "pull_request",

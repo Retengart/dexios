@@ -41,6 +41,14 @@ jobs:
     - name: Clippy
       run: cargo clippy --locked --workspace --all-targets --all-features --no-deps
 
+    # Regression guard: the --all-features run above exempts feature-gated-private
+    # items as exported API (unreachable_pub / trivially_copy_pass_by_ref), masking
+    # warnings that only surface in the production (default-feature) build. Lint the
+    # default-feature lib+bins under -D warnings. No --all-targets: the
+    # test-support-gated integration tests do not compile without the feature.
+    - name: Clippy (production build, default features)
+      run: cargo clippy --locked --workspace --no-deps -- -D warnings
+
   check:
     name: check (ubuntu-latest, stable)
     runs-on: ubuntu-latest
