@@ -92,8 +92,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios/src/cli/tests.rs",
         category: "parser compatibility matrix",
         rationale: "CLI parser compatibility matrix remains source-local evidence per D-03.",
-        current_lines: 922,
-        cap: 922,
+        current_lines: 961,
+        cap: 961,
     },
     FileSizeException {
         path: "dexios-domain/src/unpack.rs",
@@ -106,8 +106,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios/tests/key_cli_regressions.rs",
         category: "key CLI security regression matrix",
         rationale: "Key-source prompting and stderr regression matrix remains explicit per D-03.",
-        current_lines: 807,
-        cap: 807,
+        current_lines: 811,
+        cap: 811,
     },
     FileSizeException {
         path: "dexios-core/src/payload.rs",

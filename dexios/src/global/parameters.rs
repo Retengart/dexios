@@ -195,6 +195,7 @@ pub fn key_manipulation_params(sub_matches: &ArgMatches) -> Result<KeyManipulati
         key_old,
         key_new,
         kdf,
+        force: ForceMode::Prompt,
     })
 }
 

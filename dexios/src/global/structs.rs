@@ -24,4 +24,5 @@ pub struct KeyManipulationParams {
     pub key_old: Key,
     pub key_new: Key,
     pub kdf: Kdf,
+    pub force: ForceMode,
 }

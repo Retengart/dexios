@@ -22,6 +22,7 @@ fn change_command() -> Command {
         ))
         .arg(args::keyfile_old_arg())
         .arg(args::keyfile_new_arg())
+        .arg(args::force_arg())
 }
 
 fn add_command() -> Command {
@@ -44,6 +45,7 @@ fn del_command() -> Command {
         .arg(args::keyfile_arg_with_help(
             "Use a keyfile to identify the key you want to delete",
         ))
+        .arg(args::force_arg())
 }
 
 fn verify_command() -> Command {

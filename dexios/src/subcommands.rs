@@ -194,7 +194,8 @@ pub fn header_details(sub_matches: &ArgMatches) -> Result<()> {
 }
 
 pub fn key_change(sub_matches: &ArgMatches) -> Result<()> {
-    let params = key_manipulation_params(sub_matches)?;
+    let mut params = key_manipulation_params(sub_matches)?;
+    params.force = forcemode(sub_matches);
 
     key::change(&get_param("input", sub_matches)?, &params)
 }
@@ -207,8 +208,9 @@ pub fn key_add(sub_matches: &ArgMatches) -> Result<()> {
 
 pub fn key_del(sub_matches: &ArgMatches) -> Result<()> {
     let key = Key::init(sub_matches, &KeyParams::default(), "keyfile")?;
+    let force = forcemode(sub_matches);
 
-    key::delete(&get_param("input", sub_matches)?, &key)
+    key::delete(&get_param("input", sub_matches)?, &key, force)
 }
 
 pub fn key_verify(sub_matches: &ArgMatches) -> Result<()> {

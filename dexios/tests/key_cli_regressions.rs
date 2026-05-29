@@ -624,6 +624,7 @@ fn key_change_reads_new_key_after_old_key_verification_succeeds() {
         &[
             "key",
             "change",
+            "--force",
             "--keyfile-old",
             old_keyfile.to_str().unwrap(),
             "--keyfile-new",
@@ -672,6 +673,7 @@ fn key_change_uses_dexios_key_for_old_key_when_old_keyfile_is_absent() {
         &[
             "key",
             "change",
+            "--force",
             "--keyfile-new",
             new_keyfile.to_str().unwrap(),
             encrypted.to_str().unwrap(),
@@ -735,6 +737,7 @@ fn key_delete_maps_failures_without_remaining_key_collection() {
         &[
             "key",
             "del",
+            "--force",
             "--keyfile",
             old_keyfile.to_str().unwrap(),
             encrypted.to_str().unwrap(),
@@ -755,6 +758,7 @@ fn key_delete_maps_failures_without_remaining_key_collection() {
         &[
             "key",
             "del",
+            "--force",
             "--keyfile",
             wrong_keyfile.to_str().unwrap(),
             encrypted.to_str().unwrap(),

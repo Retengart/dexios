@@ -1,3 +1,5 @@
+use crate::cli::prompt::get_answer;
+use crate::global::states::ForceMode;
 use crate::global::states::Key;
 use crate::global::states::PasswordState;
 use crate::global::structs::KeyManipulationParams;
@@ -6,6 +8,14 @@ use std::path::Path;
 
 use super::errors::map_key_error;
 use crate::info;
+
+// Confirms a destructive keyslot mutation before it happens. The default answer
+// is No, so an empty line aborts; `--force`/`-f` short-circuits to Yes via
+// `get_answer`. Returns whether the caller may proceed with the mutation.
+fn confirm_destructive_keyslot_change(input: &str, force: ForceMode) -> Result<bool> {
+    let prompt = format!("This will permanently rewrite the keyslots of {input} - are you sure?");
+    get_answer(&prompt, false, force)
+}
 
 fn reject_dual_stdin_keyfiles(params: &KeyManipulationParams) -> Result<()> {
     if params.key_old.reads_stdin() && params.key_new.reads_stdin() {
@@ -55,12 +65,16 @@ pub fn change(input: &str, params: &KeyManipulationParams) -> Result<()> {
 
     let raw_key_new = params.key_new.get_secret(&PasswordState::Validate)?;
 
+    if !confirm_destructive_keyslot_change(input, params.force)? {
+        return Ok(());
+    }
+
     domain::key::change::execute(proven, raw_key_new, params.kdf).map_err(map_key_error)?;
 
     Ok(())
 }
 
-pub fn delete(input: &str, key_old: &Key) -> Result<()> {
+pub fn delete(input: &str, key_old: &Key, force: ForceMode) -> Result<()> {
     let intent = domain::key::delete::DeleteIntent::new(Path::new(input)).map_err(map_key_error)?;
 
     if key_old == &Key::User {
@@ -68,6 +82,10 @@ pub fn delete(input: &str, key_old: &Key) -> Result<()> {
     }
 
     let raw_key_old = key_old.get_secret(&PasswordState::Direct)?;
+
+    if !confirm_destructive_keyslot_change(input, force)? {
+        return Ok(());
+    }
 
     domain::key::delete::execute(intent, raw_key_old).map_err(map_key_error)?;
 

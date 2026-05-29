@@ -114,7 +114,7 @@ fn incorrect_key_and_unsupported_workflow_messages_stay_terse() {
     let delete_output = run_cli(
         test_dir.path(),
         CORRECT_PASSWORD,
-        &["key", "del", "--keyfile", "old.key", "plain.enc"],
+        &["key", "del", "--force", "--keyfile", "old.key", "plain.enc"],
     );
     assert!(!delete_output.status.success());
     let delete_stderr = stderr(&delete_output);

@@ -177,6 +177,7 @@ fn nested_command_builders_are_split_by_family() {
         "args::keyfile_old_arg()",
         "args::keyfile_new_arg()",
         "args::keyfile_arg_with_help(",
+        "args::force_arg()",
         "Use a keyfile to identify the key you want to delete",
         "Verify a keyfile",
         "conflicts_with(\"keyfile-new\")",
@@ -506,6 +507,24 @@ fn key_change_command_accepts_old_and_new_keyfiles() {
 }
 
 #[test]
+fn key_change_accepts_force_flag() {
+    let matches = parse_ok(["dexios", "key", "change", "--force", "cipher.enc"]);
+    let (_, sub) = matches.subcommand().expect("subcommand");
+    let change = sub.subcommand_matches("change").expect("key change");
+
+    assert!(change.get_flag("force"));
+}
+
+#[test]
+fn key_change_defaults_force_flag_to_false() {
+    let matches = parse_ok(["dexios", "key", "change", "cipher.enc"]);
+    let (_, sub) = matches.subcommand().expect("subcommand");
+    let change = sub.subcommand_matches("change").expect("key change");
+
+    assert!(!change.get_flag("force"));
+}
+
+#[test]
 fn key_change_auto_without_value_defaults_to_seven_words() {
     let matches = parse_ok(["dexios", "key", "change", "--auto", "cipher.enc"]);
     let (_, sub) = matches.subcommand().expect("subcommand");
@@ -549,6 +568,26 @@ fn key_del_command_accepts_input_and_keyfile() {
         del.get_one::<String>("input").map(String::as_str),
         Some("cipher.enc")
     );
+}
+
+#[test]
+fn key_del_accepts_force_flag_short_and_long() {
+    for flag in ["--force", "-f"] {
+        let matches = parse_ok(["dexios", "key", "del", flag, "cipher.enc"]);
+        let (_, sub) = matches.subcommand().expect("subcommand");
+        let del = sub.subcommand_matches("del").expect("key del");
+
+        assert!(del.get_flag("force"), "{flag} should set the force flag");
+    }
+}
+
+#[test]
+fn key_del_defaults_force_flag_to_false() {
+    let matches = parse_ok(["dexios", "key", "del", "cipher.enc"]);
+    let (_, sub) = matches.subcommand().expect("subcommand");
+    let del = sub.subcommand_matches("del").expect("key del");
+
+    assert!(!del.get_flag("force"));
 }
 
 #[test]
