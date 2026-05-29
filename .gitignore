@@ -7,10 +7,6 @@
 /dexios/CHANGELOG.md
 /target
 
-# Local planning artifacts - do not commit
-/local-plans
-local-notes/
-
 # Local editor/tool scratch - not project work
 .antigravitycli/
 .fresh/
