@@ -12,7 +12,7 @@ use core::kdf::Kdf;
 use super::states::{DirectoryMode, Key, KeyParams, PrintMode};
 use super::structs::KeyManipulationParams;
 
-pub fn get_params(name: &str, sub_matches: &ArgMatches) -> Result<Vec<String>> {
+pub(crate) fn get_params(name: &str, sub_matches: &ArgMatches) -> Result<Vec<String>> {
     let values = sub_matches
         .try_get_many::<String>(name)
         .map_err(|_| {
@@ -30,7 +30,7 @@ pub fn get_params(name: &str, sub_matches: &ArgMatches) -> Result<Vec<String>> {
     Ok(values)
 }
 
-pub fn get_param(name: &str, sub_matches: &ArgMatches) -> Result<String> {
+pub(crate) fn get_param(name: &str, sub_matches: &ArgMatches) -> Result<String> {
     let value = sub_matches
         .try_get_one::<String>(name)
         .map_err(|_| {
@@ -47,7 +47,7 @@ pub fn get_param(name: &str, sub_matches: &ArgMatches) -> Result<String> {
     Ok(value)
 }
 
-pub fn get_optional_param<'a>(name: &str, sub_matches: &'a ArgMatches) -> Result<Option<&'a str>> {
+pub(crate) fn get_optional_param<'a>(name: &str, sub_matches: &'a ArgMatches) -> Result<Option<&'a str>> {
     match sub_matches.try_get_one::<String>(name) {
         Ok(value) => Ok(value.map(String::as_str)),
         // An OPTIONAL argument that isn't defined for this subcommand is legitimately
@@ -64,7 +64,7 @@ pub fn get_optional_param<'a>(name: &str, sub_matches: &'a ArgMatches) -> Result
 }
 
 // the main parameter handler for encrypt/decrypt
-pub fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
+pub(crate) fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
     let key = Key::init(sub_matches, &KeyParams::default(), "keyfile")?;
 
     let hash_mode = if sub_matches.get_flag("hash") {
@@ -100,11 +100,11 @@ pub fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
     })
 }
 
-pub fn kdf(_sub_matches: &ArgMatches) -> Kdf {
+pub(crate) fn kdf(_sub_matches: &ArgMatches) -> Kdf {
     Kdf::Argon2id
 }
 
-pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams)> {
+pub(crate) fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams)> {
     let key = Key::init(sub_matches, &KeyParams::default(), "keyfile")?;
 
     let hash_mode = if sub_matches.get_flag("hash") {
@@ -164,7 +164,7 @@ pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams
     Ok((crypto_params, pack_params))
 }
 
-pub fn forcemode(sub_matches: &ArgMatches) -> ForceMode {
+pub(crate) fn forcemode(sub_matches: &ArgMatches) -> ForceMode {
     if sub_matches.get_flag("force") {
         ForceMode::Force
     } else {
@@ -172,7 +172,7 @@ pub fn forcemode(sub_matches: &ArgMatches) -> ForceMode {
     }
 }
 
-pub fn key_manipulation_params(sub_matches: &ArgMatches) -> Result<KeyManipulationParams> {
+pub(crate) fn key_manipulation_params(sub_matches: &ArgMatches) -> Result<KeyManipulationParams> {
     let key_old = Key::init(
         sub_matches,
         &KeyParams {

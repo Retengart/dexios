@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
 #[path = "support/common.rs"]
 mod common;
 use common::*;
@@ -152,7 +153,7 @@ fn storage_backed_encrypt_writes_a_v1_header() {
     let intent = encrypt::EncryptIntent::new(
         "hello_16.txt",
         "hello_16.enc",
-        dexios_domain::storage::identity::OverwritePolicy::CreateNew,
+        identity::OverwritePolicy::CreateNew,
         None,
         core::protected::Protected::new(b"test-password".to_vec()),
         core::kdf::Kdf::Argon2id,

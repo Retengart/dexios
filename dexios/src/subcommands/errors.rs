@@ -5,7 +5,7 @@ use domain::storage::transaction::{
 };
 use domain::workflow_error::WorkflowErrorClass;
 
-pub fn map_encrypt_error(error: domain::encrypt::Error) -> anyhow::Error {
+pub(crate) fn map_encrypt_error(error: domain::encrypt::Error) -> anyhow::Error {
     if let Some(failure) = error.detached_publication_failure() {
         return map_detached_publication_failure(failure);
     }
@@ -31,7 +31,7 @@ pub fn map_encrypt_error(error: domain::encrypt::Error) -> anyhow::Error {
     }
 }
 
-pub fn map_decrypt_error(error: domain::decrypt::Error) -> anyhow::Error {
+pub(crate) fn map_decrypt_error(error: domain::decrypt::Error) -> anyhow::Error {
     match error.workflow_class() {
         WorkflowErrorClass::MalformedFormat => anyhow!("Malformed Dexios encrypted data"),
         WorkflowErrorClass::UnsupportedFormat => anyhow!("Unsupported Dexios format"),
@@ -60,7 +60,7 @@ pub fn map_decrypt_error(error: domain::decrypt::Error) -> anyhow::Error {
     }
 }
 
-pub fn map_pack_error(error: domain::pack::Error) -> anyhow::Error {
+pub(crate) fn map_pack_error(error: domain::pack::Error) -> anyhow::Error {
     if let Some(failure) = error.detached_publication_failure() {
         return map_detached_publication_failure(failure);
     }
@@ -159,7 +159,7 @@ fn role_label(role: PathRole) -> &'static str {
     }
 }
 
-pub fn map_unpack_error(error: domain::unpack::Error) -> anyhow::Error {
+pub(crate) fn map_unpack_error(error: domain::unpack::Error) -> anyhow::Error {
     match error.workflow_class() {
         WorkflowErrorClass::ResourcePressure => {
             debug_assert!(error.is_resource_pressure());
@@ -190,14 +190,18 @@ enum HeaderDisclosure {
     Details,
 }
 
-pub fn map_header_error(error: domain::header::Error) -> anyhow::Error {
+pub(crate) fn map_header_error(error: domain::header::Error) -> anyhow::Error {
     map_header_error_with_disclosure(error, HeaderDisclosure::Terse)
 }
 
-pub fn map_header_details_error(error: domain::header::Error) -> anyhow::Error {
+pub(crate) fn map_header_details_error(error: domain::header::Error) -> anyhow::Error {
     map_header_error_with_disclosure(error, HeaderDisclosure::Details)
 }
 
+#[expect(
+    clippy::match_same_arms,
+    reason = "the explicit `_` fallback arms keep a stable user-facing message per workflow class even when they share text with a named arm; merging them would drop the defensive catch-all"
+)]
 fn map_header_error_with_disclosure(
     error: domain::header::Error,
     disclosure: HeaderDisclosure,
@@ -286,7 +290,11 @@ fn map_header_error_with_disclosure(
     }
 }
 
-pub fn map_key_error(error: domain::key::Error) -> anyhow::Error {
+#[expect(
+    clippy::match_same_arms,
+    reason = "the explicit `_` fallback arms keep a stable user-facing message per workflow class even when they share text with a named arm; merging them would drop the defensive catch-all"
+)]
+pub(crate) fn map_key_error(error: domain::key::Error) -> anyhow::Error {
     match error.workflow_class() {
         WorkflowErrorClass::MalformedFormat => match error {
             domain::key::Error::MalformedV1Header(_)

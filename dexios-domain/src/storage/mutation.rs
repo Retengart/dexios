@@ -32,7 +32,10 @@ impl MutationSnapshot {
     }
 
     #[must_use]
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "constructor kept for mutation API symmetry; not all call sites are wired yet"
+    )]
     pub(crate) fn from_bytes(target: ResolvedTarget, original: Vec<u8>) -> Self {
         Self { target, original }
     }

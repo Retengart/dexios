@@ -1,6 +1,6 @@
-pub mod parameters;
-pub mod states;
-pub mod structs;
+pub(crate) mod parameters;
+pub(crate) mod states;
+pub(crate) mod structs;
 
 #[macro_export]
 macro_rules! info {

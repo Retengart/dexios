@@ -5,13 +5,11 @@ pub use common::{HeaderReadError, HeaderWriteError, PayloadNonce, V1HeaderAad};
 
 use common::{CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, MAGIC, VERSION_V1};
 
-#[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub enum ParsedHeader {
     V1(ParsedV1Payload),
 }
 
-#[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct ParsedV1Payload {
     header: v1::V1Header,
@@ -47,7 +45,7 @@ pub fn read_header(reader: &mut impl std::io::Read) -> Result<ParsedHeader, Head
     let format_prefix = [prefix[0], prefix[1]];
     if matches!(
         format_prefix,
-        [0xDE, 0x01] | [0xDE, 0x02] | [0xDE, 0x03] | [0xDE, 0x04] | [0xDE, 0x05]
+        [0xDE, 0x01..=0x05]
     ) {
         return Err(HeaderReadError::UnsupportedFormat(format_prefix));
     }
@@ -79,7 +77,7 @@ pub fn read_header(reader: &mut impl std::io::Read) -> Result<ParsedHeader, Head
     bytes[..10].copy_from_slice(&prefix);
     reader.read_exact(&mut bytes[10..])?;
 
-    let header = v1::V1Header::deserialize_bytes(bytes)?;
+    let header = v1::V1Header::deserialize_bytes(&bytes)?;
     let aad = header.aad();
     Ok(ParsedHeader::V1(ParsedV1Payload { header, aad }))
 }

@@ -71,7 +71,10 @@ impl CleanupTarget {
     }
 
     #[must_use]
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "unchecked constructor kept for cleanup-target API symmetry; not all call sites are wired yet"
+    )]
     pub(crate) fn file(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
@@ -85,7 +88,6 @@ impl CleanupTarget {
     }
 
     #[must_use]
-    #[allow(dead_code)]
     pub(crate) fn directory(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),

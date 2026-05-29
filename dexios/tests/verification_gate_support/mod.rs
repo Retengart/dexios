@@ -1,4 +1,5 @@
-#![allow(dead_code)]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, clippy::allow_attributes, clippy::redundant_pub_crate, reason = "shared gate helpers assert exact behavior and may panic on failure"))]
+#![allow(dead_code, reason = "shared gate helpers are used selectively across gate modules")]
 
 pub(crate) const SAFETY_CONTRACT: &str = include_str!("../../../book/src/Safety-Contract.md");
 pub(crate) const CONTRIBUTING: &str = include_str!("../../../CONTRIBUTING.md");
@@ -627,9 +628,7 @@ pub(crate) fn normalized_rust_production_section(
         .find(start)
         .unwrap_or_else(|| panic!("{source_name} must contain section start {start:?}"));
     let end_index = source[start_index..]
-        .find(end)
-        .map(|index| start_index + index)
-        .unwrap_or_else(|| panic!("{source_name} must contain section end {end:?}"));
+        .find(end).map_or_else(|| panic!("{source_name} must contain section end {end:?}"), |index| start_index + index);
     normalized_rust_production_source(&source[start_index..end_index])
 }
 
@@ -661,8 +660,7 @@ pub(crate) fn assert_no_direct_final_create_builders(source_name: &str, source: 
             let start = search_from + relative_start;
             let end = normalized[start..]
                 .find(';')
-                .map(|relative_end| start + relative_end)
-                .unwrap_or(normalized.len());
+                .map_or(normalized.len(), |relative_end| start + relative_end);
             let statement = &normalized[start..end];
             for forbidden in [".create(true)", ".create_new(true)"] {
                 assert!(

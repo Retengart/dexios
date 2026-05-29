@@ -1,5 +1,18 @@
 #![forbid(unsafe_code)]
-#![warn(clippy::all)]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::indexing_slicing,
+        clippy::string_slice,
+        clippy::arithmetic_side_effects,
+        clippy::too_many_lines,
+        reason = "tests assert exact behavior and may panic on failure"
+    )
+)]
 
 use anyhow::Result;
 use clap::ArgMatches;
@@ -187,7 +200,7 @@ mod route_tests {
             .expect("synthetic command should parse adapter route state");
 
         let error = CliRoute::from_matches(&matches)
-            .and_then(|route| route.dispatch())
+            .and_then(CliRoute::dispatch)
             .expect_err("adapter route state should be rejected");
 
         error.to_string()

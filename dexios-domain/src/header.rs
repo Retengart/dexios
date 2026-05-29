@@ -113,7 +113,7 @@ impl std::fmt::Display for Error {
             }
             TargetNotStripped => f.write_str("Header restore target is not stripped"),
             TargetChanged => f.write_str("Header workflow target changed before commit"),
-            Error::DetachedHeaderChanged => {
+            Self::DetachedHeaderChanged => {
                 f.write_str("Detached header changed before header restore commit")
             }
             DetachedHeaderMismatch => f.write_str(

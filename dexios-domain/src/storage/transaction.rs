@@ -70,7 +70,10 @@ pub struct DetachedPairReceipt {
 
 impl DetachedPairReceipt {
     #[must_use]
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "constructor kept for receipt API symmetry; not all call sites are wired yet"
+    )]
     pub(crate) fn from_commit_receipt(receipt: CommitReceipt) -> Self {
         Self { receipt }
     }
@@ -402,7 +405,7 @@ impl LinkedOutputTransaction {
             }
         })?;
         self.staged.push(staged);
-        Ok(self.staged.len() - 1)
+        Ok(self.staged.len().saturating_sub(1))
     }
 
     pub fn stage_in(
@@ -418,7 +421,7 @@ impl LinkedOutputTransaction {
                 source: Some(source),
             })?;
         self.staged.push(staged);
-        Ok(self.staged.len() - 1)
+        Ok(self.staged.len().saturating_sub(1))
     }
 
     pub fn staged_output_mut(&mut self, index: usize) -> Option<&mut NamedStagedOutput> {

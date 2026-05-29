@@ -277,6 +277,11 @@ impl PathIdentityGraph {
         self.add_output(path, PathRole::UnpackRoot, OverwritePolicy::CreateNew)
     }
 
+    #[expect(
+        clippy::indexing_slicing,
+        clippy::arithmetic_side_effects,
+        reason = "index comes from enumerate() over self.nodes, so index + 1 <= self.nodes.len() and the pairwise slice is always in bounds"
+    )]
     pub fn validate(&self) -> Result<(), IdentityError> {
         for (index, left) in self.nodes.iter().enumerate() {
             for right in &self.nodes[index + 1..] {

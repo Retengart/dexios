@@ -56,33 +56,33 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::CreateDir | Error::CreateDirWithSource(_) => {
+            Self::CreateDir | Self::CreateDirWithSource(_) => {
                 f.write_str("Unable to create a new directory")
             }
-            Error::CreateFile | Error::CreateFileWithSource(_) => {
+            Self::CreateFile | Self::CreateFileWithSource(_) => {
                 f.write_str("Unable to create a new file")
             }
-            Error::OpenFile(mode) | Error::OpenFileWithSource { mode, .. } => {
+            Self::OpenFile(mode) | Self::OpenFileWithSource { mode, .. } => {
                 write!(f, "Unable to read the file in {mode:?} mode")
             }
-            Error::FlushFile | Error::FlushFileWithSource(_) => {
+            Self::FlushFile | Self::FlushFileWithSource(_) => {
                 f.write_str("Unable to flush the file")
             }
-            Error::SyncFile | Error::SyncFileWithSource(_) => {
+            Self::SyncFile | Self::SyncFileWithSource(_) => {
                 f.write_str("Unable to sync the file")
             }
-            Error::RemoveFile | Error::RemoveFileWithSource(_) => {
+            Self::RemoveFile | Self::RemoveFileWithSource(_) => {
                 f.write_str("Unable to remove the file")
             }
-            Error::RemoveDir | Error::RemoveDirWithSource(_) => f.write_str("Unable to remove dir"),
-            Error::DirEntries | Error::DirEntriesWithSource(_) => {
+            Self::RemoveDir | Self::RemoveDirWithSource(_) => f.write_str("Unable to remove dir"),
+            Self::DirEntries | Self::DirEntriesWithSource(_) => {
                 f.write_str("Unable to read directory")
             }
-            Error::FileAccess | Error::FileAccessWithSource(_) => f.write_str("Permission denied"),
-            Error::FileLen | Error::FileLenWithSource(_) => {
+            Self::FileAccess | Self::FileAccessWithSource(_) => f.write_str("Permission denied"),
+            Self::FileLen | Self::FileLenWithSource(_) => {
                 f.write_str("Unable to get file length")
             }
-            Error::UnsafePath(path) => {
+            Self::UnsafePath(path) => {
                 write!(f, "Unsafe extraction path: {}", path.display())
             }
         }

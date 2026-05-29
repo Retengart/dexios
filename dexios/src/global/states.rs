@@ -12,48 +12,48 @@ use crate::warn;
 use core::key::{PassphraseWordCount, generate_passphrase};
 
 #[derive(PartialEq, Eq, Clone, Copy)]
-pub enum DirectoryMode {
+pub(crate) enum DirectoryMode {
     Singular,
     Recursive,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
-pub enum DeleteSource {
+pub(crate) enum DeleteSource {
     Delete,
     Retain,
 }
 
 #[derive(PartialEq, Eq)]
-pub enum PrintMode {
+pub(crate) enum PrintMode {
     Verbose,
     Quiet,
 }
 
-pub enum HeaderLocation {
+pub(crate) enum HeaderLocation {
     Embedded,
     Detached(String),
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
-pub enum DeleteInput {
+pub(crate) enum DeleteInput {
     Delete,
     Retain,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
-pub enum HashMode {
+pub(crate) enum HashMode {
     CalculateHash,
     NoHash,
 }
 
 #[derive(PartialEq, Eq, Copy, Clone)]
-pub enum ForceMode {
+pub(crate) enum ForceMode {
     Force,
     Prompt,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum Key {
+pub(crate) enum Key {
     Keyfile(String),
     Env,
     Generate(PassphraseWordCount),
@@ -61,7 +61,7 @@ pub enum Key {
 }
 
 #[derive(PartialEq, Eq)]
-pub enum PasswordState {
+pub(crate) enum PasswordState {
     Validate,
     Direct, // maybe not the best name
 }
@@ -107,7 +107,7 @@ fn parse_generated_passphrase_word_count(words: &str) -> Result<PassphraseWordCo
 
 impl Key {
     #[must_use]
-    pub fn reads_stdin(&self) -> bool {
+    pub(crate) fn reads_stdin(&self) -> bool {
         matches!(self, Self::Keyfile(path) if path == "-")
     }
 
@@ -118,13 +118,13 @@ impl Key {
         params: &KeyParams,
     ) -> Result<Self> {
         let key = if let (Some(path), true) = (keyfile, params.keyfile) {
-            Key::Keyfile(path.to_owned())
+            Self::Keyfile(path.to_owned())
         } else if let (Some(words), true) = (autogenerate, params.autogenerate) {
-            Key::Generate(parse_generated_passphrase_word_count(words)?)
+            Self::Generate(parse_generated_passphrase_word_count(words)?)
         } else if env_available && params.env {
-            Key::Env
+            Self::Env
         } else if params.user {
-            Key::User
+            Self::User
         } else {
             return Err(anyhow::anyhow!(
                 "No key sources found with the parameters/arguments provided"
@@ -138,26 +138,26 @@ impl Key {
     // it relies on `parameters.rs`' handling and logic to determine which route to get the key
     // it can handle keyfiles, env variables, automatically generating and letting the user enter a key
     // it has a check for if the keyfile is empty or not
-    pub fn get_secret(&self, pass_state: &PasswordState) -> Result<Protected<Vec<u8>>> {
+    pub(crate) fn get_secret(&self, pass_state: &PasswordState) -> Result<Protected<Vec<u8>>> {
         let secret = match self {
-            Key::Keyfile(path) if path == "-" => {
+            Self::Keyfile(path) if path == "-" => {
                 let mut reader = std::io::stdin();
                 let secret = get_bytes(&mut reader)?;
-                if secret.with_exposed(|secret| secret.is_empty()) {
+                if secret.with_exposed(Vec::is_empty) {
                     return Err(anyhow::anyhow!("STDIN is empty"));
                 }
                 secret
             }
-            Key::Keyfile(path) => {
+            Self::Keyfile(path) => {
                 let mut reader = std::fs::File::open(path)
                     .with_context(|| format!("Unable to read file: {path}"))?;
                 let secret = get_bytes(&mut reader)?;
-                if secret.with_exposed(|secret| secret.is_empty()) {
+                if secret.with_exposed(Vec::is_empty) {
                     return Err(anyhow::anyhow!(format!("Keyfile '{path}' is empty")));
                 }
                 secret
             }
-            Key::Env => {
+            Self::Env => {
                 let value = std::env::var("DEXIOS_KEY")
                     .context("Unable to read DEXIOS_KEY from environment variable")?;
                 // The value is used byte-for-byte (no trimming), so the key matches exactly
@@ -175,18 +175,18 @@ impl Key {
                 );
                 Protected::new(value.into_bytes())
             }
-            Key::User => get_password(pass_state)?,
-            Key::Generate(i) => generated_passphrase_secret(*i, |message| warn!("{message}")),
+            Self::User => get_password(pass_state)?,
+            Self::Generate(i) => generated_passphrase_secret(*i, |message| warn!("{message}")),
         };
 
-        if secret.with_exposed(|secret| secret.is_empty()) {
+        if secret.with_exposed(Vec::is_empty) {
             Err(anyhow::anyhow!("The specified key is empty!"))
         } else {
             Ok(secret)
         }
     }
 
-    pub fn init(
+    pub(crate) fn init(
         sub_matches: &ArgMatches,
         params: &KeyParams,
         keyfile_descriptor: &str,
@@ -203,8 +203,11 @@ impl Key {
     }
 }
 
-#[allow(clippy::struct_excessive_bools)]
-pub struct KeyParams {
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is an independent CLI key-source flag, not a state machine"
+)]
+pub(crate) struct KeyParams {
     pub user: bool,
     pub env: bool,
     pub autogenerate: bool,
@@ -212,8 +215,8 @@ pub struct KeyParams {
 }
 
 impl KeyParams {
-    pub fn default() -> Self {
-        KeyParams {
+    pub(crate) fn default() -> Self {
+        Self {
             user: true,
             env: true,
             autogenerate: true,

@@ -3,7 +3,7 @@ use core::key::PassphraseWordCount;
 
 mod args;
 mod commands;
-pub mod prompt;
+pub(crate) mod prompt;
 
 const MAX_AUTOGENERATE_WORDS: u16 = 64;
 
@@ -22,7 +22,7 @@ fn validate_autogenerate_words(words: &str) -> Result<String, String> {
 }
 
 // this assembles the clap subcommands and arguments for get_matches()
-pub fn build_cli() -> Command {
+pub(crate) fn build_cli() -> Command {
     Command::new("dexios")
         .version(clap::crate_version!())
         .author(clap::crate_authors!("\n"))
@@ -38,7 +38,7 @@ pub fn build_cli() -> Command {
         .subcommand(commands::header::header_command())
 }
 
-pub fn get_matches() -> clap::ArgMatches {
+pub(crate) fn get_matches() -> clap::ArgMatches {
     build_cli().get_matches()
 }
 

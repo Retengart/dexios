@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
 const DOMAIN_CARGO_TOML: &str = include_str!("../Cargo.toml");
 
 const DOMAIN_WORKFLOW_ERROR: &str = include_str!("../src/workflow_error.rs");
@@ -1643,11 +1644,11 @@ fn phase15_unpack_intent_constructs_checked_sources_before_no_follow_reads() {
 
 #[test]
 fn phase15_unpack_cli_delegates_raw_paths_without_preopening_sources() {
-    let old_preopen_source = r#"
+    let old_preopen_source = r"
         let stor = storage::FileStorage;
         let input = stor.read_file(input)?;
         let header = header_path.map(|path| stor.read_file(path));
-    "#;
+    ";
     assert!(
         contains_unpack_cli_preopened_source(old_preopen_source),
         "source gate fixture must detect old unpack CLI pre-open reads"
@@ -1828,13 +1829,13 @@ fn d05_fixture_helpers_are_valid_by_default_or_explicitly_negative() {
 
     let allowed_fixture_names = Source {
         path: "synthetic/allowed-fixtures.rs",
-        text: r#"
+        text: r"
             fn encrypted_v1_fixture() {}
             fn valid_header_fixture() {}
             fn invalid_header_fixture() {}
             fn malformed_v1_fixture() {}
             fn unsupported_format_fixture() {}
-        "#,
+        ",
     };
     assert_d05_fixture_names(&[allowed_fixture_names])
         .expect("valid and explicitly negative fixture names");

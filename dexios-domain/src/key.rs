@@ -78,42 +78,42 @@ impl Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::HeaderSizeParse => f.write_str("Cannot parse header size"),
-            Error::Seek => f.write_str("Unable to seek the data's cursor"),
-            Error::HeaderWrite => f.write_str("Unable to write the header"),
-            Error::HeaderDeserialize => f.write_str("Unable to deserialize the header"),
-            Error::InvalidMagic(magic) => write!(f, "Invalid Dexios header magic: {magic:02X?}"),
-            Error::UnsupportedFormat(prefix) => {
+            Self::HeaderSizeParse => f.write_str("Cannot parse header size"),
+            Self::Seek => f.write_str("Unable to seek the data's cursor"),
+            Self::HeaderWrite => f.write_str("Unable to write the header"),
+            Self::HeaderDeserialize => f.write_str("Unable to deserialize the header"),
+            Self::InvalidMagic(magic) => write!(f, "Invalid Dexios header magic: {magic:02X?}"),
+            Self::UnsupportedFormat(prefix) => {
                 write!(f, "Unsupported Dexios header format: {prefix:02X?}")
             }
-            Error::UnsupportedVersion(version) => {
+            Self::UnsupportedVersion(version) => {
                 write!(f, "Unsupported Dexios header version: {version:02X?}")
             }
-            Error::RetiredV1Layout => f.write_str("Retired Dexios V1 header layout"),
-            Error::MalformedV1Header(error) => write!(f, "Malformed Dexios V1 header: {error}"),
-            Error::ReadIo | Error::ReadIoWithSource(_) => {
+            Self::RetiredV1Layout => f.write_str("Retired Dexios V1 header layout"),
+            Self::MalformedV1Header(error) => write!(f, "Malformed Dexios V1 header: {error}"),
+            Self::ReadIo | Self::ReadIoWithSource(_) => {
                 f.write_str("Unable to read key workflow target")
             }
-            Error::PathIdentity(error) => write!(f, "{error}"),
-            Error::Transaction(error) => write!(f, "{error}"),
-            Error::TargetChanged => f.write_str("Key workflow target changed before commit"),
-            Error::CannotRemoveFinalV1Keyslot => f.write_str("Cannot remove the final V1 keyslot"),
-            Error::CannotAddV1KeyslotWithoutReencrypt => {
+            Self::PathIdentity(error) => write!(f, "{error}"),
+            Self::Transaction(error) => write!(f, "{error}"),
+            Self::TargetChanged => f.write_str("Key workflow target changed before commit"),
+            Self::CannotRemoveFinalV1Keyslot => f.write_str("Cannot remove the final V1 keyslot"),
+            Self::CannotAddV1KeyslotWithoutReencrypt => {
                 f.write_str("Cannot add a V1 keyslot without re-encrypting the payload")
             }
-            Error::CipherInit => f.write_str("Unable to initialize a cipher"),
-            Error::KeyHash => f.write_str("Unable to hash your key"),
-            Error::TooManyKeyslots => {
+            Self::CipherInit => f.write_str("Unable to initialize a cipher"),
+            Self::KeyHash => f.write_str("Unable to hash your key"),
+            Self::TooManyKeyslots => {
                 f.write_str("There are already too many populated keyslots within this file")
             }
-            Error::MasterKeyEncrypt => f.write_str("Unable to encrypt master key"),
-            Error::Unsupported => {
+            Self::MasterKeyEncrypt => f.write_str("Unable to encrypt master key"),
+            Self::Unsupported => {
                 f.write_str("The provided request is unsupported with this header version")
             }
-            Error::UnsupportedKdf(tag) => {
+            Self::UnsupportedKdf(tag) => {
                 write!(f, "Unsupported keyslot KDF tag: {tag:02X?}")
             }
-            Error::IncorrectKey => f.write_str("The provided key is incorrect"),
+            Self::IncorrectKey => f.write_str("The provided key is incorrect"),
         }
     }
 }

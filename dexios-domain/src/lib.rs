@@ -16,21 +16,25 @@
 
 // lints
 #![forbid(unsafe_code)]
-#![warn(
-    rust_2018_idioms,
-    non_ascii_idents,
-    unstable_features,
-    unused_imports,
-    unused_qualifications,
-    clippy::pedantic,
-    clippy::all
-)]
-#![allow(
-    clippy::module_name_repetitions,
-    clippy::similar_names,
-    clippy::needless_pass_by_value,
-    clippy::missing_panics_doc,
-    clippy::missing_errors_doc
+// Library hygiene: keep stdout/stderr/process-exit out of the reusable crate.
+// `missing_docs` is intentionally NOT enforced here: the public surface has a
+// large pre-existing undocumented body, and promoting it under the workspace
+// `-D warnings` gate would require ~1000 doc comments that would also breach the
+// frozen maintainability line-count caps. Documenting it is tracked separately.
+#![warn(clippy::print_stdout, clippy::print_stderr, clippy::exit)]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::indexing_slicing,
+        clippy::string_slice,
+        clippy::arithmetic_side_effects,
+        clippy::significant_drop_tightening,
+        reason = "tests assert exact behavior and may panic on failure"
+    )
 )]
 
 pub mod archive;

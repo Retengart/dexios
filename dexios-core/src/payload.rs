@@ -80,6 +80,10 @@ pub enum PayloadError {
 }
 
 impl PartialEq for PayloadError {
+    #[expect(
+        clippy::match_same_arms,
+        reason = "each variant pair is matched explicitly for clarity; collapsing arms with identical bodies would obscure which error variants are compared"
+    )]
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Io(left), Self::Io(right)) => {
@@ -168,7 +172,7 @@ impl PartialEq for PayloadError {
 impl Eq for PayloadError {}
 
 impl Display for PayloadError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io(error) => write!(f, "manifest-first payload IO failed: {error}"),
             Self::UnsupportedPayloadKind(byte) => {
@@ -350,6 +354,10 @@ impl ArchiveManifest {
         &self.entries
     }
 
+    #[expect(
+        clippy::expect_used,
+        reason = "entry count and path lengths are bounded below MAX_MANIFEST_ENTRY_COUNT / u16::MAX by construction-time validation, so these width conversions cannot overflow"
+    )]
     pub fn write_to(&self, writer: &mut impl Write) -> Result<(), PayloadError> {
         writer
             .write_all(&MANIFEST_MAGIC)
@@ -465,6 +473,10 @@ impl ArchiveBodyFrame {
     }
 
     #[must_use]
+    #[expect(
+        clippy::expect_used,
+        reason = "on every supported target usize fits in u64, so this in-memory body length conversion cannot fail"
+    )]
     pub fn body_len(&self) -> u64 {
         u64::try_from(self.body.len()).expect("usize body length fits in u64")
     }
@@ -555,6 +567,10 @@ impl ManifestFirstPayload {
         &self.body_frames
     }
 
+    #[expect(
+        clippy::expect_used,
+        reason = "the manifest entry count is bounded below MAX_MANIFEST_ENTRY_COUNT (< u32::MAX), so the index conversion cannot overflow"
+    )]
     pub fn serialize(&self) -> Result<Vec<u8>, PayloadError> {
         validate_body_frames(&self.manifest, &self.body_frames)?;
 
@@ -582,6 +598,10 @@ impl ManifestFirstPayload {
     /// [`MAX_TOTAL_BODY_FRAME_BYTES`] caps, but still allocates each frame fully. Production
     /// extraction streams bodies via the unpack workflow's `reader.take(..)` path and never
     /// calls this. Do not call `parse` on untrusted, large archives.
+    #[expect(
+        clippy::expect_used,
+        reason = "entry count is bounded below MAX_MANIFEST_ENTRY_COUNT (< u32::MAX) and File entries always carry a validated body length, so these conversions/unwraps cannot fail"
+    )]
     pub fn parse(bytes: &[u8]) -> Result<Self, PayloadError> {
         let mut reader = io::Cursor::new(bytes);
         let manifest = ArchiveManifest::read_from(&mut reader)?;
@@ -629,7 +649,7 @@ impl ManifestFirstPayload {
         let offset =
             usize::try_from(reader.position()).expect("cursor position for in-memory payload fits");
         if offset != bytes.len() {
-            return Err(PayloadError::TrailingBytes(bytes.len() - offset));
+            return Err(PayloadError::TrailingBytes(bytes.len().saturating_sub(offset)));
         }
 
         Self::new(manifest, body_frames)
@@ -654,6 +674,10 @@ fn validate_body_len(body_len: u64) -> Result<(), PayloadError> {
     Ok(())
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "File entries always carry a validated body length and the manifest entry count is bounded below MAX_MANIFEST_ENTRY_COUNT (< u32::MAX), so these unwraps/conversions cannot fail"
+)]
 fn validate_body_frames(
     manifest: &ArchiveManifest,
     body_frames: &[ArchiveBodyFrame],

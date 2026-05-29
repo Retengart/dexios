@@ -50,9 +50,7 @@ fn reject_stdin_keyfile_prompt_conflict(params: &CryptoParams) -> Result<()> {
 
 // Unpacking is delegated to the domain layer, which validates the manifest,
 // stages selected file bodies, and commits only after final authentication.
-#[allow(clippy::module_name_repetitions)]
-#[allow(clippy::needless_pass_by_value)]
-pub fn unpack(
+pub(crate) fn unpack(
     input: &str,  // encrypted archive file
     output: &str, // directory
     print_mode: PrintMode,
@@ -114,7 +112,7 @@ mod tests {
 
         let result = should_unpack_entry(
             &path,
-            crate::global::states::ForceMode::Prompt,
+            ForceMode::Prompt,
             false,
             |_p, _d, _f| Err(anyhow::anyhow!("tty failure")),
         );
@@ -133,7 +131,7 @@ mod tests {
         let path = PathBuf::from(OsString::from_vec(vec![0x66, 0x6f, 0x80, 0x6f]));
         let result = should_unpack_entry(
             &path,
-            crate::global::states::ForceMode::Prompt,
+            ForceMode::Prompt,
             false,
             |_p, _d, _f| Ok(true),
         );

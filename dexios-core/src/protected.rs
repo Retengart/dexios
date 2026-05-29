@@ -45,7 +45,7 @@ where
     T: Zeroize,
 {
     pub fn new(value: T) -> Self {
-        Protected { data: value }
+        Self { data: value }
     }
 
     pub fn with_exposed<R>(&self, f: impl FnOnce(&T) -> R) -> R {

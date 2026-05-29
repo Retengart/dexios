@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
 const CORE_PAYLOAD: &str = include_str!("../../dexios-core/src/payload.rs");
 const CORE_HEADER_V1: &str = include_str!("../../dexios-core/src/header/v1.rs");
 const DOMAIN_ARCHIVE: &str = include_str!("../src/archive.rs");
@@ -76,11 +77,11 @@ fn d01_domain_archive_contracts_do_not_expose_zip_crate_api_types() {
 
     let bad_public_enum = Source {
         path: "synthetic/public-zip-error.rs",
-        text: r#"
+        text: r"
             pub enum Error {
                 Legacy(zip::result::ZipError),
             }
-        "#,
+        ",
     };
     assert!(
         !public_archive_contract_violations(
@@ -120,11 +121,11 @@ fn d03_public_archive_policy_has_no_compression_selector() {
     for bad_source in [
         Source {
             path: "synthetic/public-compression-method.rs",
-            text: r#"
+            text: r"
                 pub fn compression(self) -> ArchiveCompression {
                     ArchiveCompression::Zstd
                 }
-            "#,
+            ",
         },
         Source {
             path: "synthetic/public-zstd-constructor.rs",
@@ -132,12 +133,12 @@ fn d03_public_archive_policy_has_no_compression_selector() {
         },
         Source {
             path: "synthetic/public-compression-enum.rs",
-            text: r#"
+            text: r"
                 pub enum Compression {
                     Zstd,
                     Stored,
                 }
-            "#,
+            ",
         },
         Source {
             path: "synthetic/public-renamed-compression-selector.rs",
@@ -175,13 +176,13 @@ fn d05_public_archive_contract_has_no_zip_metadata_knobs() {
 
     let bad_public_enum = Source {
         path: "synthetic/public-zip-metadata.rs",
-        text: r#"
+        text: r"
             pub enum ArchiveMetadata {
                 UnixPermissions,
                 LastModified,
                 Zip64,
             }
-        "#,
+        ",
     };
     assert!(
         !public_archive_contract_violations(
@@ -195,13 +196,13 @@ fn d05_public_archive_contract_has_no_zip_metadata_knobs() {
 
     let private_implementation = Source {
         path: "synthetic/private-implementation.rs",
-        text: r#"
+        text: r"
             // Compression with encryption is discussed in implementation comments.
             fn inspect_private_path(path: &Path) {
                 let _ = fs::symlink_metadata(path);
                 let _ = crate::encrypt::Error::EncryptFile;
             }
-        "#,
+        ",
     };
     assert!(
         public_archive_contract_violations(
@@ -586,10 +587,10 @@ fn payload_kind_and_framing_bytes_stay_core_owned_not_cli_duplicated() {
 
     let bad_cli_source = Source {
         path: "synthetic/cli-payload-byte-duplication.rs",
-        text: r#"
+        text: r"
             const PAYLOAD_KIND_MANIFEST_ARCHIVE: u8 = 0x02;
             let _ = PayloadFramingProfile::ManifestFirst;
-        "#,
+        ",
     };
     assert!(
         !payload_contract_duplication_violations(bad_cli_source).is_empty(),
@@ -615,9 +616,7 @@ fn source_section<'a>(source_name: &str, source: &'a str, start: &str, end: &str
         .find(start)
         .unwrap_or_else(|| panic!("{source_name} must contain section start {start:?}"));
     let end_index = source[start_index..]
-        .find(end)
-        .map(|index| start_index + index)
-        .unwrap_or_else(|| panic!("{source_name} must contain section end {end:?}"));
+        .find(end).map_or_else(|| panic!("{source_name} must contain section end {end:?}"), |index| start_index + index);
     &source[start_index..end_index]
 }
 

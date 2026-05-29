@@ -59,28 +59,28 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::WriteData | Error::WriteDataWithSource(_) => f.write_str("Unable to write data"),
-            Error::OpenArchive => f.write_str("Unable to open archive"),
-            Error::ArchivePayload(inner) => write!(f, "Archive payload error: {inner}"),
-            Error::ResetCursorPosition | Error::ResetCursorPositionWithSource(_) => {
+            Self::WriteData | Self::WriteDataWithSource(_) => f.write_str("Unable to write data"),
+            Self::OpenArchive => f.write_str("Unable to open archive"),
+            Self::ArchivePayload(inner) => write!(f, "Archive payload error: {inner}"),
+            Self::ResetCursorPosition | Self::ResetCursorPositionWithSource(_) => {
                 f.write_str("Unable to reset cursor position")
             }
-            Error::UnsafeOutputPath(path) => {
+            Self::UnsafeOutputPath(path) => {
                 write!(f, "Unsafe output path: {}", path.display())
             }
-            Error::DuplicateOutputPath(path) => {
+            Self::DuplicateOutputPath(path) => {
                 write!(
                     f,
                     "Duplicate output path after normalization: {}",
                     path.display()
                 )
             }
-            Error::ArchiveLimit(inner) => write!(f, "Archive limit error: {inner}"),
-            Error::Storage(inner) => write!(f, "Storage error: {inner}"),
-            Error::PathIdentity(inner) => write!(f, "Path identity error: {inner}"),
-            Error::Transaction(inner) => write!(f, "Transaction error: {inner}"),
-            Error::Decrypt(inner) => write!(f, "Decrypt error: {inner}"),
-            Error::ArchiveFileCallback(inner) => write!(f, "Archive file callback error: {inner}"),
+            Self::ArchiveLimit(inner) => write!(f, "Archive limit error: {inner}"),
+            Self::Storage(inner) => write!(f, "Storage error: {inner}"),
+            Self::PathIdentity(inner) => write!(f, "Path identity error: {inner}"),
+            Self::Transaction(inner) => write!(f, "Transaction error: {inner}"),
+            Self::Decrypt(inner) => write!(f, "Decrypt error: {inner}"),
+            Self::ArchiveFileCallback(inner) => write!(f, "Archive file callback error: {inner}"),
         }
     }
 }
@@ -155,7 +155,6 @@ pub struct UnpackIntent {
 }
 
 impl UnpackIntent {
-    #[allow(clippy::too_many_arguments)]
     pub fn new<P, O>(
         input_path: P,
         detached_header_path: Option<&Path>,
@@ -266,7 +265,7 @@ struct ArchivePathTree {
 #[derive(Default)]
 struct ArchivePathNode {
     kind: Option<ArchiveEntryKind>,
-    children: BTreeMap<OsString, ArchivePathNode>,
+    children: BTreeMap<OsString, Self>,
 }
 
 impl ArchivePathTree {
@@ -420,6 +419,10 @@ where
     }
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "manifest entry count is bounded below MAX_MANIFEST_ENTRY_COUNT (< u32::MAX) and File entries always carry a validated body length, so these conversions/unwraps cannot fail"
+)]
 fn stage_manifest_extraction<R: Read>(
     stor: &storage::FileStorage,
     plaintext_reader: &mut R,
@@ -605,7 +608,12 @@ fn stage_manifest_file_body<R: Read>(
     entity: &ExtractionEntity,
     body_len: u64,
 ) -> Result<(), Error> {
-    let ExtractionKind::File(target) = &entity.kind else {
+    #[expect(
+        clippy::unreachable,
+        reason = "stage_manifest_file_body is only dispatched for File entities by the manifest staging loop"
+    )]
+    let ExtractionKind::File(target) = &entity.kind
+    else {
         unreachable!();
     };
 
@@ -672,7 +680,12 @@ fn create_selected_directories_after_final_auth(
         .iter()
         .filter(|entity| matches!(entity.kind, ExtractionKind::Directory(_)))
     {
-        let ExtractionKind::Directory(target) = &entity.kind else {
+        #[expect(
+            clippy::unreachable,
+            reason = "the surrounding filter() only yields Directory entities, so this binding always matches"
+        )]
+        let ExtractionKind::Directory(target) = &entity.kind
+        else {
             unreachable!();
         };
         if let Err(error) =

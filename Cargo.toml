@@ -42,3 +42,56 @@ inherits = "release"
 lto = "thin"
 strip = "debuginfo"
 codegen-units = 1
+
+# Strictest-practical workspace lints (quality-3). Crates opt in with
+# `[lints]\nworkspace = true`. The `priority = -1` groups are evaluated first so
+# the individual lints below override them.
+[workspace.lints.rust]
+# Lint groups at priority -1 so the individual lints below override them.
+rust_2018_idioms = { level = "warn", priority = -1 }
+rust_2024_compatibility = { level = "warn", priority = -1 }
+unused = { level = "warn", priority = -1 }
+nonstandard_style = { level = "warn", priority = -1 }
+unreachable_pub = "warn"
+unused_qualifications = "warn"
+unsafe_code = "forbid"
+non_ascii_idents = "deny"
+
+[workspace.lints.clippy]
+# Lint groups (priority -1 so specific lints below win on conflicts).
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+# Restriction lints surfaced as warnings: keep panicking/footgun patterns visible.
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+unreachable = "warn"
+indexing_slicing = "warn"
+string_slice = "warn"
+arithmetic_side_effects = "warn"
+todo = "warn"
+unimplemented = "warn"
+dbg_macro = "warn"
+mem_forget = "warn"
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+# Noisy / low-value here: explicitly allowed.
+# `redundant_pub_crate` (nursery) fires on intentional `pub(crate)`/`pub(super)`
+# encapsulation in the binary crate and shared test-support modules; rewriting to
+# bare `pub` adds churn without real value, so we keep the explicit visibility.
+redundant_pub_crate = "allow"
+# The `test-support` feature name is pinned by source gates (it documents intent
+# better than a bare `test`); the "-support suffix is redundant" cargo lint is noise.
+redundant_feature_names = "allow"
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+similar_names = "allow"
+doc_markdown = "allow"
+needless_pass_by_value = "allow"
+missing_const_for_fn = "allow"
+option_if_let_else = "allow"
+multiple_crate_versions = "allow"

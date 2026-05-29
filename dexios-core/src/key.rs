@@ -33,9 +33,11 @@ impl std::fmt::Display for VecToArrayLengthError {
 
 impl std::error::Error for VecToArrayLengthError {}
 
-/// Converts owned key material (e.g. a 32-byte master key `Vec<u8>`) into a
-/// fixed-size `[u8; N]`, zeroizing the input on both the success and
-/// length-mismatch paths so secret bytes never linger in the freed `Vec`.
+/// Converts owned key material into a fixed-size `[u8; N]`.
+///
+/// Accepts e.g. a 32-byte master key `Vec<u8>` and zeroizes the input on both
+/// the success and length-mismatch paths so secret bytes never linger in the
+/// freed `Vec`.
 pub fn vec_to_arr<const N: usize>(
     mut master_key_vec: Vec<u8>,
 ) -> Result<[u8; N], VecToArrayLengthError> {
@@ -69,6 +71,10 @@ impl std::fmt::Display for PassphraseWordCountError {
 impl std::error::Error for PassphraseWordCountError {}
 
 impl PassphraseWordCount {
+    #[expect(
+        clippy::unreachable,
+        reason = "const initializer: the literal 7 is provably non-zero, so the None arm cannot occur"
+    )]
     pub const DEFAULT: Self = Self(match NonZeroU16::new(7) {
         Some(words) => words,
         None => unreachable!(),
@@ -105,11 +111,13 @@ pub fn generate_passphrase(total_words: PassphraseWordCount) -> Protected<String
 
     let mut passphrase = String::new();
 
+    let last = total_words.as_usize().saturating_sub(1);
     for i in 0..total_words.as_usize() {
         let index = rand::rng().random_range(0..words.len());
-        let word = words[index];
-        passphrase.push_str(word);
-        if i < total_words.as_usize() - 1 {
+        if let Some(word) = words.get(index) {
+            passphrase.push_str(word);
+        }
+        if i < last {
             passphrase.push('-');
         }
     }

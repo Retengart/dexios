@@ -1,4 +1,5 @@
-#![allow(dead_code, unused_imports)]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, clippy::allow_attributes, clippy::redundant_pub_crate, reason = "shared test-support helpers assert exact behavior and may panic on failure"))]
+#![allow(dead_code, unused_imports, reason = "shared keyslot helpers are imported selectively across test crates")]
 
 pub(super) use core::header::common::{
     CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN,
@@ -127,7 +128,7 @@ pub(super) fn write_malformed_v1_fixture(path: &Path) {
 }
 
 pub(super) fn decode_hex_fixture(path: &Path) -> Vec<u8> {
-    let fixture = std::fs::read_to_string(path).expect("read hex fixture");
+    let fixture = fs::read_to_string(path).expect("read hex fixture");
     let nibbles: Vec<u8> = fixture
         .chars()
         .filter(|ch| !ch.is_ascii_whitespace())
@@ -306,7 +307,7 @@ pub(super) fn decrypt_fixture(
         &encrypted_path,
         &output_path,
         dexios_domain::storage::identity::OverwritePolicy::CreateNew,
-        None::<&std::path::Path>,
+        None::<&Path>,
         Protected::new(raw_key.to_vec()),
         None,
     )?;
@@ -323,7 +324,7 @@ pub(super) fn decrypt_file(path: &Path, raw_key: &[u8]) -> Result<Vec<u8>, decry
         path,
         &output_path,
         dexios_domain::storage::identity::OverwritePolicy::CreateNew,
-        None::<&std::path::Path>,
+        None::<&Path>,
         Protected::new(raw_key.to_vec()),
         None,
     )?;

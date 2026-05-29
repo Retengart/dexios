@@ -245,7 +245,7 @@ impl NamedStagedOutput {
 
         let path = self.target.target_path().to_path_buf();
         let role = self.target.role();
-        let file = self.file.take().ok_or(TransactionError::Persist {
+        let file = self.file.take().ok_or_else(|| TransactionError::Persist {
             path: path.clone(),
             source: None,
         })?;
@@ -403,7 +403,7 @@ fn persist_unsafe_path_error(path: &Path, source: Option<io::Error>) -> Transact
 }
 
 #[cfg(unix)]
-pub(crate) use unix_fd_persist::{create_dirs_fd_relative, open_absolute_dir};
+pub(super) use unix_fd_persist::{create_dirs_fd_relative, open_absolute_dir};
 
 #[cfg(unix)]
 mod unix_fd_persist {

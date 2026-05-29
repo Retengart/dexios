@@ -77,31 +77,31 @@ impl Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::InitializeCiphers => f.write_str("Cannot initialize ciphers"),
-            Error::InitializeStreams => f.write_str("Cannot initialize streams"),
-            Error::DeserializeHeader | Error::DeserializeHeaderWithSource(_) => {
+            Self::InitializeCiphers => f.write_str("Cannot initialize ciphers"),
+            Self::InitializeStreams => f.write_str("Cannot initialize streams"),
+            Self::DeserializeHeader | Self::DeserializeHeaderWithSource(_) => {
                 f.write_str("Cannot deserialize header")
             }
-            Error::InvalidMagic(magic) => write!(f, "Invalid Dexios header magic: {magic:02X?}"),
-            Error::UnsupportedFormat(prefix) => {
+            Self::InvalidMagic(magic) => write!(f, "Invalid Dexios header magic: {magic:02X?}"),
+            Self::UnsupportedFormat(prefix) => {
                 write!(f, "Unsupported Dexios header format: {prefix:02X?}")
             }
-            Error::UnsupportedVersion(version) => {
+            Self::UnsupportedVersion(version) => {
                 write!(f, "Unsupported Dexios header version: {version:02X?}")
             }
-            Error::RetiredV1Layout => f.write_str("Retired Dexios V1 header layout"),
-            Error::ReadEncryptedData | Error::ReadEncryptedDataWithSource(_) => {
+            Self::RetiredV1Layout => f.write_str("Retired Dexios V1 header layout"),
+            Self::ReadEncryptedData | Self::ReadEncryptedDataWithSource(_) => {
                 f.write_str("Unable to read encrypted data")
             }
-            Error::DecryptMasterKey => f.write_str("Cannot decrypt master key"),
-            Error::UnsupportedKdf(tag) => write!(f, "Unsupported keyslot KDF tag: {tag:02X?}"),
-            Error::DecryptData => f.write_str("Unable to decrypt data"),
-            Error::WriteData | Error::WriteDataWithSource(_) => f.write_str("Unable to write data"),
-            Error::RewindDataReader | Error::RewindDataReaderWithSource(_) => {
+            Self::DecryptMasterKey => f.write_str("Cannot decrypt master key"),
+            Self::UnsupportedKdf(tag) => write!(f, "Unsupported keyslot KDF tag: {tag:02X?}"),
+            Self::DecryptData => f.write_str("Unable to decrypt data"),
+            Self::WriteData | Self::WriteDataWithSource(_) => f.write_str("Unable to write data"),
+            Self::RewindDataReader | Self::RewindDataReaderWithSource(_) => {
                 f.write_str("Unable to rewind the reader")
             }
-            Error::PathIdentity(error) => write!(f, "{error}"),
-            Error::Transaction(error) => write!(f, "{error}"),
+            Self::PathIdentity(error) => write!(f, "{error}"),
+            Self::Transaction(error) => write!(f, "{error}"),
         }
     }
 }
@@ -502,7 +502,7 @@ mod tests {
 
         match execute_handles(req) {
             Ok(()) => {
-                assert_eq!(output_content, "Hello world".as_bytes().to_vec());
+                assert_eq!(output_content, b"Hello world".to_vec());
             }
             _ => unreachable!(),
         }
@@ -584,7 +584,7 @@ mod tests {
 
         match execute_handles(req) {
             Ok(()) => {
-                assert_eq!(output_content, "Hello world".as_bytes().to_vec());
+                assert_eq!(output_content, b"Hello world".to_vec());
             }
             _ => unreachable!(),
         }

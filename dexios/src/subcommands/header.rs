@@ -34,7 +34,7 @@ fn overwrite_check_if_needed(path: &str, path_exists: bool, force: ForceMode) ->
 // `--raw` so they are not dumped to terminals, scrollback, or logs by default.
 const ENCRYPTED_MASTER_KEY_REDACTION: &str = "<hidden — use --raw to show>";
 
-pub fn details(input: &str, raw: bool) -> Result<()> {
+pub(crate) fn details(input: &str, raw: bool) -> Result<()> {
     let mut input_file =
         File::open(input).with_context(|| format!("Unable to open input file: {input}"))?;
 
@@ -78,7 +78,7 @@ pub fn details(input: &str, raw: bool) -> Result<()> {
 // this function reads the header fromthe input file and writes it to the output file
 // it's used for extracting an encrypted file's header for backups and such
 // it implements a check to ensure the header is valid
-pub fn dump(input: &str, output: &str, force: ForceMode) -> Result<()> {
+pub(crate) fn dump(input: &str, output: &str, force: ForceMode) -> Result<()> {
     let output_exists = existing_path(output);
     if !overwrite_check_if_needed(output, output_exists, force)? {
         return Ok(());
@@ -98,7 +98,7 @@ pub fn dump(input: &str, output: &str, force: ForceMode) -> Result<()> {
 // this can be used for restoring a dumped header to a file that had it's header stripped
 // this does not work for files encrypted *with* a detached header
 // it implements a check to ensure the header is valid before restoring to a file
-pub fn restore(input: &str, output: &str, force: ForceMode) -> Result<()> {
+pub(crate) fn restore(input: &str, output: &str, force: ForceMode) -> Result<()> {
     if !overwrite_check(output, force)? {
         return Ok(());
     }
@@ -123,7 +123,7 @@ pub fn restore(input: &str, output: &str, force: ForceMode) -> Result<()> {
 // it implements a check to ensure the header is valid before stripping
 // the supplied detached header must byte-match the embedded header before the embedded
 // header is destroyed, so an operator cannot wipe a file while holding a wrong backup
-pub fn strip(input: &str, header: &str, force: ForceMode) -> Result<()> {
+pub(crate) fn strip(input: &str, header: &str, force: ForceMode) -> Result<()> {
     if !overwrite_check(input, force)? {
         return Ok(());
     }

@@ -25,9 +25,9 @@ pub enum StreamError {
     InvalidNonceLength(usize),
     InvalidChunkSize(usize),
     CipherInit,
-    Read(std::io::Error),
-    Write(std::io::Error),
-    Flush(std::io::Error),
+    Read(io::Error),
+    Write(io::Error),
+    Flush(io::Error),
     Authentication,
     TruncatedCiphertext,
     MissingFinalBlock,
@@ -62,6 +62,12 @@ impl std::error::Error for StreamError {
     }
 }
 
+#[expect(
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects,
+    clippy::needless_continue,
+    reason = "the `filled < buffer.len()` loop guard keeps `buffer[filled..]` in bounds and `filled += read_count` <= buffer.len(); the explicit `continue` documents the EINTR retry"
+)]
 fn read_up_to_full(reader: &mut impl Read, buffer: &mut [u8]) -> Result<usize, StreamError> {
     let mut filled = 0;
 
@@ -144,6 +150,10 @@ impl V1PayloadEncryptor {
         self.stream.encrypt_last(payload)
     }
 
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "read_count is the count returned by read_up_to_full into a BLOCK_SIZE buffer, so read_buffer[..read_count] is always in bounds"
+    )]
     pub fn encrypt_file(
         mut self,
         reader: &mut impl Read,
@@ -220,11 +230,20 @@ impl<W: Write> V1PayloadEncryptingWriter<W> {
         })
     }
 
+    #[expect(
+        clippy::expect_used,
+        reason = "writer is only taken once in finish(); the Option is always Some until the writer is consumed exactly here"
+    )]
     pub fn finish(mut self) -> Result<W, StreamError> {
         self.finish_payload()?;
         Ok(self.writer.take().expect("finished writer is present"))
     }
 
+    #[expect(
+        clippy::indexing_slicing,
+        clippy::arithmetic_side_effects,
+        reason = "buffered <= BLOCK_SIZE invariant keeps available = BLOCK_SIZE - buffered and the buffer[buffered..buffered+take] / input[..take] ranges in bounds (take = min(available, input.len()))"
+    )]
     fn write_plaintext(&mut self, mut input: &[u8]) -> Result<(), StreamError> {
         if self.finished {
             return Err(StreamError::Write(io::Error::new(
@@ -248,6 +267,10 @@ impl<W: Write> V1PayloadEncryptingWriter<W> {
         Ok(())
     }
 
+    #[expect(
+        clippy::expect_used,
+        reason = "encryptor and writer stay Some for the entire lifetime of an unfinished writer; both are only consumed in finish_payload()"
+    )]
     fn write_full_buffer(&mut self) -> Result<(), StreamError> {
         let encrypted = match self
             .encryptor
@@ -271,6 +294,11 @@ impl<W: Write> V1PayloadEncryptingWriter<W> {
             .map_err(StreamError::Write)
     }
 
+    #[expect(
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        reason = "encryptor/writer are Some until consumed exactly here, and buffered <= BLOCK_SIZE keeps buffer[..buffered] in bounds"
+    )]
     fn finish_payload(&mut self) -> Result<(), StreamError> {
         if self.finished {
             return Ok(());
@@ -356,6 +384,11 @@ impl<R: Read> V1PayloadDecryptingReader<R> {
     ///
     /// Bytes returned from this method are uncommitted scratch until `finish`
     /// returns `Ok(V1FinalAuth)`.
+    #[expect(
+        clippy::indexing_slicing,
+        clippy::arithmetic_side_effects,
+        reason = "plaintext_offset <= plaintext_buffer.len() invariant keeps available = len - offset and the buf[..take] / plaintext_buffer[offset..offset+take] ranges in bounds (take = min(available, buf.len()))"
+    )]
     pub fn read_uncommitted(&mut self, buf: &mut [u8]) -> Result<usize, StreamError> {
         if buf.is_empty() {
             return Ok(0);
@@ -381,6 +414,11 @@ impl<R: Read> V1PayloadDecryptingReader<R> {
         Ok(take)
     }
 
+    #[expect(
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        reason = "decryptor is Some until the final block is consumed exactly here, and read_count <= ciphertext_buffer.len() keeps the final-block slice in bounds"
+    )]
     fn fill_plaintext(&mut self) -> Result<(), StreamError> {
         if self.final_auth.is_some() {
             return Ok(());
@@ -468,6 +506,10 @@ impl V1PayloadDecryptor {
         self.stream.decrypt_last(payload)
     }
 
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "read_count is the count returned by read_up_to_full into a BLOCK_SIZE + 16 buffer, so buffer[..read_count] is always in bounds"
+    )]
     pub fn decrypt_file_uncommitted(
         mut self,
         reader: &mut impl Read,

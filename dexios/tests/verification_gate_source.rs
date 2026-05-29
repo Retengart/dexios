@@ -1,10 +1,11 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
 mod verification_gate_support;
 
 use verification_gate_support::*;
 
 #[test]
 fn rust_production_source_gate_catches_multiline_dangerous_calls() {
-    let source = r#"
+    let source = r"
 fn production_write(path: &std::path::Path) {
     std::fs::OpenOptions::new()
         .create(true)
@@ -18,7 +19,7 @@ mod tests {
         std::fs::File::create(path).unwrap();
     }
 }
-"#;
+";
     let normalized = normalized_rust_production_source(source);
 
     assert!(normalized.contains("OpenOptions::new().create(true)"));
@@ -30,7 +31,7 @@ mod tests {
         .is_err()
     );
 
-    let reordered_open_options_source = r#"
+    let reordered_open_options_source = r"
 fn production_write(path: &std::path::Path) {
     std::fs::OpenOptions::new()
         .write(true)
@@ -38,7 +39,7 @@ fn production_write(path: &std::path::Path) {
         .open(path)
         .unwrap();
 }
-"#;
+";
     assert!(
         std::panic::catch_unwind(|| {
             assert_no_direct_final_create_builders("synthetic.rs", reordered_open_options_source);
@@ -46,7 +47,7 @@ fn production_write(path: &std::path::Path) {
         .is_err()
     );
 
-    let file_options_source = r#"
+    let file_options_source = r"
 fn production_write(path: &std::path::Path) {
     std::fs::File::options()
         .append(true)
@@ -54,7 +55,7 @@ fn production_write(path: &std::path::Path) {
         .open(path)
         .unwrap();
 }
-"#;
+";
     assert!(
         std::panic::catch_unwind(|| {
             assert_no_direct_final_create_builders("synthetic.rs", file_options_source);
@@ -62,7 +63,7 @@ fn production_write(path: &std::path::Path) {
         .is_err()
     );
 
-    let file_options_create_new_source = r#"
+    let file_options_create_new_source = r"
 fn production_write(path: &std::path::Path) {
     std::fs::File::options()
         .write(true)
@@ -70,7 +71,7 @@ fn production_write(path: &std::path::Path) {
         .open(path)
         .unwrap();
 }
-"#;
+";
     assert!(
         std::panic::catch_unwind(|| {
             assert_no_direct_final_create_builders("synthetic.rs", file_options_create_new_source);

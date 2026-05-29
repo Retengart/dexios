@@ -18,8 +18,8 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::ResetCursorPosition => f.write_str("Unable to reset cursor position"),
-            Error::ReadData => f.write_str("Unable to read data"),
+            Self::ResetCursorPosition => f.write_str("Unable to reset cursor position"),
+            Self::ReadData => f.write_str("Unable to read data"),
         }
     }
 }
@@ -30,6 +30,10 @@ pub struct Request<R: Read + Seek> {
     pub reader: RefCell<R>,
 }
 
+#[expect(
+    clippy::indexing_slicing,
+    reason = "read_count is the byte count returned by read() into `buffer`, so buffer[..read_count] is always in bounds"
+)]
 pub fn execute<R: Read + Seek>(mut hasher: impl Hasher, req: Request<R>) -> Result<String, Error> {
     req.reader
         .borrow_mut()
@@ -80,10 +84,11 @@ mod tests {
 
     #[test]
     fn should_hash_big_string() {
-        #[allow(
+        #[expect(
             clippy::cast_sign_loss,
             clippy::cast_possible_truncation,
-            clippy::cast_precision_loss
+            clippy::cast_precision_loss,
+            reason = "test-only fixed capacity computation from a small constant block size"
         )]
         let capacity = (BLOCK_SIZE as f32 * 1.5) as usize;
         let mut buf = Vec::with_capacity(capacity);

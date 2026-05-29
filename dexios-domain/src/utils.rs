@@ -1,16 +1,23 @@
-use std::fmt::Write as _;
+/// Lowercase hexadecimal nibble lookup table.
+const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 
 /// Canonical workspace helper for rendering raw bytes as a lowercase,
 /// fixed-width (two hex digits per byte, zero-padded) hex string.
 ///
 /// This is the single de-duplicated bytes -> hex conversion for the workspace;
 /// all callers route through here rather than re-implementing the loop or
-/// reaching for a third-party encoder.
+/// reaching for a third-party encoder. The nibble lookup avoids both the
+/// `core::fmt` machinery and any fallible `write!`, so it never panics.
 #[must_use]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "a 4-bit nibble (`>> 4` / `& 0x0f`) is always 0..=15, so indexing the 16-entry table is in bounds"
+)]
 pub fn hex_encode(bytes: &[u8]) -> String {
-    let mut encoded = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        write!(&mut encoded, "{byte:02x}").expect("writing to String cannot fail");
+    let mut encoded = String::with_capacity(bytes.len().saturating_mul(2));
+    for &byte in bytes {
+        encoded.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
     }
     encoded
 }

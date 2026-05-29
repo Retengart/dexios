@@ -63,32 +63,32 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::CreateArchive
-            | Error::CreateArchiveWithSource(_)
-            | Error::CreateArchiveIoWithSource(_) => f.write_str("Unable to create archive"),
-            Error::AddDirToArchive => f.write_str("Unable to add directory to archive"),
-            Error::AddFileToArchive => f.write_str("Unable to add file to archive"),
-            Error::FinishArchive | Error::FinishArchiveIoWithSource(_) => {
+            Self::CreateArchive
+            | Self::CreateArchiveWithSource(_)
+            | Self::CreateArchiveIoWithSource(_) => f.write_str("Unable to create archive"),
+            Self::AddDirToArchive => f.write_str("Unable to add directory to archive"),
+            Self::AddFileToArchive => f.write_str("Unable to add file to archive"),
+            Self::FinishArchive | Self::FinishArchiveIoWithSource(_) => {
                 f.write_str("Unable to finish archive")
             }
-            Error::ReadData
-            | Error::ReadDataWithSource(_)
-            | Error::ReadDataStorageWithSource(_) => f.write_str("Unable to read data"),
-            Error::WriteData | Error::WriteDataWithSource(_) => f.write_str("Unable to write data"),
-            Error::Encrypt(inner) => write!(f, "Unable to encrypt archive: {inner}"),
-            Error::PathIdentity(inner) => write!(f, "Pack path identity check failed: {inner}"),
-            Error::Transaction(inner) => write!(f, "Pack transaction failed: {inner}"),
-            Error::DetachedPublication(inner) => {
+            Self::ReadData
+            | Self::ReadDataWithSource(_)
+            | Self::ReadDataStorageWithSource(_) => f.write_str("Unable to read data"),
+            Self::WriteData | Self::WriteDataWithSource(_) => f.write_str("Unable to write data"),
+            Self::Encrypt(inner) => write!(f, "Unable to encrypt archive: {inner}"),
+            Self::PathIdentity(inner) => write!(f, "Pack path identity check failed: {inner}"),
+            Self::Transaction(inner) => write!(f, "Pack transaction failed: {inner}"),
+            Self::DetachedPublication(inner) => {
                 write!(f, "Detached publication incomplete: {inner}")
             }
-            Error::TransactionWriter => f.write_str("Unable to release staged pack writers"),
-            Error::ArchiveLimit(inner) => write!(f, "Archive limit error: {inner}"),
-            Error::ArchivePayload(inner) => write!(f, "Archive payload error: {inner}"),
-            Error::ArchiveRootName => f.write_str("Unable to derive archive root names"),
-            Error::SymlinkSource(path) => {
+            Self::TransactionWriter => f.write_str("Unable to release staged pack writers"),
+            Self::ArchiveLimit(inner) => write!(f, "Archive limit error: {inner}"),
+            Self::ArchivePayload(inner) => write!(f, "Archive payload error: {inner}"),
+            Self::ArchiveRootName => f.write_str("Unable to derive archive root names"),
+            Self::SymlinkSource(path) => {
                 write!(f, "Symlink pack source rejected: {}", path.display())
             }
-            Error::ReadSource | Error::ReadSourceWithSource(_) => {
+            Self::ReadSource | Self::ReadSourceWithSource(_) => {
                 f.write_str("Unable to read pack source")
             }
         }
@@ -215,7 +215,10 @@ pub struct PackIntent {
 }
 
 impl PackIntent {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "pack intent aggregates the full pack CLI surface in one constructor"
+    )]
     pub fn new<S, O>(
         source_paths: Vec<S>,
         output_path: O,
@@ -397,6 +400,10 @@ fn map_detached_publication_transaction_error(
     }
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "entry index is bounded by the manifest entry count (< u32::MAX), so the width conversion cannot overflow"
+)]
 fn execute_streaming_archive<SRW, W>(req: HandleRequest<'_, SRW, W>) -> Result<(), Error>
 where
     SRW: Read + Write + Seek,
@@ -489,6 +496,12 @@ where
     Ok(end)
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects,
+    reason = "limit = min(remaining, BLOCK_SIZE) <= buffer.len() and read_count <= limit keep the buffer ranges in bounds; both bounded sizes fit usize/u64, and remaining only decreases by the actual read_count (<= remaining)"
+)]
 fn write_archive_body<RW, W>(
     entry: &ArchiveSourceEntry<RW>,
     body_len: u64,
@@ -682,7 +695,7 @@ where
     RW: Read + Write + Seek,
 {
     limits
-        .check_entry_count(entries.len() + 1)
+        .check_entry_count(entries.len().saturating_add(1))
         .map_err(Error::ArchiveLimit)?;
     limits
         .check_normalized_path(&archive_path)
@@ -699,6 +712,10 @@ where
     Ok(())
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "generated pack output/detached-header targets are always constructed with an overwrite policy, so these accessors are never None here"
+)]
 fn validate_generated_targets_against_entries<RW>(
     entries: &[ArchiveSourceEntry<RW>],
     output_target: &ResolvedTarget,
@@ -819,6 +836,10 @@ fn normalized_path_components(path: &Path) -> Result<Vec<OsString>, Error> {
     Ok(components)
 }
 
+#[expect(
+    clippy::indexing_slicing,
+    reason = "start = components.len().saturating_sub(suffix_len) is always <= components.len(), so components[start..] is in bounds"
+)]
 fn suffix_path(components: &[OsString], suffix_len: usize) -> PathBuf {
     let start = components.len().saturating_sub(suffix_len);
     let mut path = PathBuf::new();
@@ -828,6 +849,11 @@ fn suffix_path(components: &[OsString], suffix_len: usize) -> PathBuf {
     path
 }
 
+#[expect(
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects,
+    reason = "suffix_lengths and components are the same length, and index always comes from enumerate() over the equally-sized roots vector; the increment is guarded by `suffix_lengths[index] < components[index].len()`"
+)]
 fn archive_root_names(inputs: &[PathBuf]) -> Result<Vec<PathBuf>, Error> {
     let components = inputs
         .iter()
@@ -895,7 +921,7 @@ impl LinkedStagedWriter {
     }
 
     fn with_staged_file<T>(
-        &mut self,
+        &self,
         write: impl FnOnce(&mut fs::File) -> io::Result<T>,
     ) -> io::Result<T> {
         let mut transaction = self.transaction.borrow_mut();
@@ -961,7 +987,10 @@ pub(crate) mod tests {
     use crate::encrypt::tests::PASSWORD;
     use crate::storage::{InMemoryStorage, Storage};
 
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "captured ciphertext fixture retained for regression replay even when unused"
+    )]
     pub(crate) const ENCRYPTED_PACKED_BAR_DIR: [u8; 1202] = [
         222, 5, 14, 1, 12, 1, 173, 240, 60, 45, 230, 243, 58, 160, 69, 50, 217, 192, 66, 223, 124,
         190, 148, 91, 92, 129, 0, 0, 0, 0, 0, 0, 223, 181, 71, 240, 140, 106, 41, 36, 82, 150, 105,

@@ -1,4 +1,5 @@
-#![allow(dead_code, unused_imports)]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, clippy::allow_attributes, clippy::redundant_pub_crate, reason = "shared test-support helpers assert exact behavior and may panic on failure"))]
+#![allow(dead_code, unused_imports, reason = "shared CLI workflow-error helpers are imported selectively across test crates")]
 
 use std::fs;
 use std::io::{Cursor, Write};
@@ -21,16 +22,16 @@ use core::stream::V1PayloadStream;
 use domain::storage::identity::{OverwritePolicy, PathIdentityGraph, PathRole};
 use domain::storage::transaction::{LinkedOutputTransaction, TransactionError};
 
-pub const CORRECT_PASSWORD: &str = "correct-password";
-pub const WRONG_PASSWORD: &str = "wrong-password";
+pub(crate) const CORRECT_PASSWORD: &str = "correct-password";
+pub(crate) const WRONG_PASSWORD: &str = "wrong-password";
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 
-pub struct TestDir {
+pub(crate) struct TestDir {
     path: PathBuf,
 }
 
 impl TestDir {
-    pub fn new(prefix: &str) -> Self {
+    pub(crate) fn new(prefix: &str) -> Self {
         let seq = NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -45,7 +46,7 @@ impl TestDir {
         Self { path }
     }
 
-    pub fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.path
     }
 }
@@ -56,7 +57,7 @@ impl Drop for TestDir {
     }
 }
 
-pub fn run_cli(current_dir: &Path, key: &str, args: &[&str]) -> std::process::Output {
+pub(crate) fn run_cli(current_dir: &Path, key: &str, args: &[&str]) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
     command
         .current_dir(current_dir)
@@ -66,11 +67,11 @@ pub fn run_cli(current_dir: &Path, key: &str, args: &[&str]) -> std::process::Ou
         .unwrap()
 }
 
-pub fn stderr(output: &std::process::Output) -> String {
+pub(crate) fn stderr(output: &std::process::Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
-pub fn assert_no_default_source_chain(stderr: &str) {
+pub(crate) fn assert_no_default_source_chain(stderr: &str) {
     for forbidden in [
         "Caused by:",
         "caused by:",
@@ -84,7 +85,7 @@ pub fn assert_no_default_source_chain(stderr: &str) {
     }
 }
 
-pub fn assert_no_default_debug_rendering(stderr: &str) {
+pub(crate) fn assert_no_default_debug_rendering(stderr: &str) {
     for forbidden in [
         "Error:",
         "TransactionError::",
@@ -103,7 +104,7 @@ pub fn assert_no_default_debug_rendering(stderr: &str) {
     }
 }
 
-pub fn encrypt_fixture(test_dir: &TestDir) {
+pub(crate) fn encrypt_fixture(test_dir: &TestDir) {
     fs::write(test_dir.path().join("plain.txt"), b"top secret").unwrap();
     let output = run_cli(
         test_dir.path(),
@@ -119,7 +120,7 @@ pub fn encrypt_fixture(test_dir: &TestDir) {
     );
 }
 
-pub fn write_manifest_archive_with_entries(path: &Path, entries: &[(&str, &[u8])]) {
+pub(crate) fn write_manifest_archive_with_entries(path: &Path, entries: &[(&str, &[u8])]) {
     let (header, encrypted_payload) = encrypted_manifest_archive_bytes(entries);
     let mut bytes = header;
     bytes.extend_from_slice(&encrypted_payload);
@@ -205,14 +206,14 @@ fn manifest_archive_header_and_master_key() -> (V1Header, MasterKey) {
     (header, master_key)
 }
 
-pub fn write_legacy_header(path: &Path) {
+pub(crate) fn write_legacy_header(path: &Path) {
     let mut file = fs::File::create(path).unwrap();
     file.write_all(&[0xDE, 0x05]).unwrap();
     file.write_all(&[7u8; 126]).unwrap();
     file.flush().unwrap();
 }
 
-pub fn write_malformed_v1_header(path: &Path) {
+pub(crate) fn write_malformed_v1_header(path: &Path) {
     let mut bytes = vec![0u8; HEADER_LEN];
     bytes[0..4].copy_from_slice(b"DXIO");
     bytes[4..6].copy_from_slice(&[0x00, 0x01]);
@@ -254,11 +255,11 @@ fn retired_v1_fixture_bytes() -> Vec<u8> {
     bytes
 }
 
-pub fn write_retired_v1_fixture(path: &Path) {
+pub(crate) fn write_retired_v1_fixture(path: &Path) {
     fs::write(path, retired_v1_fixture_bytes()).unwrap();
 }
 
-pub fn partial_commit_error() -> TransactionError {
+pub(crate) fn partial_commit_error() -> TransactionError {
     let test_dir = TestDir::new("partial-commit-error");
     let output_path = test_dir.path().join("committed.out");
     let header_path = test_dir.path().join("failed.header");
@@ -291,7 +292,7 @@ pub fn partial_commit_error() -> TransactionError {
     transaction.commit_all().unwrap_err()
 }
 
-pub fn mark_keyslot_unsupported_argon2id(path: &Path, index: usize) {
+pub(crate) fn mark_keyslot_unsupported_argon2id(path: &Path, index: usize) {
     let mut bytes = fs::read(path).unwrap();
     let offset = HEADER_STATIC_LEN + (index * KEYSLOT_LEN) + 2;
     bytes[offset..offset + 2].copy_from_slice(&[0xDF, 0x02]);

@@ -102,9 +102,10 @@ pub fn unwrap_v1_master_key(
     nonce: &KeyslotNonce,
     aad: &[u8],
 ) -> Result<MasterKey, CipherError> {
-    let cipher = Ciphers::initialize(wrapping_key)?;
     use aead::AeadInPlace;
     use zeroize::Zeroizing;
+
+    let cipher = Ciphers::initialize(wrapping_key)?;
 
     // ENCRYPTED_MASTER_KEY_LEN = 48 = 32-byte key + 16-byte tag. Decrypt the 32-byte
     // buffer in place so the AEAD does not allocate and hand back a separate plaintext

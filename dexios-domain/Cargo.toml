@@ -35,3 +35,6 @@ walkdir.workspace = true
 tempfile = "3.27.0"
 same-file = "1.0.6"
 rustix.workspace = true
+
+[lints]
+workspace = true

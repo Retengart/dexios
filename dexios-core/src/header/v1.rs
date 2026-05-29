@@ -65,6 +65,10 @@ pub struct V1KeyslotCount(u8);
 
 impl V1KeyslotCount {
     pub const MIN: u8 = 1;
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "MAX_KEYSLOTS is the constant 4, which trivially fits in u8"
+    )]
     pub const MAX: u8 = MAX_KEYSLOTS as u8;
 
     pub fn try_from_u8(count: u8) -> Result<Self, HeaderReadError> {
@@ -84,6 +88,10 @@ impl V1KeyslotCount {
 pub struct V1KeyslotIndex(u8);
 
 impl V1KeyslotIndex {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the preceding bound `index < count.get()` (a u8) guarantees index fits in u8"
+    )]
     pub fn try_from_usize(index: usize, count: V1KeyslotCount) -> Result<Self, HeaderReadError> {
         if index >= usize::from(count.get()) {
             return Err(HeaderReadError::InvalidKeyslotCount(count.get()));
@@ -91,10 +99,14 @@ impl V1KeyslotIndex {
         Ok(Self(index as u8))
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the preceding bound `index < MAX_KEYSLOTS` (4) guarantees index fits in u8"
+    )]
     pub fn try_from_physical_index(index: usize) -> Result<Self, HeaderReadError> {
         if index >= MAX_KEYSLOTS {
             return Err(HeaderReadError::InvalidPhysicalSlotIndex {
-                expected: MAX_KEYSLOTS - 1,
+                expected: MAX_KEYSLOTS.saturating_sub(1),
                 actual: u8::try_from(index).unwrap_or(u8::MAX),
             });
         }
@@ -164,6 +176,10 @@ impl V1Keyslot {
         }
     }
 
+    #[expect(
+        clippy::expect_used,
+        reason = "physical_index is always derived from a slot position < MAX_KEYSLOTS (4), so it fits in u8"
+    )]
     fn with_physical_index(mut self, physical_index: usize) -> Self {
         self.physical_index =
             u8::try_from(physical_index).expect("physical V1 slot index fits in u8");
@@ -206,6 +222,11 @@ impl V1Keyslot {
         bytes.extend_from_slice(&[0u8; KEYSLOT_LEN - 92]);
     }
 
+    #[expect(
+        clippy::indexing_slicing,
+        clippy::expect_used,
+        reason = "slot_bytes is a KEYSLOT_LEN-sized slice carved by deserialize_bytes; all offsets (0..92) are within the validated keyslot layout, and physical_index is bounded < MAX_KEYSLOTS (4) so it fits in u8"
+    )]
     fn deserialize(slot_bytes: &[u8], physical_index: usize) -> Result<Self, HeaderReadError> {
         if slot_bytes[0] != SLOT_STATE_ACTIVE {
             return Err(HeaderReadError::InvalidSlotState {
@@ -310,6 +331,11 @@ impl V1Keyslots {
     }
 
     #[must_use]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::expect_used,
+        reason = "V1Keyslots maintains the invariant that inner.len() is in 1..=MAX_KEYSLOTS (4), so the cast never truncates and try_from_u8 always succeeds"
+    )]
     pub fn count(&self) -> V1KeyslotCount {
         V1KeyslotCount::try_from_u8(self.inner.len() as u8)
             .expect("V1Keyslots invariant keeps count in 1..=4")
@@ -317,11 +343,11 @@ impl V1Keyslots {
 
     pub fn push(&mut self, keyslot: V1Keyslot) -> Result<(), HeaderWriteError> {
         if self.is_full() {
-            return Err(HeaderWriteError::TooManyKeyslots(self.inner.len() + 1));
+            return Err(HeaderWriteError::TooManyKeyslots(self.inner.len().saturating_add(1)));
         }
         let physical_index = self
             .first_empty_physical_slot()
-            .ok_or_else(|| HeaderWriteError::TooManyKeyslots(self.inner.len() + 1))?;
+            .ok_or_else(|| HeaderWriteError::TooManyKeyslots(self.inner.len().saturating_add(1)))?;
         self.insert_physical_slot(physical_index, keyslot)
     }
 
@@ -331,7 +357,7 @@ impl V1Keyslots {
         keyslot: V1Keyslot,
     ) -> Result<(), HeaderWriteError> {
         if self.is_full() {
-            return Err(HeaderWriteError::TooManyKeyslots(self.inner.len() + 1));
+            return Err(HeaderWriteError::TooManyKeyslots(self.inner.len().saturating_add(1)));
         }
         if self.get_physical(index.get()).is_some() {
             return Err(HeaderWriteError::InvalidKeyslotIndex(index.get()));
@@ -458,6 +484,10 @@ impl V1Header {
     }
 
     #[must_use]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "MAX_KEYSLOTS (4) trivially fits in u8 for the keyslot-count AAD byte"
+    )]
     pub fn aad(&self) -> V1HeaderAad {
         let mut aad = [0u8; HEADER_STATIC_LEN];
         aad[..4].copy_from_slice(&MAGIC);
@@ -483,6 +513,10 @@ impl V1Header {
         self.slot_wrapping_aad_for_keyslot(keyslot)
     }
 
+    #[expect(
+        clippy::expect_used,
+        reason = "the preceding `physical_index >= MAX_KEYSLOTS` guard guarantees the value is < 4, so it fits in u8"
+    )]
     fn slot_wrapping_aad_for_keyslot(
         &self,
         keyslot: &V1Keyslot,
@@ -525,10 +559,16 @@ impl V1Header {
         let mut bytes = [0u8; HEADER_LEN];
         reader.read_exact(&mut bytes)?;
 
-        Self::deserialize_bytes(bytes)
+        Self::deserialize_bytes(&bytes)
     }
 
-    pub(crate) fn deserialize_bytes(bytes: [u8; HEADER_LEN]) -> Result<Self, HeaderReadError> {
+    #[expect(
+        clippy::indexing_slicing,
+        clippy::arithmetic_side_effects,
+        clippy::cast_possible_truncation,
+        reason = "bytes is a fixed [u8; HEADER_LEN] array; every offset and the per-slot range (HEADER_STATIC_LEN + index*KEYSLOT_LEN for index<MAX_KEYSLOTS) is a compile-time-bounded position inside the canonical header layout, and MAX_KEYSLOTS (4) fits in u8"
+    )]
+    pub(crate) fn deserialize_bytes(bytes: &[u8; HEADER_LEN]) -> Result<Self, HeaderReadError> {
         let mut magic = [0u8; 4];
         magic.copy_from_slice(&bytes[..4]);
         if magic != MAGIC {

@@ -98,7 +98,6 @@ impl Storage<io::Cursor<Vec<u8>>> for InMemoryStorage {
     fn create_file<P: AsRef<Path>>(&self, path: P) -> Result<Entry<io::Cursor<Vec<u8>>>, Error> {
         let file_path = path.as_ref().to_path_buf();
 
-        #[allow(clippy::significant_drop_in_scrutinee)]
         let im_file = match self.files().get(&file_path) {
             Some(_) => Err(Error::CreateFile),
             None => Ok(IMFile::File(InMemoryFile::default())),
@@ -200,7 +199,10 @@ impl Storage<io::Cursor<Vec<u8>>> for InMemoryStorage {
 
         let file_path = file.path();
 
-        #[allow(clippy::needless_collect)] // We have to collect to close read lock guard.
+        #[expect(
+            clippy::needless_collect,
+            reason = "collecting eagerly releases the read lock guard before mutating the map"
+        )]
         let file_paths = self
             .files()
             .keys()
@@ -248,10 +250,14 @@ pub enum IMFile {
 }
 
 impl IMFile {
+    #[expect(
+        clippy::unreachable,
+        reason = "inner() is only ever called on File variants the caller just constructed/opened as files"
+    )]
     fn inner(&self) -> &InMemoryFile {
         match self {
-            IMFile::File(inner) => inner,
-            IMFile::Dir => unreachable!(),
+            Self::File(inner) => inner,
+            Self::Dir => unreachable!(),
         }
     }
 }

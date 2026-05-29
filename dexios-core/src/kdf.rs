@@ -75,8 +75,7 @@ pub enum KdfError {
 impl Display for KdfError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidParams(message) => f.write_str(message),
-            Self::DeriveFailed(message) => f.write_str(message),
+            Self::InvalidParams(message) | Self::DeriveFailed(message) => f.write_str(message),
         }
     }
 }
@@ -104,15 +103,12 @@ pub(crate) fn derive_argon2id_with_params(
     let result = raw_key
         .with_exposed(|raw_key| argon2.hash_password_into(raw_key, salt.as_bytes(), &mut key));
 
-    match result {
-        Ok(()) => {
-            let protected = Protected::new(key);
-            key.zeroize();
-            Ok(protected)
-        }
-        Err(_) => {
-            key.zeroize();
-            Err(KdfError::DeriveFailed("Error while hashing your key"))
-        }
+    if result == Ok(()) {
+        let protected = Protected::new(key);
+        key.zeroize();
+        Ok(protected)
+    } else {
+        key.zeroize();
+        Err(KdfError::DeriveFailed("Error while hashing your key"))
     }
 }

@@ -38,7 +38,7 @@ where
     Ok(header_check()?.unwrap_or(true))
 }
 
-pub struct Request<'a> {
+pub(crate) struct Request<'a> {
     pub input_file: &'a Vec<String>,
     pub output_file: &'a str,
     pub pack_params: PackParams,
@@ -55,7 +55,7 @@ fn overwrite_policy_for(path: &Path) -> OverwritePolicy {
 
 // Packing is delegated to the domain layer, which writes a canonical
 // manifest-first archive payload through staged transaction semantics.
-pub fn execute(req: &Request) -> Result<()> {
+pub(crate) fn execute(req: &Request<'_>) -> Result<()> {
     // 1. validate and prepare options
     if req.input_file.iter().any(|f| f == req.output_file) {
         return Err(anyhow::anyhow!(

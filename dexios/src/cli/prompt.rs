@@ -13,7 +13,7 @@ use zeroize::Zeroizing;
 // this handles user-interactivity, specifically getting a "yes" or "no" answer from the user
 // it requires the question itself, if the default is true/false
 // if force is enabled then it will just return the `default`
-pub fn get_answer(prompt: &str, default: bool, force: ForceMode) -> Result<bool> {
+pub(crate) fn get_answer(prompt: &str, default: bool, force: ForceMode) -> Result<bool> {
     if force == ForceMode::Force {
         return Ok(true);
     }
@@ -51,7 +51,7 @@ pub fn get_answer(prompt: &str, default: bool, force: ForceMode) -> Result<bool>
 // then it prompts the user if they'd like to overwrite a file (while showing the associated file name)
 // if they have the force argument supplied, this will just assume true
 // if force mode is true, avoid prompts at all
-pub fn overwrite_check(name: &str, force: ForceMode) -> Result<bool> {
+pub(crate) fn overwrite_check(name: &str, force: ForceMode) -> Result<bool> {
     let answer = if std::fs::metadata(name).is_ok() {
         let prompt = format!("{name} already exists, would you like to overwrite?");
         get_answer(&prompt, true, force)?
@@ -100,7 +100,7 @@ where
     }
 }
 
-pub fn get_password(pass_state: &PasswordState) -> Result<Protected<Vec<u8>>> {
+pub(crate) fn get_password(pass_state: &PasswordState) -> Result<Protected<Vec<u8>>> {
     get_password_with_prompt(pass_state, |prompt| {
         rpassword::prompt_password(prompt).map_err(Into::into)
     })

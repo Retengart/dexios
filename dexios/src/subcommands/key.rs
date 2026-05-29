@@ -26,7 +26,7 @@ fn reject_dual_stdin_keyfiles(params: &KeyManipulationParams) -> Result<()> {
     Ok(())
 }
 
-pub fn add(input: &str, params: &KeyManipulationParams) -> Result<()> {
+pub(crate) fn add(input: &str, params: &KeyManipulationParams) -> Result<()> {
     reject_dual_stdin_keyfiles(params)?;
     let intent = domain::key::add::AddIntent::new(Path::new(input)).map_err(map_key_error)?;
 
@@ -48,7 +48,7 @@ pub fn add(input: &str, params: &KeyManipulationParams) -> Result<()> {
     Ok(())
 }
 
-pub fn change(input: &str, params: &KeyManipulationParams) -> Result<()> {
+pub(crate) fn change(input: &str, params: &KeyManipulationParams) -> Result<()> {
     reject_dual_stdin_keyfiles(params)?;
     let intent = domain::key::change::ChangeIntent::new(Path::new(input)).map_err(map_key_error)?;
 
@@ -74,7 +74,7 @@ pub fn change(input: &str, params: &KeyManipulationParams) -> Result<()> {
     Ok(())
 }
 
-pub fn delete(input: &str, key_old: &Key, force: ForceMode) -> Result<()> {
+pub(crate) fn delete(input: &str, key_old: &Key, force: ForceMode) -> Result<()> {
     let intent = domain::key::delete::DeleteIntent::new(Path::new(input)).map_err(map_key_error)?;
 
     if key_old == &Key::User {
@@ -92,7 +92,7 @@ pub fn delete(input: &str, key_old: &Key, force: ForceMode) -> Result<()> {
     Ok(())
 }
 
-pub fn verify(input: &str, key: &Key) -> Result<()> {
+pub(crate) fn verify(input: &str, key: &Key) -> Result<()> {
     let intent = domain::key::verify::VerifyIntent::new(Path::new(input)).map_err(map_key_error)?;
 
     if key == &Key::User {

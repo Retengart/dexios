@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
 use dexios_core::header::common::{
     CANONICAL_HEADER_LEN, CANONICAL_HEADER_STATIC_LEN, CANONICAL_V1_DISCRIMINATOR, HEADER_LEN,
     HEADER_STATIC_LEN, KEYSLOT_LEN, KeyslotNonce, PayloadNonce, Salt as HeaderSalt,
@@ -17,7 +18,7 @@ use std::path::Path;
 mod support {
     use super::*;
 
-    pub fn sample_v1_header() -> V1Header {
+    pub(crate) fn sample_v1_header() -> V1Header {
         let keyslots = V1Keyslots::single(V1Keyslot::new(
             Kdf::Argon2id,
             [11u8; 48],
@@ -28,7 +29,7 @@ mod support {
         V1Header::new(PayloadNonce::new([7u8; 20]), keyslots).expect("sample v1 header")
     }
 
-    pub fn parsed_payload_for(header: &V1Header) -> ParsedV1Payload {
+    pub(crate) fn parsed_payload_for(header: &V1Header) -> ParsedV1Payload {
         let bytes = header.serialize().unwrap();
         let ParsedHeader::V1(payload) =
             dexios_core::header::read_header(&mut std::io::Cursor::new(bytes)).unwrap();
@@ -190,7 +191,7 @@ fn keyslot_wrap_unwrap_authenticates_slot_scoped_metadata() {
     wrong_salt[CANONICAL_HEADER_STATIC_LEN + 3] ^= 0x01;
     let mut wrong_keyslot_nonce = wrapping_aad.clone();
     wrong_keyslot_nonce[CANONICAL_HEADER_STATIC_LEN + 3 + 16] ^= 0x01;
-    let mut wrong_static_header = wrapping_aad.clone();
+    let mut wrong_static_header = wrapping_aad;
     wrong_static_header[16] ^= 0x01;
 
     for (case, aad) in [
@@ -321,7 +322,7 @@ fn shared_payload_kind_and_framing_roundtrip_through_header_bytes() {
         "raw-file payload kind/framing bytes must be exact"
     );
 
-    let mut archive_bytes = raw_bytes.clone();
+    let mut archive_bytes = raw_bytes;
     archive_bytes[11] = PayloadKind::ManifestArchive.to_byte();
     archive_bytes[12] = PayloadFramingProfile::ManifestFirst.to_byte();
 
@@ -408,7 +409,7 @@ fn deserialize_roundtrip_preserves_payload_nonce_and_keyslots() {
     let bytes = header.serialize().unwrap();
     let parsed = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes)).unwrap();
 
-    let dexios_core::header::ParsedHeader::V1(parsed) = parsed;
+    let ParsedHeader::V1(parsed) = parsed;
     assert_eq!(
         parsed.payload_nonce().as_bytes(),
         header.payload_nonce().as_bytes()
@@ -585,7 +586,7 @@ fn read_header_rejects_invalid_magic_before_dispatching() {
 
     assert!(matches!(
         error,
-        dexios_core::header::HeaderReadError::InvalidMagic([0x42, 0x41, 0x44, 0x21])
+        HeaderReadError::InvalidMagic([0x42, 0x41, 0x44, 0x21])
     ));
 }
 
@@ -599,7 +600,7 @@ fn read_header_rejects_legacy_prefix_as_unsupported_format() {
 
     assert!(matches!(
         error,
-        dexios_core::header::HeaderReadError::UnsupportedFormat([0xDE, 0x05])
+        HeaderReadError::UnsupportedFormat([0xDE, 0x05])
     ));
 }
 
@@ -613,7 +614,7 @@ fn read_header_rejects_truncated_header() {
 
     assert!(matches!(
         error,
-        dexios_core::header::HeaderReadError::TruncatedHeader
+        HeaderReadError::TruncatedHeader
     ));
 }
 
@@ -764,7 +765,7 @@ fn v1_header_rejects_keyslot_count_above_max() {
 
     assert!(matches!(
         error,
-        dexios_core::header::HeaderReadError::InvalidKeyslotCount(5)
+        HeaderReadError::InvalidKeyslotCount(5)
     ));
 }
 
@@ -778,7 +779,7 @@ fn v1_header_rejects_invalid_kdf_tag() {
 
     assert!(matches!(
         error,
-        dexios_core::header::HeaderReadError::InvalidKdfProfile(0xAA)
+        HeaderReadError::InvalidKdfProfile(0xAA)
     ));
 }
 
@@ -869,7 +870,7 @@ fn v1_header_rejects_active_keyslot_padding() {
 
     assert!(matches!(
         error,
-        dexios_core::header::HeaderReadError::NonZeroActiveKeyslotPadding(0)
+        HeaderReadError::NonZeroActiveKeyslotPadding(0)
     ));
 }
 
@@ -883,7 +884,7 @@ fn v1_header_rejects_inactive_keyslot_bytes() {
 
     assert!(matches!(
         error,
-        dexios_core::header::HeaderReadError::NonZeroInactiveKeyslotPadding(1)
+        HeaderReadError::NonZeroInactiveKeyslotPadding(1)
     ));
 }
 
@@ -897,7 +898,7 @@ fn v1_header_rejects_nonzero_reserved_bytes() {
 
     assert!(matches!(
         error,
-        dexios_core::header::HeaderReadError::NonZeroReservedBytes
+        HeaderReadError::NonZeroReservedBytes
     ));
 }
 
@@ -916,7 +917,7 @@ fn v1_primitives_reject_invalid_lengths() {
         Err(HeaderReadError::InvalidSaltLength(15))
     ));
     assert!(matches!(
-        dexios_core::header::v1::EncryptedMasterKey::try_from_slice(&[0u8; 47]),
+        EncryptedMasterKey::try_from_slice(&[0u8; 47]),
         Err(HeaderReadError::InvalidEncryptedMasterKeyLength(47))
     ));
 }

@@ -1,6 +1,10 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
 use domain::workflow_error::WorkflowErrorClass;
 
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "the included CLI error-mapper module exposes more mappers than this boundary test exercises"
+)]
 #[path = "../src/subcommands/errors.rs"]
 mod cli_error_mappers;
 
@@ -98,7 +102,7 @@ fn detached_pack_partial_publication_names_committed_and_failed_artifacts() {
 
 #[test]
 fn cli_workflow_errors_are_routed_through_mapping_helpers() {
-    assert!(SUBCOMMANDS_SOURCE.contains("pub mod errors;"));
+    assert!(SUBCOMMANDS_SOURCE.contains("pub(crate) mod errors;"));
     let mapper_source = production_mapper_source();
     assert!(ERRORS_SOURCE.contains("map_encrypt_error"));
     assert!(ERRORS_SOURCE.contains("map_decrypt_error"));

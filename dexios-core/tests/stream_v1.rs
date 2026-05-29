@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
 use std::io::{Cursor, Read, Write};
 
 use dexios_core::header::common::{KeyslotNonce, PayloadNonce, Salt as HeaderSalt};
@@ -21,11 +22,11 @@ const FIXTURE_MANIFEST: &str = include_str!("testdata/fixture_manifest.toml");
 mod support {
     use super::*;
 
-    pub fn sample_v1_header() -> V1Header {
+    pub(crate) fn sample_v1_header() -> V1Header {
         sample_v1_header_with_nonce_and_keyslot_count([7u8; 20], 1)
     }
 
-    pub fn sample_v1_header_with_nonce_and_keyslot_count(
+    pub(crate) fn sample_v1_header_with_nonce_and_keyslot_count(
         payload_nonce: [u8; 20],
         keyslot_count: usize,
     ) -> V1Header {
@@ -39,14 +40,14 @@ mod support {
         .expect("sample v1 header")
     }
 
-    pub fn parsed_payload_for(header: &V1Header) -> ParsedV1Payload {
+    pub(crate) fn parsed_payload_for(header: &V1Header) -> ParsedV1Payload {
         let bytes = header.serialize().expect("serialize header");
         let ParsedHeader::V1(payload) =
             dexios_core::header::read_header(&mut Cursor::new(bytes)).expect("parse header");
         payload
     }
 
-    pub fn parsed_payload_with_payload_metadata(
+    pub(crate) fn parsed_payload_with_payload_metadata(
         header: &V1Header,
         payload_kind: u8,
         payload_framing: u8,
@@ -59,7 +60,7 @@ mod support {
         payload
     }
 
-    pub fn master_key() -> MasterKey {
+    pub(crate) fn master_key() -> MasterKey {
         MasterKey::new([31u8; 32])
     }
 

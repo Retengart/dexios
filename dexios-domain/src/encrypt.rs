@@ -78,25 +78,25 @@ impl Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::OpenInput | Error::OpenInputWithSource(_) => {
+            Self::OpenInput | Self::OpenInputWithSource(_) => {
                 f.write_str("Cannot open input file")
             }
-            Error::ResetCursorPosition | Error::ResetCursorPositionWithSource(_) => {
+            Self::ResetCursorPosition | Self::ResetCursorPositionWithSource(_) => {
                 f.write_str("Unable to reset cursor position")
             }
-            Error::HashKey => f.write_str("Cannot hash raw key"),
-            Error::EncryptMasterKey => f.write_str("Cannot encrypt master key"),
-            Error::EncryptFile | Error::EncryptFileWithSource(_) => {
+            Self::HashKey => f.write_str("Cannot hash raw key"),
+            Self::EncryptMasterKey => f.write_str("Cannot encrypt master key"),
+            Self::EncryptFile | Self::EncryptFileWithSource(_) => {
                 f.write_str("Cannot encrypt file")
             }
-            Error::WriteHeader | Error::WriteHeaderWithSource(_) => {
+            Self::WriteHeader | Self::WriteHeaderWithSource(_) => {
                 f.write_str("Cannot write header")
             }
-            Error::InitializeStreams => f.write_str("Cannot initialize streams"),
-            Error::InitializeCiphers => f.write_str("Cannot initialize ciphers"),
-            Error::PathIdentity(error) => write!(f, "{error}"),
-            Error::Transaction(error) => write!(f, "{error}"),
-            Error::DetachedPublication(error) => {
+            Self::InitializeStreams => f.write_str("Cannot initialize streams"),
+            Self::InitializeCiphers => f.write_str("Cannot initialize ciphers"),
+            Self::PathIdentity(error) => write!(f, "{error}"),
+            Self::Transaction(error) => write!(f, "{error}"),
+            Self::DetachedPublication(error) => {
                 write!(f, "Detached publication incomplete: {error}")
             }
         }

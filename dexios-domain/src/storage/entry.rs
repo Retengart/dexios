@@ -26,25 +26,25 @@ where
 {
     pub fn path(&self) -> &Path {
         match self {
-            Entry::File(FileData { path, .. }) | Entry::Dir(path) => path,
+            Self::File(FileData { path, .. }) | Self::Dir(path) => path,
         }
     }
 
     pub fn is_dir(&self) -> bool {
-        matches!(self, Entry::Dir(_))
+        matches!(self, Self::Dir(_))
     }
 
     pub fn try_reader(&self) -> Result<&RefCell<RW>, Error> {
         match self {
-            Entry::File(file) => Ok(&file.stream),
-            Entry::Dir(_) => Err(Error::FileAccess),
+            Self::File(file) => Ok(&file.stream),
+            Self::Dir(_) => Err(Error::FileAccess),
         }
     }
 
     pub fn try_writer(&self) -> Result<&RefCell<RW>, Error> {
         match self {
-            Entry::File(file) => Ok(&file.stream),
-            Entry::Dir(_) => Err(Error::FileAccess),
+            Self::File(file) => Ok(&file.stream),
+            Self::Dir(_) => Err(Error::FileAccess),
         }
     }
 }
