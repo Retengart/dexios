@@ -161,6 +161,33 @@ fn encrypt_with_dexios_key_env_warns_about_environment_exposure() {
 }
 
 #[test]
+fn encrypt_auto_word_count_is_capped_at_64() {
+    let test_dir = TestDir::new("encrypt-auto-cap");
+    fs::write(test_dir.path().join("plain.txt"), b"x").unwrap();
+
+    let over = run_cli(
+        test_dir.path(),
+        &["encrypt", "--force", "--auto=70", "plain.txt", "over.enc"],
+    );
+    assert!(!over.status.success(), "--auto=70 must be rejected");
+    let stderr = String::from_utf8_lossy(&over.stderr);
+    assert!(
+        stderr.contains("between 1 and 64"),
+        "expected cap message, got: {stderr}"
+    );
+
+    let ok = run_cli(
+        test_dir.path(),
+        &["encrypt", "--force", "--auto=64", "plain.txt", "ok.enc"],
+    );
+    assert!(
+        ok.status.success(),
+        "--auto=64 must be accepted: {}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+}
+
+#[test]
 fn encrypt_keyfile_stdin_fails_before_interactive_overwrite_prompt() {
     let test_dir = TestDir::new("encrypt-keyfile-stdin-overwrite");
     fs::write(test_dir.path().join("plain.txt"), b"plain").unwrap();
