@@ -38,7 +38,7 @@ fn key_add_commits_second_keyslot_without_breaking_existing_decrypt() {
     key::add::execute(
         proven,
         Protected::new(b"new-pass".to_vec()),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
     )
     .expect("add second keyslot");
 
@@ -82,7 +82,7 @@ fn key_change_rejects_target_changed_after_old_key_proof() {
     let result = key::change::execute(
         proven,
         Protected::new(b"new-pass".to_vec()),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
     );
 
     assert!(matches!(result, Err(key::Error::TargetChanged)));
@@ -106,7 +106,7 @@ fn key_change_commits_replacement_header_that_only_new_key_can_use() {
     key::change::execute(
         proven,
         Protected::new(b"new-pass".to_vec()),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
     )
     .expect("commit key change");
 
@@ -449,14 +449,14 @@ fn can_change_and_reject_final_delete_v1_keyslots() {
     key::change::execute(
         proven,
         Protected::new(b"new-pass".to_vec()),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
     )
     .expect("change keyslot");
 
     let changed = RefCell::new(Cursor::new(
         fs::read(&encrypted_path).expect("read changed fixture"),
     ));
-    assert_eq!(keyslot_kdfs(&changed), [KeyslotKdf::Blake3Balloon]);
+    assert_eq!(keyslot_kdfs(&changed), [KeyslotKdf::Argon2id]);
 
     verify_file(&encrypted_path, b"new-pass").expect("verify changed key");
 

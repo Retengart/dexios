@@ -52,7 +52,7 @@ fn v1_header_write_must_write_the_full_serialized_header() {
     let header = V1Header::new(
         PayloadNonce::new([7u8; 20]),
         V1Keyslots::single(V1Keyslot::new(
-            Kdf::Blake3Balloon,
+            Kdf::Argon2id,
             [5u8; 48],
             KeyslotNonce::new([9u8; 24]),
             Salt::new([3u8; 16]),
@@ -71,7 +71,7 @@ fn v1_header_write_preserves_underlying_io_error_details() {
     let header = V1Header::new(
         PayloadNonce::new([7u8; 20]),
         V1Keyslots::single(V1Keyslot::new(
-            Kdf::Blake3Balloon,
+            Kdf::Argon2id,
             [5u8; 48],
             KeyslotNonce::new([9u8; 24]),
             Salt::new([3u8; 16]),

@@ -34,7 +34,7 @@ fn pack_intent(
         detached_header_path
             .map(|path| DetachedHeaderTarget::new(path, OverwritePolicy::CreateNew)),
         Protected::new(PASSWORD.to_vec()),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
         ArchivePolicy::default(),
         true,
         None,
@@ -46,7 +46,7 @@ fn add_key_file(path: &Path, old_key: &[u8], new_key: &[u8]) {
     let proven = intent
         .verify_old_key(Protected::new(old_key.to_vec()))
         .expect("old key proof");
-    key::add::execute(proven, Protected::new(new_key.to_vec()), Kdf::Blake3Balloon)
+    key::add::execute(proven, Protected::new(new_key.to_vec()), Kdf::Argon2id)
         .expect("add second keyslot");
 }
 
@@ -55,7 +55,7 @@ fn change_key_file(path: &Path, old_key: &[u8], new_key: &[u8]) {
     let proven = intent
         .verify_old_key(Protected::new(old_key.to_vec()))
         .expect("old key proof");
-    key::change::execute(proven, Protected::new(new_key.to_vec()), Kdf::Blake3Balloon)
+    key::change::execute(proven, Protected::new(new_key.to_vec()), Kdf::Argon2id)
         .expect("change keyslot");
 }
 
@@ -163,7 +163,7 @@ fn encrypt_key_add_decrypt_preserves_rawfile_payload() {
             OverwritePolicy::CreateNew,
             None,
             Protected::new(PASSWORD.to_vec()),
-            Kdf::Blake3Balloon,
+            Kdf::Argon2id,
         )
         .unwrap(),
     )

@@ -4,10 +4,10 @@ mod keyslots_support;
 use keyslots_support::*;
 
 #[test]
-fn encrypt_writes_blake3_balloon_keyslot() {
+fn encrypt_writes_argon2id_keyslot() {
     let encrypted = encrypted_v1_fixture();
 
-    assert_eq!(keyslot_kdfs(&encrypted), [KeyslotKdf::Blake3Balloon]);
+    assert_eq!(keyslot_kdfs(&encrypted), [KeyslotKdf::Argon2id]);
 }
 #[test]
 fn argon2id_only_keyslot_returns_unsupported_kdf_for_verify() {

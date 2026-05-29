@@ -44,7 +44,7 @@ impl Drop for TestDir {
 
 fn v1_header_bytes() -> Vec<u8> {
     let keyslot = V1Keyslot::new(
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
         [1u8; 48],
         KeyslotNonce::new([2u8; 24]),
         Salt::new([3u8; 16]),

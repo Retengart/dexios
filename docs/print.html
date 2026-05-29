@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-cdf0b23e.js";
+            window.path_to_searchindex_js = "searchindex-c68e4b7a.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-07f7ca76.js"></script>
@@ -188,9 +188,9 @@
 </ul>
 <p>For normal encryption, Dexios writes V1 headers and uses one suite:
 <code>XChaCha20-Poly1305</code> with LE31 stream encryption. The normal KDF for new V1
-writes is BLAKE3-Balloon only. Historical unsupported Argon2id keyslot tags remain
-recognized as unsupported historical metadata so old headers can fail with a
-specific diagnosis.</p>
+writes is Argon2id only (256 MiB / t=4 / p=4). The historical unsupported
+Argon2id keyslot tag remains recognized as unsupported historical metadata so
+old headers can fail with a specific diagnosis.</p>
 <h2 id="security-notices"><a class="header" href="#security-notices">Security Notices</a></h2>
 <p>The RustCrypto <code>chacha20poly1305</code> implementation used by Dexios is based on audited upstream crates. Dexios itself does not claim a full-project external audit.</p>
 <p>Dexios uses authenticated encryption and authenticates header data through AEAD AAD. Integrity of encrypted payloads does not depend on the optional checksum output.</p>
@@ -205,7 +205,7 @@ uncommitted scratch until final authentication succeeds.</p>
 <p>uses the following defaults:</p>
 <ul>
 <li><code>XChaCha20-Poly1305</code></li>
-<li><code>BLAKE3-Balloon</code> password hashing with frozen Phase 3 parameters</li>
+<li><code>Argon2id</code> password hashing with frozen canonical parameters (256 MiB / t=4 / p=4)</li>
 <li>V1 headers</li>
 <li>stream encryption with 1 MiB blocks</li>
 <li>an authenticated final block, including an empty final marker for exact-block plaintext</li>
@@ -504,7 +504,7 @@ assigned to a later phase.</p>
 <tr><td>FMT-004</td><td>Headers</td><td>V1 reserved bytes are rejected when non-zero.</td><td>current</td><td>Reviewable byte fixture and core test</td><td><code>dexios-core/tests/testdata/v1_malformed_reserved_byte.hex</code>; <code>dexios-core/tests/v1_header.rs::fixture_v1_malformed_reserved_byte_is_rejected</code></td><td>SAFE-01, VERI-02</td><td>Phase 2</td></tr>
 <tr><td>FMT-005</td><td>Headers</td><td>Detached V1 header mode stores exact parseable 512-byte canonical V1 header bytes separately from encrypted payload bytes; header dump writes exactly one V1 header and rejects header-only artifacts.</td><td>current</td><td>Current source and CLI fixture tests</td><td><code>dexios-domain/src/header/dump.rs</code>; <code>dexios-domain/src/header/strip.rs</code>; <code>dexios/tests/header_details_cli.rs::detached_header_current_v1_fixture_keeps_header_separate</code>; <code>dexios/tests/header_cli_regressions.rs::header_dump_rejects_header_only_input_and_writes_exact_detached_header</code>; <code>dexios/tests/header_cli_regressions.rs::header_strip_rejects_header_only_input_and_preserves_payload_bytes</code>; <code>dexios/tests/workflow_error_cli_header_key.rs::header_exact_failures_use_typed_cli_mapping</code></td><td>FMT-01, FMT-06, VERI-02</td><td>Phase 3 / Phase 5</td></tr>
 <tr><td>FMT-006</td><td>Headers</td><td>Legacy header formats are rejected as unsupported format.</td><td>current</td><td>Current source and core test</td><td><code>dexios-core/src/header/mod.rs</code>; <code>dexios-core/tests/v1_header.rs::read_header_rejects_legacy_prefix_as_unsupported_format</code></td><td>SAFE-01, VERI-02</td><td>Phase 2</td></tr>
-<tr><td>KDF-001</td><td>KDFs</td><td>V1 normal KDF derivation is BLAKE3-Balloon only; <code>balloon-hash 0.4.0</code> is built with the <code>zeroize</code> feature; the historical Argon2id tag <code>[0xDF, 0x02]</code> is recognized as unsupported historical metadata.</td><td>current</td><td>Current source, tests, editable docs, and Context7 <code>/rustcrypto/password-hashes</code> research</td><td><code>Cargo.toml</code>; <code>Cargo.lock</code>; <code>dexios-core/src/kdf.rs</code>; <code>dexios-core/src/header/v1.rs</code>; <code>dexios-domain/src/key.rs</code>; <code>dexios-core/tests/key_derivation.rs</code>; <code>dexios-core/tests/testdata/kdf_vectors.toml</code>; <code>dexios-domain/tests/keyslots_intent_v1.rs</code>; <code>dexios-domain/tests/keyslots_crypto_v1.rs</code>; <code>dexios-domain/tests/keyslots_mutation_v1.rs</code>; <code>dexios-domain/tests/support/keyslots_v1.rs</code>; <code>book/src/dexios-core/Headers.md</code>; <code>book/src/dexios-core/Password-Hashing.md</code></td><td>SAFE-01, KEY-04, KEY-05, KDF-01, KDF-05</td><td>Phase 3 / Phase 9</td></tr>
+<tr><td>KDF-001</td><td>KDFs</td><td>V1 normal KDF derivation is Argon2id only (256 MiB / t=4 / p=4); <code>argon2 0.5.3</code> is built <code>default-features = false</code> with the <code>alloc</code> and <code>zeroize</code> features; the historical Argon2id tag <code>[0xDF, 0x02]</code> is recognized as unsupported historical metadata.</td><td>current</td><td>Current source, tests, editable docs, and Context7 <code>/rustcrypto/password-hashes</code> research</td><td><code>Cargo.toml</code>; <code>Cargo.lock</code>; <code>dexios-core/src/kdf.rs</code>; <code>dexios-core/src/header/v1.rs</code>; <code>dexios-domain/src/key.rs</code>; <code>dexios-core/tests/key_derivation.rs</code>; <code>dexios-core/tests/testdata/kdf_vectors.toml</code>; <code>dexios-domain/tests/keyslots_intent_v1.rs</code>; <code>dexios-domain/tests/keyslots_crypto_v1.rs</code>; <code>dexios-domain/tests/keyslots_mutation_v1.rs</code>; <code>dexios-domain/tests/support/keyslots_v1.rs</code>; <code>book/src/dexios-core/Headers.md</code>; <code>book/src/dexios-core/Password-Hashing.md</code></td><td>SAFE-01, KEY-04, KEY-05, KDF-01, KDF-05</td><td>Phase 3 / Phase 9</td></tr>
 <tr><td>STRM-001</td><td>Stream encryption</td><td>Typed V1 stream encryption authenticates immutable canonical header-derived AAD and final block state; failed decrypt output is uncommitted scratch until <code>V1FinalAuth</code> is returned after final authentication and flush.</td><td>current</td><td>Current source, stream matrix tests, and editable docs</td><td><code>dexios-core/src/stream.rs::V1PayloadStream</code>; <code>dexios-core/src/stream.rs::V1PayloadEncryptor</code>; <code>dexios-core/src/stream.rs::V1PayloadDecryptor</code>; <code>dexios-core/tests/stream_v1.rs</code>; <code>book/src/dexios-core/Encryption.md</code></td><td>STRM-03, STRM-04</td><td>Phase 3</td></tr>
 <tr><td>KEY-001</td><td>Key material</td><td>Committed encrypted artifacts do not end with zero usable keyslots; key deletion clears only the old-key-proven physical slot and never compacts later slots.</td><td>current</td><td>Current source and tests</td><td><code>dexios-core/src/header/v1.rs::V1Keyslots</code>; <code>dexios-domain/src/key/delete.rs</code>; <code>dexios-domain/tests/keyslots_mutation_v1.rs::key_del_rejects_final_keyslot_before_writing_header</code>; <code>dexios-domain/tests/keyslots_mutation_v1.rs::key_delete_removes_only_old_key_proven_slot_and_preserves_payload</code>; <code>dexios/tests/key_cli_regressions.rs::key_delete_maps_failures_without_remaining_key_collection</code></td><td>FMT-04, FMT-05, VERI-01</td><td>Phase 3</td></tr>
 <tr><td>KEY-002</td><td>Key material</td><td>Wrong V1 keys fail verification and decryption before plaintext is accepted or committed.</td><td>current</td><td>Domain and CLI tests</td><td><code>dexios-domain/tests/keyslots_crypto_v1.rs::wrong_key_current_v1_fixture_rejects_verification_and_decrypt</code>; <code>dexios/tests/decrypt_cli_regressions.rs::decrypt_wrong_key_preserves_existing_output</code>; <code>dexios/tests/workflow_error_cli_header_key.rs::incorrect_key_and_unsupported_workflow_messages_stay_terse</code>; <code>dexios/tests/workflow_error_cli_header_key.rs::key_verify_wrong_key_and_unsupported_kdf_use_typed_mapping</code></td><td>SAFE-01, KEY-02, VERI-02</td><td>Phase 5</td></tr>
@@ -536,7 +536,7 @@ editable docs, generated docs, security policy, or historical specs disagree.</p
 </thead>
 <tbody>
 <tr><td>V1 header layout and AAD</td><td>Current source/tests plus <code>book/src/dexios-core/Headers.md</code> are the current authority.</td><td><code>dexios-core/src/header/common.rs</code>; <code>dexios-core/src/header/v1.rs</code>; <code>dexios-core/tests/v1_header.rs</code>; <code>book/src/</code> editable documentation source.</td><td><code>spec/specification-v1.pdf</code> is historical input only; generated <code>docs/</code> is generated output.</td><td>Treat canonical V1 as a 512-byte header with <code>DXIO 00 01 CV1\0</code>, a 64-byte immutable static-header payload AAD, four fixed 112-byte physical keyslot records, and retired old current-V1 rejection.</td></tr>
-<tr><td>KDF identifiers and parameters</td><td>Current source, current KDF vectors, <code>book/src/dexios-core/Headers.md</code>, and <code>book/src/dexios-core/Password-Hashing.md</code> are the authority for canonical V1 keyslot profile ids, dependency feature policy, and KDF parameter evidence.</td><td><code>Cargo.toml</code>; <code>Cargo.lock</code>; <code>dexios-core/src/header/v1.rs</code>; <code>dexios-core/src/kdf.rs</code>; <code>dexios-core/tests/key_derivation.rs</code>; <code>dexios-core/tests/testdata/kdf_vectors.toml</code>; <code>dexios-domain/tests/keyslots_intent_v1.rs</code>; <code>dexios-domain/tests/keyslots_crypto_v1.rs</code>; <code>dexios-domain/tests/keyslots_mutation_v1.rs</code>; <code>dexios-domain/tests/support/keyslots_v1.rs</code>; <code>book/src/</code> editable documentation source; Context7 <code>/rustcrypto/password-hashes</code> research.</td><td><code>spec/specification-v1.pdf</code> and generated <code>docs/</code> are comparison inputs only.</td><td>Treat canonical BLAKE3-Balloon profile ids as the normal write policy. Treat historical Argon2id metadata as unsupported diagnostics only. Current BLAKE3-Balloon parameters are frozen: space cost <code>278_528</code>, time cost <code>1</code>, p-cost <code>1</code>, output length <code>32</code>, and delta <code>3</code>. <code>balloon-hash 0.4.0</code> must keep the <code>zeroize</code> feature unless a later dependency proof replaces this policy.</td></tr>
+<tr><td>KDF identifiers and parameters</td><td>Current source, current KDF vectors, <code>book/src/dexios-core/Headers.md</code>, and <code>book/src/dexios-core/Password-Hashing.md</code> are the authority for canonical V1 keyslot profile ids, dependency feature policy, and KDF parameter evidence.</td><td><code>Cargo.toml</code>; <code>Cargo.lock</code>; <code>dexios-core/src/header/v1.rs</code>; <code>dexios-core/src/kdf.rs</code>; <code>dexios-core/tests/key_derivation.rs</code>; <code>dexios-core/tests/testdata/kdf_vectors.toml</code>; <code>dexios-domain/tests/keyslots_intent_v1.rs</code>; <code>dexios-domain/tests/keyslots_crypto_v1.rs</code>; <code>dexios-domain/tests/keyslots_mutation_v1.rs</code>; <code>dexios-domain/tests/support/keyslots_v1.rs</code>; <code>book/src/</code> editable documentation source; Context7 <code>/rustcrypto/password-hashes</code> research.</td><td><code>spec/specification-v1.pdf</code> and generated <code>docs/</code> are comparison inputs only.</td><td>Treat the canonical Argon2id profile ids (<code>0x01</code> / <code>0x01</code>) as the normal write policy. Treat the historical Argon2id tag <code>[0xDF, 0x02]</code> as unsupported diagnostics only. Current Argon2id parameters are frozen: m_cost <code>262_144</code> KiB (256 MiB), t_cost <code>4</code>, p_cost <code>4</code>, output length <code>32</code>, salt length <code>16</code>, version <code>0x13</code>. <code>argon2 0.5.3</code> must keep the <code>alloc</code> and <code>zeroize</code> features (with <code>default-features = false</code>) unless a later dependency proof replaces this policy.</td></tr>
 <tr><td>stream encryption block/final semantics</td><td>Current source, <code>dexios-core/tests/stream_v1.rs</code>, and <code>book/src/dexios-core/Encryption.md</code> describe current typed stream, immutable header-derived AAD, slot-scoped key wrapping AAD, uncommitted scratch, and final-auth receipt behavior.</td><td><code>dexios-core/src/stream.rs</code>; <code>dexios-core/src/payload.rs</code>; <code>dexios-core/tests/stream_v1.rs</code>; <code>dexios-domain/src/encrypt.rs</code>; <code>dexios-domain/src/decrypt.rs</code>; <code>book/src/</code> editable documentation source; Context7 <code>/rustcrypto/aeads</code> research.</td><td><code>spec/specification-v1.pdf</code> documents historical LE31 and final-block behavior but is not sole authority; generated <code>docs/</code> is generated output.</td><td>Treat STRM-001 as current after Phase 3 stream matrix and <code>V1FinalAuth</code> receipt coverage. Domain final-output commit must observe the receipt before publishing decrypt output.</td></tr>
 <tr><td>public API authority boundaries</td><td>Current source, source gates, and editable docs are the authority for public API authority boundaries and forge-resistant receipts.</td><td><code>dexios-core/src/stream.rs</code>; <code>dexios-domain/src/decrypt.rs</code>; <code>dexios-domain/src/encrypt.rs</code>; <code>dexios-domain/src/storage/transaction.rs</code>; <code>dexios-domain/src/storage/cleanup.rs</code>; <code>dexios-domain/src/storage/mutation.rs</code>; <code>dexios-domain/src/storage/test_support.rs</code>; <code>dexios-domain/tests/workflow_public_api.rs</code>; <code>dexios-domain/tests/archive_public_api.rs</code>; <code>dexios-core/tests/public_api_footguns.rs</code>; <code>dexios/tests/verification_gate_docs.rs</code>; <code>book/src/dexios-core/Encryption.md</code>.</td><td>Generated docs and external caller examples do not create authority.</td><td>Treat <code>V1FinalAuth</code>, cleanup receipts, transaction receipts, detached pair receipts, and mutation snapshots as authority evidence produced by core/domain workflows, not caller-made data. Low-level stream reads are uncommitted until final authentication succeeds, and callers using those helpers must keep plaintext scratch outside final publication paths until they hold the receipt.</td></tr>
 <tr><td>keyslot mutation safety</td><td>Current source and owning-crate tests are the authority.</td><td><code>dexios-core/src/header/v1.rs::V1Keyslots</code>; <code>dexios-domain/src/key/add.rs</code>; <code>dexios-domain/src/key/change.rs</code>; <code>dexios-domain/src/key/delete.rs</code>; <code>dexios-domain/src/key/verify.rs</code>; <code>dexios-domain/src/key.rs</code>; <code>dexios-domain/src/storage/mutation.rs</code>; <code>dexios-domain/tests/keyslots_intent_v1.rs</code>; <code>dexios-domain/tests/keyslots_crypto_v1.rs</code>; <code>dexios-domain/tests/keyslots_mutation_v1.rs</code>; <code>dexios-domain/tests/support/keyslots_v1.rs</code>; <code>dexios/tests/key_cli_regressions.rs</code>.</td><td>Historical docs describe older key deletion mechanics but do not override canonical fixed-slot behavior; generated <code>docs/</code> is generated output.</td><td>Treat canonical V1 keyslot add/change/delete/verify as fixed physical slot operations with no compaction, fresh add/change wrapping nonces, final-supported-slot deletion rejection, and stale key mutation refusal through mutation freshness checks.</td></tr>
@@ -679,7 +679,7 @@ the source-backed PDF freshness commands for <code>spec/dexios-paper.pdf</code>;
 not treat <code>spec/specification-v1.pdf</code> as current release-critical authority.</p>
 <p>Phase 9 closes with an additional KDF/passphrase/secret-memory gate:</p>
 <ul>
-<li><code>balloon-hash 0.4.0</code> keeps the <code>zeroize</code> feature and <code>blake3 = "=1.8.3"</code> stays pinned;</li>
+<li><code>argon2 0.5.3</code> keeps the <code>alloc</code> and <code>zeroize</code> features (<code>default-features = false</code>); <code>blake3 = "=1.8.3"</code> stays pinned for content hashing only;</li>
 <li>explicit invalid <code>--auto</code> word counts fail before passphrase generation and disclosure;</li>
 <li>KDF timing evidence records a hardware profile and may use <code>--max-kdf-seconds</code> or <code>DEXIOS_KDF_MAX_SECONDS</code> for focused release checks;</li>
 <li>narrow secret-memory claim documentation stays limited to owned-value zeroization, redacted debug output, <code>Zeroizing&lt;String&gt;</code> prompt temporaries, and closure-scoped <code>with_exposed</code>.</li>
@@ -1139,7 +1139,7 @@ metadata fails keyslot unwrap authentication.</p>
 <h2 id="kdf-identifiers"><a class="header" href="#kdf-identifiers">KDF Identifiers</a></h2>
 <p>Canonical V1 normal writes use one KDF profile:</p>
 <ul>
-<li>BLAKE3-Balloon with the canonical profile ids defined in <code>dexios-core/src/kdf.rs</code></li>
+<li>Argon2id with the canonical profile ids defined in <code>dexios-core/src/kdf.rs</code></li>
 </ul>
 <p>New canonical V1 writes do not expose alternate KDF selection or
 user-configurable KDF parameters. The historical Argon2id tag may still be
@@ -1208,16 +1208,19 @@ workflow.</p>
 <p>The normal canonical V1 KDF contract supports one hashing family for new files
 and new keyslots:</p>
 <ul>
-<li><code>BLAKE3-Balloon</code></li>
+<li><code>Argon2id</code></li>
 </ul>
+<p><code>Argon2id</code> (RFC 9106) is the OWASP-recommended memory-hard password hashing
+function. It replaces the retired <code>BLAKE3-Balloon</code> KDF for all new V1 keyslots.</p>
 <h2 id="current-defaults"><a class="header" href="#current-defaults">Current Defaults</a></h2>
 <p>For new files:</p>
 <ul>
-<li><code>Blake3Balloon</code> is the only normal KDF selector</li>
+<li><code>Argon2id</code> is the only normal KDF for new V1 keyslots</li>
 <li>KDF parameters are serialized as canonical profile ids, not
 user-configurable header knobs</li>
-<li>the historical Argon2id tag is no longer supported for new writes</li>
-<li><code>balloon-hash 0.4.0</code> is built with the <code>zeroize</code> feature enabled</li>
+<li>the historical Argon2id tag (a distinct unsupported keyslot profile pair) is
+no longer supported for new writes</li>
+<li><code>argon2 0.5.3</code> is built with the <code>zeroize</code> feature enabled</li>
 </ul>
 <p>For decryption and key manipulation, Dexios reads the required KDF family from
 candidate keyslot metadata. Canonical V1 keyslots store a KDF profile id and KDF
@@ -1226,42 +1229,50 @@ unsupported metadata and reported when the selected candidate requires it, when
 all candidate keyslots are unsupported, or when a workflow preflight rejects
 unsupported keyslot metadata before prompting. Mixed headers can still derive
 against supported keyslots.</p>
-<h2 id="frozen-blake3-balloon-parameters"><a class="header" href="#frozen-blake3-balloon-parameters">Frozen BLAKE3-Balloon Parameters</a></h2>
-<p>Phase 3 freezes the BLAKE3-Balloon contract for canonical V1 output:</p>
+<h2 id="frozen-argon2id-parameters"><a class="header" href="#frozen-argon2id-parameters">Frozen Argon2id Parameters</a></h2>
+<p>The canonical V1 contract freezes the <code>Argon2id</code> parameters for the canonical
+KDF param-profile id <code>0x01</code>:</p>
 <ul>
-<li>space cost: <code>278_528</code></li>
-<li>time cost: <code>1</code></li>
-<li>p-cost: <code>1</code></li>
+<li>algorithm: <code>Argon2id</code>, version <code>0x13</code> (Argon2 v1.3)</li>
+<li>memory cost (<code>m_cost</code>): <code>262_144</code> KiB (256 MiB)</li>
+<li>time cost (<code>t_cost</code>): <code>4</code> passes</li>
+<li>parallelism (<code>p_cost</code>): <code>4</code> lanes</li>
 <li>output length: <code>32</code> bytes</li>
-<li>Balloon algorithm delta: <code>3</code></li>
+<li>salt length: <code>16</code> bytes</li>
 </ul>
-<p>The p-cost is the value passed to <code>balloon_hash::Params::new</code>. The delta is a
-separate Balloon algorithm constant recorded in the vector metadata.</p>
+<p>The four lanes are computed sequentially in pure Rust (no threads), but the
+resulting digest is spec-correct for the declared <code>p_cost</code>. The canonical V1
+keyslot KDF profile ids are unchanged (KDF profile <code>0x01</code> / param-profile
+<code>0x01</code>); they now denote <code>Argon2id</code>.</p>
 <p>The checked KDF vector lives in <code>dexios-core/tests/testdata/kdf_vectors.toml</code>
-and is exercised by <code>dexios-core/tests/key_derivation.rs</code>. Context7
-<code>/rustcrypto/password-hashes</code> documents the raw-output <code>Balloon</code> API that writes
-derived bytes into a caller-provided output buffer; Dexios uses that API with
-BLAKE3 as the Balloon hash primitive.</p>
+and is exercised by <code>dexios-core/tests/key_derivation.rs</code>. The stable vector was
+generated independently from the Argon2 reference C implementation (the <code>argon2</code>
+CLI) and cross-checked against <code>argon2-cffi 25.1.0</code>; both agree, validating the
+RustCrypto output at the frozen production parameters. Context7
+<code>/rustcrypto/password-hashes</code> documents the raw-output <code>Argon2</code> API that writes
+derived bytes into a caller-provided output buffer; Dexios uses that API.</p>
 <p>The workspace manifest source-gates this dependency policy:</p>
 <ul>
-<li><code>balloon-hash = { version = "0.4.0", features = ["zeroize"] }</code></li>
-<li><code>blake3 = "=1.8.3"</code></li>
+<li><code>argon2 0.5.3</code> is the canonical KDF crate</li>
+<li><code>argon2 = { version = "0.5.3", default-features = false, features = ["alloc", "zeroize"] }</code></li>
 </ul>
-<p>The enabled <code>zeroize</code> feature covers <code>balloon-hash</code>’s internal allocated memory
-buffer for the locked crate version. This is a crate-internal allocation
-handling claim. It is not a whole-process memory cleanup, allocator-history,
-swap, crash-dump, terminal, shell-log, secure-erase, or physical-media
-sanitization guarantee.</p>
-<p>KDF parameter changes require measured evidence from:</p>
+<p>The enabled <code>zeroize</code> feature wipes Argon2’s internal memory blocks on drop for
+the locked crate version. This is a crate-internal allocation handling claim. It
+is not a whole-process memory cleanup, allocator-history, swap, crash-dump,
+terminal, shell-log, secure-erase, or physical-media sanitization guarantee.</p>
+<p><code>blake3</code> is no longer part of the KDF. It is retained only for content hashing
+(the dexios-domain hasher and cleanup digests); <code>dexios-core</code> no longer depends
+on <code>blake3</code>.</p>
+<p>A single canonical <code>Argon2id</code> derive costs roughly <code>0.5s</code> on reference
+hardware. KDF parameter changes require measured evidence from:</p>
 <pre><code class="language-bash">bash scripts/measure_performance_gate.sh --scenario kdf
 </code></pre>
 <p>The focused KDF measurement can enforce an opt-in local threshold with
 <code>--max-kdf-seconds</code> or <code>DEXIOS_KDF_MAX_SECONDS</code>. The default maintainer gate
 does not run this timing check.</p>
-<p>The same Context7 <code>/rustcrypto/password-hashes</code> source documents historical
-unsupported Argon2id as a RustCrypto implementation API. In Dexios, historical
-Argon2id metadata is now a file-format diagnosis only, not a required dependency
-or normal write policy. It is not a normal write policy.</p>
+<p>The historical Argon2id tag (the distinct unsupported keyslot profile pair) is
+now a file-format diagnosis only, not a required dependency or normal write
+policy. It is not a normal write policy.</p>
 <h2 id="handling-the-hash"><a class="header" href="#handling-the-hash">Handling the Hash</a></h2>
 <p>Derived keys are wrapped in <code>Protected&lt;&gt;</code> and exposed only when initializing the cipher layer.</p>
 <p>The implementation is intentionally explicit:</p>

@@ -14,7 +14,7 @@ const CARGO_TOML: &str = include_str!("../Cargo.toml");
 
 fn sample_keyslot(seed: u8) -> V1Keyslot {
     V1Keyslot::new(
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
         [seed; 48],
         KeyslotNonce::new([seed.wrapping_add(1); 24]),
         Salt::new([seed.wrapping_add(2); 16]),

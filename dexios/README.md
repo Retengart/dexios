@@ -9,7 +9,7 @@
 Current defaults for new encrypted files:
 
 - `XChaCha20-Poly1305`
-- `BLAKE3-Balloon` as the only normal KDF for new V1 writes
+- `Argon2id` as the only normal KDF for new V1 writes
 - V1 headers
 - LE31 stream encryption
 

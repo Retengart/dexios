@@ -43,8 +43,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios/tests/verification_gate_source.rs",
         category: "Phase 25 source-gate evidence",
         rationale: "Phase 25 fail-closed source/API safety evidence per D-11.",
-        current_lines: 1582,
-        cap: 1582,
+        current_lines: 1581,
+        cap: 1581,
     },
     FileSizeException {
         path: "dexios-core/tests/stream_v1.rs",

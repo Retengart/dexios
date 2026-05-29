@@ -117,7 +117,7 @@ pub fn gen_master_key() -> MasterKey {
 
 /// Generates a salt, of the specified `SALT_LEN`
 ///
-/// This salt can be used at the current BLAKE3-Balloon KDF boundary.
+/// This salt can be used at the current Argon2id KDF boundary.
 ///
 /// # Examples
 ///

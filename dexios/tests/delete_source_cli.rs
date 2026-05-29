@@ -118,12 +118,12 @@ fn manifest_archive_header_and_master_key() -> (V1Header, MasterKey) {
     let raw_key = Protected::new(PASSWORD.as_bytes().to_vec());
     let header_salt = HeaderSalt::new([17u8; 16]);
     let kdf_salt = header_salt.to_kdf_salt();
-    let wrapping_key = Kdf::Blake3Balloon.derive(&raw_key, &kdf_salt).unwrap();
+    let wrapping_key = Kdf::Argon2id.derive(&raw_key, &kdf_salt).unwrap();
     let master_key = MasterKey::new([31u8; 32]);
     let keyslot_nonce = KeyslotNonce::new([13u8; 24]);
     let payload_nonce = PayloadNonce::new([7u8; 20]);
     let placeholder_keyslot =
-        V1Keyslot::new(Kdf::Blake3Balloon, [0u8; 48], keyslot_nonce, header_salt);
+        V1Keyslot::new(Kdf::Argon2id, [0u8; 48], keyslot_nonce, header_salt);
     let placeholder_header =
         V1Header::new_manifest_archive(payload_nonce, V1Keyslots::single(placeholder_keyslot))
             .unwrap();
@@ -140,7 +140,7 @@ fn manifest_archive_header_and_master_key() -> (V1Header, MasterKey) {
     )
     .unwrap();
     let keyslot = V1Keyslot::new(
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
         *encrypted_master_key.as_bytes(),
         keyslot_nonce,
         header_salt,

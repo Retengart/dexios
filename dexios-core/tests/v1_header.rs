@@ -7,7 +7,7 @@ use dexios_core::header::v1::{
 };
 use dexios_core::header::{HeaderReadError, ParsedHeader, ParsedV1Payload};
 use dexios_core::kdf::{
-    BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID, BLAKE3_BALLOON_KDF_PROFILE_ID, Kdf, Salt,
+    ARGON2ID_KDF_PARAM_PROFILE_ID, ARGON2ID_KDF_PROFILE_ID, Kdf, Salt,
 };
 use dexios_core::payload::{PayloadFramingProfile, PayloadKind};
 use dexios_core::primitives::{MasterKey, WrappingKey};
@@ -19,7 +19,7 @@ mod support {
 
     pub fn sample_v1_header() -> V1Header {
         let keyslots = V1Keyslots::single(V1Keyslot::new(
-            Kdf::Blake3Balloon,
+            Kdf::Argon2id,
             [11u8; 48],
             KeyslotNonce::new([13u8; 24]),
             HeaderSalt::new([17u8; 16]),
@@ -88,7 +88,7 @@ fn v1_header_rejects_zero_keyslots() {
 #[test]
 fn v1_keyslot_collection_rejects_more_than_max() {
     let keyslot = V1Keyslot::new(
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
         [11u8; 48],
         KeyslotNonce::new([13u8; 24]),
         HeaderSalt::new([17u8; 16]),
@@ -249,7 +249,7 @@ fn v1_payload_stream_uses_header_derived_aad() {
     let other_header = V1Header::new(
         PayloadNonce::new([8u8; 20]),
         V1Keyslots::single(V1Keyslot::new(
-            Kdf::Blake3Balloon,
+            Kdf::Argon2id,
             [21u8; 48],
             KeyslotNonce::new([23u8; 24]),
             HeaderSalt::new([29u8; 16]),
@@ -482,7 +482,7 @@ fn creates_exact_aad_bytes_for_sample_v1_header() {
 fn payload_aad_excludes_mutable_keyslot_table_state() {
     let first_header = support::sample_v1_header();
     let second_keyslot = V1Keyslot::new(
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
         [29u8; 48],
         KeyslotNonce::new([31u8; 24]),
         HeaderSalt::new([37u8; 16]),
@@ -496,7 +496,7 @@ fn payload_aad_excludes_mutable_keyslot_table_state() {
     let changed_slot_header = V1Header::new(
         PayloadNonce::new([7u8; 20]),
         V1Keyslots::single(V1Keyslot::new(
-            Kdf::Blake3Balloon,
+            Kdf::Argon2id,
             [41u8; 48],
             KeyslotNonce::new([43u8; 24]),
             HeaderSalt::new([47u8; 16]),
@@ -531,13 +531,13 @@ fn slot_wrapping_aad_binds_static_header_and_physical_slot_metadata() {
         PayloadNonce::new([7u8; 20]),
         V1Keyslots::try_from_vec(vec![
             V1Keyslot::new(
-                Kdf::Blake3Balloon,
+                Kdf::Argon2id,
                 [11u8; 48],
                 KeyslotNonce::new([13u8; 24]),
                 HeaderSalt::new([17u8; 16]),
             ),
             V1Keyslot::new(
-                Kdf::Blake3Balloon,
+                Kdf::Argon2id,
                 [19u8; 48],
                 KeyslotNonce::new([23u8; 24]),
                 HeaderSalt::new([29u8; 16]),
@@ -811,7 +811,7 @@ fn v1_header_parses_historical_argon2id_tag_as_unsupported_keyslot_metadata() {
 #[test]
 fn new_keyslot_constructor_uses_supported_kdf_selector() {
     let keyslot = V1Keyslot::new(
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
         [11u8; 48],
         KeyslotNonce::new([13u8; 24]),
         HeaderSalt::new([17u8; 16]),
@@ -831,16 +831,16 @@ fn canonical_header_serializes_kdf_profile_ids_not_parameter_values() {
     let header = support::sample_v1_header();
     let bytes = header.serialize().unwrap();
 
-    assert_eq!(bytes[13], BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID);
-    assert_eq!(bytes[HEADER_STATIC_LEN + 2], BLAKE3_BALLOON_KDF_PROFILE_ID);
+    assert_eq!(bytes[13], ARGON2ID_KDF_PARAM_PROFILE_ID);
+    assert_eq!(bytes[HEADER_STATIC_LEN + 2], ARGON2ID_KDF_PROFILE_ID);
     assert_eq!(
         bytes[HEADER_STATIC_LEN + 3],
-        BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID
+        ARGON2ID_KDF_PARAM_PROFILE_ID
     );
 
     let header_source = include_str!("../src/header/v1.rs");
     assert!(
-        !header_source.contains("BLAKE3_BALLOON_SPACE_COST"),
+        !header_source.contains("ARGON2ID_M_COST"),
         "canonical V1 header must serialize the KDF parameter profile id, not raw parameter knobs"
     );
 }
@@ -926,7 +926,7 @@ fn with_keyslots_preserves_manifest_archive_payload_metadata() {
     let source = V1Header::new_manifest_archive(
         PayloadNonce::new([9u8; 20]),
         V1Keyslots::single(V1Keyslot::new(
-            Kdf::Blake3Balloon,
+            Kdf::Argon2id,
             [11u8; 48],
             KeyslotNonce::new([13u8; 24]),
             HeaderSalt::new([17u8; 16]),
@@ -935,7 +935,7 @@ fn with_keyslots_preserves_manifest_archive_payload_metadata() {
     .expect("manifest archive source header");
 
     let new_keyslots = V1Keyslots::single(V1Keyslot::new(
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
         [22u8; 48],
         KeyslotNonce::new([23u8; 24]),
         HeaderSalt::new([27u8; 16]),

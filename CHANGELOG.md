@@ -32,17 +32,26 @@
   only after final stream authentication. Plaintext exposure is still present in
   selected staged file bodies and ordinary filesystem temporary/staged files;
   Dexios does not claim secure erase or physical sanitization.
-- Enabled the `balloon-hash 0.4.0` `zeroize` feature and source-gated the
-  BLAKE3-Balloon dependency policy while keeping `blake3 = "=1.8.3"` pinned.
+- Migrated the canonical V1 KDF from BLAKE3-Balloon to `Argon2id` (RFC 9106,
+  crypto-1) using `argon2 0.5.3` (RustCrypto) with `default-features = false` and
+  the `alloc` and `zeroize` features. The canonical Argon2id parameters are
+  frozen at m_cost `262_144` KiB (256 MiB), t_cost `4` passes, p_cost `4` lanes,
+  output `32` bytes, salt `16` bytes, version `0x13`. The canonical V1 keyslot
+  KDF profile ids are unchanged (`0x01` / `0x01`) and now denote Argon2id. The
+  `zeroize` feature wipes Argon2's internal memory blocks on drop; this is a
+  crate-internal allocation handling claim only.
+- Removed the `balloon-hash 0.4.0` dependency. `blake3 = "=1.8.3"` stays pinned
+  but is now retained only for content hashing (the dexios-domain hasher and
+  cleanup digests); dexios-core no longer depends on blake3.
 - Rejected explicit invalid generated passphrase counts such as `--auto=0`,
   `--auto=-1`, and non-numeric values before passphrase generation or terminal
   disclosure.
 - Resolved the `rand 0.10.0` / `RUSTSEC-2026-0097` exposure by updating to
   `rand 0.10.1` and keeping `cargo audit --deny warnings` in the maintainer
   gate.
-- Kept `blake3 = "=1.8.3"` because `1.8.4` and newer move the traits-preview
-  digest line in a way that breaks the current stable `balloon-hash 0.4.0` KDF
-  integration.
+- Kept `blake3 = "=1.8.3"` pinned for content hashing because `1.8.4` and newer
+  move the traits-preview digest line; the pin is retained pending a separate
+  dependency re-evaluation now that balloon-hash is gone.
 - Added `deny.toml` cargo-deny policy for advisories, duplicate bans, source
   restrictions, and license allowlisting.
 
@@ -80,7 +89,7 @@
 ### Documentation
 
 - Corrected the whitepaper-style V1 format reference to the current 512-byte
-  canonical header, BLAKE3-Balloon KDF policy, and DXAR/DXBF manifest-first
+  canonical header, Argon2id KDF policy, and DXAR/DXBF manifest-first
   archive framing.
 - Documented Phase 11 filesystem transaction and cleanup limits in the safety
   contract and mdBook technical notes, including ordinary delete-after-success

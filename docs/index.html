@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-cdf0b23e.js";
+            window.path_to_searchindex_js = "searchindex-c68e4b7a.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-07f7ca76.js"></script>
@@ -187,9 +187,9 @@
 </ul>
 <p>For normal encryption, Dexios writes V1 headers and uses one suite:
 <code>XChaCha20-Poly1305</code> with LE31 stream encryption. The normal KDF for new V1
-writes is BLAKE3-Balloon only. Historical unsupported Argon2id keyslot tags remain
-recognized as unsupported historical metadata so old headers can fail with a
-specific diagnosis.</p>
+writes is Argon2id only (256 MiB / t=4 / p=4). The historical unsupported
+Argon2id keyslot tag remains recognized as unsupported historical metadata so
+old headers can fail with a specific diagnosis.</p>
 <h2 id="security-notices"><a class="header" href="#security-notices">Security Notices</a></h2>
 <p>The RustCrypto <code>chacha20poly1305</code> implementation used by Dexios is based on audited upstream crates. Dexios itself does not claim a full-project external audit.</p>
 <p>Dexios uses authenticated encryption and authenticates header data through AEAD AAD. Integrity of encrypted payloads does not depend on the optional checksum output.</p>
@@ -204,7 +204,7 @@ uncommitted scratch until final authentication succeeds.</p>
 <p>uses the following defaults:</p>
 <ul>
 <li><code>XChaCha20-Poly1305</code></li>
-<li><code>BLAKE3-Balloon</code> password hashing with frozen Phase 3 parameters</li>
+<li><code>Argon2id</code> password hashing with frozen canonical parameters (256 MiB / t=4 / p=4)</li>
 <li>V1 headers</li>
 <li>stream encryption with 1 MiB blocks</li>
 <li>an authenticated final block, including an empty final marker for exact-block plaintext</li>

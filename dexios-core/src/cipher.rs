@@ -11,7 +11,7 @@
 //! let raw_key = Protected::new(vec![0u8; 128]);
 //! let salt = dexios_core::kdf::Salt::new([9u8; 16]);
 //! let key = dexios_core::primitives::WrappingKey::from(
-//!     dexios_core::kdf::Kdf::Blake3Balloon.derive(&raw_key, &salt).unwrap(),
+//!     dexios_core::kdf::Kdf::Argon2id.derive(&raw_key, &salt).unwrap(),
 //! );
 //!
 //! let master_key = dexios_core::primitives::MasterKey::new([7u8; 32]);
@@ -123,7 +123,7 @@ impl Ciphers {
     /// let raw_key = Protected::new(vec![0u8; 128]);
     /// let salt = dexios_core::kdf::Salt::new([9u8; 16]);
     /// let key = dexios_core::primitives::WrappingKey::from(
-    ///     dexios_core::kdf::Kdf::Blake3Balloon.derive(&raw_key, &salt).unwrap(),
+    ///     dexios_core::kdf::Kdf::Argon2id.derive(&raw_key, &salt).unwrap(),
     /// );
     /// let cipher = Ciphers::initialize(key).unwrap();
     /// ```

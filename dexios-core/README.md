@@ -10,16 +10,16 @@ It provides:
 
 - V1 header parsing and serialization
 - single-suite XChaCha20-Poly1305 helpers
-- BLAKE3-Balloon key derivation helpers for new V1 keyslots
+- Argon2id key derivation helpers for new V1 keyslots
 - protected secret handling through `Protected<>`
 
 The supported format is V1-only.
 
 ## KDF Contract
 
-Normal V1 key derivation is BLAKE3-Balloon only. The frozen Phase 3 parameters
-are space cost `278_528`, time cost `1`, p-cost `1`, output length `32`, and
-Balloon algorithm delta `3`.
+Normal V1 key derivation is Argon2id only. The frozen canonical parameters are
+m_cost `262_144` KiB (256 MiB), t_cost `4` passes, p_cost `4` lanes, output
+length `32` bytes, salt length `16` bytes, and Argon2 version `0x13`.
 
 The V1 keyslot tag `[0xDF, 0x02]` is still recognized as an unsupported
 historical Argon2id tag so old headers can be diagnosed explicitly. New core

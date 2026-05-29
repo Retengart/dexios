@@ -58,7 +58,7 @@ fn encrypt_fixture(input_path: &Path, output_path: &Path) {
         domain::storage::identity::OverwritePolicy::CreateNew,
         None,
         core::protected::Protected::new(PASSWORD.as_bytes().to_vec()),
-        core::kdf::Kdf::Blake3Balloon,
+        core::kdf::Kdf::Argon2id,
     )
     .unwrap();
     encrypt::execute(intent).unwrap();
@@ -145,7 +145,7 @@ fn header_details_reports_v1_profile() {
 }
 
 #[test]
-fn header_details_reports_supported_blake3_balloon_keyslot() {
+fn header_details_reports_supported_argon2id_keyslot() {
     let test_dir = TestDir::new("header-details-kdf");
     let plain = test_dir.path().join("plain.txt");
     let encrypted = test_dir.path().join("plain.enc");
@@ -166,7 +166,7 @@ fn header_details_reports_supported_blake3_balloon_keyslot() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("KDF: BLAKE3-Balloon"),
+        stdout.contains("KDF: Argon2id"),
         "header details did not show supported KDF: stdout={stdout}"
     );
     assert!(

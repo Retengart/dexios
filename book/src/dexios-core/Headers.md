@@ -73,7 +73,7 @@ metadata fails keyslot unwrap authentication.
 
 Canonical V1 normal writes use one KDF profile:
 
-- BLAKE3-Balloon with the canonical profile ids defined in `dexios-core/src/kdf.rs`
+- Argon2id with the canonical profile ids defined in `dexios-core/src/kdf.rs`
 
 New canonical V1 writes do not expose alternate KDF selection or
 user-configurable KDF parameters. The historical Argon2id tag may still be

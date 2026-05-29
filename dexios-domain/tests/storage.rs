@@ -155,7 +155,7 @@ fn storage_backed_encrypt_writes_a_v1_header() {
         dexios_domain::storage::identity::OverwritePolicy::CreateNew,
         None,
         core::protected::Protected::new(b"test-password".to_vec()),
-        core::kdf::Kdf::Blake3Balloon,
+        core::kdf::Kdf::Argon2id,
     )
     .unwrap();
     encrypt::execute(intent).unwrap();

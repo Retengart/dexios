@@ -67,7 +67,7 @@ fn pack_intent(
         detached_header_path
             .map(|path| DetachedHeaderTarget::new(path, OverwritePolicy::CreateNew)),
         Protected::new(PASSWORD.to_vec()),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
         ArchivePolicy::default(),
         true,
         None,

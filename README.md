@@ -13,7 +13,7 @@ Dexios is a Rust command-line file encryption utility built around a small, vers
 Current defaults for new encryption:
 
 - `XChaCha20-Poly1305`
-- `BLAKE3-Balloon` as the only normal KDF for new V1 writes
+- `Argon2id` as the only normal KDF for new V1 writes
 - 512-byte canonical V1 headers
 - LE31 stream encryption
 

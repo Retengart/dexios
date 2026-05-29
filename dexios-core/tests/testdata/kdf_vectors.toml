@@ -1,17 +1,15 @@
 [[vector]]
-id = "balloon-stable"
-algorithm = "balloon"
+id = "argon2id-stable"
+algorithm = "argon2id"
 case = "stable"
 password = "test-password"
-salt_hex = "05050505050505050505050505050505"
-expected_hex = "b09fdf12ae43dd737a7007f0deb7c3c1692bcb2497f52a845d7bf9d5e3f1ac23"
-provenance = "Generated on 2026-03-07 from the independent Python implementation at github.com/nachonavarro/balloon-hashing (commit 8e28a7822113f1e8ef56b175550210c1a8e36c1a), adapted locally to use Python blake3 1.0.8 as the hash primitive with delta=3."
-source_kind = "python-script"
-source_name = "balloon-hashing"
-source_repo = "https://github.com/nachonavarro/balloon-hashing"
-source_commit = "8e28a7822113f1e8ef56b175550210c1a8e36c1a"
-source_hash_primitive = "blake3 1.0.8"
-params_space_cost = 278528
-params_time_cost = 1
-params_p_cost = 1
-params_delta = 3
+salt_hex = "30313233343536373839616263646566"
+expected_hex = "120abc052d90c81ad8084a879cab045aa3bcf34ac66abb76e62b645250a91f7d"
+provenance = "Independently generated on 2026-05-29 from the Argon2 reference C implementation (`printf 'test-password' | argon2 '0123456789abcdef' -id -t 4 -m 18 -p 4 -l 32 -r`) and cross-checked against argon2-cffi 25.1.0 (Python low_level.hash_secret_raw, Type.ID). Both reference implementations produced the identical digest, independently validating the RustCrypto argon2 0.5.3 output at the frozen production parameters (Argon2id, version 0x13, m_cost=262144 KiB=256 MiB, t_cost=4, p_cost=4, 32-byte output). Salt '0123456789abcdef' is 16 printable ASCII bytes so the vector is reproducible with the stock argon2 CLI."
+source_kind = "reference-implementation"
+source_name = "argon2 (P-H-C reference C) + argon2-cffi 25.1.0"
+source_repo = "https://github.com/P-H-C/phc-winner-argon2"
+params_m_cost = 262144
+params_t_cost = 4
+params_p_cost = 4
+params_version = 19

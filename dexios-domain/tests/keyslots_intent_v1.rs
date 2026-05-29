@@ -15,7 +15,7 @@ fn key_add_intent_adds_supported_v1_without_mutating_payload() {
     key::add::execute(
         proven,
         Protected::new(b"new-pass".to_vec()),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
     )
     .expect("add second keyslot");
 
@@ -90,7 +90,7 @@ fn key_add_rejects_target_changed_after_old_key_proof() {
     let result = key::add::execute(
         proven,
         Protected::new(b"new-pass".to_vec()),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
     );
 
     assert!(matches!(result, Err(key::Error::TargetChanged)));
@@ -113,7 +113,7 @@ fn key_add_rejects_target_replacement_after_old_key_proof() {
     let result = key::add::execute(
         proven,
         Protected::new(b"new-pass".to_vec()),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
     );
 
     assert!(matches!(result, Err(key::Error::TargetChanged)));

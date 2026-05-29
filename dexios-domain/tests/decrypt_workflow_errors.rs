@@ -82,7 +82,7 @@ fn encrypted_fixture(test_dir: &TestDir, name: &str) -> PathBuf {
         OverwritePolicy::CreateNew,
         None,
         protected_key(CORRECT_PASSWORD),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
     )
     .expect("build encrypt intent");
     encrypt::execute(intent).expect("encrypt fixture");
@@ -104,7 +104,7 @@ fn encrypted_multichunk_fixture(test_dir: &TestDir, name: &str) -> PathBuf {
         OverwritePolicy::CreateNew,
         None,
         protected_key(CORRECT_PASSWORD),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
     )
     .expect("build multichunk encrypt intent");
     encrypt::execute(intent).expect("encrypt multichunk fixture");
@@ -127,7 +127,7 @@ fn detached_encrypted_fixture(test_dir: &TestDir) -> (PathBuf, PathBuf) {
             OverwritePolicy::CreateNew,
         )),
         protected_key(CORRECT_PASSWORD),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
     )
     .expect("build detached encrypt intent");
     encrypt::execute(intent).expect("encrypt detached fixture");

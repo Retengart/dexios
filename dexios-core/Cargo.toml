@@ -33,9 +33,8 @@ aead.workspace = true
 zeroize.workspace = true
 subtle.workspace = true
 
-# for password hashing
-balloon-hash.workspace = true
-blake3 = { workspace = true, features = ["traits-preview"] }
+# for password hashing (Argon2id; RFC 9106 memory-hard KDF)
+argon2.workspace = true
 
 # for generating random bytes
 rand.workspace = true

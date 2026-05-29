@@ -131,7 +131,7 @@ pub fn decrypt_v1_master_key_with_index(
     for keyslot in keyslots.as_slice() {
         let physical_index = keyslot.physical_index();
         let kdf = match keyslot.kdf() {
-            KeyslotKdf::Blake3Balloon => Kdf::Blake3Balloon,
+            KeyslotKdf::Argon2id => Kdf::Argon2id,
             KeyslotKdf::UnsupportedArgon2id => {
                 saw_unsupported_kdf = Some([0xDF, 0x02]);
                 continue;
@@ -191,7 +191,7 @@ pub(crate) fn decrypt_v1_master_key_at_index(
         .get_physical(index.get())
         .ok_or(Error::IncorrectKey)?;
     let kdf = match keyslot.kdf() {
-        KeyslotKdf::Blake3Balloon => Kdf::Blake3Balloon,
+        KeyslotKdf::Argon2id => Kdf::Argon2id,
         KeyslotKdf::UnsupportedArgon2id => return Err(Error::UnsupportedKdf([0xDF, 0x02])),
     };
     let salt = keyslot.salt().to_kdf_salt();

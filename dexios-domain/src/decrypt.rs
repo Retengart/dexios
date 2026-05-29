@@ -463,7 +463,7 @@ mod tests {
             writer: &encrypted_cur,
             header_writer: None,
             raw_key: Protected::new(PASSWORD.to_vec()),
-            kdf: Kdf::Blake3Balloon,
+            kdf: Kdf::Argon2id,
         })
         .expect("encrypt fixture");
 
@@ -480,7 +480,7 @@ mod tests {
             writer: &encrypted_cur,
             header_writer: None,
             raw_key: Protected::new(PASSWORD.to_vec()),
-            kdf: Kdf::Blake3Balloon,
+            kdf: Kdf::Argon2id,
         })
         .expect("encrypt fixture");
 
@@ -561,7 +561,7 @@ mod tests {
             writer: &encrypted_cur,
             header_writer: Some(&header_cur),
             raw_key: Protected::new(PASSWORD.to_vec()),
-            kdf: Kdf::Blake3Balloon,
+            kdf: Kdf::Argon2id,
         })
         .expect("encrypt detached fixture");
 
@@ -601,7 +601,7 @@ mod tests {
             writer: &encrypted_cur,
             header_writer: Some(&header_cur),
             raw_key: Protected::new(PASSWORD.to_vec()),
-            kdf: Kdf::Blake3Balloon,
+            kdf: Kdf::Argon2id,
         })
         .expect("encrypt detached fixture");
 

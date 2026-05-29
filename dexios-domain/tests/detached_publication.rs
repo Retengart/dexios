@@ -32,7 +32,7 @@ fn encrypt_detached_partial_publication_reports_committed_payload_and_failed_hea
             OverwritePolicy::CreateNew,
         )),
         key(),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
     )
     .unwrap();
 
@@ -82,7 +82,7 @@ fn pack_detached_partial_publication_reports_committed_payload_and_failed_header
             OverwritePolicy::CreateNew,
         )),
         key(),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
         ArchivePolicy::default(),
         true,
         None,

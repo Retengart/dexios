@@ -136,7 +136,7 @@ fn encrypt_fixture(dir: &Path, name: &str) -> PathBuf {
         domain::storage::identity::OverwritePolicy::CreateNew,
         None,
         Protected::new(PASSWORD.as_bytes().to_vec()),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
     )
     .expect("build encrypt intent");
     encrypt::execute(intent).expect("encrypt fixture");

@@ -95,7 +95,7 @@ pub fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
 }
 
 pub fn kdf(_sub_matches: &ArgMatches) -> Kdf {
-    Kdf::Blake3Balloon
+    Kdf::Argon2id
 }
 
 pub fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams)> {
@@ -303,7 +303,7 @@ mod tests {
     }
 
     #[test]
-    fn decrypt_parameter_handler_defaults_to_blake3_balloon() {
+    fn decrypt_parameter_handler_defaults_to_argon2id() {
         let matches = build_cli()
             .try_get_matches_from([
                 "dexios",
@@ -318,11 +318,11 @@ mod tests {
 
         let params = parameter_handler(sub_matches).expect("params");
 
-        assert_eq!(params.kdf, Kdf::Blake3Balloon);
+        assert_eq!(params.kdf, Kdf::Argon2id);
     }
 
     #[test]
-    fn unpack_parameter_handler_defaults_to_blake3_balloon() {
+    fn unpack_parameter_handler_defaults_to_argon2id() {
         let matches = build_cli()
             .try_get_matches_from([
                 "dexios",
@@ -337,7 +337,7 @@ mod tests {
 
         let params = parameter_handler(sub_matches).expect("params");
 
-        assert_eq!(params.kdf, Kdf::Blake3Balloon);
+        assert_eq!(params.kdf, Kdf::Argon2id);
     }
 
     #[test]

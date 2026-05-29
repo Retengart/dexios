@@ -16,8 +16,10 @@ homepage = "https://github.com/brxken128/dexios"
 
 [workspace.dependencies]
 anyhow = "1.0.102"
-# Keep blake3 pinned for Phase 8: 1.8.4+ changes the traits-preview
-# digest line and breaks the stable balloon-hash 0.4.0 KDF integration.
+# blake3 is used only for CONTENT hashing (dexios-domain hasher/cleanup digests).
+# The original `=1.8.3` pin existed for balloon-hash 0.4.0's traits-preview coupling,
+# which was removed by the crypto-1 Argon2id migration; pin retained pending the
+# dep-1 re-evaluation (see Cargo.toml dependency-policy task).
 blake3 = "=1.8.3"
 rand = "0.10.1"
 clap = { version = "4.6.1", features = ["cargo"] }
@@ -26,7 +28,9 @@ chacha20poly1305 = "0.10.1"
 aead = { version = "0.5.2", features = ["stream"] }
 zeroize = "1.8.2"
 subtle = "2.6.1"
-balloon-hash = { version = "0.4.0", features = ["zeroize"] }
+# Argon2id (OWASP-recommended, RFC 9106) is the normal KDF for new V1 keyslots.
+# Minimal features: `alloc` for the memory block + `zeroize` to wipe it; no PHC parser.
+argon2 = { version = "0.5.3", default-features = false, features = ["alloc", "zeroize"] }
 indicatif = "0.18.4"
 walkdir = "2.5.0"
 rustix = { version = "1.1.4", features = ["fs"] }

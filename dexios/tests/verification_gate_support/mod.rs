@@ -358,8 +358,8 @@ pub(crate) fn spec_format_reference_alignment_issues(source: &str) -> Vec<&'stat
             "missing current physical keyslot size",
         ),
         (
-            "BLAKE3-Balloon",
-            "missing current BLAKE3-Balloon write policy",
+            "Argon2id",
+            "missing current Argon2id write policy",
         ),
         (
             "historical Argon2id tag",

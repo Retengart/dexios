@@ -37,7 +37,7 @@ pub(super) fn encrypted_v1_fixture() -> RefCell<Cursor<Vec<u8>>> {
         dexios_domain::storage::identity::OverwritePolicy::CreateNew,
         None,
         Protected::new(b"old-pass".to_vec()),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
     )
     .expect("build encrypt intent");
     encrypt::execute(intent).expect("encrypt fixture");
@@ -57,7 +57,7 @@ pub(super) fn encrypted_v1_file(name: &str) -> (tempfile::TempDir, PathBuf) {
         dexios_domain::storage::identity::OverwritePolicy::CreateNew,
         None,
         Protected::new(b"old-pass".to_vec()),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
     )
     .expect("build encrypt intent");
     encrypt::execute(intent).expect("encrypt fixture");
@@ -215,7 +215,7 @@ pub(super) fn add_key_file(path: &Path, old_key: &[u8], new_key: &[u8]) {
     let proven = intent
         .verify_old_key(Protected::new(old_key.to_vec()))
         .expect("old key proof");
-    key::add::execute(proven, Protected::new(new_key.to_vec()), Kdf::Blake3Balloon)
+    key::add::execute(proven, Protected::new(new_key.to_vec()), Kdf::Argon2id)
         .expect("add second keyslot");
 }
 
@@ -224,7 +224,7 @@ pub(super) fn change_key_file(path: &Path, old_key: &[u8], new_key: &[u8]) {
     let proven = intent
         .verify_old_key(Protected::new(old_key.to_vec()))
         .expect("old key proof");
-    key::change::execute(proven, Protected::new(new_key.to_vec()), Kdf::Blake3Balloon)
+    key::change::execute(proven, Protected::new(new_key.to_vec()), Kdf::Argon2id)
         .expect("change keyslot");
 }
 
@@ -250,12 +250,12 @@ pub(super) fn append_synthetic_second_keyslot(
             .expect("decrypt existing master key");
     let salt = Salt::new(gen_salt());
     let nonce = gen_keyslot_nonce();
-    let wrapping_key = Kdf::Blake3Balloon
+    let wrapping_key = Kdf::Argon2id
         .derive(&Protected::new(new_key.to_vec()), &salt.to_kdf_salt())
         .expect("derive synthetic wrapping key");
     let mut placeholder_keyslots = keyslots.clone();
     placeholder_keyslots
-        .push(V1Keyslot::new(Kdf::Blake3Balloon, [0u8; 48], nonce, salt))
+        .push(V1Keyslot::new(Kdf::Argon2id, [0u8; 48], nonce, salt))
         .expect("append placeholder keyslot");
     let placeholder_header = header
         .with_keyslots(placeholder_keyslots)
@@ -274,7 +274,7 @@ pub(super) fn append_synthetic_second_keyslot(
     .expect("wrap synthetic master key");
     keyslots
         .push(V1Keyslot::new(
-            Kdf::Blake3Balloon,
+            Kdf::Argon2id,
             *encrypted_master_key.as_bytes(),
             nonce,
             salt,

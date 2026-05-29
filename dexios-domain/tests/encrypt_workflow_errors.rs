@@ -97,7 +97,7 @@ fn encrypt_intent_rejects_aliased_input_output_before_mutation() {
         OverwritePolicy::ReplaceAtCommit,
         None,
         protected_key(),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
     );
 
     assert!(matches!(result, Err(encrypt::Error::PathIdentity(_))));
@@ -122,7 +122,7 @@ fn encrypt_intent_rejects_aliased_output_and_detached_header_targets() {
             OverwritePolicy::CreateNew,
         )),
         protected_key(),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
     );
 
     assert!(matches!(result, Err(encrypt::Error::PathIdentity(_))));
@@ -160,7 +160,7 @@ fn encrypt_intent_with_relative_input_opens_validated_target_after_cwd_change() 
         OverwritePolicy::CreateNew,
         None,
         protected_key(),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
     )
     .expect("build encrypt intent from relative input");
 
@@ -218,7 +218,7 @@ fn encrypt_open_and_stream_failures_preserve_diagnostic_sources() {
         OverwritePolicy::CreateNew,
         None,
         protected_key(),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
     )
     .expect("build encrypt intent before removing input");
     fs::remove_file(&plain).expect("remove validated input");
@@ -240,7 +240,7 @@ fn encrypt_open_and_stream_failures_preserve_diagnostic_sources() {
         OverwritePolicy::CreateNew,
         None,
         protected_key(),
-        Kdf::Blake3Balloon,
+        Kdf::Argon2id,
     )
     .expect("build encrypt intent for existing directory input");
 

@@ -1,7 +1,6 @@
 use dexios_core::kdf::{
-    BLAKE3_BALLOON_ALGORITHM_DELTA, BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID,
-    BLAKE3_BALLOON_KDF_PROFILE_ID, BLAKE3_BALLOON_OUTPUT_LEN, BLAKE3_BALLOON_P_COST,
-    BLAKE3_BALLOON_SALT_LEN, BLAKE3_BALLOON_SPACE_COST, BLAKE3_BALLOON_TIME_COST, Kdf, Salt,
+    ARGON2ID_KDF_PARAM_PROFILE_ID, ARGON2ID_KDF_PROFILE_ID, ARGON2ID_M_COST, ARGON2ID_OUTPUT_LEN,
+    ARGON2ID_P_COST, ARGON2ID_SALT_LEN, ARGON2ID_T_COST, Kdf, Salt,
 };
 use dexios_core::protected::Protected;
 use serde::Deserialize;
@@ -73,82 +72,73 @@ fn kdf_vector_file_contains_expected_cases() {
         assert!(vector.metadata.contains_key("source_name"));
 
         match vector.algorithm.as_str() {
-            "balloon" => {
-                assert!(vector.metadata.contains_key("source_repo"));
-                assert!(vector.metadata.contains_key("source_commit"));
-                assert!(vector.metadata.contains_key("source_hash_primitive"));
-                assert!(vector.metadata.contains_key("params_space_cost"));
-                assert!(vector.metadata.contains_key("params_time_cost"));
+            "argon2id" => {
+                assert!(vector.metadata.contains_key("params_m_cost"));
+                assert!(vector.metadata.contains_key("params_t_cost"));
                 assert!(vector.metadata.contains_key("params_p_cost"));
-                assert!(vector.metadata.contains_key("params_delta"));
             }
             other => panic!("unexpected KDF algorithm in testdata: {other}"),
         }
     }
 
     assert!(
-        vectors.iter().all(|vector| vector.algorithm != "argon2id"),
-        "Argon2id is a historical unsupported keyslot tag, not a normal KDF vector"
+        vectors.iter().all(|vector| vector.algorithm != "balloon"),
+        "BLAKE3-Balloon was retired in the crypto-1 Argon2id migration; no balloon vectors remain"
     );
     assert!(
         vectors
             .iter()
-            .any(|vector| vector.algorithm == "balloon" && vector.case == "stable")
+            .any(|vector| vector.algorithm == "argon2id" && vector.case == "stable")
     );
 }
 
 #[test]
-fn normal_kdf_selector_is_blake3_balloon_only() {
-    let supported = [Kdf::Blake3Balloon];
+fn normal_kdf_selector_is_argon2id_only() {
+    let supported = [Kdf::Argon2id];
 
     for selector in supported {
         match selector {
-            Kdf::Blake3Balloon => {}
+            Kdf::Argon2id => {}
         }
     }
 }
 
 #[test]
-fn blake3_balloon_derives_a_32_byte_key() {
-    let derived = Kdf::Blake3Balloon
+fn argon2id_derives_a_32_byte_key() {
+    let derived = Kdf::Argon2id
         .derive(&Protected::new(b"password".to_vec()), &Salt::new([9; 16]))
         .unwrap();
     derived.with_exposed(|key_bytes| assert_eq!(key_bytes.len(), 32));
 }
 
 #[test]
-fn blake3_balloon_vector_metadata_matches_frozen_contract() {
+fn argon2id_vector_metadata_matches_frozen_contract() {
     let vectors = load_vectors();
-    let vector = find_vector(&vectors, "balloon", "stable");
+    let vector = find_vector(&vectors, "argon2id", "stable");
 
     assert_eq!(
-        vector.metadata["params_space_cost"].as_integer(),
-        Some(i64::from(BLAKE3_BALLOON_SPACE_COST))
+        vector.metadata["params_m_cost"].as_integer(),
+        Some(i64::from(ARGON2ID_M_COST))
     );
     assert_eq!(
-        vector.metadata["params_time_cost"].as_integer(),
-        Some(i64::from(BLAKE3_BALLOON_TIME_COST))
+        vector.metadata["params_t_cost"].as_integer(),
+        Some(i64::from(ARGON2ID_T_COST))
     );
     assert_eq!(
         vector.metadata["params_p_cost"].as_integer(),
-        Some(i64::from(BLAKE3_BALLOON_P_COST))
-    );
-    assert_eq!(
-        vector.metadata["params_delta"].as_integer(),
-        Some(i64::from(BLAKE3_BALLOON_ALGORITHM_DELTA))
+        Some(i64::from(ARGON2ID_P_COST))
     );
 }
 
 #[test]
-fn canonical_blake3_balloon_profile_ids_match_frozen_params() {
-    assert_eq!(BLAKE3_BALLOON_KDF_PROFILE_ID, 0x01);
-    assert_eq!(BLAKE3_BALLOON_KDF_PARAM_PROFILE_ID, 0x01);
-    assert_eq!(BLAKE3_BALLOON_SPACE_COST, 278_528);
-    assert_eq!(BLAKE3_BALLOON_TIME_COST, 1);
-    assert_eq!(BLAKE3_BALLOON_P_COST, 1);
-    assert_eq!(BLAKE3_BALLOON_ALGORITHM_DELTA, 3);
-    assert_eq!(BLAKE3_BALLOON_OUTPUT_LEN, 32);
-    assert_eq!(BLAKE3_BALLOON_SALT_LEN, 16);
+fn canonical_argon2id_profile_ids_match_frozen_params() {
+    assert_eq!(ARGON2ID_KDF_PROFILE_ID, 0x01);
+    assert_eq!(ARGON2ID_KDF_PARAM_PROFILE_ID, 0x01);
+    assert_eq!(ARGON2ID_M_COST, 262_144); // 256 MiB at 1 KiB blocks
+    assert_eq!(ARGON2ID_T_COST, 4);
+    assert_eq!(ARGON2ID_P_COST, 4);
+    assert_eq!(ARGON2ID_OUTPUT_LEN, 32);
+    assert_eq!(ARGON2ID_SALT_LEN, 16);
 }
 
 #[test]
@@ -159,26 +149,32 @@ fn workspace_manifest_source_gates_kdf_dependency_policy() {
         .as_table()
         .expect("workspace dependencies table");
 
-    let balloon_hash = workspace_deps
-        .get("balloon-hash")
+    let argon2 = workspace_deps
+        .get("argon2")
         .and_then(toml::Value::as_table)
-        .expect("balloon-hash uses explicit workspace dependency table");
+        .expect("argon2 uses explicit workspace dependency table");
     assert_eq!(
-        balloon_hash.get("version").and_then(toml::Value::as_str),
-        Some("0.4.0")
+        argon2.get("version").and_then(toml::Value::as_str),
+        Some("0.5.3")
     );
-    let balloon_features = balloon_hash
+    assert_eq!(
+        argon2.get("default-features").and_then(toml::Value::as_bool),
+        Some(false),
+        "argon2 must disable default features (no PHC parser / std)"
+    );
+    let argon2_features = argon2
         .get("features")
         .and_then(toml::Value::as_array)
-        .expect("balloon-hash feature policy is explicit")
+        .expect("argon2 feature policy is explicit")
         .iter()
         .map(|feature| feature.as_str().expect("feature is a string"))
         .collect::<BTreeSet<_>>();
-    assert_eq!(balloon_features, BTreeSet::from(["zeroize"]));
+    assert_eq!(argon2_features, BTreeSet::from(["alloc", "zeroize"]));
 
-    assert_eq!(
-        workspace_deps.get("blake3").and_then(toml::Value::as_str),
-        Some("=1.8.3")
+    // balloon-hash must be fully gone from the workspace dependency surface.
+    assert!(
+        workspace_deps.get("balloon-hash").is_none(),
+        "balloon-hash was retired by the crypto-1 Argon2id migration"
     );
 
     let core_manifest: toml::Value =
@@ -187,13 +183,40 @@ fn workspace_manifest_source_gates_kdf_dependency_policy() {
         .as_table()
         .expect("core dependencies table");
     assert_eq!(
-        core_deps["balloon-hash"]["workspace"].as_bool(),
+        core_deps["argon2"]["workspace"].as_bool(),
         Some(true),
-        "dexios-core must inherit the workspace balloon-hash feature policy"
+        "dexios-core must inherit the workspace argon2 dependency policy"
+    );
+    // dexios-core no longer derives keys from blake3 (it was only balloon-hash's hash
+    // primitive); content hashing lives in dexios-domain.
+    assert!(
+        core_deps.get("blake3").is_none(),
+        "dexios-core must not depend on blake3 after the Argon2id migration"
     );
 }
 
 #[test]
-fn balloon_matches_stable_known_vector() {
-    assert_vector(Kdf::Blake3Balloon, "balloon", "stable");
+fn argon2id_matches_stable_known_vector() {
+    assert_vector(Kdf::Argon2id, "argon2id", "stable");
+}
+
+#[test]
+fn argon2id_distinct_inputs_yield_distinct_keys() {
+    let password = Protected::new(b"test-password".to_vec());
+    let base = Kdf::Argon2id
+        .derive(&password, &Salt::new([5u8; 16]))
+        .unwrap();
+    let other_salt = Kdf::Argon2id
+        .derive(&password, &Salt::new([6u8; 16]))
+        .unwrap();
+    let other_password = Kdf::Argon2id
+        .derive(&Protected::new(b"test-password!".to_vec()), &Salt::new([5u8; 16]))
+        .unwrap();
+
+    base.with_exposed(|base| {
+        assert_ne!(base, &[0u8; 32], "derived key must not be all zeros");
+        other_salt.with_exposed(|other| assert_ne!(base, other, "salt must change the key"));
+        other_password
+            .with_exposed(|other| assert_ne!(base, other, "password must change the key"));
+    });
 }

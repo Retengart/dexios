@@ -1045,7 +1045,7 @@ pub(crate) mod tests {
             writer: output_file.try_writer().unwrap(),
             header_writer: None,
             raw_key: Protected::new(PASSWORD.to_vec()),
-            kdf: Kdf::Blake3Balloon,
+            kdf: Kdf::Argon2id,
         };
 
         match execute_streaming_archive(req) {

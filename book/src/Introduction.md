@@ -15,9 +15,9 @@ The current workspace is split into four crates:
 
 For normal encryption, Dexios writes V1 headers and uses one suite:
 `XChaCha20-Poly1305` with LE31 stream encryption. The normal KDF for new V1
-writes is BLAKE3-Balloon only. Historical unsupported Argon2id keyslot tags remain
-recognized as unsupported historical metadata so old headers can fail with a
-specific diagnosis.
+writes is Argon2id only (256 MiB / t=4 / p=4). The historical unsupported
+Argon2id keyslot tag remains recognized as unsupported historical metadata so
+old headers can fail with a specific diagnosis.
 
 ## Security Notices
 
@@ -42,7 +42,7 @@ dexios encrypt input.txt output.enc
 uses the following defaults:
 
 - `XChaCha20-Poly1305`
-- `BLAKE3-Balloon` password hashing with frozen Phase 3 parameters
+- `Argon2id` password hashing with frozen canonical parameters (256 MiB / t=4 / p=4)
 - V1 headers
 - stream encryption with 1 MiB blocks
 - an authenticated final block, including an empty final marker for exact-block plaintext

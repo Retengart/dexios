@@ -753,7 +753,7 @@ fn crate_roots_keep_the_no_unsafe_compiler_baseline() {
 #[test]
 fn phase9_kdf_passphrase_and_secret_contract_is_source_gated() {
     for required in [
-        "balloon-hash = { version = \"0.4.0\", features = [\"zeroize\"] }",
+        "argon2 = { version = \"0.5.3\", default-features = false, features = [\"alloc\", \"zeroize\"] }",
         "blake3 = \"=1.8.3\"",
     ] {
         assert_contains("Cargo.toml", CARGO_TOML, required);
@@ -798,9 +798,8 @@ fn phase9_kdf_passphrase_and_secret_contract_is_source_gated() {
     }
 
     for required in [
-        "balloon-hash 0.4.0",
+        "argon2 0.5.3",
         "zeroize",
-        "blake3 = \"=1.8.3\"",
         "scripts/measure_performance_gate.sh --scenario kdf",
         "--max-kdf-seconds",
         "DEXIOS_KDF_MAX_SECONDS",
@@ -867,7 +866,7 @@ fn phase9_kdf_passphrase_and_secret_contract_is_source_gated() {
     }
 
     for required in [
-        "balloon-hash 0.4.0",
+        "argon2 0.5.3",
         "invalid `--auto` word counts",
         "hardware profile",
         "narrow secret-memory claim",
@@ -876,7 +875,7 @@ fn phase9_kdf_passphrase_and_secret_contract_is_source_gated() {
     }
 
     for required in [
-        "balloon-hash 0.4.0",
+        "argon2 0.5.3",
         "invalid generated passphrase counts",
         "--max-kdf-seconds",
         "narrow secret-memory claim",

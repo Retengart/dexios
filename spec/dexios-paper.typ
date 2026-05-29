@@ -16,7 +16,7 @@
 
 Dexios is an open-source file encryption tool written in Rust. Its current
 normal format combines a 512-byte canonical V1 header, authenticated streaming
-encryption, BLAKE3-Balloon password hashing, keyslot-based master-key wrapping,
+encryption, Argon2id password hashing, keyslot-based master-key wrapping,
 and Dexios-owned manifest-first archive payloads.
 
 = Introduction
@@ -45,7 +45,7 @@ For new files, Dexios:
 - generates a random 32-byte master key,
 - generates a 20-byte payload nonce,
 - generates salts and 24-byte wrapping nonces for keyslots,
-- hashes the user-provided key material with BLAKE3-Balloon,
+- hashes the user-provided key material with Argon2id,
 - wraps the master key inside one or more keyslots,
 - serializes the canonical V1 header,
 - encrypts the payload in stream mode.
@@ -178,12 +178,14 @@ instead of compacting or reordering the keyslot table.
 Dexios uses memory-hard password hashing to derive 32-byte wrapping keys from
 user-supplied key material.
 
-Current canonical V1 writes use a 16-byte salt and BLAKE3-Balloon with the
-frozen parameter profile defined in `dexios-core/src/kdf.rs`.
+Current canonical V1 writes use a 16-byte salt and Argon2id (RFC 9106) with the
+frozen parameter profile defined in `dexios-core/src/kdf.rs`: m_cost `262144`
+KiB (256 MiB), t_cost `4` passes, p_cost `4` lanes, 32-byte output, and Argon2
+version `0x13`.
 
 === Hashing Algorithms
 
-The normal write policy is BLAKE3-Balloon only. New canonical V1 files do not
+The normal write policy is Argon2id only. New canonical V1 files do not
 expose alternate KDF selection or user-configurable KDF parameters.
 
 The historical Argon2id tag `[0xDF, 0x02]` may be recognized as unsupported
@@ -193,7 +195,9 @@ and is not a normal write policy.
 === Performance
 
 The KDF parameters are intentionally expensive compared to a general-purpose
-password hash, but still chosen to remain practical on normal user hardware.
+password hash, but still chosen to remain practical on normal user hardware. A
+single Argon2id derive costs roughly 0.5 seconds on reference hardware; the four
+lanes are computed sequentially in pure Rust, but the digest is spec-correct.
 In most real workflows, storage I/O dominates total runtime once the key has
 been derived.
 
@@ -295,7 +299,7 @@ Each active keyslot contains:
 
 The wrapped master key is 48 bytes long.
 
-The normal KDF identifier is `[0xDF, 0x01]` for BLAKE3-Balloon. The historical
+The normal KDF identifier is `[0x01, 0x01]` for Argon2id. The historical
 Argon2id tag `[0xDF, 0x02]` is unsupported metadata for diagnostics, not a
 current derivation path.
 

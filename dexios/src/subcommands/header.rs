@@ -47,7 +47,7 @@ pub fn details(input: &str) -> Result<()> {
 
             for (i, keyslot) in header.keyslots().iter().enumerate() {
                 let kdf = match keyslot.kdf() {
-                    KeyslotKdf::Blake3Balloon => "BLAKE3-Balloon",
+                    KeyslotKdf::Argon2id => "Argon2id",
                     KeyslotKdf::UnsupportedArgon2id => "Argon2id (unsupported historical tag)",
                 };
                 println!("Keyslot {i}:");
