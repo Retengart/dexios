@@ -3,6 +3,8 @@
 //! It implements zeroize-on-drop for the owned value inside the wrapper.
 //! You may call `drop()` prematurely if you wish to clear that owned value sooner.
 //! This does not claim allocator, OS, terminal, crash-dump, or physical-media sanitization.
+//! See `book/src/Threat-Model.md` for the memory-residency scope (no mlock under
+//! `forbid(unsafe_code)`; encrypt swap; the `DEXIOS_KEY` residual window).
 //!
 //! `Protected` values are also hidden from `fmt::Debug`, and will display `[REDACTED]` instead.
 //!

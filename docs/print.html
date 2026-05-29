@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-c68e4b7a.js";
+            window.path_to_searchindex_js = "searchindex-ff00a369.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-07f7ca76.js"></script>
+        <script src="toc-0dc8da65.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -689,6 +689,50 @@ not treat <code>spec/specification-v1.pdf</code> as current release-critical aut
 <li>stale normal Argon2id wording is rejected, while explicit historical unsupported Argon2id wording is allowed;</li>
 <li>targeted KDF, V1 header, V1 stream, protected wrapper, domain keyslot, CLI header-details, and CLI parser/prompt tests pass;</li>
 <li>workspace release and debug checks, rustfmt, clippy, full release tests, and no-unsafe crate-root checks pass.</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="threat-model-and-memory-residency-scope"><a class="header" href="#threat-model-and-memory-residency-scope">Threat Model and Memory-Residency Scope</a></h1>
+<p>Dexios protects file confidentiality and integrity against an attacker who obtains the
+ciphertext and header. This page records what is intentionally <strong>out of scope</strong> for
+in-process secret handling, so the boundaries are explicit rather than implied. These are
+conscious decisions, not oversights.</p>
+<h2 id="in-scope"><a class="header" href="#in-scope">In scope</a></h2>
+<ul>
+<li>Authenticated encryption of payloads (XChaCha20-Poly1305 over the LE31 stream).</li>
+<li>Tamper / downgrade / truncation detection via header-bound AAD and per-keyslot AAD.</li>
+<li>Memory-hard password hashing (Argon2id, 256 MiB / t=4 / p=4) before keyslot unwrap.</li>
+<li>Zeroize-on-drop of key material, derived keys, passwords, and decrypted scratch buffers
+via <code>Protected&lt;T&gt;</code> and <code>Zeroizing</code>.</li>
+</ul>
+<h2 id="out-of-scope-conscious-decisions"><a class="header" href="#out-of-scope-conscious-decisions">Out of scope (conscious decisions)</a></h2>
+<ul>
+<li><strong>Memory locking (mlock / VirtualLock).</strong> Every Dexios crate is <code>#![forbid(unsafe_code)]</code>.
+Locking pages requires <code>unsafe</code> FFI (directly or via a crate), which we deliberately do
+not introduce into the cryptographic core. Consequently, live secrets may be paged to
+swap or captured in a hibernation image or core dump, where <code>zeroize</code> cannot reach them.</li>
+<li><strong>Allocator / OS / terminal / crash-dump sanitization.</strong> <code>zeroize</code> clears the buffers we
+own; it cannot clear copies made by the allocator, the kernel, the terminal scrollback,
+or third-party AEAD internals.</li>
+<li><strong>Environment-variable key residue (<code>DEXIOS_KEY</code>).</strong> When a key is supplied via the
+<code>DEXIOS_KEY</code> environment variable, Dexios reads it byte-for-byte and <strong>cannot scrub it</strong>
+from the process environment: <code>std::env::remove_var</code> is <code>unsafe</code> under the 2024 edition,
+and the cryptographic crates forbid <code>unsafe</code>. The value therefore remains visible to
+other processes (e.g. <code>/proc/&lt;pid&gt;/environ</code>), is inherited by child processes, and may
+persist in shell history or CI logs. Dexios emits a one-time warning whenever the
+environment key is used. Prefer an interactive prompt or a keyfile on shared hosts.</li>
+</ul>
+<h2 id="output-file-permissions"><a class="header" href="#output-file-permissions">Output file permissions</a></h2>
+<p>On Unix, <strong>all</strong> committed outputs — encrypted artifacts, detached headers, and <strong>decrypted
+plaintext / unpacked files</strong> — are published with owner-only <code>0o600</code> permissions rather than
+the umask default. This is a deliberate defense-in-depth choice: a freshly decrypted secret
+should not be world- or group-readable by default, even though that is stricter than typical
+<code>create</code> semantics. Loosen the permissions explicitly (e.g. <code>chmod</code>) if wider access is
+intended.</p>
+<h2 id="recommended-operator-mitigations"><a class="header" href="#recommended-operator-mitigations">Recommended operator mitigations</a></h2>
+<ul>
+<li>Encrypt your swap device, or use a swapless / encrypted-hibernation configuration.</li>
+<li>Disable core dumps for sensitive runs (<code>ulimit -c 0</code>).</li>
+<li>Prefer interactive prompts or keyfiles over <code>DEXIOS_KEY</code> on shared or multi-user hosts.</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="technical-details"><a class="header" href="#technical-details">Technical Details</a></h1>
