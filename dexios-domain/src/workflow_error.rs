@@ -48,24 +48,18 @@ pub(crate) fn classify_identity_error(error: &IdentityError) -> WorkflowErrorCla
 }
 
 pub(crate) fn classify_transaction_error(error: &TransactionError) -> WorkflowErrorClass {
-    if matches!(
-        error,
-        TransactionError::PartialCommit { .. } | TransactionError::PostCommitSync { .. }
-    ) {
-        return WorkflowErrorClass::TransactionCommitFailure;
-    }
-
-    if error.is_resource_pressure() {
-        return WorkflowErrorClass::ResourcePressure;
-    }
-
+    // PartialCommit/PostCommitSync are commit failures even when their io chain looks like
+    // resource pressure, so they are matched before the resource-pressure guard. A single
+    // exhaustive match removes the previously duplicated (dead) trailing arms (quality-2).
     match error {
+        TransactionError::PartialCommit { .. } | TransactionError::PostCommitSync { .. } => {
+            WorkflowErrorClass::TransactionCommitFailure
+        }
+        _ if error.is_resource_pressure() => WorkflowErrorClass::ResourcePressure,
         TransactionError::Write { .. }
         | TransactionError::Flush { .. }
         | TransactionError::Sync { .. } => WorkflowErrorClass::IoFailure,
-        TransactionError::Persist { .. }
-        | TransactionError::PartialCommit { .. }
-        | TransactionError::PostCommitSync { .. } => WorkflowErrorClass::TransactionCommitFailure,
+        TransactionError::Persist { .. } => WorkflowErrorClass::TransactionCommitFailure,
     }
 }
 
