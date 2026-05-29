@@ -553,7 +553,8 @@ fn prepare_manifest_extraction_entities(
                 .map_err(map_identity_error)?;
             ExtractionKind::Directory(target)
         } else {
-            let overwrite_policy = overwrite_policy_for_extracted_file(&full_path)?;
+            let overwrite_policy =
+                overwrite_policy_for_extracted_file(&full_path, on_archive_file.is_some())?;
             let target = identity_graph
                 .add_output(&full_path, PathRole::Output, overwrite_policy)
                 .map_err(map_identity_error)?;
@@ -786,10 +787,16 @@ fn map_body_io_error(error: io::Error) -> Error {
     }
 }
 
-fn overwrite_policy_for_extracted_file(path: &Path) -> Result<OverwritePolicy, Error> {
+fn overwrite_policy_for_extracted_file(
+    path: &Path,
+    consent_callback_present: bool,
+) -> Result<OverwritePolicy, Error> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.is_dir() => Err(Error::UnsafeOutputPath(path.to_path_buf())),
-        Ok(_) => Ok(OverwritePolicy::ReplaceAtCommit),
+        // An existing target is only replaced when a consent callback is wired up to drive
+        // the decision; with no consent path we refuse to clobber silently (fs-4).
+        Ok(_) if consent_callback_present => Ok(OverwritePolicy::ReplaceAtCommit),
+        Ok(_) => Ok(OverwritePolicy::CreateNew),
         Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(OverwritePolicy::CreateNew),
         Err(_) => Err(Error::Storage(storage::Error::FileAccess)),
     }
