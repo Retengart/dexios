@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-22a03076.js";
+            window.path_to_searchindex_js = "../searchindex-55585b20.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-0dc8da65.js"></script>
@@ -198,6 +198,50 @@
 pre-merge gate for safety-sensitive changes. It requires focused invariant
 checks, broad workspace checks, dependency/security checks, and documentation
 checks, but it is still not a substitute for a dedicated independent audit.</p>
+<h2 id="dependency-currency"><a class="header" href="#dependency-currency">Dependency currency</a></h2>
+<p>Dexios aims to keep dependencies current, but the dependency graph deliberately
+tolerates a small set of duplicate (older) crate versions. These are documented
+inline in <code>deny.toml</code>’s <code>[bans] skip</code> list and enforced by <code>cargo deny check</code>
+(<code>multiple-versions = "deny"</code>), so the set cannot grow silently.</p>
+<p>The duplicates have two distinct causes:</p>
+<ul>
+<li><strong>Trailing RustCrypto 0.10 / <code>aead 0.5</code> line (most entries).</strong> The AEAD and KDF
+cipher stack (<code>chacha20poly1305 0.10.1</code>, <code>aead 0.5.2</code>, <code>argon2 0.5.3</code>,
+<code>cipher 0.4.4</code>, <code>crypto-common 0.1.7</code>, <code>password-hash 0.5.0</code>) still depends on
+the older RustCrypto 0.10-era crates, which pull in older versions of
+<code>chacha20</code>, <code>cpufeatures</code>, <code>rand_core</code>, and <code>getrandom</code>. Our RNG dependency
+<code>rand 0.10.1</code> has already moved onto the newer line, so both coexist. The plan
+is to collapse onto the <code>aead 0.6</code> / <code>chacha20poly1305 0.11</code> stack once it is
+available across the cipher graph; that upgrade carries the newer transitive
+dependencies and the duplicates disappear, at which point the matching <code>skip</code>
+entries are removed.</li>
+<li><strong><code>rpassword</code>/<code>rtoolbox</code> Windows prompt dependency (one entry).</strong> The
+<code>windows-sys 0.59</code> skip is unrelated to the cipher stack: it exists only
+because <code>rpassword</code>/<code>rtoolbox</code> lag behind the rest of the Windows transitive
+graph (which is on <code>windows-sys 0.61</code>). It is removed once those crates catch
+up.</li>
+</ul>
+<p>Each <code>skip</code> entry was verified against the current <code>Cargo.lock</code> with
+<code>cargo tree -i &lt;crate&gt;</code> and should be re-checked (and dropped if no longer
+duplicated) whenever the cipher stack or prompt dependency is bumped.</p>
+<p>How the project keeps dependencies current:</p>
+<ul>
+<li><strong><code>cargo deny check</code></strong> gates licenses, sources, advisories, and the
+duplicate-version policy above on every run of the Maintainer Verification
+Gate.</li>
+<li><strong><code>cargo audit --deny warnings</code></strong> fails the gate on any known advisory
+(RUSTSEC) affecting the locked graph.</li>
+<li><strong>Dependabot</strong> runs weekly with grouped pull requests (see
+<code>.github/dependabot.yml</code>): a <code>cargo-version</code> group for routine version
+updates and a <code>cargo-security</code> group scoped to security updates.</li>
+</ul>
+<blockquote>
+<p><strong>Operator action required:</strong> the <code>cargo-security</code> Dependabot group only
+produces security-update pull requests when <strong>GitHub Dependabot alerts are
+enabled</strong> for the repository. Without alerts enabled, security updates will
+not be surfaced. Enable Dependabot alerts in the repository security settings
+so the <code>cargo-security</code> group can do its job.</p>
+</blockquote>
 
                     </main>
 

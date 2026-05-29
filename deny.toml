@@ -16,12 +16,43 @@ multiple-versions = "deny"
 wildcards = "deny"
 highlight = "simplest-path"
 deny = []
+# Why we skip these duplicate (older) crate versions:
+#
+# Root cause (entries 1-4): the AEAD/KDF cipher stack is the trailing stable
+# RustCrypto 0.10-era line. `chacha20poly1305 0.10.1`, `aead 0.5.2`,
+# `argon2 0.5.3`, `cipher 0.4.4`, `crypto-common 0.1.7`, `password-hash 0.5.0`
+# (and friends) still pull the older `chacha20 0.9`, `cpufeatures 0.2`,
+# `rand_core 0.6`, and `getrandom 0.2`. Meanwhile our RNG dependency
+# `rand 0.10.1` has already moved onto the newer line (`chacha20 0.10`,
+# `cpufeatures 0.3`, `rand_core 0.10.1`, `getrandom 0.4`). Until the RustCrypto
+# AEAD ecosystem collapses onto `aead 0.6` (which carries the upgraded
+# transitive deps), both lines coexist and `multiple-versions = "deny"` would
+# otherwise fail. These skips are removed once we adopt the `aead 0.6` /
+# `chacha20poly1305 0.11` stack and the older 0.10-era duplicates disappear.
+#
+# Verified with `cargo tree -i <crate>` against the current Cargo.lock (see
+# book/src/dexios-core/Auditing.md "Dependency currency"); re-check each entry
+# when bumping the cipher stack and drop any that is no longer duplicated.
+#
+# NOTE: entry 5 (`windows-sys`) is a SEPARATE, unrelated cause — it is not part
+# of the aead/RustCrypto line; it comes from the `rpassword`/`rtoolbox` prompt
+# dependency lagging behind the rest of the Windows transitive graph.
 skip = [
-    { crate = "chacha20@0.9.1", reason = "Final graph keeps chacha20poly1305 0.10.1 on the RustCrypto 0.9 stream while rand 0.10.1 uses chacha20 0.10.0." },
-    { crate = "cpufeatures@0.2.17", reason = "Final graph keeps stable crypto crates on cpufeatures 0.2 while rand 0.10.1 pulls chacha20 0.10 with cpufeatures 0.3." },
-    { crate = "getrandom@0.2.17", reason = "Required by rand_core 0.6 through the stable RustCrypto 0.10 stack kept for the current stream AEAD/KDF contract." },
-    { crate = "rand_core@0.6.4", reason = "Required by the stable RustCrypto 0.10 dependency line while rand 0.10.1 uses rand_core 0.10.1." },
-    { crate = "windows-sys@0.59.0", reason = "Required by rtoolbox via rpassword 7.5.2 while newer Windows transitive dependencies use windows-sys 0.61.2." },
+    # chacha20poly1305 0.10.1 (RustCrypto 0.10 AEAD) pins chacha20 0.9 stream
+    # cipher; rand 0.10.1 already uses chacha20 0.10.0. Collapses on aead 0.6.
+    { crate = "chacha20@0.9.1", reason = "Trailing RustCrypto 0.10 AEAD line: chacha20poly1305 0.10.1 keeps chacha20 0.9 while rand 0.10.1 uses chacha20 0.10.0. Removed on the aead 0.6 collapse." },
+    # Stable crypto stack (argon2 0.5.3, blake3, chacha20 0.9, poly1305 0.8)
+    # uses cpufeatures 0.2; chacha20 0.10 (via rand 0.10.1) uses cpufeatures 0.3.
+    { crate = "cpufeatures@0.2.17", reason = "Trailing RustCrypto 0.10 line: argon2/blake3/chacha20 0.9/poly1305 keep cpufeatures 0.2 while rand 0.10.1 pulls chacha20 0.10 with cpufeatures 0.3. Removed on the aead 0.6 collapse." },
+    # rand_core 0.6 (RustCrypto 0.10 stack) requires getrandom 0.2; rand 0.10.1
+    # and tempfile use getrandom 0.4.
+    { crate = "getrandom@0.2.17", reason = "Trailing RustCrypto 0.10 line: rand_core 0.6 (via crypto-common/aead 0.5.2/password-hash/argon2) requires getrandom 0.2 while rand 0.10.1 and tempfile use getrandom 0.4. Removed on the aead 0.6 collapse." },
+    # RustCrypto 0.10 stack (crypto-common 0.1.7, password-hash 0.5.0 -> argon2)
+    # pins rand_core 0.6; rand 0.10.1 uses rand_core 0.10.1.
+    { crate = "rand_core@0.6.4", reason = "Trailing RustCrypto 0.10 line: crypto-common 0.1.7 (aead 0.5.2/cipher 0.4.4/digest/universal-hash) and password-hash 0.5.0 keep rand_core 0.6 while rand 0.10.1 uses rand_core 0.10.1. Removed on the aead 0.6 collapse." },
+    # SEPARATE cause (not aead/RustCrypto): rpassword 7.5.2 -> rtoolbox 0.0.5
+    # lags on windows-sys 0.59 while the rest of the Windows graph is on 0.61.2.
+    { crate = "windows-sys@0.59.0", reason = "Unrelated to the aead/RustCrypto line: rtoolbox 0.0.5 via rpassword 7.5.2 keeps windows-sys 0.59 while newer Windows transitive dependencies use windows-sys 0.61.2. Removed when rpassword/rtoolbox catch up." },
 ]
 skip-tree = []
 
