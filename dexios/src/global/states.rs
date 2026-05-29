@@ -157,11 +157,24 @@ impl Key {
                 }
                 secret
             }
-            Key::Env => Protected::new(
-                std::env::var("DEXIOS_KEY")
-                    .context("Unable to read DEXIOS_KEY from environment variable")?
-                    .into_bytes(),
-            ),
+            Key::Env => {
+                let value = std::env::var("DEXIOS_KEY")
+                    .context("Unable to read DEXIOS_KEY from environment variable")?;
+                // The value is used byte-for-byte (no trimming), so the key matches exactly
+                // what was exported. We deliberately do NOT scrub it with
+                // `std::env::remove_var`: that is `unsafe` under edition 2024 and these
+                // crates are `#![forbid(unsafe_code)]`. Environment-variable keys are
+                // therefore inherently visible to other processes (e.g. `/proc/<pid>/environ`)
+                // and inherited by children — see `book/src/Threat-Model.md`. Warn the
+                // operator so the exposure is an informed choice.
+                warn!(
+                    "Using DEXIOS_KEY from the environment: env-var keys can be read by other \
+                     processes (e.g. /proc/<pid>/environ), are inherited by child processes, \
+                     and are used byte-for-byte. Prefer an interactive prompt or a keyfile on \
+                     shared hosts."
+                );
+                Protected::new(value.into_bytes())
+            }
             Key::User => get_password(pass_state)?,
             Key::Generate(i) => generated_passphrase_secret(*i, |message| warn!("{message}")),
         };

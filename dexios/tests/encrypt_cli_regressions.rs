@@ -137,6 +137,30 @@ fn encrypt_auto_generated_passphrase_disclosure_uses_stderr_not_stdout() {
 }
 
 #[test]
+fn encrypt_with_dexios_key_env_warns_about_environment_exposure() {
+    let test_dir = TestDir::new("encrypt-env-key-warn");
+    fs::write(test_dir.path().join("plain.txt"), b"env key plaintext").unwrap();
+
+    // run_cli sets DEXIOS_KEY, so this exercises the Key::Env path (mem-1/cli-1).
+    let output = run_cli(
+        test_dir.path(),
+        &["encrypt", "--force", "plain.txt", "plain.enc"],
+    );
+
+    assert!(
+        output.status.success(),
+        "encrypt failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Using DEXIOS_KEY from the environment"),
+        "env-key exposure warning must be emitted on stderr: stderr={stderr}"
+    );
+}
+
+#[test]
 fn encrypt_keyfile_stdin_fails_before_interactive_overwrite_prompt() {
     let test_dir = TestDir::new("encrypt-keyfile-stdin-overwrite");
     fs::write(test_dir.path().join("plain.txt"), b"plain").unwrap();
