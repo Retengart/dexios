@@ -39,7 +39,7 @@ jobs:
         key: ${{ runner.os }}-cargo-stable-${{ hashFiles('Cargo.lock') }}
 
     - name: Clippy
-      run: cargo clippy --workspace --all-targets --all-features --no-deps
+      run: cargo clippy --locked --workspace --all-targets --all-features --no-deps
 
   check:
     name: check (ubuntu-latest, stable)
@@ -65,7 +65,7 @@ jobs:
         key: ${{ runner.os }}-cargo-stable-${{ hashFiles('Cargo.lock') }}
 
     - name: Check
-      run: cargo check --workspace --all-targets --release
+      run: cargo check --locked --workspace --all-targets --release
 
   build:
     strategy:
@@ -100,7 +100,7 @@ jobs:
           key: ${{ matrix.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('Cargo.lock') }}
 
       - name: Build
-        run: cargo build --release
+        run: cargo build --locked --release
 
       - if: matrix.os != 'windows-latest'
         name: Strip

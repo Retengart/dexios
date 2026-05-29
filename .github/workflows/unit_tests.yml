@@ -37,7 +37,7 @@ jobs:
           key: ${{ runner.os }}-cargo-msrv-1.88-${{ hashFiles('Cargo.lock') }}
 
       - name: Check MSRV
-        run: cargo check --workspace --all-targets
+        run: cargo check --locked --workspace --all-targets
 
   test:
     strategy:
@@ -73,4 +73,4 @@ jobs:
           key: ${{ matrix.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('Cargo.lock') }}
 
       - name: Run tests
-        run: cargo test --workspace --all-features --release --verbose
+        run: cargo test --locked --workspace --all-features --release --verbose
