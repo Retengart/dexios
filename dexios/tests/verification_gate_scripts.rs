@@ -91,8 +91,14 @@ fn phase06_release_evidence_script_and_claims_are_source_gated() {
 }
 
 #[test]
-fn planning_artifacts_remain_local_only() {
-    assert_contains(".gitignore", GITIGNORE, "local-notes/");
+fn planning_artifacts_are_committed_project_state() {
+    // Reversed 2026-05-29: local-notes/ is committed project state, not local-only.
+    assert_not_contains(".gitignore", GITIGNORE, "local-notes/");
+    assert_contains(
+        "scripts/verify_repo_hygiene.sh",
+        VERIFY_REPO_HYGIENE,
+        "local-notes/ is not tracked by git",
+    );
 }
 
 #[test]

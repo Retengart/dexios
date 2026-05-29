@@ -11,9 +11,9 @@ fail() {
 }
 
 tracked_planning="$(git ls-files local-notes)"
-[[ -z "$tracked_planning" ]] || fail "local-notes/ is tracked by git"
+[[ -n "$tracked_planning" ]] || fail "local-notes/ is not tracked by git"
 
-git check-ignore -q local-notes || fail "local-notes/ is not ignored by git"
+! git check-ignore -q local-notes || fail "local-notes/ must not be gitignored (committed project state)"
 
 grep -F 'build-dir = "docs"' book.toml >/dev/null \
     || fail 'book.toml must keep build-dir = "docs"'

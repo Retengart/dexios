@@ -1571,8 +1571,8 @@ fn phase7_decision_groups_are_source_gated() {
     assert_contains("book/src/Safety-Contract.md", SAFETY_CONTRACT, "VERI-06");
     assert_contains("CHANGELOG.md", CHANGELOG, "## Unreleased");
 
-    // D-21 through D-23: planning context stays local and outside CI inputs.
-    assert_contains(".gitignore", GITIGNORE, "local-notes/");
+    // D-21 through D-23 (reversed 2026-05-29): local-notes/ is committed project state.
+    assert_not_contains(".gitignore", GITIGNORE, "local-notes/");
     assert_contains(
         "scripts/verify_repo_hygiene.sh",
         VERIFY_REPO_HYGIENE,
