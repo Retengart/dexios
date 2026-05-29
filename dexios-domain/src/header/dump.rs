@@ -2,7 +2,6 @@
 
 use super::Error;
 use std::fs;
-use std::io::Cursor;
 use std::path::Path;
 
 use core::header::common::HEADER_LEN;
@@ -50,8 +49,7 @@ pub fn execute(intent: DumpIntent) -> Result<CommitReceipt, Error> {
         output_target,
     } = intent;
 
-    let input = fs::read(input_target.target_path()).map_err(|_| Error::ReadIo)?;
-    let header_bytes = dump_header_bytes(&input)?;
+    let header_bytes = read_header_only(input_target.target_path())?;
     let mut transaction =
         StagedOutputTransaction::new(output_target).map_err(Error::Transaction)?;
     transaction
@@ -64,15 +62,20 @@ pub fn execute_transactional(intent: DumpIntent) -> Result<CommitReceipt, Error>
     execute(intent)
 }
 
-fn dump_header_bytes(input: &[u8]) -> Result<Vec<u8>, Error> {
-    if input.len() <= HEADER_LEN {
+// Reads only the fixed-size header region instead of slurping the whole (possibly
+// multi-GB) file: `read_header` consumes exactly `HEADER_LEN` bytes from the reader, and
+// the length is confirmed via `metadata()` (parse-2). `dump` is read-only, so there is no
+// mutation-freshness contract to preserve here.
+fn read_header_only(path: &Path) -> Result<Vec<u8>, Error> {
+    let mut file = fs::File::open(path).map_err(|_| Error::ReadIo)?;
+    let len = file.metadata().map_err(|_| Error::ReadIo)?.len();
+    if len <= HEADER_LEN as u64 {
         return Err(Error::MissingPayload {
-            actual_len: input.len(),
+            actual_len: usize::try_from(len).unwrap_or(usize::MAX),
         });
     }
 
-    let mut reader = Cursor::new(input);
-    let parsed = read_header(&mut reader).map_err(Error::from)?;
+    let parsed = read_header(&mut file).map_err(Error::from)?;
     let ParsedHeader::V1(payload) = parsed;
     let serialized = payload.header().serialize().map_err(|_| Error::WriteIo)?;
     debug_assert_eq!(serialized.len(), HEADER_LEN);

@@ -7,6 +7,16 @@ use std::path::PathBuf;
 
 use super::identity::{PathRole, ResolvedTarget};
 
+/// Snapshot of a file targeted by an in-place header/key-slot mutation.
+///
+/// `original` deliberately holds the **full** file contents so [`ensure_fresh`] can
+/// detect *any* change between intent creation and commit (a byte-exact freshness
+/// contract), not just header or length drift. This is a conscious decision (add-1):
+/// streaming the payload tail with a metadata-only freshness check (identity + length +
+/// header prefix) would avoid buffering large files, but it weakens the mutation
+/// freshness guarantee on the security-sensitive keyslot-rewrite path, so it is not taken
+/// here. The read-only `header dump` path, which has no freshness contract, reads only the
+/// header region (see `header::dump`).
 #[derive(Debug)]
 pub struct MutationSnapshot {
     target: ResolvedTarget,
