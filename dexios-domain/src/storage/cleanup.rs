@@ -193,12 +193,65 @@ impl CleanupFileStamp {
             return Ok(None);
         }
 
+        // Hash the content from a no-follow descriptor (fs-3): a symlink swapped in at
+        // `path` yields ELOOP rather than letting us hash the link target, and the fstat
+        // inside `open_regular_file_no_follow` confirms the opened object is still a
+        // regular file — the same inode the dev/ino identity check observes.
+        let file = open_regular_file_no_follow(path)?;
         let mut hasher = blake3::Hasher::new();
-        hasher.update_reader(fs::File::open(path)?)?;
+        hasher.update_reader(&file)?;
         Ok(Some(Self {
             len: metadata.len(),
             digest: *hasher.finalize().as_bytes(),
         }))
+    }
+}
+
+#[cfg(unix)]
+fn open_regular_file_no_follow(path: &Path) -> io::Result<fs::File> {
+    use rustix::fs::{CWD, Mode, OFlags, openat};
+
+    let fd = openat(
+        CWD,
+        path,
+        OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+        Mode::empty(),
+    )?;
+    let file = fs::File::from(fd);
+    if !file.metadata()?.file_type().is_file() {
+        return Err(io::Error::other("cleanup target is not a regular file"));
+    }
+    Ok(file)
+}
+
+#[cfg(not(unix))]
+fn open_regular_file_no_follow(path: &Path) -> io::Result<fs::File> {
+    fs::File::open(path)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::open_regular_file_no_follow;
+    use std::os::unix::fs::symlink;
+
+    // fs-3: the content-digest open must refuse a symlink swapped in at the path rather
+    // than following it and hashing the (potentially sensitive) link target.
+    #[test]
+    fn open_regular_file_no_follow_refuses_a_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        std::fs::write(&target, b"secret").unwrap();
+        let link = dir.path().join("link");
+        symlink(&target, &link).unwrap();
+
+        assert!(
+            open_regular_file_no_follow(&link).is_err(),
+            "no-follow open must refuse a symlinked path"
+        );
+        assert!(
+            open_regular_file_no_follow(&target).is_ok(),
+            "a real regular file must still open"
+        );
     }
 }
 
