@@ -1,13 +1,16 @@
 //! This provides functionality for verifying that a decryption key is correct
 //! for Dexios V1.
 
-use std::fs::File;
+use std::io;
 use std::path::Path;
 
 use super::Error;
 use core::header::v1::V1Header;
 use core::header::{ParsedHeader, read_header};
 use core::protected::Protected;
+
+use crate::storage;
+use crate::storage::identity::{IdentityError, PathIdentityGraph, PathRole};
 
 pub struct VerifyIntent {
     header: V1Header,
@@ -18,8 +21,28 @@ impl VerifyIntent {
     where
         P: AsRef<Path>,
     {
-        let mut target = File::open(target_path).map_err(|_| Error::ReadIo)?;
-        let parsed = read_header(&mut target).map_err(super::map_header_read_error)?;
+        // Resolve the target through the path-identity layer with a read-only `Input`
+        // role: a symlinked target (or symlinked prefix) is rejected here, and the
+        // resolved canonical path carries the dev/ino identity used by the no-follow
+        // read below to defend against TOCTOU swaps (verify-1).
+        let mut graph = PathIdentityGraph::new();
+        let target = graph
+            .add_existing(target_path, PathRole::Input)
+            .map_err(map_identity_error)?;
+        graph.validate().map_err(Error::PathIdentity)?;
+
+        // Read the header through the same no-follow resolution the other read-side
+        // intents use; this re-opens with `O_NOFOLLOW` and re-verifies the dev/ino
+        // identity, so the header cannot be read through a symlink. Verify is strictly
+        // read-only: nothing is mutated and no output is staged.
+        let entry = storage::FileStorage
+            .read_resolved_existing_no_follow(&target)
+            .map_err(map_storage_error)?;
+        let reader = entry.try_reader().map_err(map_storage_error)?;
+        let parsed = {
+            let mut stream = reader.borrow_mut();
+            read_header(&mut *stream).map_err(super::map_header_read_error)?
+        };
         let ParsedHeader::V1(payload) = parsed;
         let header = payload.header().clone();
 
@@ -38,4 +61,26 @@ pub fn execute(intent: VerifyIntent, raw_key: Protected<Vec<u8>>) -> Result<(), 
     drop(master_key);
 
     Ok(())
+}
+
+// Preserve the historical `ReadIo` outcome for a non-existent target while keeping the
+// symlink/aliasing rejections as `PathIdentity` errors.
+fn map_identity_error(error: IdentityError) -> Error {
+    match &error {
+        IdentityError::Io(kind) | IdentityError::IoWithSource { kind, .. }
+            if *kind == io::ErrorKind::NotFound =>
+        {
+            Error::ReadIo
+        }
+        _ => Error::PathIdentity(error),
+    }
+}
+
+// `read_resolved_existing_no_follow` rejects a symlinked / swapped target as an unsafe
+// path; surface that as a path-identity rejection and any other read failure as IO.
+fn map_storage_error(error: storage::Error) -> Error {
+    match error {
+        storage::Error::UnsafePath(path) => Error::PathIdentity(IdentityError::UnsafePath(path)),
+        _ => Error::ReadIo,
+    }
 }
