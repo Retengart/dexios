@@ -26,7 +26,7 @@ use crate::workflow_error::{
 
 #[derive(Debug)]
 pub enum Error {
-    InitializeChiphers,
+    InitializeCiphers,
     InitializeStreams,
     DeserializeHeader,
     DeserializeHeaderWithSource(HeaderReadError),
@@ -69,7 +69,7 @@ impl Error {
             Self::DecryptData => WorkflowErrorClass::AuthenticationFailure,
             Self::PathIdentity(error) => classify_identity_error(error),
             Self::Transaction(error) => classify_transaction_error(error),
-            Self::InitializeChiphers | Self::InitializeStreams => WorkflowErrorClass::Other,
+            Self::InitializeCiphers | Self::InitializeStreams => WorkflowErrorClass::Other,
         }
     }
 }
@@ -77,7 +77,7 @@ impl Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::InitializeChiphers => f.write_str("Cannot initialize chiphers"),
+            Error::InitializeCiphers => f.write_str("Cannot initialize ciphers"),
             Error::InitializeStreams => f.write_str("Cannot initialize streams"),
             Error::DeserializeHeader | Error::DeserializeHeaderWithSource(_) => {
                 f.write_str("Cannot deserialize header")
@@ -403,7 +403,7 @@ fn map_decrypt_transaction_error(error: TransactionError) -> Error {
 pub(crate) fn map_stream_error(error: StreamError) -> Error {
     match error {
         StreamError::InvalidNonceLength(_) => Error::InitializeStreams,
-        StreamError::CipherInit => Error::InitializeChiphers,
+        StreamError::CipherInit => Error::InitializeCiphers,
         StreamError::Read(error) => Error::ReadEncryptedDataWithSource(error),
         StreamError::Write(error) | StreamError::Flush(error) => Error::WriteDataWithSource(error),
         StreamError::Authentication
@@ -642,7 +642,7 @@ mod tests {
             ),
             (
                 StreamError::CipherInit,
-                Error::InitializeChiphers,
+                Error::InitializeCiphers,
                 WorkflowErrorClass::Other,
             ),
             (

@@ -45,7 +45,7 @@ pub enum Error {
     WriteHeader,
     WriteHeaderWithSource(io::Error),
     InitializeStreams,
-    InitializeChiphers,
+    InitializeCiphers,
     PathIdentity(IdentityError),
     Transaction(TransactionError),
     DetachedPublication(TransactionError),
@@ -68,7 +68,7 @@ impl Error {
             Self::Transaction(error) | Self::DetachedPublication(error) => {
                 classify_transaction_error(error)
             }
-            Self::EncryptMasterKey | Self::InitializeStreams | Self::InitializeChiphers => {
+            Self::EncryptMasterKey | Self::InitializeStreams | Self::InitializeCiphers => {
                 WorkflowErrorClass::Other
             }
         }
@@ -93,7 +93,7 @@ impl std::fmt::Display for Error {
                 f.write_str("Cannot write header")
             }
             Error::InitializeStreams => f.write_str("Cannot initialize streams"),
-            Error::InitializeChiphers => f.write_str("Cannot initialize chiphers"),
+            Error::InitializeCiphers => f.write_str("Cannot initialize ciphers"),
             Error::PathIdentity(error) => write!(f, "{error}"),
             Error::Transaction(error) => write!(f, "{error}"),
             Error::DetachedPublication(error) => {
@@ -465,7 +465,7 @@ where
 fn map_stream_error(error: StreamError) -> Error {
     match error {
         StreamError::InvalidNonceLength(_) => Error::InitializeStreams,
-        StreamError::CipherInit => Error::InitializeChiphers,
+        StreamError::CipherInit => Error::InitializeCiphers,
         StreamError::Write(error) | StreamError::Flush(error) | StreamError::Read(error) => {
             Error::EncryptFileWithSource(error)
         }
