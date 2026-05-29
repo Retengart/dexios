@@ -403,6 +403,9 @@ fn persist_unsafe_path_error(path: &Path, source: Option<io::Error>) -> Transact
 }
 
 #[cfg(unix)]
+pub(crate) use unix_fd_persist::{create_dirs_fd_relative, open_absolute_dir};
+
+#[cfg(unix)]
 mod unix_fd_persist {
     use std::ffi::{CString, OsStr};
     use std::io;
@@ -519,7 +522,45 @@ mod unix_fd_persist {
         }
     }
 
-    fn open_absolute_dir(path: &Path) -> io::Result<OwnedFd> {
+    /// Walks `relative` (Normal components only) beneath the already-open, canonical
+    /// `root` directory fd, creating missing components via mkdirat and refusing any
+    /// symlinked or non-directory component (every hop opens `O_NOFOLLOW | O_DIRECTORY`,
+    /// so a symlink yields `ELOOP` and a file yields `ENOTDIR` rather than being
+    /// followed). Returns the absolute paths of the components it created. This closes
+    /// the check-then-create TOCTOU window of a path-string component walk (fs-1, fs-2).
+    pub(crate) fn create_dirs_fd_relative(
+        root_dir: &OwnedFd,
+        root_path: &Path,
+        relative: &Path,
+    ) -> io::Result<Vec<std::path::PathBuf>> {
+        let mut dir = reopen_dir(root_dir)?;
+        let mut current = root_path.to_path_buf();
+        let mut created = Vec::new();
+        for component in relative.components() {
+            let Component::Normal(name) = component else {
+                return Err(invalid_path("unsafe directory component"));
+            };
+            current.push(name);
+            let existed = open_child_dir(&dir, name).is_ok();
+            dir = open_child_dir_or_create(&dir, name, true)?;
+            if !existed {
+                created.push(current.clone());
+            }
+        }
+        Ok(created)
+    }
+
+    fn reopen_dir(dir: &OwnedFd) -> io::Result<OwnedFd> {
+        openat(
+            dir.as_fd(),
+            c".",
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+            Mode::empty(),
+        )
+        .map_err(io::Error::from)
+    }
+
+    pub(crate) fn open_absolute_dir(path: &Path) -> io::Result<OwnedFd> {
         let mut dir = openat(
             CWD,
             c"/",

@@ -124,31 +124,49 @@ impl FileStorage {
     ) -> Result<Vec<PathBuf>, Error> {
         let root = root.as_ref();
         reject_mutated_root(root)?;
-
         let full_path = root.join(relative);
-        let mut current = root.to_path_buf();
-        let mut created = Vec::new();
-        for component in relative.components() {
-            let Component::Normal(part) = component else {
-                return Err(Error::UnsafePath(full_path));
-            };
-            current.push(part);
 
-            match std_fs::symlink_metadata(&current) {
-                Ok(meta) if meta.file_type().is_symlink() || meta.is_file() => {
-                    return Err(Error::UnsafePath(full_path));
+        #[cfg(unix)]
+        {
+            // Create each component fd-relative to a trusted, O_NOFOLLOW-opened parent so
+            // an intermediate component cannot be swapped for a symlink between check and
+            // use (fs-1, fs-2). A symlinked/non-dir component is refused as UnsafePath.
+            let root_fd = super::temp::open_absolute_dir(root)
+                .map_err(|_| Error::UnsafePath(full_path.clone()))?;
+            super::temp::create_dirs_fd_relative(&root_fd, root, relative).map_err(|err| {
+                match err.kind() {
+                    io::ErrorKind::AlreadyExists => Error::CreateDirWithSource(err),
+                    _ => Error::UnsafePath(full_path.clone()),
                 }
-                Ok(meta) if meta.is_dir() => {}
-                Ok(_) => return Err(Error::UnsafePath(full_path)),
-                Err(err) if err.kind() == io::ErrorKind::NotFound => {
-                    std_fs::create_dir(&current).map_err(Error::CreateDirWithSource)?;
-                    created.push(current.clone());
-                }
-                Err(err) => return Err(Error::FileAccessWithSource(err)),
-            }
+            })
         }
 
-        Ok(created)
+        #[cfg(not(unix))]
+        {
+            let mut current = root.to_path_buf();
+            let mut created = Vec::new();
+            for component in relative.components() {
+                let Component::Normal(part) = component else {
+                    return Err(Error::UnsafePath(full_path));
+                };
+                current.push(part);
+
+                match std_fs::symlink_metadata(&current) {
+                    Ok(meta) if meta.file_type().is_symlink() || meta.is_file() => {
+                        return Err(Error::UnsafePath(full_path));
+                    }
+                    Ok(meta) if meta.is_dir() => {}
+                    Ok(_) => return Err(Error::UnsafePath(full_path)),
+                    Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                        std_fs::create_dir(&current).map_err(Error::CreateDirWithSource)?;
+                        created.push(current.clone());
+                    }
+                    Err(err) => return Err(Error::FileAccessWithSource(err)),
+                }
+            }
+
+            Ok(created)
+        }
     }
 }
 
@@ -349,37 +367,74 @@ impl Storage<std_fs::File> for FileStorage {
 
     fn prepare_unpack_root<P: AsRef<Path>>(&self, output_dir: P) -> Result<PathBuf, Error> {
         let output_dir = output_dir.as_ref();
-        let mut current = if output_dir.is_absolute() {
-            PathBuf::new()
-        } else {
-            std::env::current_dir().map_err(Error::FileAccessWithSource)?
-        };
 
-        for component in output_dir.components() {
-            match component {
-                Component::Prefix(prefix) => current.push(prefix.as_os_str()),
-                Component::RootDir => current.push(component.as_os_str()),
-                Component::CurDir => {}
-                Component::ParentDir => return Err(Error::UnsafePath(output_dir.to_path_buf())),
-                Component::Normal(part) => {
-                    current.push(part);
+        #[cfg(unix)]
+        {
+            // Establish the absolute base, then create the Normal components fd-relative
+            // (O_NOFOLLOW per hop) so no intermediate component can be swapped for a
+            // symlink between check and use (fs-1, fs-2).
+            let mut base = if output_dir.is_absolute() {
+                PathBuf::from("/")
+            } else {
+                std::env::current_dir().map_err(Error::FileAccessWithSource)?
+            };
+            let mut normal = PathBuf::new();
+            for component in output_dir.components() {
+                match component {
+                    Component::Prefix(prefix) => base.push(prefix.as_os_str()),
+                    Component::RootDir | Component::CurDir => {}
+                    Component::ParentDir => {
+                        return Err(Error::UnsafePath(output_dir.to_path_buf()));
+                    }
+                    Component::Normal(part) => normal.push(part),
+                }
+            }
 
-                    match std_fs::symlink_metadata(&current) {
-                        Ok(meta) if meta.file_type().is_symlink() => {
-                            return Err(Error::UnsafePath(current));
+            let base_fd = super::temp::open_absolute_dir(&base)
+                .map_err(|_| Error::UnsafePath(output_dir.to_path_buf()))?;
+            super::temp::create_dirs_fd_relative(&base_fd, &base, &normal)
+                .map_err(|_| Error::UnsafePath(output_dir.to_path_buf()))?;
+
+            std_fs::canonicalize(base.join(&normal))
+                .map_err(|_| Error::UnsafePath(output_dir.to_path_buf()))
+        }
+
+        #[cfg(not(unix))]
+        {
+            let mut current = if output_dir.is_absolute() {
+                PathBuf::new()
+            } else {
+                std::env::current_dir().map_err(Error::FileAccessWithSource)?
+            };
+
+            for component in output_dir.components() {
+                match component {
+                    Component::Prefix(prefix) => current.push(prefix.as_os_str()),
+                    Component::RootDir => current.push(component.as_os_str()),
+                    Component::CurDir => {}
+                    Component::ParentDir => {
+                        return Err(Error::UnsafePath(output_dir.to_path_buf()));
+                    }
+                    Component::Normal(part) => {
+                        current.push(part);
+
+                        match std_fs::symlink_metadata(&current) {
+                            Ok(meta) if meta.file_type().is_symlink() => {
+                                return Err(Error::UnsafePath(current));
+                            }
+                            Ok(meta) if meta.is_dir() => {}
+                            Ok(_) => return Err(Error::UnsafePath(current)),
+                            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                                std_fs::create_dir(&current).map_err(Error::CreateDirWithSource)?;
+                            }
+                            Err(err) => return Err(Error::FileAccessWithSource(err)),
                         }
-                        Ok(meta) if meta.is_dir() => {}
-                        Ok(_) => return Err(Error::UnsafePath(current)),
-                        Err(err) if err.kind() == io::ErrorKind::NotFound => {
-                            std_fs::create_dir(&current).map_err(Error::CreateDirWithSource)?;
-                        }
-                        Err(err) => return Err(Error::FileAccessWithSource(err)),
                     }
                 }
             }
-        }
 
-        std_fs::canonicalize(&current).map_err(|_| Error::UnsafePath(output_dir.to_path_buf()))
+            std_fs::canonicalize(&current).map_err(|_| Error::UnsafePath(output_dir.to_path_buf()))
+        }
     }
 
     fn resolve_unpack_path<P: AsRef<Path>>(
