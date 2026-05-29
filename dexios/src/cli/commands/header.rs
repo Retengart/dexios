@@ -1,4 +1,4 @@
-use clap::Command;
+use clap::{Arg, ArgAction, Command};
 
 use crate::cli::args;
 
@@ -44,4 +44,10 @@ fn details_command() -> Command {
         .about("Show details of a header")
         .arg_required_else_help(true)
         .arg(args::input_arg("The encrypted/header file"))
+        .arg(
+            Arg::new("raw")
+                .long("raw")
+                .action(ArgAction::SetTrue)
+                .help("Reveal the per-keyslot encrypted master key (sensitive; hidden by default)"),
+        )
 }

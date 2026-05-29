@@ -30,7 +30,11 @@ fn overwrite_check_if_needed(path: &str, path_exists: bool, force: ForceMode) ->
     }
 }
 
-pub fn details(input: &str) -> Result<()> {
+// Per-keyslot encrypted master keys are sensitive material; they stay hidden behind
+// `--raw` so they are not dumped to terminals, scrollback, or logs by default.
+const ENCRYPTED_MASTER_KEY_REDACTION: &str = "<hidden — use --raw to show>";
+
+pub fn details(input: &str, raw: bool) -> Result<()> {
     let mut input_file =
         File::open(input).with_context(|| format!("Unable to open input file: {input}"))?;
 
@@ -53,10 +57,12 @@ pub fn details(input: &str) -> Result<()> {
                 println!("Keyslot {i}:");
                 println!("  KDF: {kdf}");
                 println!("  Salt: {} (hex)", hex_encode(keyslot.salt().as_bytes()));
-                println!(
-                    "  Encrypted master key: {} (hex)",
+                let encrypted_master_key = if raw {
                     hex_encode(keyslot.encrypted_master_key())
-                );
+                } else {
+                    ENCRYPTED_MASTER_KEY_REDACTION.to_string()
+                };
+                println!("  Encrypted master key: {encrypted_master_key} (hex)");
                 println!(
                     "  Keyslot nonce: {} (hex)",
                     hex_encode(keyslot.nonce().as_bytes())

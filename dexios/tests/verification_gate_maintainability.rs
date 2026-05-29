@@ -92,8 +92,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios/src/cli/tests.rs",
         category: "parser compatibility matrix",
         rationale: "CLI parser compatibility matrix remains source-local evidence per D-03.",
-        current_lines: 961,
-        cap: 961,
+        current_lines: 976,
+        cap: 976,
     },
     FileSizeException {
         path: "dexios-domain/src/unpack.rs",

@@ -191,6 +191,108 @@ fn header_details_reports_supported_argon2id_keyslot() {
     );
 }
 
+// Extracts the per-keyslot encrypted master-key hex from a real V1 header so the
+// redaction tests can assert against the exact bytes that `header details` would print.
+fn encrypted_master_key_hex(encrypted: &Path) -> String {
+    let mut file = File::open(encrypted).unwrap();
+    let ParsedHeader::V1(payload) = read_header(&mut file).unwrap();
+    payload
+        .header()
+        .keyslots()
+        .iter()
+        .map(|keyslot| {
+            keyslot
+                .encrypted_master_key()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        })
+        .next()
+        .expect("canonical V1 fixture has at least one keyslot")
+}
+
+#[test]
+fn header_details_redacts_encrypted_master_key_by_default() {
+    let test_dir = TestDir::new("header-details-redact");
+    let plain = test_dir.path().join("plain.txt");
+    let encrypted = test_dir.path().join("plain.enc");
+    fs::write(&plain, b"top secret").unwrap();
+    encrypt_fixture(&plain, &encrypted);
+
+    let master_key_hex = encrypted_master_key_hex(&encrypted);
+
+    let output = run_cli(
+        test_dir.path(),
+        &["header", "details", encrypted.to_str().unwrap()],
+    );
+
+    assert!(
+        output.status.success(),
+        "header details failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains(&master_key_hex),
+        "default header details leaked the encrypted master-key hex: stdout={stdout}"
+    );
+    assert!(
+        stdout.contains("Encrypted master key: <hidden — use --raw to show> (hex)"),
+        "default header details must show the encrypted master-key redaction placeholder: stdout={stdout}"
+    );
+    // Every other field/label stays intact in the default (redacted) mode.
+    assert!(stdout.contains("Header version: V1"));
+    assert!(stdout.contains("Cipher suite: XChaCha20-Poly1305 / LE31 stream"));
+    assert!(stdout.contains("Payload nonce: "));
+    assert!(stdout.contains("AAD: "));
+    assert!(stdout.contains("KDF: Argon2id"));
+    assert!(stdout.contains("Salt: "));
+    assert!(stdout.contains("Keyslot nonce: "));
+}
+
+#[test]
+fn header_details_raw_flag_reveals_encrypted_master_key() {
+    let test_dir = TestDir::new("header-details-raw");
+    let plain = test_dir.path().join("plain.txt");
+    let encrypted = test_dir.path().join("plain.enc");
+    fs::write(&plain, b"top secret").unwrap();
+    encrypt_fixture(&plain, &encrypted);
+
+    let master_key_hex = encrypted_master_key_hex(&encrypted);
+
+    let output = run_cli(
+        test_dir.path(),
+        &["header", "details", "--raw", encrypted.to_str().unwrap()],
+    );
+
+    assert!(
+        output.status.success(),
+        "header details --raw failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(&format!("Encrypted master key: {master_key_hex} (hex)")),
+        "header details --raw must print the encrypted master-key hex: stdout={stdout}"
+    );
+    assert!(
+        !stdout.contains("<hidden — use --raw to show>"),
+        "header details --raw must not show the redaction placeholder: stdout={stdout}"
+    );
+    // All the other fields/labels remain unchanged in --raw mode.
+    assert!(stdout.contains("Header version: V1"));
+    assert!(stdout.contains("Cipher suite: XChaCha20-Poly1305 / LE31 stream"));
+    assert!(stdout.contains("Payload nonce: "));
+    assert!(stdout.contains("AAD: "));
+    assert!(stdout.contains("KDF: Argon2id"));
+    assert!(stdout.contains("Salt: "));
+    assert!(stdout.contains("Keyslot nonce: "));
+}
+
 #[test]
 fn header_details_rejects_unsupported_kdf_profile() {
     let test_dir = TestDir::new("header-details-unsupported-kdf");

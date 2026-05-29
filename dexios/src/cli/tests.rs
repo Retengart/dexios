@@ -724,6 +724,21 @@ fn header_details_command_accepts_input() {
         details.get_one::<String>("input").map(String::as_str),
         Some("cipher.enc")
     );
+    // The encrypted master key is hidden unless --raw is requested.
+    assert!(!details.get_flag("raw"));
+}
+
+#[test]
+fn header_details_command_accepts_raw_flag() {
+    let matches = parse_ok(["dexios", "header", "details", "--raw", "cipher.enc"]);
+
+    let (_, sub) = matches.subcommand().expect("subcommand");
+    let details = sub.subcommand_matches("details").expect("header details");
+    assert_eq!(
+        details.get_one::<String>("input").map(String::as_str),
+        Some("cipher.enc")
+    );
+    assert!(details.get_flag("raw"));
 }
 
 #[test]

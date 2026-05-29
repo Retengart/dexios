@@ -190,7 +190,7 @@ pub fn header_strip(sub_matches: &ArgMatches) -> Result<()> {
 }
 
 pub fn header_details(sub_matches: &ArgMatches) -> Result<()> {
-    header::details(&get_param("input", sub_matches)?)
+    header::details(&get_param("input", sub_matches)?, sub_matches.get_flag("raw"))
 }
 
 pub fn key_change(sub_matches: &ArgMatches) -> Result<()> {
