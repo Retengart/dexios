@@ -200,7 +200,7 @@ not treat `spec/specification-v1.pdf` as current release-critical authority.
 
 Phase 9 closes with an additional KDF/passphrase/secret-memory gate:
 
-- `argon2 0.5.3` keeps the `alloc` and `zeroize` features (`default-features = false`); `blake3 = "=1.8.3"` stays pinned for content hashing only;
+- `argon2 0.5.3` keeps the `alloc` and `zeroize` features (`default-features = false`); `blake3 = "1.8"` is a caret range used for content hashing only (no longer on the KDF path, so no exact pin);
 - explicit invalid `--auto` word counts fail before passphrase generation and disclosure;
 - KDF timing evidence records a hardware profile and may use `--max-kdf-seconds` or `DEXIOS_KDF_MAX_SECONDS` for focused release checks;
 - narrow secret-memory claim documentation stays limited to owned-value zeroization, redacted debug output, `Zeroizing<String>` prompt temporaries, and closure-scoped `with_exposed`.

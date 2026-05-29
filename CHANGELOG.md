@@ -40,18 +40,21 @@
   KDF profile ids are unchanged (`0x01` / `0x01`) and now denote Argon2id. The
   `zeroize` feature wipes Argon2's internal memory blocks on drop; this is a
   crate-internal allocation handling claim only.
-- Removed the `balloon-hash 0.4.0` dependency. `blake3 = "=1.8.3"` stays pinned
-  but is now retained only for content hashing (the dexios-domain hasher and
-  cleanup digests); dexios-core no longer depends on blake3.
+- Removed the `balloon-hash 0.4.0` dependency. `blake3` is now retained only for
+  content hashing (the dexios-domain hasher and cleanup digests); dexios-core no
+  longer depends on blake3.
 - Rejected explicit invalid generated passphrase counts such as `--auto=0`,
   `--auto=-1`, and non-numeric values before passphrase generation or terminal
   disclosure.
 - Resolved the `rand 0.10.0` / `RUSTSEC-2026-0097` exposure by updating to
   `rand 0.10.1` and keeping `cargo audit --deny warnings` in the maintainer
   gate.
-- Kept `blake3 = "=1.8.3"` pinned for content hashing because `1.8.4` and newer
-  move the traits-preview digest line; the pin is retained pending a separate
-  dependency re-evaluation now that balloon-hash is gone.
+- Relaxed the `blake3` constraint from the exact `blake3 = "=1.8.3"` pin to a
+  caret range `blake3 = "1.8"` (dep-1). The exact pin existed only while blake3
+  was the BLAKE3-Balloon KDF; with the crypto-1 Argon2id migration blake3 left
+  the KDF path and is now content-hashing only, so the historical traits-preview
+  pin rationale no longer applies and a caret range is acceptable. The resolved
+  lock version may remain 1.8.3; only the declared constraint changed.
 - Added `deny.toml` cargo-deny policy for advisories, duplicate bans, source
   restrictions, and license allowlisting.
 

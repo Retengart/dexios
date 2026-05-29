@@ -60,7 +60,7 @@ fn release_notes_track_breaking_security_verification_and_docs_changes() {
         "### Verification",
         "### Documentation",
         "RUSTSEC-2026-0097",
-        "blake3 = \"=1.8.3\"",
+        "blake3 = \"1.8\"",
         "traits-preview",
         "deny.toml",
         "cargo audit --deny warnings",

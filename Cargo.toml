@@ -16,11 +16,13 @@ homepage = "https://github.com/brxken128/dexios"
 
 [workspace.dependencies]
 anyhow = "1.0.102"
-# blake3 is used only for CONTENT hashing (dexios-domain hasher/cleanup digests).
-# The original `=1.8.3` pin existed for balloon-hash 0.4.0's traits-preview coupling,
-# which was removed by the crypto-1 Argon2id migration; pin retained pending the
-# dep-1 re-evaluation (see Cargo.toml dependency-policy task).
-blake3 = "=1.8.3"
+# blake3 is used only for CONTENT hashing (dexios-domain hasher/cleanup digests),
+# never on the cryptographic KDF path. The original `=1.8.3` exact pin existed
+# because blake3 was the BLAKE3-Balloon KDF; the crypto-1 Argon2id migration
+# removed that coupling and dropped blake3 from dexios-core. With blake3 off the
+# KDF path (dep-1 re-evaluation), an exact pin is no longer warranted: a caret
+# range is acceptable for a content-hashing-only dependency.
+blake3 = "1.8"
 rand = "0.10.1"
 clap = { version = "4.6.1", features = ["cargo"] }
 rpassword = "7.5.2"

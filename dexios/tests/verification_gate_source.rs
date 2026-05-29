@@ -754,7 +754,7 @@ fn crate_roots_keep_the_no_unsafe_compiler_baseline() {
 fn phase9_kdf_passphrase_and_secret_contract_is_source_gated() {
     for required in [
         "argon2 = { version = \"0.5.3\", default-features = false, features = [\"alloc\", \"zeroize\"] }",
-        "blake3 = \"=1.8.3\"",
+        "blake3 = \"1.8\"",
     ] {
         assert_contains("Cargo.toml", CARGO_TOML, required);
     }

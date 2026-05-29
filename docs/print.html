@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-04ca19cf.js";
+            window.path_to_searchindex_js = "searchindex-22a03076.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-0dc8da65.js"></script>
@@ -679,7 +679,7 @@ the source-backed PDF freshness commands for <code>spec/dexios-paper.pdf</code>;
 not treat <code>spec/specification-v1.pdf</code> as current release-critical authority.</p>
 <p>Phase 9 closes with an additional KDF/passphrase/secret-memory gate:</p>
 <ul>
-<li><code>argon2 0.5.3</code> keeps the <code>alloc</code> and <code>zeroize</code> features (<code>default-features = false</code>); <code>blake3 = "=1.8.3"</code> stays pinned for content hashing only;</li>
+<li><code>argon2 0.5.3</code> keeps the <code>alloc</code> and <code>zeroize</code> features (<code>default-features = false</code>); <code>blake3 = "1.8"</code> is a caret range used for content hashing only (no longer on the KDF path, so no exact pin);</li>
 <li>explicit invalid <code>--auto</code> word counts fail before passphrase generation and disclosure;</li>
 <li>KDF timing evidence records a hardware profile and may use <code>--max-kdf-seconds</code> or <code>DEXIOS_KDF_MAX_SECONDS</code> for focused release checks;</li>
 <li>narrow secret-memory claim documentation stays limited to owned-value zeroization, redacted debug output, <code>Zeroizing&lt;String&gt;</code> prompt temporaries, and closure-scoped <code>with_exposed</code>.</li>
