@@ -8,8 +8,13 @@ use zeroize::Zeroize;
 
 use crate::protected::Protected;
 
-// TODO: choose better place for this util
-/// This is a simple helper function, used for converting the 32-byte master key `Vec<u8>`s to `[u8; 32]`
+/// Error returned by [`vec_to_arr`] when key material is not the expected
+/// fixed length.
+///
+/// `vec_to_arr` lives here because this module is the home for shared
+/// key-shape utilities (see the module-level docs); the surrounding KDF and
+/// keyslot code converts wrapped/master key `Vec<u8>`s into fixed arrays
+/// through it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VecToArrayLengthError {
     pub expected: usize,
@@ -28,6 +33,9 @@ impl std::fmt::Display for VecToArrayLengthError {
 
 impl std::error::Error for VecToArrayLengthError {}
 
+/// Converts owned key material (e.g. a 32-byte master key `Vec<u8>`) into a
+/// fixed-size `[u8; N]`, zeroizing the input on both the success and
+/// length-mismatch paths so secret bytes never linger in the freed `Vec`.
 pub fn vec_to_arr<const N: usize>(
     mut master_key_vec: Vec<u8>,
 ) -> Result<[u8; N], VecToArrayLengthError> {

@@ -21,6 +21,6 @@ impl Hasher for Blake3Hasher {
     }
 
     fn finish(&mut self) -> String {
-        self.inner.finalize().to_hex().to_string()
+        crate::utils::hex_encode(self.inner.finalize().as_bytes())
     }
 }

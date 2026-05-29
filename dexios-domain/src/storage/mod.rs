@@ -166,7 +166,11 @@ where
     fn file_len(&self, file: &Entry<RW>) -> Result<usize, Error>;
     fn remove_file(&self, file: Entry<RW>) -> Result<(), Error>;
     fn remove_dir_all(&self, file: Entry<RW>) -> Result<(), Error>;
-    // TODO(pleshevskiy): return iterator instead of Vector
+    // Returns an eagerly-collected `Vec` rather than a lazy iterator on
+    // purpose: both backends (real filesystem and in-memory) already
+    // materialize the full set of entries while reading, and a trait method
+    // returning `impl Iterator` would force a per-implementation associated
+    // type or boxing for no real benefit at the directory sizes Dexios packs.
     fn read_dir(&self, file: &Entry<RW>) -> Result<Vec<Entry<RW>>, Error>;
 
     fn prepare_unpack_root<P: AsRef<Path>>(&self, output_dir: P) -> Result<PathBuf, Error> {

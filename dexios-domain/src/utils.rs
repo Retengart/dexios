@@ -1,7 +1,11 @@
-// TODO(pleshevskiy): dedup these utils
-
 use std::fmt::Write as _;
 
+/// Canonical workspace helper for rendering raw bytes as a lowercase,
+/// fixed-width (two hex digits per byte, zero-padded) hex string.
+///
+/// This is the single de-duplicated bytes -> hex conversion for the workspace;
+/// all callers route through here rather than re-implementing the loop or
+/// reaching for a third-party encoder.
 #[must_use]
 pub fn hex_encode(bytes: &[u8]) -> String {
     let mut encoded = String::with_capacity(bytes.len() * 2);
@@ -24,9 +28,18 @@ pub use core::primitives::{gen_master_key, gen_salt};
 
 #[cfg(test)]
 mod test {
+    use super::hex_encode;
     use core::primitives::{MASTER_KEY_LEN, MasterKey, SALT_LEN};
     // `Rng` provides `fill_bytes`; `SeedableRng` provides `seed_from_u64` (rand 0.10).
     use rand::{Rng, SeedableRng, rngs::StdRng};
+
+    #[test]
+    fn hex_encode_is_lowercase_fixed_width_for_edge_bytes() {
+        assert_eq!(hex_encode(&[]), "");
+        assert_eq!(hex_encode(&[0x00]), "00");
+        assert_eq!(hex_encode(&[0xff]), "ff");
+        assert_eq!(hex_encode(&[0x00, 0x0f, 0xa0, 0xff]), "000fa0ff");
+    }
 
     const SALT_SEED: u64 = 123_456;
     const MASTER_KEY_SEED: u64 = SALT_SEED + 1;
