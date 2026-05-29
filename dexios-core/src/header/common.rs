@@ -10,6 +10,15 @@ pub const HEADER_LEN: usize = CANONICAL_HEADER_LEN;
 pub const HEADER_STATIC_LEN: usize = CANONICAL_HEADER_STATIC_LEN;
 pub const KEYSLOT_LEN: usize = CANONICAL_KEYSLOT_LEN;
 
+const _: () = {
+    assert!(
+        HEADER_STATIC_LEN + MAX_KEYSLOTS * KEYSLOT_LEN == HEADER_LEN,
+        "header geometry: static + slots must equal HEADER_LEN"
+    );
+    // V1Keyslot::deserialize slices slot_bytes[..92]; padding is KEYSLOT_LEN - 92.
+    assert!(KEYSLOT_LEN >= 92, "keyslot record must hold at least 92 bytes");
+};
+
 pub const MAGIC: [u8; 4] = *b"DXIO";
 pub const VERSION_V1: [u8; 2] = [0x00, 0x01];
 pub const CANONICAL_V1_DISCRIMINATOR: [u8; 4] = *b"CV1\0";
