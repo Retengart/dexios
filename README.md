@@ -52,6 +52,33 @@ cargo install dexios --locked
 
 Prebuilt binaries are also published on the releases page.
 
+### Verifying a release download
+
+Release binaries are built with `cargo auditable`, so the dependency tree is
+embedded in each binary, and the release pipeline attaches a Sigstore keyless
+build-provenance attestation to every published asset.
+
+Verify a downloaded asset's provenance against this repository:
+
+```bash
+gh attestation verify dexios-vX.Y.Z-linux-amd64 --repo brxken128/dexios
+```
+
+This confirms the file was produced by the project's release workflow before it
+was published. A successful run prints the verified workflow and source
+repository; a tampered or unrelated file fails verification.
+
+Read the dependency list embedded in a binary with `rust-audit-info` (from the
+`rust-audit-info` crate, installable via `cargo install rust-audit-info`):
+
+```bash
+rust-audit-info dexios-vX.Y.Z-linux-amd64
+```
+
+Each release also ships a CycloneDX SBOM per platform, named
+`dexios-vX.Y.Z-<platform>.cdx.json`, alongside the binaries and their
+`.sha256` checksums.
+
 ## Development
 
 ```bash

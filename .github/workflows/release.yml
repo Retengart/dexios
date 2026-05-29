@@ -121,8 +121,39 @@ jobs:
       - name: Select Rust toolchain
         run: rustup default ${{ matrix.rust }}
 
+      - name: Install cargo-auditable
+        run: cargo install cargo-auditable --locked --version 0.6.7
+
+      - name: Install cargo-cyclonedx
+        run: cargo install cargo-cyclonedx --locked --version 0.5.7
+
       - name: Build dexios release binary
-        run: cargo build --locked --profile release-lto -p dexios
+        run: cargo auditable build --locked --profile release-lto -p dexios
+
+      - name: Generate CycloneDX SBOM
+        shell: bash
+        run: |
+          sbom_name="dexios-${GITHUB_REF_NAME}-${{ matrix.asset_suffix }}.cdx.json"
+          mkdir -p release-assets
+          cargo cyclonedx --locked --format json --spec-version 1.5 -p dexios
+          # cargo-cyclonedx writes the SBOM next to the package manifest; the
+          # filename is derived from the crate name (dexios.cdx.json) or, on
+          # older releases, bom.json. Accept whichever it produced.
+          src_sbom=""
+          for candidate in dexios/dexios.cdx.json dexios/bom.json; do
+            if [[ -f "$candidate" ]]; then
+              src_sbom="$candidate"
+              break
+            fi
+          done
+          if [[ -z "$src_sbom" ]]; then
+            src_sbom="$(find dexios -maxdepth 2 \( -name '*.cdx.json' -o -name 'bom.json' \) | head -1)"
+          fi
+          if [[ -z "$src_sbom" ]]; then
+            echo "Could not locate generated CycloneDX SBOM." >&2
+            exit 1
+          fi
+          mv "$src_sbom" "release-assets/${sbom_name}"
 
       - name: Rename release asset
         shell: bash
@@ -166,6 +197,7 @@ jobs:
           path: |
             release-assets/dexios-${{ github.ref_name }}-${{ matrix.asset_suffix }}${{ matrix.asset_ext }}
             release-assets/dexios-${{ github.ref_name }}-${{ matrix.asset_suffix }}${{ matrix.asset_ext }}.sha256
+            release-assets/dexios-${{ github.ref_name }}-${{ matrix.asset_suffix }}.cdx.json
           if-no-files-found: error
 
   publish:
@@ -174,6 +206,8 @@ jobs:
     environment: release
     permissions:
       contents: write
+      id-token: write
+      attestations: write
 
     steps:
       # actions/download-artifact v8.0.0
@@ -189,10 +223,13 @@ jobs:
           expected_names=(
             "dexios-${GITHUB_REF_NAME}-linux-amd64"
             "dexios-${GITHUB_REF_NAME}-linux-amd64.sha256"
+            "dexios-${GITHUB_REF_NAME}-linux-amd64.cdx.json"
             "dexios-${GITHUB_REF_NAME}-macos-amd64"
             "dexios-${GITHUB_REF_NAME}-macos-amd64.sha256"
+            "dexios-${GITHUB_REF_NAME}-macos-amd64.cdx.json"
             "dexios-${GITHUB_REF_NAME}-windows-amd64.exe"
             "dexios-${GITHUB_REF_NAME}-windows-amd64.exe.sha256"
+            "dexios-${GITHUB_REF_NAME}-windows-amd64.cdx.json"
           )
 
           for name in "${expected_names[@]}"; do
@@ -205,6 +242,7 @@ jobs:
 
           for name in "${expected_names[@]}"; do
             [[ "$name" == *.sha256 ]] && continue
+            [[ "$name" == *.cdx.json ]] && continue
             bin_path="$(find release-assets -name "$name" | head -1)"
             sha_path="$(find release-assets -name "${name}.sha256" | head -1)"
             recorded_hash="$(awk '{print $1}' "$sha_path")"
@@ -272,3 +310,9 @@ jobs:
               --title "$GITHUB_REF_NAME" \
               --generate-notes
           fi
+
+      - name: Attest build provenance
+        # actions/attest-build-provenance v4.1.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32
+        with:
+          subject-path: 'release-assets/**/dexios-*'

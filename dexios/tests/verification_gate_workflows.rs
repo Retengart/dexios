@@ -155,7 +155,9 @@ fn phase21_release_workflow_tool_pins_and_locked_build_are_source_gated() {
         ".github/workflows/release.yml",
         RELEASE_WORKFLOW,
         &[
-            "cargo build --locked --profile release-lto -p dexios",
+            // rel-1: built with cargo-auditable to embed the dependency list; still
+            // --locked --profile release-lto -p dexios.
+            "cargo auditable build --locked --profile release-lto -p dexios",
             "cargo install mdbook --locked --version 0.5.3",
             "cargo install typst-cli --locked --version 0.14.2",
         ],
