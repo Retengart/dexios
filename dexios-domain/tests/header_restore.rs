@@ -153,9 +153,11 @@ fn restores_valid_v1_header_into_stripped_artifact_with_payload() {
 fn header_strip_rejects_target_rewrite_after_snapshot() {
     let test_dir = TestDir::new("strip-stale-content");
     let target_path = test_dir.path().join("plain.enc");
+    let header_path = test_dir.path().join("plain.hdr");
     let changed = b"changed target after strip intent".to_vec();
+    fs::write(&header_path, v1_header_bytes()).unwrap();
     fs::write(&target_path, encrypted_artifact_bytes(b"payload")).unwrap();
-    let intent = strip::StripIntent::new(&target_path).expect("strip intent");
+    let intent = strip::StripIntent::new(&header_path, &target_path).expect("strip intent");
 
     fs::write(&target_path, &changed).unwrap();
 
@@ -169,11 +171,13 @@ fn header_strip_rejects_target_rewrite_after_snapshot() {
 fn header_strip_rejects_target_replacement_after_snapshot() {
     let test_dir = TestDir::new("strip-stale-identity");
     let target_path = test_dir.path().join("plain.enc");
+    let header_path = test_dir.path().join("plain.hdr");
     let replacement_path = test_dir.path().join("replacement.enc");
     let original = encrypted_artifact_bytes(b"payload");
+    fs::write(&header_path, v1_header_bytes()).unwrap();
     fs::write(&target_path, &original).unwrap();
     fs::write(&replacement_path, &original).unwrap();
-    let intent = strip::StripIntent::new(&target_path).expect("strip intent");
+    let intent = strip::StripIntent::new(&header_path, &target_path).expect("strip intent");
 
     fs::rename(&replacement_path, &target_path).unwrap();
 

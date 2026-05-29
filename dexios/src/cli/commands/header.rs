@@ -35,6 +35,7 @@ fn strip_command() -> Command {
         .about("Strip a header")
         .arg_required_else_help(true)
         .arg(args::input_arg("The encrypted file"))
+        .arg(args::required_detached_header_backup_arg())
         .arg(args::force_arg())
 }
 

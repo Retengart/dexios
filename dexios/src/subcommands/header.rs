@@ -115,12 +115,15 @@ pub fn restore(input: &str, output: &str, force: ForceMode) -> Result<()> {
 // the header must be intact for this to work, as the length varies between the versions
 // it can be useful for storing the header separate from the file, to make an attacker's life that little bit harder
 // it implements a check to ensure the header is valid before stripping
-pub fn strip(input: &str, force: ForceMode) -> Result<()> {
+// the supplied detached header must byte-match the embedded header before the embedded
+// header is destroyed, so an operator cannot wipe a file while holding a wrong backup
+pub fn strip(input: &str, header: &str, force: ForceMode) -> Result<()> {
     if !overwrite_check(input, force)? {
         return Ok(());
     }
 
-    let intent = domain::header::strip::StripIntent::new(input).map_err(map_header_error)?;
+    let intent =
+        domain::header::strip::StripIntent::new(header, input).map_err(map_header_error)?;
 
     let _receipt =
         domain::header::strip::execute_transactional(intent).map_err(map_header_error)?;

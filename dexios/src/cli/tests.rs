@@ -640,8 +640,16 @@ fn header_restore_command_accepts_input_and_output() {
 }
 
 #[test]
-fn header_strip_command_accepts_input() {
-    let matches = parse_ok(["dexios", "header", "strip", "--force", "cipher.enc"]);
+fn header_strip_command_accepts_input_and_required_header() {
+    let matches = parse_ok([
+        "dexios",
+        "header",
+        "strip",
+        "--force",
+        "--header",
+        "backup.hdr",
+        "cipher.enc",
+    ]);
 
     let (name, sub) = matches.subcommand().expect("subcommand");
     assert_eq!(name, "header");
@@ -650,7 +658,20 @@ fn header_strip_command_accepts_input() {
         strip.get_one::<String>("input").map(String::as_str),
         Some("cipher.enc")
     );
+    assert_eq!(
+        strip.get_one::<String>("header").map(String::as_str),
+        Some("backup.hdr")
+    );
     assert!(strip.get_flag("force"));
+}
+
+#[test]
+fn header_strip_command_requires_header_backup() {
+    assert_parser_error(
+        ["dexios", "header", "strip", "--force", "cipher.enc"],
+        clap::error::ErrorKind::MissingRequiredArgument,
+        "--header",
+    );
 }
 
 #[test]

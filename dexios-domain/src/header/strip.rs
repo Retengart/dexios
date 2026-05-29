@@ -13,13 +13,22 @@ use crate::storage::transaction::{CommitReceipt, StagedOutputTransaction, Transa
 
 #[derive(Debug)]
 pub struct StripIntent {
+    detached_header: MutationSnapshot,
     target: MutationSnapshot,
 }
 
 impl StripIntent {
-    pub fn new<P: AsRef<Path>>(target_path: P) -> Result<Self, Error> {
+    pub fn new<H, T>(detached_header_path: H, target_path: T) -> Result<Self, Error>
+    where
+        H: AsRef<Path>,
+        T: AsRef<Path>,
+    {
+        let detached_header_path = detached_header_path.as_ref().to_path_buf();
         let target_path = target_path.as_ref().to_path_buf();
         let mut graph = PathIdentityGraph::new();
+        let detached_header = graph
+            .add_existing(&detached_header_path, PathRole::DetachedHeader)
+            .map_err(Error::PathIdentity)?;
         let target = graph
             .add_output(
                 &target_path,
@@ -28,15 +37,39 @@ impl StripIntent {
             )
             .map_err(Error::PathIdentity)?;
         graph.validate().map_err(Error::PathIdentity)?;
+        let detached_header = read_snapshot(detached_header)?;
         let target = read_snapshot(target)?;
 
-        Ok(Self { target })
+        Ok(Self {
+            detached_header,
+            target,
+        })
     }
 }
 
+/// Strips (zeroes) the embedded header from the target artifact.
+///
+/// # Detached-header backup guard
+///
+/// Zeroing the embedded header is irreversible without a backup. Before mutating, this
+/// verifies that the operator-supplied detached header is exactly a valid 512-byte V1
+/// header that is **byte-equal** to the header currently embedded in the target. Any
+/// mismatch (wrong size, structurally invalid, or different bytes) yields
+/// [`Error::DetachedHeaderMismatch`] and performs no mutation, preventing data loss from
+/// stripping while holding a wrong/garbage backup.
 pub fn execute(intent: StripIntent) -> Result<CommitReceipt, Error> {
-    let StripIntent { target } = intent;
+    let StripIntent {
+        detached_header,
+        target,
+    } = intent;
+    verify_detached_header_matches_embedded(
+        detached_header.original_bytes(),
+        target.original_bytes(),
+    )?;
     let replacement = stripped_header_bytes(target.original_bytes().to_vec())?;
+    detached_header
+        .ensure_fresh()
+        .map_err(super::map_mutation_freshness_error)?;
     target
         .ensure_fresh()
         .map_err(super::map_mutation_freshness_error)?;
@@ -47,6 +80,29 @@ pub fn execute(intent: StripIntent) -> Result<CommitReceipt, Error> {
         .write_all(&replacement)
         .map_err(map_write_transaction_error)?;
     transaction.commit().map_err(Error::Transaction)
+}
+
+/// Verifies that `detached_header` is exactly a valid 512-byte V1 header that is
+/// byte-equal to the header region currently embedded in `target`.
+fn verify_detached_header_matches_embedded(
+    detached_header: &[u8],
+    target: &[u8],
+) -> Result<(), Error> {
+    if detached_header.len() != HEADER_LEN {
+        return Err(Error::DetachedHeaderMismatch);
+    }
+    let mut reader = Cursor::new(detached_header);
+    match read_header(&mut reader) {
+        Ok(ParsedHeader::V1(_)) => {}
+        Err(_) => return Err(Error::DetachedHeaderMismatch),
+    }
+    let embedded_header = target
+        .get(..HEADER_LEN)
+        .ok_or(Error::DetachedHeaderMismatch)?;
+    if detached_header != embedded_header {
+        return Err(Error::DetachedHeaderMismatch);
+    }
+    Ok(())
 }
 
 pub fn execute_transactional(intent: StripIntent) -> Result<CommitReceipt, Error> {

@@ -91,6 +91,15 @@ pub(super) fn detached_header_input_arg() -> Arg {
         .help("Use a header file that was dumped")
 }
 
+pub(super) fn required_detached_header_backup_arg() -> Arg {
+    Arg::new("header")
+        .long("header")
+        .value_name("file")
+        .action(ArgAction::Set)
+        .required(true)
+        .help("Verified backup of the header being stripped (must byte-match the embedded header)")
+}
+
 pub(super) fn keyfile_old_arg() -> Arg {
     Arg::new("keyfile-old")
         .short('k')

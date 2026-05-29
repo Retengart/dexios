@@ -73,6 +73,10 @@ fn header_operation_errors_keep_exact_failure_variants() {
         header::Error::DetachedHeaderChanged
     ));
     assert!(matches!(
+        header::Error::DetachedHeaderMismatch,
+        header::Error::DetachedHeaderMismatch
+    ));
+    assert!(matches!(
         header::Error::UnsupportedFormat([0xDE, 0x01]),
         header::Error::UnsupportedFormat([0xDE, 0x01])
     ));
@@ -135,6 +139,14 @@ fn header_operation_error_classes_are_typed_not_display_derived() {
     assert_eq!(
         header::Error::DetachedHeaderChanged.workflow_class(),
         WorkflowErrorClass::IoFailure
+    );
+    assert_eq!(
+        header::Error::DetachedHeaderMismatch.workflow_class(),
+        WorkflowErrorClass::MalformedFormat
+    );
+    assert_no_source(
+        &header::Error::DetachedHeaderMismatch,
+        "header detached mismatch guard",
     );
     assert_eq!(
         unsupported.workflow_class(),

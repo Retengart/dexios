@@ -35,6 +35,7 @@ pub enum Error {
     TargetNotStripped,
     TargetChanged,
     DetachedHeaderChanged,
+    DetachedHeaderMismatch,
     PathIdentity(IdentityError),
     Transaction(TransactionError),
 }
@@ -50,7 +51,8 @@ impl Error {
             | Self::TrailingDetachedHeader { .. }
             | Self::MissingPayload { .. }
             | Self::TargetTooShort { .. }
-            | Self::TargetNotStripped => WorkflowErrorClass::MalformedFormat,
+            | Self::TargetNotStripped
+            | Self::DetachedHeaderMismatch => WorkflowErrorClass::MalformedFormat,
             Self::InvalidMagic(_)
             | Self::UnsupportedFormat(_)
             | Self::UnsupportedVersion(_)
@@ -73,8 +75,8 @@ impl Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Error::{
-            HeaderSizeParse, InvalidFile, InvalidMagic, MalformedV1Header, MissingPayload,
-            PathIdentity, Read, ReadIo, ReadIoWithSource, RetiredV1Layout, Rewind,
+            DetachedHeaderMismatch, HeaderSizeParse, InvalidFile, InvalidMagic, MalformedV1Header,
+            MissingPayload, PathIdentity, Read, ReadIo, ReadIoWithSource, RetiredV1Layout, Rewind,
             ShortDetachedHeader, TargetChanged, TargetNotStripped, TargetTooShort,
             TrailingDetachedHeader, Transaction, UnsupportedFormat, UnsupportedRestore,
             UnsupportedVersion, Write, WriteIo,
@@ -114,6 +116,9 @@ impl std::fmt::Display for Error {
             Error::DetachedHeaderChanged => {
                 f.write_str("Detached header changed before header restore commit")
             }
+            DetachedHeaderMismatch => f.write_str(
+                "Detached header does not match the embedded header; refusing to strip",
+            ),
             PathIdentity(error) => write!(f, "{error}"),
             Transaction(error) => write!(f, "{error}"),
         }
@@ -145,7 +150,8 @@ impl std::error::Error for Error {
             | Self::TargetTooShort { .. }
             | Self::TargetNotStripped
             | Self::TargetChanged
-            | Self::DetachedHeaderChanged => None,
+            | Self::DetachedHeaderChanged
+            | Self::DetachedHeaderMismatch => None,
         }
     }
 }

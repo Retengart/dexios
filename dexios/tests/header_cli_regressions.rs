@@ -246,14 +246,18 @@ fn header_restore_rejects_inexact_headers_and_invalid_targets_without_mutation()
 }
 
 #[test]
-fn header_strip_rejects_header_only_input_and_preserves_payload_bytes() {
+fn header_strip_requires_matching_header_backup_and_preserves_payload_bytes() {
     let test_dir = TestDir::new("header-strip-exact");
     let encrypted = encrypt_fixture(&test_dir, "plain", b"payload bytes");
+    dump_header(&test_dir, "plain.enc", "plain.hdr");
     let original = fs::read(&encrypted).unwrap();
     let payload = original[HEADER_LEN..].to_vec();
 
-    let decline_output =
-        run_cli_with_stdin(test_dir.path(), &["header", "strip", "plain.enc"], b"n\n");
+    let decline_output = run_cli_with_stdin(
+        test_dir.path(),
+        &["header", "strip", "--header", "plain.hdr", "plain.enc"],
+        b"n\n",
+    );
     assert_success(&decline_output, "declined header strip");
     assert_eq!(
         fs::read(&encrypted).unwrap(),
@@ -263,7 +267,7 @@ fn header_strip_rejects_header_only_input_and_preserves_payload_bytes() {
 
     let output = run_cli(
         test_dir.path(),
-        &["header", "strip", "--force", "plain.enc"],
+        &["header", "strip", "--force", "--header", "plain.hdr", "plain.enc"],
     );
     assert_success(&output, "header strip");
 
@@ -277,10 +281,64 @@ fn header_strip_rejects_header_only_input_and_preserves_payload_bytes() {
     let header_only_before = fs::read(&header_only).unwrap();
     let output = run_cli(
         test_dir.path(),
-        &["header", "strip", "--force", "header-only.enc"],
+        &[
+            "header",
+            "strip",
+            "--force",
+            "--header",
+            "plain.hdr",
+            "header-only.enc",
+        ],
     );
     assert_failure(&output, "header strip header-only input");
     assert_eq!(fs::read(header_only).unwrap(), header_only_before);
+}
+
+#[test]
+fn header_strip_rejects_wrong_header_backup_without_mutation() {
+    let test_dir = TestDir::new("header-strip-wrong-backup");
+    let encrypted = encrypt_fixture(&test_dir, "plain", b"payload bytes");
+    // A second encrypted file gives us a structurally valid but unrelated header backup.
+    encrypt_fixture(&test_dir, "other", b"other payload");
+    dump_header(&test_dir, "other.enc", "wrong.hdr");
+    let original = fs::read(&encrypted).unwrap();
+
+    let output = run_cli(
+        test_dir.path(),
+        &["header", "strip", "--force", "--header", "wrong.hdr", "plain.enc"],
+    );
+    assert_failure(&output, "header strip with wrong detached header backup");
+    assert_eq!(
+        fs::read(&encrypted).unwrap(),
+        original,
+        "a mismatched detached header backup must leave the embedded header byte-unchanged"
+    );
+
+    // A truncated (wrong-size) backup is likewise refused without mutation.
+    let short = test_dir.path().join("short.hdr");
+    fs::write(&short, &original[..HEADER_LEN - 1]).unwrap();
+    let output = run_cli(
+        test_dir.path(),
+        &["header", "strip", "--force", "--header", "short.hdr", "plain.enc"],
+    );
+    assert_failure(&output, "header strip with wrong-size detached header backup");
+    assert_eq!(fs::read(&encrypted).unwrap(), original);
+}
+
+#[test]
+fn header_strip_requires_detached_header_backup_argument() {
+    let test_dir = TestDir::new("header-strip-missing-backup");
+    encrypt_fixture(&test_dir, "plain", b"payload bytes");
+
+    let output = run_cli(
+        test_dir.path(),
+        &["header", "strip", "--force", "plain.enc"],
+    );
+    assert_failure(&output, "header strip without --header backup");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("--header"),
+        "missing --header must produce a clap usage error mentioning the argument"
+    );
 }
 
 #[test]

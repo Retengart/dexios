@@ -182,7 +182,11 @@ pub fn header_restore(sub_matches: &ArgMatches) -> Result<()> {
 pub fn header_strip(sub_matches: &ArgMatches) -> Result<()> {
     let force = forcemode(sub_matches);
 
-    header::strip(&get_param("input", sub_matches)?, force)
+    header::strip(
+        &get_param("input", sub_matches)?,
+        &get_param("header", sub_matches)?,
+        force,
+    )
 }
 
 pub fn header_details(sub_matches: &ArgMatches) -> Result<()> {

@@ -225,6 +225,9 @@ fn map_header_error_with_disclosure(
             (domain::header::Error::TargetNotStripped, _) => {
                 anyhow!("Header restore target is not stripped")
             }
+            (domain::header::Error::DetachedHeaderMismatch, _) => {
+                anyhow!("Detached header does not match the embedded header; refusing to strip")
+            }
             (domain::header::Error::InvalidFile | domain::header::Error::HeaderSizeParse, _) => {
                 anyhow!("Malformed Dexios header or payload")
             }
