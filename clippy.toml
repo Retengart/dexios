@@ -4,7 +4,8 @@ msrv = "1.88"
 
 # Types for which `clippy::arithmetic_side_effects` is suppressed. These are the
 # internal counter/index domain newtypes whose arithmetic is bounds-checked at
-# their own construction sites (try_new / TryFrom), so the generic
+# their own construction sites (try_from_u8 / try_from_usize /
+# try_from_physical_index), so the generic
 # overflow-on-arithmetic warning is impractical and adds no real safety here.
 # We deliberately do NOT blanket-allow primitive integer arithmetic: hot crypto
 # and header-parsing math is fixed with checked_*/saturating_* instead.
