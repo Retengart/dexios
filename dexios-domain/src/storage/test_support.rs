@@ -1,3 +1,25 @@
+//! Deterministic failure-injection seam for storage safety tests.
+//!
+//! This module is part of `dexios-domain`'s public surface **only** under the
+//! `test-support` feature (or `cfg(test)`); see `storage::mod`, where the
+//! declaration is source-gated to `pub mod` under that feature and a private
+//! `mod` otherwise. Production builds therefore wall the seam off entirely: the
+//! `pub` items below are deliberately unreachable from outside the crate.
+//! Runtime workflows construct only `FailureHooks::none`, so the seam is inert
+//! in production; the failure-driving entry points (`fail_on`, `check`, `point`)
+//! exist for the `test-support`-gated integration tests that exercise the
+//! commit/rollback paths.
+#![cfg_attr(
+    not(any(test, feature = "test-support")),
+    expect(
+        unreachable_pub,
+        reason = "the failure-injection seam is public API only under `test-support` (or \
+            `cfg(test)`); production builds declare `mod test_support` privately (source-gated \
+            in `storage::mod`), so these `pub` items are intentionally unreachable — exactly \
+            the cfg-conditional isolation `unreachable_pub` reports here"
+    )
+)]
+
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -50,7 +72,7 @@ impl FailureHooks {
         }
     }
 
-    pub fn check(&self, point: FailurePoint) -> Result<(), FailureError> {
+    pub fn check(self, point: FailurePoint) -> Result<(), FailureError> {
         if self.fail_on == Some(point) {
             Err(FailureError { point })
         } else {
