@@ -28,7 +28,6 @@ use std::fmt::{Display, Formatter};
 
 use aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::XChaCha20Poly1305;
-use zeroize::Zeroize;
 
 use crate::header::common::KeyslotNonce;
 use crate::header::v1::EncryptedMasterKey;
@@ -104,25 +103,29 @@ pub fn unwrap_v1_master_key(
     aad: &[u8],
 ) -> Result<MasterKey, CipherError> {
     let cipher = Ciphers::initialize(wrapping_key)?;
-    let mut decrypted = cipher.decrypt(
-        nonce,
-        Payload {
-            msg: encrypted_master_key.as_bytes().as_slice(),
-            aad,
-        },
-    )?;
-    if decrypted.len() != crate::primitives::MASTER_KEY_LEN {
-        let len = decrypted.len();
-        decrypted.zeroize();
-        return Err(CipherError::InvalidMasterKeyLength(len));
-    }
+    use aead::AeadInPlace;
+    use zeroize::Zeroizing;
 
-    let mut master_key = [0u8; crate::primitives::MASTER_KEY_LEN];
-    master_key.copy_from_slice(&decrypted);
-    decrypted.zeroize();
-    let protected = MasterKey::new(master_key);
-    master_key.zeroize();
-    Ok(protected)
+    // ENCRYPTED_MASTER_KEY_LEN = 48 = 32-byte key + 16-byte tag. Decrypt the 32-byte
+    // buffer in place so the AEAD does not allocate and hand back a separate plaintext
+    // Vec that would then need best-effort zeroizing (mem-3).
+    let bytes = encrypted_master_key.as_bytes();
+    let mut buffer: Zeroizing<[u8; crate::primitives::MASTER_KEY_LEN]> =
+        Zeroizing::new([0u8; crate::primitives::MASTER_KEY_LEN]);
+    buffer.copy_from_slice(&bytes[..crate::primitives::MASTER_KEY_LEN]);
+    let tag = aead::Tag::<XChaCha20Poly1305>::from_slice(&bytes[crate::primitives::MASTER_KEY_LEN..]);
+
+    cipher
+        .0
+        .decrypt_in_place_detached(
+            nonce.as_bytes().as_ref().into(),
+            aad,
+            buffer.as_mut_slice(),
+            tag,
+        )
+        .map_err(|_| CipherError::Authentication)?;
+
+    Ok(MasterKey::new(*buffer))
 }
 
 /// Direct AEAD helper for the single supported Dexios suite.
@@ -173,23 +176,35 @@ impl Ciphers {
             .encrypt(nonce.as_bytes().as_ref().into(), plaintext)
             .map_err(|_| CipherError::Authentication)
     }
+}
 
-    /// This can be used to decrypt data with a given `Ciphers` object
-    ///
-    /// It requires the nonce used for encryption, and either some plaintext, or an `aead::Payload` (that contains the plaintext and the AAD)
-    ///
-    /// NOTE: The data will not decrypt successfully if an AAD was provided for encryption, but is not present/has been modified while decrypting
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the AEAD rejects the supplied nonce, ciphertext, or AAD.
-    pub(crate) fn decrypt<'msg, 'aad>(
-        &self,
-        nonce: &KeyslotNonce,
-        ciphertext: impl Into<Payload<'msg, 'aad>>,
-    ) -> Result<Vec<u8>, CipherError> {
-        self.0
-            .decrypt(nonce.as_bytes().as_ref().into(), ciphertext)
-            .map_err(|_| CipherError::Authentication)
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kdf::{Kdf, Salt};
+    use crate::protected::Protected;
+
+    fn wrapping_key() -> WrappingKey {
+        let raw = Protected::new(vec![7u8; 32]);
+        WrappingKey::from(Kdf::Argon2id.derive(&raw, &Salt::new([9u8; 16])).unwrap())
+    }
+
+    #[test]
+    fn wrap_then_unwrap_round_trips_and_tamper_fails() {
+        let nonce = KeyslotNonce::new([3u8; 24]);
+        let mk = MasterKey::new([42u8; 32]);
+        let aad = b"slot-aad";
+
+        let wrapped = wrap_v1_master_key(wrapping_key(), &mk, &nonce, aad).unwrap();
+        let unwrapped = unwrap_v1_master_key(wrapping_key(), &wrapped, &nonce, aad).unwrap();
+        assert!(mk.same_secret_as(&unwrapped));
+
+        let mut tampered = *wrapped.as_bytes();
+        tampered[0] ^= 0x01;
+        let tampered = EncryptedMasterKey::new(tampered);
+        assert!(matches!(
+            unwrap_v1_master_key(wrapping_key(), &tampered, &nonce, aad),
+            Err(CipherError::Authentication)
+        ));
     }
 }
