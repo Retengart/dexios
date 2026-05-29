@@ -1076,6 +1076,7 @@ pub(crate) mod tests {
             max_entries,
             max_normalized_path_bytes,
             max_normalized_path_depth,
+            max_total_body_bytes: ArchiveLimits::DEFAULT_MAX_TOTAL_BODY_BYTES,
         }
     }
 

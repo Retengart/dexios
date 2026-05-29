@@ -445,6 +445,7 @@ fn stage_manifest_extraction<R: Read>(
         }
     }
 
+    let mut total_body: u64 = 0;
     for (index, entry) in manifest.entries().iter().enumerate() {
         if entry.kind() != ManifestEntryKind::File {
             continue;
@@ -470,6 +471,12 @@ fn stage_manifest_extraction<R: Read>(
                 },
             ));
         }
+
+        // Enforce the aggregate body-byte ceiling before staging this frame (parse-1).
+        total_body = total_body.saturating_add(frame_header.body_len());
+        ArchiveLimits::defaults()
+            .check_total_body_bytes(total_body)
+            .map_err(Error::ArchiveLimit)?;
 
         if let Some(entity) = file_entities_by_index.get(&index) {
             stage_manifest_file_body(

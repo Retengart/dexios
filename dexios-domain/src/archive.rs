@@ -12,6 +12,7 @@ pub enum ArchiveLimitKind {
     EntryCount,
     NormalizedPathBytes,
     NormalizedPathDepth,
+    TotalBodyBytes,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -27,6 +28,7 @@ impl std::fmt::Display for ArchiveLimitError {
             ArchiveLimitKind::EntryCount => "archive entry count",
             ArchiveLimitKind::NormalizedPathBytes => "normalized path byte length",
             ArchiveLimitKind::NormalizedPathDepth => "normalized path depth",
+            ArchiveLimitKind::TotalBodyBytes => "aggregate archive body byte length",
         };
         write!(
             f,
@@ -43,12 +45,15 @@ pub struct ArchiveLimits {
     pub max_entries: usize,
     pub max_normalized_path_bytes: usize,
     pub max_normalized_path_depth: usize,
+    pub max_total_body_bytes: u64,
 }
 
 impl ArchiveLimits {
     pub const DEFAULT_MAX_ENTRIES: usize = 100_000;
     pub const DEFAULT_MAX_NORMALIZED_PATH_BYTES: usize = 4096;
     pub const DEFAULT_MAX_NORMALIZED_PATH_DEPTH: usize = 64;
+    /// Aggregate decompressed/extracted body-byte ceiling for a single archive (64 GiB).
+    pub const DEFAULT_MAX_TOTAL_BODY_BYTES: u64 = 64 * 1024 * 1024 * 1024;
 
     #[must_use]
     pub const fn defaults() -> Self {
@@ -56,7 +61,22 @@ impl ArchiveLimits {
             max_entries: Self::DEFAULT_MAX_ENTRIES,
             max_normalized_path_bytes: Self::DEFAULT_MAX_NORMALIZED_PATH_BYTES,
             max_normalized_path_depth: Self::DEFAULT_MAX_NORMALIZED_PATH_DEPTH,
+            max_total_body_bytes: Self::DEFAULT_MAX_TOTAL_BODY_BYTES,
         }
+    }
+
+    /// Fails once the running total of staged body bytes exceeds the aggregate cap,
+    /// before the offending frame is staged (parse-1).
+    pub fn check_total_body_bytes(self, running_total: u64) -> Result<(), ArchiveLimitError> {
+        if running_total > self.max_total_body_bytes {
+            return Err(ArchiveLimitError {
+                kind: ArchiveLimitKind::TotalBodyBytes,
+                limit: usize::try_from(self.max_total_body_bytes).unwrap_or(usize::MAX),
+                actual: usize::try_from(running_total).unwrap_or(usize::MAX),
+            });
+        }
+
+        Ok(())
     }
 
     pub fn check_entry_count(self, count: usize) -> Result<(), ArchiveLimitError> {
@@ -106,6 +126,15 @@ impl Default for ArchiveLimits {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn check_total_body_bytes_enforces_aggregate_cap() {
+        let limits = ArchiveLimits::defaults();
+        let max = limits.max_total_body_bytes;
+        assert!(limits.check_total_body_bytes(max).is_ok());
+        let err = limits.check_total_body_bytes(max + 1).unwrap_err();
+        assert_eq!(err.kind, ArchiveLimitKind::TotalBodyBytes);
+    }
 
     #[test]
     fn archive_limits_reject_entry_count_above_default() {

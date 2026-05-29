@@ -9,6 +9,8 @@ pub const MANIFEST_VERSION: u16 = 0x0001;
 pub const MAX_MANIFEST_ENTRY_COUNT: u32 = 65_536;
 pub const MAX_NORMALIZED_PATH_BYTES: usize = 4096;
 pub const MAX_BODY_FRAME_LEN: u64 = 1024 * 1024 * 1024;
+/// Aggregate ceiling across all buffered body frames for the in-memory [`ManifestFirstPayload::parse`] path (64 GiB).
+pub const MAX_TOTAL_BODY_FRAME_BYTES: u64 = 64 * 1024 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -573,10 +575,18 @@ impl ManifestFirstPayload {
         Ok(bytes)
     }
 
+    /// Parses an entire manifest archive into memory, buffering every body frame.
+    ///
+    /// This is intended for trusted, in-memory use (round-trip tests, small archives).
+    /// It enforces the per-frame [`MAX_BODY_FRAME_LEN`] and the aggregate
+    /// [`MAX_TOTAL_BODY_FRAME_BYTES`] caps, but still allocates each frame fully. Production
+    /// extraction streams bodies via the unpack workflow's `reader.take(..)` path and never
+    /// calls this. Do not call `parse` on untrusted, large archives.
     pub fn parse(bytes: &[u8]) -> Result<Self, PayloadError> {
         let mut reader = io::Cursor::new(bytes);
         let manifest = ArchiveManifest::read_from(&mut reader)?;
         let mut body_frames = Vec::new();
+        let mut total_body: u64 = 0;
         for (expected_index, entry) in manifest.entries.iter().enumerate() {
             if entry.kind != ManifestEntryKind::File {
                 continue;
@@ -591,6 +601,13 @@ impl ManifestFirstPayload {
                 });
             }
             let body_len = header.body_len();
+            total_body = total_body.saturating_add(body_len);
+            if total_body > MAX_TOTAL_BODY_FRAME_BYTES {
+                return Err(PayloadError::BodyFrameLimitExceeded {
+                    limit: MAX_TOTAL_BODY_FRAME_BYTES,
+                    actual: total_body,
+                });
+            }
             if Some(body_len) != entry.body_len {
                 return Err(PayloadError::BodyFrameLengthMismatch {
                     expected: entry.body_len.expect("file entry has body length"),
