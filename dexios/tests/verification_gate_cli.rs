@@ -532,7 +532,7 @@ fn phase22_cli_parser_baseline_and_surface_gate_are_source_gated() {
     assert_occurs_before(
         ".github/workflows/cli-surface.yml",
         CLI_SURFACE_WORKFLOW,
-        "run: cargo build -p dexios --profile release-lto",
+        "run: cargo build --locked -p dexios --profile release-lto",
         "bash scripts/verify_cli_surface.sh",
     );
     assert_non_comment_line_count(
