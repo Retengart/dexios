@@ -30,7 +30,8 @@ use crate::storage::transaction::{
     CommitReceipt, DetachedPublicationFailure, LinkedOutputTransaction, TransactionError,
 };
 use crate::workflow_error::{
-    WorkflowErrorClass, classify_identity_error, classify_transaction_error,
+    WorkflowErrorClass, classify_identity_error, classify_storage_error,
+    classify_transaction_error,
 };
 
 #[derive(Debug)]
@@ -125,12 +126,14 @@ impl Error {
             _ if self.is_resource_pressure() => WorkflowErrorClass::ResourcePressure,
             Self::Encrypt(error) => error.workflow_class(),
             Self::PathIdentity(error) => classify_identity_error(error),
+            Self::CreateArchiveWithSource(error)
+            | Self::ReadDataStorageWithSource(error)
+            | Self::ReadSourceWithSource(error) => classify_storage_error(error),
             Self::ArchiveLimit(_) | Self::ArchiveRootName | Self::SymlinkSource(_) => {
                 WorkflowErrorClass::UnsafePath
             }
             Self::ArchivePayload(error) => classify_payload_error(error),
             Self::CreateArchive
-            | Self::CreateArchiveWithSource(_)
             | Self::CreateArchiveIoWithSource(_)
             | Self::AddDirToArchive
             | Self::AddFileToArchive
@@ -138,12 +141,10 @@ impl Error {
             | Self::FinishArchiveIoWithSource(_)
             | Self::ReadData
             | Self::ReadDataWithSource(_)
-            | Self::ReadDataStorageWithSource(_)
             | Self::WriteData
             | Self::WriteDataWithSource(_)
             | Self::TransactionWriter
-            | Self::ReadSource
-            | Self::ReadSourceWithSource(_) => WorkflowErrorClass::IoFailure,
+            | Self::ReadSource => WorkflowErrorClass::IoFailure,
         }
     }
 

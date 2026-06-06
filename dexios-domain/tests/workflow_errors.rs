@@ -5,11 +5,15 @@ use std::io;
 use std::path::PathBuf;
 
 use core::header::common::HeaderReadError;
+#[cfg(unix)]
+use dexios_domain::archive::ArchivePolicy;
 use dexios_domain::archive::{ArchiveLimitError, ArchiveLimitKind};
 use dexios_domain::storage;
 #[cfg(feature = "test-support")]
 use dexios_domain::storage::cleanup::{CleanupFailure, CleanupResult, CleanupTarget};
 use dexios_domain::storage::identity::IdentityError;
+#[cfg(unix)]
+use dexios_domain::storage::identity::OverwritePolicy;
 #[cfg(feature = "test-support")]
 use dexios_domain::storage::identity::PathRole;
 use dexios_domain::storage::transaction::TransactionError;
@@ -22,6 +26,8 @@ const DOMAIN_WORKFLOW_ERROR_SOURCE: &str = include_str!("../src/workflow_error.r
 const DOMAIN_PACK_SOURCE: &str = include_str!("../src/pack.rs");
 const DOMAIN_UNPACK_SOURCE: &str = include_str!("../src/unpack.rs");
 const CLI_ERROR_MAPPER_SOURCE: &str = include_str!("../../dexios/src/subcommands/errors.rs");
+#[cfg(unix)]
+const PASSWORD: &[u8; 8] = b"12345678";
 
 fn path(name: &str) -> PathBuf {
     PathBuf::from(name)
@@ -62,6 +68,28 @@ fn archive_limit_error() -> ArchiveLimitError {
         limit: 1,
         actual: 2,
     }
+}
+
+#[cfg(unix)]
+fn pack_revalidation_intent(
+    source_paths: Vec<PathBuf>,
+    output_path: &std::path::Path,
+    detached_header_path: &std::path::Path,
+) -> Result<pack::PackIntent, pack::Error> {
+    pack::PackIntent::new(
+        source_paths,
+        output_path,
+        OverwritePolicy::CreateNew,
+        Some(pack::DetachedHeaderTarget::new(
+            detached_header_path,
+            OverwritePolicy::CreateNew,
+        )),
+        core::protected::Protected::new(PASSWORD.to_vec()),
+        core::kdf::Kdf::Argon2id,
+        ArchivePolicy::default(),
+        true,
+        None,
+    )
 }
 
 fn assert_source<E>(error: &E, label: &str)
@@ -108,6 +136,14 @@ fn assert_replacement_path_class(class: WorkflowErrorClass, label: &str) {
                 | WorkflowErrorClass::Other
         ),
         "{label} replacement-path failure must not be hidden as malformed archive, crypto/auth, or generic error"
+    );
+}
+
+fn assert_unsafe_path_revalidation_class(class: WorkflowErrorClass, label: &str) {
+    assert_eq!(
+        class,
+        WorkflowErrorClass::UnsafePath,
+        "{label} must classify underlying unsafe-path revalidation as UnsafePath, got {class:?}"
     );
 }
 
@@ -308,6 +344,124 @@ fn replacement_path_failures_keep_unsafe_or_io_classes_and_sources() {
         io::ErrorKind::PermissionDenied,
         "unpack replacement path access failure",
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn pack_source_root_revalidation_failure_keeps_unsafe_path_classification() {
+    let root = tempfile::tempdir().unwrap();
+    let source_dir = root.path().join("source");
+    let original_dir = root.path().join("original-source");
+    let output_path = root.path().join("archive.enc");
+    let header_path = root.path().join("archive.header");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    std::fs::write(source_dir.join("original-only.txt"), b"original").unwrap();
+
+    let intent =
+        pack_revalidation_intent(vec![source_dir.clone()], &output_path, &header_path).unwrap();
+
+    std::fs::rename(&source_dir, &original_dir).unwrap();
+    std::fs::create_dir_all(&source_dir).unwrap();
+    std::fs::write(source_dir.join("replacement-only.txt"), b"replacement").unwrap();
+
+    let error = pack::execute_transactional(intent)
+        .expect_err("replaced source root must fail before archive commit");
+    assert!(
+        matches!(
+            &error,
+            pack::Error::ReadSourceWithSource(storage::Error::UnsafePath(_))
+        ),
+        "replaced source root must remain a storage unsafe-path read-source failure, got {error:?}"
+    );
+    assert_unsafe_path_revalidation_class(
+        error.workflow_class(),
+        "pack source-root replacement",
+    );
+    assert!(
+        !matches!(
+            error.workflow_class(),
+            WorkflowErrorClass::MalformedFormat
+                | WorkflowErrorClass::KdfFailure
+                | WorkflowErrorClass::AuthenticationFailure
+                | WorkflowErrorClass::TransactionCommitFailure
+                | WorkflowErrorClass::Other
+        ),
+        "pack source-root replacement must not be hidden as malformed archive, crypto/auth, transaction-only, or generic failure"
+    );
+    assert!(
+        !output_path.exists(),
+        "archive output must not be committed after source-root replacement"
+    );
+    assert!(
+        !header_path.exists(),
+        "detached header output must not be committed after source-root replacement"
+    );
+}
+
+#[cfg(all(unix, feature = "test-support"))]
+#[test]
+fn pack_walked_entry_revalidation_failure_keeps_unsafe_path_classification() {
+    let root = tempfile::tempdir().unwrap();
+    let source_dir = root.path().join("source");
+    let target_file = source_dir.join("target.txt");
+    let original_file = root.path().join("target-original.txt");
+    let output_path = root.path().join("archive.enc");
+    let header_path = root.path().join("archive.header");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    std::fs::write(&target_file, b"original").unwrap();
+
+    let swapped = std::rc::Rc::new(std::cell::Cell::new(false));
+    let swapped_for_observer = std::rc::Rc::clone(&swapped);
+    let observed_target = target_file.clone();
+    let replacement_target = target_file.clone();
+    let original_target = original_file.clone();
+    let intent = pack_revalidation_intent(vec![source_dir], &output_path, &header_path)
+        .unwrap()
+        .with_walked_entry_after_metadata_observer(Box::new(move |walked_path| {
+            if walked_path == observed_target && !swapped_for_observer.replace(true) {
+                std::fs::rename(&replacement_target, &original_target).unwrap();
+                std::fs::write(&replacement_target, b"replacement").unwrap();
+            }
+        }));
+
+    let error = pack::execute_transactional(intent)
+        .expect_err("swapped walked entry must fail before archive commit");
+    assert!(
+        swapped.get(),
+        "regression must swap the walked entry after traversal metadata is captured"
+    );
+    assert!(
+        matches!(
+            &error,
+            pack::Error::ReadSourceWithSource(storage::Error::UnsafePath(_))
+        ),
+        "swapped walked entry must remain a storage unsafe-path read-source failure, got {error:?}"
+    );
+    assert_unsafe_path_revalidation_class(
+        error.workflow_class(),
+        "pack walked-entry replacement",
+    );
+    assert!(
+        !matches!(
+            error.workflow_class(),
+            WorkflowErrorClass::MalformedFormat
+                | WorkflowErrorClass::KdfFailure
+                | WorkflowErrorClass::AuthenticationFailure
+                | WorkflowErrorClass::TransactionCommitFailure
+                | WorkflowErrorClass::Other
+        ),
+        "pack walked-entry replacement must not be hidden as malformed archive, crypto/auth, transaction-only, or generic failure"
+    );
+    assert!(
+        !output_path.exists(),
+        "archive output must not be committed after walked-entry replacement"
+    );
+    assert!(
+        !header_path.exists(),
+        "detached header output must not be committed after walked-entry replacement"
+    );
+    assert_eq!(std::fs::read(&target_file).unwrap(), b"replacement");
+    assert_eq!(std::fs::read(&original_file).unwrap(), b"original");
 }
 
 #[test]
