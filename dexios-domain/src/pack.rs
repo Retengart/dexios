@@ -212,6 +212,7 @@ pub struct PackIntent {
     raw_key: Protected<Vec<u8>>,
     kdf: Kdf,
     on_archive_entry: Option<OnArchiveEntryFn>,
+    on_walked_entry_after_metadata: Option<OnArchiveEntryFn>,
 }
 
 impl PackIntent {
@@ -291,7 +292,15 @@ impl PackIntent {
             raw_key,
             kdf,
             on_archive_entry,
+            on_walked_entry_after_metadata: None,
         })
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_walked_entry_after_metadata_observer(mut self, observer: OnArchiveEntryFn) -> Self {
+        self.on_walked_entry_after_metadata = Some(observer);
+        self
     }
 }
 
@@ -335,9 +344,14 @@ pub fn execute_transactional_with_cleanup(
         raw_key,
         kdf,
         on_archive_entry,
+        on_walked_entry_after_metadata,
     } = intent;
 
-    let entries = materialize_archive_entries(&sources, on_archive_entry.as_deref())?;
+    let entries = materialize_archive_entries(
+        &sources,
+        on_archive_entry.as_deref(),
+        on_walked_entry_after_metadata.as_deref(),
+    )?;
     validate_generated_targets_against_entries(
         &entries,
         &output_target,
@@ -572,13 +586,20 @@ fn reject_symlink_source(path: &Path) -> Result<(), Error> {
 fn materialize_archive_entries(
     sources: &[PackSource],
     on_archive_entry: Option<&dyn Fn(&Path)>,
+    on_walked_entry_after_metadata: Option<&dyn Fn(&Path)>,
 ) -> Result<Vec<ArchiveSourceEntry<fs::File>>, Error> {
-    materialize_archive_entries_with_limits(sources, on_archive_entry, ArchiveLimits::default())
+    materialize_archive_entries_with_limits(
+        sources,
+        on_archive_entry,
+        on_walked_entry_after_metadata,
+        ArchiveLimits::default(),
+    )
 }
 
 fn materialize_archive_entries_with_limits(
     sources: &[PackSource],
     on_archive_entry: Option<&dyn Fn(&Path)>,
+    on_walked_entry_after_metadata: Option<&dyn Fn(&Path)>,
     limits: ArchiveLimits,
 ) -> Result<Vec<ArchiveSourceEntry<fs::File>>, Error> {
     let stor = crate::storage::FileStorage;
@@ -609,6 +630,9 @@ fn materialize_archive_entries_with_limits(
                         None => crate::storage::Error::FileAccess,
                     })
                 })?;
+                if let Some(on_walked_entry_after_metadata) = on_walked_entry_after_metadata {
+                    on_walked_entry_after_metadata(source.path());
+                }
                 let source = stor
                     .read_file_no_follow(source.path())
                     .map_err(Error::ReadSourceWithSource)?;

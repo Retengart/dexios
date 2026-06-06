@@ -268,6 +268,59 @@ fn pack_rejects_source_root_replaced_after_intent_capture() {
     );
 }
 
+#[cfg(all(unix, feature = "test-support"))]
+#[test]
+fn pack_rejects_walked_file_replaced_between_metadata_and_open() {
+    let root = tempfile::tempdir().unwrap();
+    let source_dir = root.path().join("source");
+    let target_file = source_dir.join("target.txt");
+    let original_file = root.path().join("target-original.txt");
+    let output_path = root.path().join("archive.enc");
+    let header_path = root.path().join("archive.header");
+    fs::create_dir_all(&source_dir).unwrap();
+    fs::write(&target_file, b"original").unwrap();
+
+    let swapped = std::rc::Rc::new(std::cell::Cell::new(false));
+    let swapped_for_observer = std::rc::Rc::clone(&swapped);
+    let observed_target = target_file.clone();
+    let replacement_target = target_file.clone();
+    let original_target = original_file.clone();
+    let intent = pack_intent(vec![source_dir], &output_path, Some(&header_path))
+        .unwrap()
+        .with_walked_entry_after_metadata_observer(Box::new(move |walked_path| {
+            if walked_path == observed_target && !swapped_for_observer.replace(true) {
+                fs::rename(&replacement_target, &original_target).unwrap();
+                fs::write(&replacement_target, b"replacement").unwrap();
+            }
+        }));
+
+    let result = pack::execute_transactional(intent);
+
+    assert!(
+        swapped.get(),
+        "regression must replace the walked file after traversal metadata is captured"
+    );
+    if output_path.exists() && header_path.exists() {
+        let names = decrypted_archive_entry_names(&output_path, Some(&header_path));
+        assert!(
+            !names.contains(&"source/target.txt".to_string()),
+            "replacement content must never be accepted as the walked archive entry"
+        );
+    }
+    let error = result.expect_err("swapped walked pack entry must be rejected before commit");
+    assert_replacement_path_error_class_and_source(&error, "swapped walked pack entry");
+    assert!(
+        !output_path.exists(),
+        "generated archive output must not be committed after walked entry replacement"
+    );
+    assert!(
+        !header_path.exists(),
+        "detached header output must not be committed after walked entry replacement"
+    );
+    assert_eq!(fs::read(&target_file).unwrap(), b"replacement");
+    assert_eq!(fs::read(&original_file).unwrap(), b"original");
+}
+
 #[test]
 fn pack_rejects_symlinked_file_entry() {
     let root = tempfile::tempdir().unwrap();
