@@ -84,6 +84,22 @@ fn assert_retired_layout_public_entry_points(case: &str, bytes: &[u8]) {
     );
 }
 
+fn assert_nonzero_reserved_bytes_public_entry_points(case: &str, bytes: &[u8]) {
+    let top_level_error = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
+        .expect_err("canonical malformed V1 header should be rejected by top-level parser");
+    assert!(
+        matches!(top_level_error, HeaderReadError::NonZeroReservedBytes),
+        "{case}: read_header returned {top_level_error:?}"
+    );
+
+    let direct_v1_error = V1Header::deserialize(&mut std::io::Cursor::new(bytes))
+        .expect_err("canonical malformed V1 header should be rejected by direct public V1 parser");
+    assert!(
+        matches!(direct_v1_error, HeaderReadError::NonZeroReservedBytes),
+        "{case}: V1Header::deserialize returned {direct_v1_error:?}"
+    );
+}
+
 #[test]
 fn serializes_canonical_v1_header_to_canonical_length() {
     let header = support::sample_v1_header();
@@ -473,6 +489,14 @@ fn retired_current_v1_malformed_reserved_byte_is_rejection_evidence() {
     let bytes = decode_hex_fixture(&path);
 
     assert_retired_layout_public_entry_points("retired malformed reserved-byte fixture", &bytes);
+}
+
+#[test]
+fn canonical_reserved_byte_mutation_remains_reserved_byte_diagnostic() {
+    let mut bytes = support::sample_v1_header().serialize().unwrap();
+    bytes[36] = 0x01;
+
+    assert_nonzero_reserved_bytes_public_entry_points("canonical reserved-byte mutation", &bytes);
 }
 
 #[test]
