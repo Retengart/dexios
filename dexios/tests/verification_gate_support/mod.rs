@@ -151,6 +151,8 @@ pub(crate) const DEXIOS_DOMAIN_IDENTITY_RS: &str =
     include_str!("../../../dexios-domain/src/storage/identity.rs");
 pub(crate) const DEXIOS_DOMAIN_STORAGE_RS: &str =
     include_str!("../../../dexios-domain/src/storage/mod.rs");
+pub(crate) const DEXIOS_DOMAIN_STORAGE_FS_RS: &str =
+    include_str!("../../../dexios-domain/src/storage/fs.rs");
 pub(crate) const DEXIOS_DOMAIN_MUTATION_RS: &str =
     include_str!("../../../dexios-domain/src/storage/mutation.rs");
 pub(crate) const DEXIOS_DOMAIN_CLEANUP_RS: &str =
@@ -161,6 +163,8 @@ pub(crate) const DEXIOS_DOMAIN_TEMP_RS: &str =
     include_str!("../../../dexios-domain/src/storage/temp.rs");
 pub(crate) const DEXIOS_DOMAIN_HEADER_RS: &str =
     include_str!("../../../dexios-domain/src/header.rs");
+pub(crate) const DEXIOS_DOMAIN_HEADER_DUMP_RS: &str =
+    include_str!("../../../dexios-domain/src/header/dump.rs");
 pub(crate) const DEXIOS_DOMAIN_HEADER_STRIP_RS: &str =
     include_str!("../../../dexios-domain/src/header/strip.rs");
 pub(crate) const DEXIOS_DOMAIN_HEADER_RESTORE_RS: &str =

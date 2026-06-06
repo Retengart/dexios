@@ -1,4 +1,6 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
+#[cfg(unix)]
+use std::error::Error as _;
 use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -11,6 +13,8 @@ use dexios_domain::archive::{ArchiveLimitKind, ArchivePolicy};
 use dexios_domain::decrypt;
 use dexios_domain::pack::{self, DetachedHeaderTarget, PackIntent};
 use dexios_domain::storage::identity::OverwritePolicy;
+#[cfg(unix)]
+use dexios_domain::workflow_error::WorkflowErrorClass;
 
 const PASSWORD: &[u8; 8] = b"12345678";
 const DOMAIN_PACK_RS: &str = include_str!("../src/pack.rs");
@@ -75,6 +79,34 @@ fn pack_intent(
     )
 }
 
+#[cfg(unix)]
+fn assert_replacement_path_error_class_and_source(error: &pack::Error, label: &str) {
+    let class = error.workflow_class();
+    assert!(
+        matches!(
+            class,
+            WorkflowErrorClass::UnsafePath | WorkflowErrorClass::IoFailure
+        ),
+        "{label} must fail as unsafe path or IO failure, not malformed archive, crypto, or callback-adjacent classification; got {class:?} from {error:?}"
+    );
+    assert!(
+        !matches!(
+            class,
+            WorkflowErrorClass::MalformedFormat
+                | WorkflowErrorClass::KdfFailure
+                | WorkflowErrorClass::AuthenticationFailure
+                | WorkflowErrorClass::Other
+        ),
+        "{label} replacement-path failure must not be hidden as unrelated workflow class {class:?}"
+    );
+    if matches!(class, WorkflowErrorClass::IoFailure) {
+        assert!(
+            error.source().is_some(),
+            "{label} IO-class replacement failure must preserve its storage/source error"
+        );
+    }
+}
+
 fn decrypted_manifest_archive(
     archive_path: &Path,
     header_path: Option<&Path>,
@@ -95,8 +127,7 @@ fn decrypted_manifest_archive(
     ManifestFirstPayload::parse(&bytes).unwrap()
 }
 
-fn decrypted_archive_entry_names(archive_path: &Path, header_path: Option<&Path>) -> Vec<String> {
-    let payload = decrypted_manifest_archive(archive_path, header_path);
+fn manifest_entry_names(payload: &ManifestFirstPayload) -> Vec<String> {
     let mut names = payload
         .manifest()
         .entries()
@@ -113,6 +144,11 @@ fn decrypted_archive_entry_names(archive_path: &Path, header_path: Option<&Path>
         .collect::<Vec<_>>();
     names.sort();
     names
+}
+
+fn decrypted_archive_entry_names(archive_path: &Path, header_path: Option<&Path>) -> Vec<String> {
+    let payload = decrypted_manifest_archive(archive_path, header_path);
+    manifest_entry_names(&payload)
 }
 
 #[cfg(unix)]
@@ -197,6 +233,98 @@ fn pack_rejects_source_root_symlink() {
     assert!(!output_path.exists());
 }
 
+#[cfg(unix)]
+#[test]
+fn pack_rejects_source_root_replaced_after_intent_capture() {
+    let root = tempfile::tempdir().unwrap();
+    let source_dir = root.path().join("source");
+    let original_dir = root.path().join("original-source");
+    let output_path = root.path().join("archive.enc");
+    let header_path = root.path().join("archive.header");
+    fs::create_dir_all(&source_dir).unwrap();
+    fs::write(source_dir.join("original-only.txt"), b"original").unwrap();
+
+    let intent = pack_intent(vec![source_dir.clone()], &output_path, Some(&header_path)).unwrap();
+
+    fs::rename(&source_dir, &original_dir).unwrap();
+    fs::create_dir_all(&source_dir).unwrap();
+    fs::write(source_dir.join("replacement-only.txt"), b"replacement").unwrap();
+
+    let result = pack::execute_transactional(intent);
+
+    if output_path.exists() && header_path.exists() {
+        let names = decrypted_archive_entry_names(&output_path, Some(&header_path));
+        assert!(
+            !names.contains(&"source/replacement-only.txt".to_string()),
+            "replaced source-root content must never be committed to the archive"
+        );
+    }
+
+    let error = result.expect_err("replaced source root must fail before commit");
+    assert_replacement_path_error_class_and_source(&error, "replaced source root");
+    assert!(
+        !output_path.exists(),
+        "generated archive output must not be committed after source-root replacement"
+    );
+    assert!(
+        !header_path.exists(),
+        "detached header output must not be committed after source-root replacement"
+    );
+}
+
+#[cfg(all(unix, feature = "test-support"))]
+#[test]
+fn pack_rejects_walked_file_replaced_between_metadata_and_open() {
+    let root = tempfile::tempdir().unwrap();
+    let source_dir = root.path().join("source");
+    let target_file = source_dir.join("target.txt");
+    let original_file = root.path().join("target-original.txt");
+    let output_path = root.path().join("archive.enc");
+    let header_path = root.path().join("archive.header");
+    fs::create_dir_all(&source_dir).unwrap();
+    fs::write(&target_file, b"original").unwrap();
+
+    let swapped = std::rc::Rc::new(std::cell::Cell::new(false));
+    let swapped_for_observer = std::rc::Rc::clone(&swapped);
+    let observed_target = target_file.clone();
+    let replacement_target = target_file.clone();
+    let original_target = original_file.clone();
+    let intent = pack_intent(vec![source_dir], &output_path, Some(&header_path))
+        .unwrap()
+        .with_walked_entry_after_metadata_observer(Box::new(move |walked_path| {
+            if walked_path == observed_target && !swapped_for_observer.replace(true) {
+                fs::rename(&replacement_target, &original_target).unwrap();
+                fs::write(&replacement_target, b"replacement").unwrap();
+            }
+        }));
+
+    let result = pack::execute_transactional(intent);
+
+    assert!(
+        swapped.get(),
+        "regression must replace the walked file after traversal metadata is captured"
+    );
+    if output_path.exists() && header_path.exists() {
+        let names = decrypted_archive_entry_names(&output_path, Some(&header_path));
+        assert!(
+            !names.contains(&"source/target.txt".to_string()),
+            "replacement content must never be accepted as the walked archive entry"
+        );
+    }
+    let error = result.expect_err("swapped walked pack entry must be rejected before commit");
+    assert_replacement_path_error_class_and_source(&error, "swapped walked pack entry");
+    assert!(
+        !output_path.exists(),
+        "generated archive output must not be committed after walked entry replacement"
+    );
+    assert!(
+        !header_path.exists(),
+        "detached header output must not be committed after walked entry replacement"
+    );
+    assert_eq!(fs::read(&target_file).unwrap(), b"replacement");
+    assert_eq!(fs::read(&original_file).unwrap(), b"original");
+}
+
 #[test]
 fn pack_rejects_symlinked_file_entry() {
     let root = tempfile::tempdir().unwrap();
@@ -270,6 +398,69 @@ fn pack_recursive_real_tree_still_succeeds() {
             "source/nested/world.txt",
         ]
     );
+}
+
+#[test]
+fn pack_recursive_detached_header_preserves_v1_manifest_first_payload() {
+    let root = tempfile::tempdir().unwrap();
+    let source_dir = create_source_dir(root.path());
+    let output_path = root.path().join("archive.enc");
+    let header_path = root.path().join("archive.header");
+
+    let intent = pack_intent(vec![source_dir.clone()], &output_path, Some(&header_path)).unwrap();
+    pack::execute_transactional(intent).unwrap();
+
+    let header_bytes = fs::read(&header_path).unwrap();
+    let ParsedHeader::V1(parsed_header) = read_header(&mut Cursor::new(&header_bytes)).unwrap();
+    assert_eq!(
+        parsed_header.header().payload_kind(),
+        PayloadKind::ManifestArchive
+    );
+    assert_eq!(
+        parsed_header.header().payload_framing(),
+        PayloadFramingProfile::ManifestFirst
+    );
+
+    let payload = decrypted_manifest_archive(&output_path, Some(&header_path));
+    assert_eq!(
+        manifest_entry_names(&payload),
+        vec![
+            "source/",
+            "source/hello.txt",
+            "source/nested/",
+            "source/nested/world.txt",
+        ]
+    );
+    assert_eq!(
+        payload.body_frames().len(),
+        2,
+        "manifest-first payload must keep body frames only for file entries"
+    );
+
+    for (entry_name, expected_body) in [
+        ("source/hello.txt", b"hello".as_slice()),
+        ("source/nested/world.txt", b"world".as_slice()),
+    ] {
+        let entry_index = payload
+            .manifest()
+            .entries()
+            .iter()
+            .position(|entry| entry.normalized_path() == entry_name.as_bytes())
+            .unwrap_or_else(|| panic!("missing manifest entry {entry_name}"));
+        let frame = payload
+            .body_frames()
+            .iter()
+            .find(|frame| frame.entry_index() == u32::try_from(entry_index).unwrap())
+            .unwrap_or_else(|| panic!("missing body frame for {entry_name}"));
+        assert_eq!(frame.body(), expected_body);
+        assert_eq!(
+            payload.manifest().entries()[entry_index].body_len(),
+            Some(u64::try_from(expected_body.len()).unwrap())
+        );
+    }
+
+    assert_eq!(fs::read(source_dir.join("hello.txt")).unwrap(), b"hello");
+    assert_eq!(fs::read(source_dir.join("nested/world.txt")).unwrap(), b"world");
 }
 
 #[test]

@@ -30,7 +30,8 @@ use crate::storage::transaction::{
     CommitReceipt, DetachedPublicationFailure, LinkedOutputTransaction, TransactionError,
 };
 use crate::workflow_error::{
-    WorkflowErrorClass, classify_identity_error, classify_transaction_error,
+    WorkflowErrorClass, classify_identity_error, classify_storage_error,
+    classify_transaction_error,
 };
 
 #[derive(Debug)]
@@ -125,12 +126,14 @@ impl Error {
             _ if self.is_resource_pressure() => WorkflowErrorClass::ResourcePressure,
             Self::Encrypt(error) => error.workflow_class(),
             Self::PathIdentity(error) => classify_identity_error(error),
+            Self::CreateArchiveWithSource(error)
+            | Self::ReadDataStorageWithSource(error)
+            | Self::ReadSourceWithSource(error) => classify_storage_error(error),
             Self::ArchiveLimit(_) | Self::ArchiveRootName | Self::SymlinkSource(_) => {
                 WorkflowErrorClass::UnsafePath
             }
             Self::ArchivePayload(error) => classify_payload_error(error),
             Self::CreateArchive
-            | Self::CreateArchiveWithSource(_)
             | Self::CreateArchiveIoWithSource(_)
             | Self::AddDirToArchive
             | Self::AddFileToArchive
@@ -138,12 +141,10 @@ impl Error {
             | Self::FinishArchiveIoWithSource(_)
             | Self::ReadData
             | Self::ReadDataWithSource(_)
-            | Self::ReadDataStorageWithSource(_)
             | Self::WriteData
             | Self::WriteDataWithSource(_)
             | Self::TransactionWriter
-            | Self::ReadSource
-            | Self::ReadSourceWithSource(_) => WorkflowErrorClass::IoFailure,
+            | Self::ReadSource => WorkflowErrorClass::IoFailure,
         }
     }
 
@@ -212,6 +213,7 @@ pub struct PackIntent {
     raw_key: Protected<Vec<u8>>,
     kdf: Kdf,
     on_archive_entry: Option<OnArchiveEntryFn>,
+    on_walked_entry_after_metadata: Option<OnArchiveEntryFn>,
 }
 
 impl PackIntent {
@@ -291,7 +293,15 @@ impl PackIntent {
             raw_key,
             kdf,
             on_archive_entry,
+            on_walked_entry_after_metadata: None,
         })
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_walked_entry_after_metadata_observer(mut self, observer: OnArchiveEntryFn) -> Self {
+        self.on_walked_entry_after_metadata = Some(observer);
+        self
     }
 }
 
@@ -335,9 +345,14 @@ pub fn execute_transactional_with_cleanup(
         raw_key,
         kdf,
         on_archive_entry,
+        on_walked_entry_after_metadata,
     } = intent;
 
-    let entries = materialize_archive_entries(&sources, on_archive_entry.as_deref())?;
+    let entries = materialize_archive_entries(
+        &sources,
+        on_archive_entry.as_deref(),
+        on_walked_entry_after_metadata.as_deref(),
+    )?;
     validate_generated_targets_against_entries(
         &entries,
         &output_target,
@@ -572,13 +587,20 @@ fn reject_symlink_source(path: &Path) -> Result<(), Error> {
 fn materialize_archive_entries(
     sources: &[PackSource],
     on_archive_entry: Option<&dyn Fn(&Path)>,
+    on_walked_entry_after_metadata: Option<&dyn Fn(&Path)>,
 ) -> Result<Vec<ArchiveSourceEntry<fs::File>>, Error> {
-    materialize_archive_entries_with_limits(sources, on_archive_entry, ArchiveLimits::default())
+    materialize_archive_entries_with_limits(
+        sources,
+        on_archive_entry,
+        on_walked_entry_after_metadata,
+        ArchiveLimits::default(),
+    )
 }
 
 fn materialize_archive_entries_with_limits(
     sources: &[PackSource],
     on_archive_entry: Option<&dyn Fn(&Path)>,
+    on_walked_entry_after_metadata: Option<&dyn Fn(&Path)>,
     limits: ArchiveLimits,
 ) -> Result<Vec<ArchiveSourceEntry<fs::File>>, Error> {
     let stor = crate::storage::FileStorage;
@@ -586,11 +608,13 @@ fn materialize_archive_entries_with_limits(
 
     for source_root in sources {
         let file = stor
-            .read_file_no_follow(source_root.target.target_path())
+            .read_resolved_existing_no_follow(&source_root.target)
             .map_err(Error::ReadSourceWithSource)?;
-        let root_path = file.path().to_path_buf();
 
         if file.is_dir() {
+            let root_path = stor
+                .revalidate_resolved_directory_root(&source_root.target)
+                .map_err(Error::ReadSourceWithSource)?;
             for source in walkdir::WalkDir::new(&root_path) {
                 let source = source.map_err(|error| {
                     Error::ReadSourceWithSource(match error.into_io_error() {
@@ -607,6 +631,9 @@ fn materialize_archive_entries_with_limits(
                         None => crate::storage::Error::FileAccess,
                     })
                 })?;
+                if let Some(on_walked_entry_after_metadata) = on_walked_entry_after_metadata {
+                    on_walked_entry_after_metadata(source.path());
+                }
                 let source = stor
                     .read_file_no_follow(source.path())
                     .map_err(Error::ReadSourceWithSource)?;
@@ -642,6 +669,8 @@ fn verify_walked_entry_matches_opened(
     entry: &crate::storage::Entry<fs::File>,
     walked_metadata: &fs::Metadata,
 ) -> Result<(), Error> {
+    // Unix pack traversal verifies the no-follow opened entry against walked
+    // identity evidence before archive acceptance.
     if entry.is_dir() {
         let current_metadata = fs::symlink_metadata(entry.path()).map_err(|source| {
             Error::ReadSourceWithSource(crate::storage::Error::FileAccessWithSource(source))
@@ -681,6 +710,8 @@ fn verify_walked_entry_matches_opened(
     _entry: &crate::storage::Entry<fs::File>,
     _walked_metadata: &fs::Metadata,
 ) -> Result<(), Error> {
+    // non-Unix fallback is limited by platform identity APIs.
+    // It does not provide Unix-equivalent identity evidence.
     Ok(())
 }
 

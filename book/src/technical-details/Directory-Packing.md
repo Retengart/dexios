@@ -9,6 +9,7 @@ ZIP bytes, ZIP central-directory metadata, ZIP crate types, compression
 selectors, and broad metadata knobs are not canonical V1 archive format surface.
 Normal operation no longer creates a full plaintext archive temporary file.
 The current archive workflow has no full plaintext archive temporary file.
+Existing V1 archive compatibility remains based on manifest-first `DXAR`/`DXBF` framing rather than ZIP implementation details.
 
 ## Current CLI Behavior
 
@@ -48,6 +49,7 @@ Pack registers input directories, requested outputs, and generated output/header
 paths through the shared storage identity graph. Existing path roles reject final
 symlinks and symlinked parent prefixes before canonicalization, and generated
 outputs are checked against source roots before archive bytes are written.
+On Unix, checked source reads use `O_NOFOLLOW` plus dev/inode identity revalidation where available. Non-Unix behavior is a weaker boundary limited by platform identity APIs and available tests, not Unix-equivalent parity.
 Delete-after-success cleanup for pack is bound to processed-source cleanup
 evidence captured for the selected source roots. Directory cleanup revalidates
 the root identity and the processed tree; a changed source tree is reported as
@@ -141,9 +143,11 @@ detached-header path into this domain construction; the domain registers those
 sources as `Input` and `DetachedHeader`, validates them in the shared identity
 graph, and opens checked sources through
 `FileStorage::read_resolved_existing_no_follow`. On Unix, that boundary uses
-`O_NOFOLLOW` plus opened-file identity recheck; non-Unix behavior is limited by platform identity APIs and available tests. The CLI still owns prompting and
-selected archive entries; the domain layer keeps archive validation, output-root
-and target path identity checks, staging, and transaction commit behavior.
+`O_NOFOLLOW` plus opened-file dev/inode identity revalidation where available;
+non-Unix behavior is limited by platform identity APIs and available tests. The
+CLI still owns prompting and selected archive entries; the domain layer keeps
+archive validation, output-root and target path identity checks, staging, and
+transaction commit behavior.
 
 1. construct checked unpack intent from the raw archive path, optional
    detached-header path, and requested output root
@@ -184,7 +188,10 @@ If the first selected file commit fails after selected directories were created,
 - The current archive workflow has no full plaintext archive temporary file.
 - Unpack-side plaintext exposure is scoped to selected staged file bodies and
   ordinary filesystem temporary/staged files while the workflow is running.
+- During unpack, staged plaintext is limited to selected file bodies in ordinary filesystem temporary/staged files.
 - Temporary/staged cleanup is ordinary filesystem cleanup, not secure erase.
+- Dexios does not claim secure erase for temporary/staged plaintext or
+  delete-source cleanup.
 - Checked unpack construction makes the public API harder to bypass; it does
   not add a capacity proof or physical sanitization.
 - Byte and storage needs are real operating assumptions. The structural limits

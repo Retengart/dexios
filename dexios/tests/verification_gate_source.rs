@@ -79,6 +79,241 @@ fn production_write(path: &std::path::Path) {
         .is_err()
     );
 }
+
+#[test]
+fn domain_path_identity_hardening_negative_fixtures_prove_gate_failures() {
+    let missing_root_revalidation = normalized_rust_production_source(
+        r"
+fn stage_manifest_file_body(
+    stor: &storage::FileStorage,
+    output_root: &ResolvedTarget,
+    transaction: &mut LinkedOutputTransaction,
+    entity: &ExtractionEntity,
+) -> Result<(), Error> {
+    let output_dir = output_root.target_path().to_path_buf();
+    stor.revalidate_unpack_target(&output_dir, &entity.relative_path, target)?;
+    transaction.stage_in(target.clone(), &output_dir)?;
+    Ok(())
+}
+",
+    );
+
+    assert!(
+        std::panic::catch_unwind(|| {
+            assert_normalized_section_order(
+                "synthetic missing unpack root revalidation",
+                &missing_root_revalidation,
+                &[
+                    ".revalidate_resolved_directory_root(output_root)",
+                    ".stage_in(target.clone(), &output_dir)",
+                ],
+            );
+        })
+        .is_err()
+    );
+
+    let missing_read_identity = normalized_rust_production_source(
+        r"
+pub fn read_resolved_existing_no_follow(
+    &self,
+    target: &ResolvedTarget,
+) -> Result<Entry<std_fs::File>, Error> {
+    let entry = self.read_file_no_follow(target.target_path())?;
+    if entry.is_dir() != target.is_dir() {
+        return Err(Error::UnsafePath(target.original_path().to_path_buf()));
+    }
+    Ok(entry)
+}
+",
+    );
+    assert!(
+        std::panic::catch_unwind(|| {
+            assert_normalized_section_order(
+                "synthetic missing read-side identity comparison",
+                &missing_read_identity,
+                &[
+                    "let entry = self.read_file_no_follow(target.target_path())?",
+                    "verify_entry_matches_resolved_target(&entry, target)?",
+                    "Ok(entry)",
+                ],
+            );
+        })
+        .is_err()
+    );
+}
+
+#[test]
+fn domain_path_identity_hardening_boundaries_are_source_gated() {
+    let pack_intent = normalized_rust_production_section(
+        "dexios-domain/src/pack.rs",
+        DEXIOS_DOMAIN_PACK_RS,
+        "impl PackIntent",
+        "struct HandleRequest",
+    );
+    assert_normalized_section_order(
+        "dexios-domain/src/pack.rs::PackIntent::new",
+        &pack_intent,
+        &[
+            "PathIdentityGraph::new",
+            ".add_existing(source_path, PathRole::ProcessedSource)",
+            "CleanupReceipt::from_processed_source_trees",
+            ".add_output(output_path, PathRole::GeneratedOutput, output_overwrite)",
+            "PathRole::GeneratedDetachedHeader",
+            "graph.validate()",
+        ],
+    );
+
+    let pack_materialization = normalized_rust_production_section(
+        "dexios-domain/src/pack.rs",
+        DEXIOS_DOMAIN_PACK_RS,
+        "fn materialize_archive_entries_with_limits",
+        "#[cfg(unix)]",
+    );
+    assert_normalized_section_order(
+        "dexios-domain/src/pack.rs::materialize_archive_entries_with_limits",
+        &pack_materialization,
+        &[
+            ".read_resolved_existing_no_follow(&source_root.target)",
+            ".revalidate_resolved_directory_root(&source_root.target)",
+            "walkdir::WalkDir::new(&root_path)",
+            ".read_file_no_follow(source.path())",
+            "verify_walked_entry_matches_opened(&source, &walked_metadata)?",
+            "push_archive_entry",
+        ],
+    );
+
+    let pack_execute = normalized_rust_production_section(
+        "dexios-domain/src/pack.rs",
+        DEXIOS_DOMAIN_PACK_RS,
+        "pub fn execute_transactional_with_cleanup",
+        "fn map_detached_publication_transaction_error",
+    );
+    assert_normalized_section_order(
+        "dexios-domain/src/pack.rs::execute_transactional_with_cleanup",
+        &pack_execute,
+        &[
+            "materialize_archive_entries",
+            "validate_generated_targets_against_entries",
+            "transaction.stage(output_target)?",
+            "execute_streaming_archive",
+            "transaction.commit_all()",
+        ],
+    );
+
+    let unpack_prepare = normalized_rust_production_section(
+        "dexios-domain/src/unpack.rs",
+        DEXIOS_DOMAIN_UNPACK_RS,
+        "fn prepare_manifest_extraction_entities",
+        "fn stage_manifest_file_body",
+    );
+    assert_normalized_section_order(
+        "dexios-domain/src/unpack.rs::prepare_manifest_extraction_entities",
+        &unpack_prepare,
+        &[
+            "PathIdentityGraph::new",
+            ".add_existing(input_path, PathRole::Input)",
+            ".add_existing(detached_header_path, PathRole::DetachedHeader)",
+            ".add_unpack_root(&output_dir)",
+            ".add_output(&full_path, PathRole::Output, overwrite_policy)",
+            "Ok(PreparedExtraction { output_root, entities, })",
+        ],
+    );
+
+    let unpack_staging = normalized_rust_production_section(
+        "dexios-domain/src/unpack.rs",
+        DEXIOS_DOMAIN_UNPACK_RS,
+        "fn stage_manifest_file_body",
+        "fn copy_manifest_body",
+    );
+    assert_normalized_section_order(
+        "dexios-domain/src/unpack.rs::stage_manifest_file_body",
+        &unpack_staging,
+        &[
+            ".revalidate_resolved_directory_root(output_root)",
+            "stor.revalidate_unpack_target(&output_dir, &entity.relative_path, target)",
+            ".stage_in(target.clone(), &output_dir)",
+            ".staged_output_mut(transaction_index)",
+            "copy_manifest_body(plaintext_reader, writer, body_len)",
+        ],
+    );
+
+    let unpack_final_commit = normalized_rust_production_section(
+        "dexios-domain/src/unpack.rs",
+        DEXIOS_DOMAIN_UNPACK_RS,
+        "fn execute_manifest_archive",
+        "#[expect(",
+    );
+    assert_normalized_section_order(
+        "dexios-domain/src/unpack.rs::execute_manifest_archive",
+        &unpack_final_commit,
+        &[
+            "stage_manifest_extraction",
+            "drain_trailing_plaintext_to_final_auth",
+            "plaintext_reader.finish()",
+            "revalidate_extraction_targets(&stor, &prepared.output_root, &prepared.entities)?",
+            "create_selected_directories_after_final_auth",
+            "transaction.commit_all()",
+        ],
+    );
+
+    let unpack_directory_creation = normalized_rust_production_section(
+        "dexios-domain/src/unpack.rs",
+        DEXIOS_DOMAIN_UNPACK_RS,
+        "fn create_selected_directories_after_final_auth",
+        "fn revalidate_extraction_targets",
+    );
+    assert_normalized_section_order(
+        "dexios-domain/src/unpack.rs::create_selected_directories_after_final_auth",
+        &unpack_directory_creation,
+        &[
+            ".revalidate_resolved_directory_root(output_root)",
+            "stor.revalidate_unpack_directory_target(&output_dir, &entity.relative_path, target)",
+            "stor.create_unpack_dir_all(&output_dir, &entity.relative_path)",
+            "artifacts.push(CommittedArtifact::new",
+        ],
+    );
+
+    for required in [
+        "pack_rejects_source_root_replaced_after_intent_capture",
+        "pack_rejects_walked_file_replaced_between_metadata_and_open",
+    ] {
+        assert_contains(
+            "dexios-domain/tests/pack_paths.rs",
+            DEXIOS_DOMAIN_PACK_PATHS_TESTS,
+            required,
+        );
+    }
+    for required in [
+        "unpack_rejects_output_root_replaced_before_selected_file_staging",
+        "unpack_rejects_output_root_replaced_after_final_auth_before_selected_directory_creation",
+        "unpack_revalidation_failure_does_not_create_selected_directory_entries",
+    ] {
+        assert_corpus_contains(
+            "domain path identity unpack regression evidence",
+            &[
+                (
+                    "dexios-domain/tests/unpack_path_identity.rs",
+                    DEXIOS_DOMAIN_UNPACK_PATH_IDENTITY_TESTS,
+                ),
+                (
+                    "dexios-domain/tests/unpack_symlink_revalidation.rs",
+                    DEXIOS_DOMAIN_UNPACK_SYMLINK_REVALIDATION_TESTS,
+                ),
+            ],
+            required,
+        );
+    }
+    for required in [
+        "pack_source_root_revalidation_failure_keeps_unsafe_path_classification",
+        "pack_walked_entry_revalidation_failure_keeps_unsafe_path_classification",
+    ] {
+        assert_contains(
+            "dexios-domain/tests/workflow_errors.rs",
+            DEXIOS_DOMAIN_WORKFLOW_ERROR_TESTS,
+            required,
+        );
+    }
+}
 #[test]
 fn phase19_public_api_authority_contract_is_source_gated() {
     let docs = [
