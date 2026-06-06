@@ -467,6 +467,58 @@ fn phase20_safety_limit_overclaim_issues(source: &str) -> Vec<&'static str> {
     issues
 }
 
+fn domain_path_identity_doc_overclaim_issues(source: &str) -> Vec<&'static str> {
+    let normalized = source.replace('`', "").to_ascii_lowercase();
+    let mut issues = Vec::new();
+
+    for (needle, issue) in [
+        ("secure erase guarantee", "secure erase overclaim"),
+        ("guarantees secure erase", "secure erase overclaim"),
+        (
+            "non-unix behavior is unix-equivalent",
+            "Unix-equivalent non-Unix identity overclaim",
+        ),
+        (
+            "non-unix behavior has unix-equivalent",
+            "Unix-equivalent non-Unix identity overclaim",
+        ),
+        (
+            "same identity guarantees on non-unix",
+            "same-guarantee non-Unix identity overclaim",
+        ),
+        (
+            "full non-unix path identity parity",
+            "full non-Unix identity parity overclaim",
+        ),
+        (
+            "full platform identity parity",
+            "full platform identity parity overclaim",
+        ),
+        (
+            "fully eliminated plaintext exposure",
+            "unpack plaintext exposure overclaim",
+        ),
+        (
+            "no plaintext exposure during unpack",
+            "unpack plaintext exposure overclaim",
+        ),
+        (
+            "no plaintext ever touches disk during unpack",
+            "unpack plaintext exposure overclaim",
+        ),
+        (
+            "plaintext staging is eliminated",
+            "unpack plaintext staging overclaim",
+        ),
+    ] {
+        if normalized.contains(needle) {
+            issues.push(issue);
+        }
+    }
+
+    issues
+}
+
 /// Canonical v3.0 support window: Dexios majors 8 and 7 are supported; 6 and below
 /// are unsupported. Closes DOCS-02 support-window gate coverage (audit v3.0).
 const SUPPORT_WINDOW_SUPPORTED: &[&str] = &["8.x.x", "7.x.x"];
@@ -827,6 +879,65 @@ fn phase20_safety_limit_gate_rejects_stale_overclaims() {
         assert!(
             !phase20_safety_limit_overclaim_issues(stale_claim).is_empty(),
             "Phase 20 safety-limit gate must reject: {stale_claim}"
+        );
+    }
+}
+
+#[test]
+fn domain_path_identity_hardening_docs_are_source_gated() {
+    assert_all_contains(
+        "book/src/Safety-Contract.md",
+        SAFETY_CONTRACT,
+        &[
+            "Unix-backed guarantee uses no-follow opens and dev/inode identity evidence",
+            "non-Unix behavior is limited by platform identity APIs and available tests",
+            "Existing V1 archive compatibility remains manifest-first",
+            "Unpack-side plaintext exposure is scoped to selected staged file bodies and ordinary filesystem temporary/staged files",
+            "not secure erase",
+        ],
+    );
+
+    assert_all_contains(
+        "book/src/technical-details/Directory-Packing.md",
+        DIRECTORY_PACKING,
+        &[
+            "On Unix, checked source reads use `O_NOFOLLOW` plus dev/inode identity revalidation",
+            "Non-Unix behavior is a weaker boundary limited by platform identity APIs and available tests",
+            "Existing V1 archive compatibility remains based on manifest-first `DXAR`/`DXBF` framing",
+            "During unpack, staged plaintext is limited to selected file bodies in ordinary filesystem temporary/staged files",
+            "does not claim secure erase",
+        ],
+    );
+
+    for (source_name, source) in [
+        ("book/src/Safety-Contract.md", SAFETY_CONTRACT),
+        (
+            "book/src/technical-details/Directory-Packing.md",
+            DIRECTORY_PACKING,
+        ),
+    ] {
+        let issues = domain_path_identity_doc_overclaim_issues(source);
+        assert!(
+            issues.is_empty(),
+            "{source_name} must not overclaim platform parity or plaintext exposure; issues: {issues:?}"
+        );
+    }
+}
+
+#[test]
+fn domain_path_identity_hardening_gate_rejects_stale_overclaims() {
+    for stale_claim in [
+        "Non-Unix behavior is Unix-equivalent to the Unix no-follow identity checks.",
+        "The docs prove the same identity guarantees on non-Unix platforms.",
+        "Dexios has full non-Unix path identity parity.",
+        "Unpack has fully eliminated plaintext exposure.",
+        "No plaintext ever touches disk during unpack.",
+        "Plaintext staging is eliminated.",
+        "Staged plaintext has a secure erase guarantee.",
+    ] {
+        assert!(
+            !domain_path_identity_doc_overclaim_issues(stale_claim).is_empty(),
+            "domain path identity docs gate must reject: {stale_claim}"
         );
     }
 }
