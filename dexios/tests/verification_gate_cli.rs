@@ -55,6 +55,34 @@ fn repaired_cli_surface_is_rejection_only_for_removed_behavior() {
 }
 
 #[test]
+fn removed_surface_probe_rejects_generic_runtime_error_fallbacks() {
+    let helper_body = VERIFY_CLI_SURFACE
+        .split_once("expect_rejected() {")
+        .expect("removed-surface rejection helper is present")
+        .1
+        .split_once("\n}\n")
+        .expect("removed-surface rejection helper has a closing brace")
+        .0;
+
+    assert_not_contains("scripts/verify_cli_surface.sh", helper_body, "error:");
+    assert_not_contains(
+        "scripts/verify_cli_surface.sh",
+        helper_body,
+        "unexpected argument|unrecognized subcommand|error:",
+    );
+    assert_all_contains(
+        "scripts/verify_cli_surface.sh",
+        VERIFY_CLI_SURFACE,
+        &[
+            "local expected_parser_rejection=$2",
+            "grep -F \"$expected_parser_rejection\" \"$stderr\"",
+            "expect_rejected \"encrypt removed aes flag\" \"unexpected argument\"",
+            "expect_rejected \"removed top level erase subcommand\" \"unrecognized subcommand\"",
+        ],
+    );
+}
+
+#[test]
 fn cli_surface_harness_resolves_selected_binary_before_directory_changes() {
     assert_all_contains(
         "scripts/verify_cli_surface.sh",
