@@ -1,5 +1,6 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
 use std::io::{Cursor, Read, Write};
+use std::path::{Path, PathBuf};
 
 use dexios_core::header::common::{KeyslotNonce, PayloadNonce, Salt as HeaderSalt};
 use dexios_core::header::v1::{V1Header, V1Keyslot, V1Keyslots};
@@ -18,6 +19,7 @@ use dexios_core::stream::{
 
 const STREAM_TAG_LEN: usize = 16;
 const FIXTURE_MANIFEST: &str = include_str!("testdata/fixture_manifest.toml");
+const PHASE01_HEADER_MALFORMED_ROW_ID: &str = "phase01-header-malformed-evidence";
 
 mod support {
     use super::*;
@@ -1103,8 +1105,64 @@ fn decrypt_failure_output_is_uncommitted_scratch() {
 
 #[test]
 fn phase01_core_fixture_manifest_links_stream_assurance_rows() {
+    validate_phase01_fixture_manifest(FIXTURE_MANIFEST);
+}
+
+#[test]
+fn phase01_fixture_manifest_validation_rejects_missing_test_target() {
+    let manifest = FIXTURE_MANIFEST.replace(
+        "retired_current_v1_malformed_reserved_byte_is_rejection_evidence",
+        "missing_retired_layout_evidence",
+    );
+
+    assert_phase01_manifest_validation_fails(
+        &manifest,
+        "phase01-header-malformed-evidence: evidence target missing_retired_layout_evidence",
+    );
+}
+
+#[test]
+fn phase01_fixture_manifest_validation_rejects_prefix_only_test_target() {
+    let manifest = FIXTURE_MANIFEST.replace(
+        "retired_current_v1_malformed_reserved_byte_is_rejection_evidence",
+        "retired_current_v1_malformed_reserved_byte_is_rejection",
+    );
+
+    assert_phase01_manifest_validation_fails(
+        &manifest,
+        "phase01-header-malformed-evidence: evidence target retired_current_v1_malformed_reserved_byte_is_rejection",
+    );
+}
+
+#[test]
+fn phase01_fixture_manifest_validation_rejects_missing_retired_fixture() {
+    let manifest = FIXTURE_MANIFEST.replace(
+        "v1_malformed_reserved_byte.hex",
+        "v1_missing_reserved_byte.hex",
+    );
+
+    assert_phase01_manifest_validation_fails(
+        &manifest,
+        "phase01-header-malformed-evidence: source must reference v1_malformed_reserved_byte.hex",
+    );
+}
+
+#[test]
+fn phase01_fixture_manifest_validation_rejects_stale_retired_layout_expectation() {
+    let manifest = FIXTURE_MANIFEST.replace(
+        "HeaderReadError::RetiredV1Layout",
+        "HeaderReadError::NonZeroReservedBytes",
+    );
+
+    assert_phase01_manifest_validation_fails(
+        &manifest,
+        "phase01-header-malformed-evidence: expected diagnostic must name HeaderReadError::RetiredV1Layout",
+    );
+}
+
+fn validate_phase01_fixture_manifest(manifest_src: &str) {
     let manifest: toml::Value =
-        toml::from_str(FIXTURE_MANIFEST).expect("fixture manifest must parse as TOML");
+        toml::from_str(manifest_src).expect("fixture manifest must parse as TOML");
     let fixtures = manifest
         .get("fixture")
         .and_then(|value| value.as_array())
@@ -1162,5 +1220,95 @@ fn phase01_core_fixture_manifest_links_stream_assurance_rows() {
             Some("Phase 1"),
             "{row_id}: owner phase must remain Phase 1"
         );
+
+        validate_phase01_fixture_manifest_evidence(row, row_id);
     }
+}
+
+fn fixture_manifest_field<'a>(row: &'a toml::Value, row_id: &str, field: &str) -> &'a str {
+    row.get(field)
+        .and_then(|value| value.as_str())
+        .unwrap_or_else(|| panic!("{row_id}: field {field} must be present"))
+}
+
+fn validate_phase01_fixture_manifest_evidence(row: &toml::Value, row_id: &str) {
+    let path = fixture_manifest_field(row, row_id, "path");
+    assert_manifest_evidence_path_resolves(row_id, path);
+
+    if row_id == PHASE01_HEADER_MALFORMED_ROW_ID {
+        let source = fixture_manifest_field(row, row_id, "source");
+        assert!(
+            source.contains("v1_malformed_reserved_byte.hex"),
+            "{row_id}: source must reference v1_malformed_reserved_byte.hex"
+        );
+        assert!(
+            workspace_root()
+                .join("dexios-core/tests/testdata/v1_malformed_reserved_byte.hex")
+                .is_file(),
+            "{row_id}: referenced fixture dexios-core/tests/testdata/v1_malformed_reserved_byte.hex must exist"
+        );
+
+        let expected = fixture_manifest_field(row, row_id, "expected");
+        assert!(
+            expected.contains("HeaderReadError::RetiredV1Layout"),
+            "{row_id}: expected diagnostic must name HeaderReadError::RetiredV1Layout"
+        );
+        assert!(
+            !expected.contains("HeaderReadError::NonZeroReservedBytes"),
+            "{row_id}: expected diagnostic must not name stale HeaderReadError::NonZeroReservedBytes"
+        );
+    }
+}
+
+fn assert_manifest_evidence_path_resolves(row_id: &str, manifest_path: &str) {
+    let (file_path, target) = manifest_path
+        .split_once("::")
+        .map_or((manifest_path, None), |(file_path, target)| {
+            (file_path, Some(target))
+        });
+    let evidence_path = workspace_root().join(file_path);
+
+    assert!(
+        evidence_path.is_file(),
+        "{row_id}: evidence path {file_path} must resolve to a checked-in file"
+    );
+
+    if let Some(target) = target {
+        let file_source = std::fs::read_to_string(&evidence_path).unwrap_or_else(|error| {
+            panic!("{row_id}: evidence path {file_path} unreadable: {error}")
+        });
+        assert!(
+            rust_function_target_exists(&file_source, target),
+            "{row_id}: evidence target {target} must exist in {file_path}"
+        );
+    }
+}
+
+fn rust_function_target_exists(file_source: &str, target: &str) -> bool {
+    file_source.contains(&format!("fn {target}("))
+        || file_source.contains(&format!("fn {target}<"))
+}
+
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("dexios-core crate must have a workspace root")
+        .to_path_buf()
+}
+
+fn assert_phase01_manifest_validation_fails(manifest_src: &str, expected_message: &str) {
+    let result = std::panic::catch_unwind(|| validate_phase01_fixture_manifest(manifest_src));
+    let Err(panic_payload) = result else {
+        panic!("expected validation failure containing {expected_message}");
+    };
+    let panic_message = panic_payload
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| panic_payload.downcast_ref::<&str>().copied())
+        .unwrap_or("<non-string panic>");
+
+    assert!(
+        panic_message.contains(expected_message),
+        "unexpected validation panic: {panic_message}"
+    );
 }
