@@ -60,6 +60,22 @@ impl FileStorage {
         Ok(entry)
     }
 
+    pub fn revalidate_resolved_directory_root(
+        &self,
+        root: &ResolvedTarget,
+    ) -> Result<PathBuf, Error> {
+        if !root.exists() || !root.is_dir() {
+            return Err(Error::UnsafePath(root.original_path().to_path_buf()));
+        }
+
+        let entry = self.read_resolved_existing_no_follow(root)?;
+        if !entry.is_dir() {
+            return Err(Error::UnsafePath(root.original_path().to_path_buf()));
+        }
+
+        Ok(entry.path().to_path_buf())
+    }
+
     pub fn revalidate_unpack_target<P: AsRef<Path>>(
         &self,
         root: P,

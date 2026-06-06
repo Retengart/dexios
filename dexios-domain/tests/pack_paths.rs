@@ -11,6 +11,8 @@ use dexios_domain::archive::{ArchiveLimitKind, ArchivePolicy};
 use dexios_domain::decrypt;
 use dexios_domain::pack::{self, DetachedHeaderTarget, PackIntent};
 use dexios_domain::storage::identity::OverwritePolicy;
+#[cfg(unix)]
+use dexios_domain::workflow_error::WorkflowErrorClass;
 
 const PASSWORD: &[u8; 8] = b"12345678";
 const DOMAIN_PACK_RS: &str = include_str!("../src/pack.rs");
@@ -195,6 +197,51 @@ fn pack_rejects_source_root_symlink() {
         source_link.display()
     );
     assert!(!output_path.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn pack_rejects_source_root_replaced_after_intent_capture() {
+    let root = tempfile::tempdir().unwrap();
+    let source_dir = root.path().join("source");
+    let original_dir = root.path().join("original-source");
+    let output_path = root.path().join("archive.enc");
+    let header_path = root.path().join("archive.header");
+    fs::create_dir_all(&source_dir).unwrap();
+    fs::write(source_dir.join("original-only.txt"), b"original").unwrap();
+
+    let intent = pack_intent(vec![source_dir.clone()], &output_path, Some(&header_path)).unwrap();
+
+    fs::rename(&source_dir, &original_dir).unwrap();
+    fs::create_dir_all(&source_dir).unwrap();
+    fs::write(source_dir.join("replacement-only.txt"), b"replacement").unwrap();
+
+    let result = pack::execute_transactional(intent);
+
+    if output_path.exists() && header_path.exists() {
+        let names = decrypted_archive_entry_names(&output_path, Some(&header_path));
+        assert!(
+            !names.contains(&"source/replacement-only.txt".to_string()),
+            "replaced source-root content must never be committed to the archive"
+        );
+    }
+
+    let error = result.expect_err("replaced source root must fail before commit");
+    assert!(
+        matches!(
+            error.workflow_class(),
+            WorkflowErrorClass::UnsafePath | WorkflowErrorClass::IoFailure
+        ),
+        "replaced source root must fail as unsafe path or read-source failure, got {error:?}"
+    );
+    assert!(
+        !output_path.exists(),
+        "generated archive output must not be committed after source-root replacement"
+    );
+    assert!(
+        !header_path.exists(),
+        "detached header output must not be committed after source-root replacement"
+    );
 }
 
 #[test]

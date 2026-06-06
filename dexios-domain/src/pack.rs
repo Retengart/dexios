@@ -586,11 +586,13 @@ fn materialize_archive_entries_with_limits(
 
     for source_root in sources {
         let file = stor
-            .read_file_no_follow(source_root.target.target_path())
+            .read_resolved_existing_no_follow(&source_root.target)
             .map_err(Error::ReadSourceWithSource)?;
-        let root_path = file.path().to_path_buf();
 
         if file.is_dir() {
+            let root_path = stor
+                .revalidate_resolved_directory_root(&source_root.target)
+                .map_err(Error::ReadSourceWithSource)?;
             for source in walkdir::WalkDir::new(&root_path) {
                 let source = source.map_err(|error| {
                     Error::ReadSourceWithSource(match error.into_io_error() {
