@@ -2,6 +2,10 @@
 #[path = "support/unpack_v1.rs"]
 mod unpack_support;
 
+#[cfg(unix)]
+use std::error::Error as _;
+#[cfg(unix)]
+use dexios_domain::workflow_error::WorkflowErrorClass;
 use unpack_support::*;
 
 #[test]
@@ -225,7 +229,6 @@ fn unpack_rejects_output_root_replaced_before_selected_file_staging() {
         Some(Box::new({
             let output_dir = output_dir.clone();
             let original_root = original_root.clone();
-            let selected_file = selected_file.clone();
             move |path| {
                 assert_eq!(
                     path, selected_file,
@@ -259,10 +262,43 @@ fn unpack_rejects_output_root_replaced_before_selected_file_staging() {
     assert_no_plaintext_under(&output_dir, selected_body);
 
     let error = result.expect_err("replaced output root must fail before selected body staging");
+    assert_replacement_path_workflow_error(&error, "replaced output root");
     assert!(
         !matches!(error, unpack::Error::Transaction(_)),
         "replaced output root must be rejected before transaction staging/commit, got {error:?}"
     );
+}
+
+#[cfg(unix)]
+fn assert_replacement_path_workflow_error(error: &unpack::Error, label: &str) {
+    let class = error.workflow_class();
+    assert!(
+        matches!(
+            class,
+            WorkflowErrorClass::UnsafePath | WorkflowErrorClass::IoFailure
+        ),
+        "{label} must fail as unsafe path or IO failure, not malformed archive, crypto, or callback error; got {class:?} from {error:?}"
+    );
+    assert!(
+        !matches!(
+            class,
+            WorkflowErrorClass::MalformedFormat
+                | WorkflowErrorClass::KdfFailure
+                | WorkflowErrorClass::AuthenticationFailure
+                | WorkflowErrorClass::Other
+        ),
+        "{label} replacement-path failure must not be hidden as unrelated workflow class {class:?}"
+    );
+    assert!(
+        !matches!(error, unpack::Error::ArchiveFileCallback(_)),
+        "{label} replacement-path failure must not be reported as a callback error"
+    );
+    if matches!(class, WorkflowErrorClass::IoFailure) {
+        assert!(
+            error.source().is_some(),
+            "{label} IO-class replacement failure must preserve its storage/source error"
+        );
+    }
 }
 
 #[cfg(unix)]

@@ -74,6 +74,43 @@ where
     );
 }
 
+fn assert_error_chain_contains_io_kind(
+    mut error: &(dyn std::error::Error + 'static),
+    expected: io::ErrorKind,
+    label: &str,
+) {
+    loop {
+        if let Some(source) = error.downcast_ref::<io::Error>() {
+            assert_eq!(source.kind(), expected, "{label} preserved wrong IO kind");
+            return;
+        }
+
+        error = error
+            .source()
+            .unwrap_or_else(|| panic!("{label} must preserve IO source kind {expected:?}"));
+    }
+}
+
+fn assert_replacement_path_class(class: WorkflowErrorClass, label: &str) {
+    assert!(
+        matches!(
+            class,
+            WorkflowErrorClass::UnsafePath | WorkflowErrorClass::IoFailure
+        ),
+        "{label} must classify replacement-path failures as unsafe path or IO failure, got {class:?}"
+    );
+    assert!(
+        !matches!(
+            class,
+            WorkflowErrorClass::MalformedFormat
+                | WorkflowErrorClass::KdfFailure
+                | WorkflowErrorClass::AuthenticationFailure
+                | WorkflowErrorClass::Other
+        ),
+        "{label} replacement-path failure must not be hidden as malformed archive, crypto/auth, or generic error"
+    );
+}
+
 fn assert_encrypt_source(error: encrypt::Error, class: WorkflowErrorClass, label: &str) {
     assert_eq!(error.workflow_class(), class);
     assert_source(&error, label);
@@ -223,6 +260,54 @@ fn storage_errors_preserve_io_sources() {
         unreachable!("wrapped storage fixture must stay storage-backed");
     };
     assert_source(inner, "storage::Error IO failure");
+}
+
+#[test]
+fn replacement_path_failures_keep_unsafe_or_io_classes_and_sources() {
+    let pack_unsafe_source =
+        pack::Error::ReadSourceWithSource(storage::Error::UnsafePath(path("source")));
+    assert_replacement_path_class(
+        pack_unsafe_source.workflow_class(),
+        "pack source replacement",
+    );
+    assert_source(
+        &pack_unsafe_source,
+        "pack source replacement storage wrapper",
+    );
+
+    let pack_missing_source =
+        pack::Error::ReadSourceWithSource(storage::Error::FileAccessWithSource(io::Error::from(
+            io::ErrorKind::NotFound,
+        )));
+    assert_eq!(
+        pack_missing_source.workflow_class(),
+        WorkflowErrorClass::IoFailure
+    );
+    assert_error_chain_contains_io_kind(
+        &pack_missing_source,
+        io::ErrorKind::NotFound,
+        "pack missing replacement source",
+    );
+
+    let unpack_root_replaced = unpack::Error::UnsafeOutputPath(path("replacement-root"));
+    assert_replacement_path_class(
+        unpack_root_replaced.workflow_class(),
+        "unpack root replacement",
+    );
+
+    let unpack_access_failure =
+        unpack::Error::Storage(storage::Error::FileAccessWithSource(io::Error::from(
+            io::ErrorKind::PermissionDenied,
+        )));
+    assert_eq!(
+        unpack_access_failure.workflow_class(),
+        WorkflowErrorClass::IoFailure
+    );
+    assert_error_chain_contains_io_kind(
+        &unpack_access_failure,
+        io::ErrorKind::PermissionDenied,
+        "unpack replacement path access failure",
+    );
 }
 
 #[test]

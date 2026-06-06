@@ -9,6 +9,9 @@ use dexios_domain::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole,
 };
 
+const STORAGE_FS_RS: &str = include_str!("../src/storage/fs.rs");
+const DOMAIN_PACK_RS: &str = include_str!("../src/pack.rs");
+
 struct TestDir {
     _dir: tempfile::TempDir,
     path: PathBuf,
@@ -94,6 +97,77 @@ fn assert_identity_source_kind(error: &IdentityError, expected: ErrorKind) {
         .downcast_ref::<std::io::Error>()
         .expect("identity error source must be std::io::Error");
     assert_eq!(source.kind(), expected);
+}
+
+fn source_section<'a>(source_name: &str, source: &'a str, start: &str, end: &str) -> &'a str {
+    let (_, rest) = source
+        .split_once(start)
+        .unwrap_or_else(|| panic!("{source_name} missing source anchor {start:?}"));
+    let (section, _) = rest
+        .split_once(end)
+        .unwrap_or_else(|| panic!("{source_name} missing source anchor {end:?} after {start:?}"));
+    section
+}
+
+#[test]
+fn platform_identity_contract_distinguishes_unix_revalidation_from_non_unix_fallback() {
+    let unix_read_reopen = source_section(
+        "dexios-domain/src/storage/fs.rs",
+        STORAGE_FS_RS,
+        "#[cfg(unix)]\nfn verify_entry_matches_resolved_target",
+        "#[cfg(unix)]\nfn open_no_follow",
+    );
+    assert!(
+        unix_read_reopen.contains("existing_target_identity()"),
+        "Unix read-side reopen must be bound to captured identity evidence"
+    );
+    assert!(
+        unix_read_reopen.contains("actual.dev() != expected_identity.dev")
+            && unix_read_reopen.contains("actual.ino() != expected_identity.ino"),
+        "Unix read-side reopen must compare dev/inode identity"
+    );
+
+    let non_unix_open = source_section(
+        "dexios-domain/src/storage/fs.rs",
+        STORAGE_FS_RS,
+        "#[cfg(not(unix))]\nfn open_no_follow",
+        "fn reject_mutated_root",
+    );
+    assert!(
+        non_unix_open.contains("std_fs::File::open(path)"),
+        "non-Unix fallback must remain visibly weaker than Unix no-follow reopen"
+    );
+    assert!(
+        !non_unix_open.contains(".dev()") && !non_unix_open.contains(".ino()"),
+        "non-Unix fallback must not pretend to perform Unix dev/inode revalidation"
+    );
+
+    let unix_walk_entry = source_section(
+        "dexios-domain/src/pack.rs",
+        DOMAIN_PACK_RS,
+        "#[cfg(unix)]\nfn verify_walked_entry_matches_opened",
+        "#[cfg(not(unix))]\nfn verify_walked_entry_matches_opened",
+    );
+    assert!(
+        unix_walk_entry.contains("opened_metadata.dev() != walked_metadata.dev()")
+            && unix_walk_entry.contains("opened_metadata.ino() != walked_metadata.ino()"),
+        "Unix pack entry materialization must compare walked and opened identities"
+    );
+
+    let non_unix_walk_entry = source_section(
+        "dexios-domain/src/pack.rs",
+        DOMAIN_PACK_RS,
+        "#[cfg(not(unix))]\nfn verify_walked_entry_matches_opened",
+        "fn push_archive_entry",
+    );
+    assert!(
+        non_unix_walk_entry.contains("Ok(())"),
+        "non-Unix pack entry identity fallback is intentionally limited"
+    );
+    assert!(
+        !non_unix_walk_entry.contains(".dev()") && !non_unix_walk_entry.contains(".ino()"),
+        "non-Unix pack fallback must not claim Unix-equivalent identity evidence"
+    );
 }
 
 #[test]

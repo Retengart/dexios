@@ -1,4 +1,6 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
+#[cfg(unix)]
+use std::error::Error as _;
 use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -75,6 +77,34 @@ fn pack_intent(
         true,
         None,
     )
+}
+
+#[cfg(unix)]
+fn assert_replacement_path_error_class_and_source(error: &pack::Error, label: &str) {
+    let class = error.workflow_class();
+    assert!(
+        matches!(
+            class,
+            WorkflowErrorClass::UnsafePath | WorkflowErrorClass::IoFailure
+        ),
+        "{label} must fail as unsafe path or IO failure, not malformed archive, crypto, or callback-adjacent classification; got {class:?} from {error:?}"
+    );
+    assert!(
+        !matches!(
+            class,
+            WorkflowErrorClass::MalformedFormat
+                | WorkflowErrorClass::KdfFailure
+                | WorkflowErrorClass::AuthenticationFailure
+                | WorkflowErrorClass::Other
+        ),
+        "{label} replacement-path failure must not be hidden as unrelated workflow class {class:?}"
+    );
+    if matches!(class, WorkflowErrorClass::IoFailure) {
+        assert!(
+            error.source().is_some(),
+            "{label} IO-class replacement failure must preserve its storage/source error"
+        );
+    }
 }
 
 fn decrypted_manifest_archive(
@@ -227,13 +257,7 @@ fn pack_rejects_source_root_replaced_after_intent_capture() {
     }
 
     let error = result.expect_err("replaced source root must fail before commit");
-    assert!(
-        matches!(
-            error.workflow_class(),
-            WorkflowErrorClass::UnsafePath | WorkflowErrorClass::IoFailure
-        ),
-        "replaced source root must fail as unsafe path or read-source failure, got {error:?}"
-    );
+    assert_replacement_path_error_class_and_source(&error, "replaced source root");
     assert!(
         !output_path.exists(),
         "generated archive output must not be committed after source-root replacement"
