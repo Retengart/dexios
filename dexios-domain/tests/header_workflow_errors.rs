@@ -24,14 +24,19 @@
         reason = "integration tests assert exact behavior and may panic on failure"
     )
 )]
+use std::fs;
 use std::io;
-use std::path::PathBuf;
+#[cfg(unix)]
+use std::os::unix::fs::symlink;
+use std::path::{Path, PathBuf};
 
 use core::header::common::HeaderReadError;
-use dexios_domain::storage::identity::IdentityError;
+use core::kdf::Kdf;
+use core::protected::Protected;
+use dexios_domain::storage::identity::{IdentityError, OverwritePolicy};
 use dexios_domain::storage::transaction::TransactionError;
 use dexios_domain::workflow_error::WorkflowErrorClass;
-use dexios_domain::{header, key};
+use dexios_domain::{encrypt, header, key};
 
 fn path(name: &str) -> PathBuf {
     PathBuf::from(name)
@@ -49,6 +54,29 @@ fn source_transaction_error() -> TransactionError {
         path: path("target.dexios"),
         source: Some(io::Error::from(io::ErrorKind::PermissionDenied)),
     }
+}
+
+fn protected_key() -> Protected<Vec<u8>> {
+    Protected::new(b"correct-password".to_vec())
+}
+
+fn encrypted_fixture(root: &Path, name: &str, plaintext: &[u8]) -> PathBuf {
+    let plain = root.join(format!("{name}.txt"));
+    let encrypted = root.join(format!("{name}.enc"));
+    fs::write(&plain, plaintext).unwrap();
+
+    let intent = encrypt::EncryptIntent::new(
+        &plain,
+        &encrypted,
+        OverwritePolicy::CreateNew,
+        None,
+        protected_key(),
+        Kdf::Argon2id,
+    )
+    .expect("build encrypt intent");
+    encrypt::execute(intent).expect("encrypt fixture");
+
+    encrypted
 }
 
 fn assert_has_source<E>(error: &E, label: &str)
@@ -290,4 +318,22 @@ fn header_and_key_unsupported_or_auth_failures_stay_source_free() {
         WorkflowErrorClass::IncorrectKey
     );
     assert_no_source(&key_incorrect, "key incorrect-key authentication failure");
+}
+
+#[cfg(unix)]
+#[test]
+fn header_details_rejects_input_replaced_by_symlink_after_identity_capture() {
+    let test_dir = tempfile::tempdir().unwrap();
+    let original = encrypted_fixture(test_dir.path(), "original", b"original plaintext");
+    let replacement = encrypted_fixture(test_dir.path(), "replacement", b"replacement plaintext");
+
+    let intent = header::details::DetailsIntent::new(&original)
+        .expect("build details intent before replacing input");
+
+    fs::remove_file(&original).unwrap();
+    symlink(&replacement, &original).unwrap();
+
+    let error = header::details::execute(intent)
+        .expect_err("symlink-swapped details input must be rejected");
+    assert_eq!(error.workflow_class(), WorkflowErrorClass::UnsafePath);
 }

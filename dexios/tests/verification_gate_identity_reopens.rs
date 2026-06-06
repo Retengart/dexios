@@ -17,6 +17,10 @@ mod verification_gate_support;
 
 use verification_gate_support::*;
 
+const DEXIOS_SUBCOMMAND_HEADER_RS: &str = include_str!("../src/subcommands/header.rs");
+const DEXIOS_DOMAIN_HEADER_DETAILS_RS: &str =
+    include_str!("../../dexios-domain/src/header/details.rs");
+
 #[test]
 fn read_side_domain_consumers_reopen_captured_existing_targets_through_storage_boundary() {
     let encrypt_execute = normalized_rust_production_section(
@@ -88,6 +92,46 @@ fn read_side_domain_consumers_reopen_captured_existing_targets_through_storage_b
             "fs::File::open(path)",
             "File::open(input_target.target_path())",
         ],
+    );
+
+    let details_execute = normalized_rust_production_section(
+        "dexios-domain/src/header/details.rs",
+        DEXIOS_DOMAIN_HEADER_DETAILS_RS,
+        "pub fn execute(intent: DetailsIntent)",
+        "fn map_read_storage_error",
+    );
+    assert_normalized_section_order(
+        "dexios-domain/src/header/details.rs::execute",
+        &details_execute,
+        &[
+            "FileStorage",
+            ".read_resolved_existing_no_follow(&input_target)",
+            "read_header",
+        ],
+    );
+    assert_rust_production_source_excludes(
+        "dexios-domain/src/header/details.rs",
+        DEXIOS_DOMAIN_HEADER_DETAILS_RS,
+        &["File::open(input_target.target_path())"],
+    );
+
+    let cli_details = normalized_rust_production_section(
+        "dexios/src/subcommands/header.rs",
+        DEXIOS_SUBCOMMAND_HEADER_RS,
+        "pub(crate) fn details(input: &str, raw: bool)",
+        "pub(crate) fn dump",
+    );
+    assert_normalized_section_order(
+        "dexios/src/subcommands/header.rs::details",
+        &cli_details,
+        &[
+            "domain::header::details::DetailsIntent::new(input)",
+            "domain::header::details::execute(intent)",
+        ],
+    );
+    assert!(
+        !cli_details.contains("File::open(input)"),
+        "CLI header details must not bypass domain identity-bound reopen"
     );
 
     let storage_reopen = normalized_rust_production_section(

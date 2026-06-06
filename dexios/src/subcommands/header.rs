@@ -1,10 +1,8 @@
-use std::fs::File;
-
 use crate::cli::prompt::overwrite_check;
 use crate::global::states::ForceMode;
-use anyhow::{Context, Result};
+use anyhow::Result;
+use core::header::ParsedHeader;
 use core::header::v1::KeyslotKdf;
-use core::header::{ParsedHeader, read_header};
 use domain::storage::identity::OverwritePolicy;
 use domain::utils::hex_encode;
 
@@ -35,11 +33,11 @@ fn overwrite_check_if_needed(path: &str, path_exists: bool, force: ForceMode) ->
 const ENCRYPTED_MASTER_KEY_REDACTION: &str = "<hidden — use --raw to show>";
 
 pub(crate) fn details(input: &str, raw: bool) -> Result<()> {
-    let mut input_file =
-        File::open(input).with_context(|| format!("Unable to open input file: {input}"))?;
+    let intent =
+        domain::header::details::DetailsIntent::new(input).map_err(map_header_details_error)?;
 
-    match read_header(&mut input_file) {
-        Ok(ParsedHeader::V1(payload)) => {
+    match domain::header::details::execute(intent).map_err(map_header_details_error)? {
+        ParsedHeader::V1(payload) => {
             let header = payload.header();
             println!("Header version: V1");
             println!("Cipher suite: XChaCha20-Poly1305 / LE31 stream");
@@ -68,11 +66,10 @@ pub(crate) fn details(input: &str, raw: bool) -> Result<()> {
                     hex_encode(keyslot.nonce().as_bytes())
                 );
             }
-
-            Ok(())
         }
-        Err(error) => Err(map_header_details_error(domain::header::Error::from(error))),
     }
+
+    Ok(())
 }
 
 // this function reads the header fromthe input file and writes it to the output file

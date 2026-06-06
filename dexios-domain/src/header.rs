@@ -1,5 +1,6 @@
 //! This module contains all Dexios header-related functions, such as dumping the header, restoring a dumped header, or stripping it entirely.
 
+pub mod details;
 pub mod dump;
 pub mod restore;
 pub mod strip;
