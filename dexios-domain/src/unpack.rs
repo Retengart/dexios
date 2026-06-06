@@ -445,7 +445,7 @@ where
 
 #[expect(
     clippy::expect_used,
-    reason = "manifest entry count is bounded below MAX_MANIFEST_ENTRY_COUNT (< u32::MAX) and File entries always carry a validated body length, so these conversions/unwraps cannot fail"
+    reason = "manifest entry count is bounded below MAX_MANIFEST_ENTRY_COUNT (< u32::MAX), File entries always carry a validated body length, and prepared entity indexes are captured from the same entity vector"
 )]
 fn stage_manifest_extraction<R: Read>(
     stor: &storage::FileStorage,
@@ -506,7 +506,10 @@ fn stage_manifest_extraction<R: Read>(
             .map_err(Error::ArchiveLimit)?;
 
         if let Some(entity_index) = file_entities_by_index.get(&index) {
-            let entity = &prepared.entities[*entity_index];
+            let entity = prepared
+                .entities
+                .get(*entity_index)
+                .expect("prepared entity index came from enumerate over the same entity vector");
             stage_manifest_file_body(
                 stor,
                 plaintext_reader,
