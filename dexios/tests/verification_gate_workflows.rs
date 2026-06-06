@@ -165,6 +165,40 @@ fn dexios_tests_workflow_does_not_reintroduce_removed_positive_cli_surface() {
 }
 
 #[test]
+fn ci_workflow_determinism_contract_is_source_gated() {
+    assert_all_contains(
+        ".github/workflows/dexios-tests.yml",
+        DEXIOS_TESTS_WORKFLOW,
+        &[
+            "name: Dexios Tests",
+            "on:\n  push:\n    branches: [ main ]\n  pull_request:\n    branches: [ main ]\n  workflow_dispatch:",
+            "run: cargo build --locked --release -p dexios",
+            "path: target/release/dexios",
+        ],
+    );
+
+    assert_all_contains(
+        ".github/workflows/cli-surface.yml",
+        CLI_SURFACE_WORKFLOW,
+        &[
+            "name: CLI Surface",
+            "DEXIOS_BIN: ${{ github.workspace }}/target/release-lto/dexios",
+            "run: cargo build --locked -p dexios --profile release-lto",
+            "bash scripts/verify_cli_surface.sh 2>&1 | tee target/cli-surface-artifacts/cli-surface.log",
+        ],
+    );
+
+    for (source_name, source) in [
+        (".github/workflows/dexios-tests.yml", DEXIOS_TESTS_WORKFLOW),
+        (".github/workflows/cli-surface.yml", CLI_SURFACE_WORKFLOW),
+    ] {
+        assert_not_contains(source_name, source, "workflow_dispatch:\n    branches:");
+    }
+
+    assert_cli_surface_harness_invocation_has_no_positional_args();
+}
+
+#[test]
 fn phase21_release_workflow_tool_pins_and_locked_build_are_source_gated() {
     // CIGR-01, CIGR-03, D-01, D-07: release.yml build uses --locked; mdbook and
     // typst-cli are version-pinned in the maintainer_gate job.
@@ -427,6 +461,43 @@ fn phase21_windows_ci_coverage_is_source_gated() {
         ".github/workflows/dexios-tests.yml",
         DEXIOS_TESTS_WORKFLOW,
         &["windows-latest"],
+    );
+}
+
+fn assert_cli_surface_harness_invocation_has_no_positional_args() {
+    let script = "bash scripts/verify_cli_surface.sh";
+    let mut found = false;
+
+    for (line_number, line) in CLI_SURFACE_WORKFLOW.lines().enumerate() {
+        let trimmed = line.trim();
+        let Some(after_script) = trimmed.strip_prefix(script) else {
+            continue;
+        };
+        found = true;
+
+        let after_script = after_script.trim_start();
+        if after_script.is_empty() {
+            continue;
+        }
+
+        let first_token = after_script
+            .split_whitespace()
+            .next()
+            .expect("non-empty script suffix has a first token");
+        assert!(
+            first_token.starts_with('|')
+                || first_token.starts_with('<')
+                || first_token.starts_with('>')
+                || first_token.contains(">&"),
+            ".github/workflows/cli-surface.yml:{} must invoke {script} without positional arguments: {}",
+            line_number + 1,
+            line
+        );
+    }
+
+    assert!(
+        found,
+        ".github/workflows/cli-surface.yml must invoke {script}"
     );
 }
 

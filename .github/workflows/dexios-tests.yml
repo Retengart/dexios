@@ -1,10 +1,11 @@
 name: Dexios Tests
 
 on:
-  workflow_dispatch:
+  push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -33,7 +34,7 @@ jobs:
           target
         key: ${{ runner.os }}-cargo-stable-${{ hashFiles('Cargo.lock') }}
     - name: Build
-      run: cargo build --release -p dexios
+      run: cargo build --locked --release -p dexios
     - name: Strip
       run: strip target/release/dexios
     - name: Upload Binary as artifact
