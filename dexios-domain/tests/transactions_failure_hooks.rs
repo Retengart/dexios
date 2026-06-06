@@ -25,8 +25,10 @@
     )
 )]
 #[path = "support/transactions.rs"]
+#[cfg(feature = "test-support")]
 mod transactions_support;
 
+#[cfg(feature = "test-support")]
 use transactions_support::*;
 
 #[test]
