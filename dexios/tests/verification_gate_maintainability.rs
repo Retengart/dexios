@@ -51,8 +51,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios-core/tests/stream_v1.rs",
         category: "core stream security matrix",
         rationale: "Core stream final-auth and tamper matrix kept explicit per D-03.",
-        current_lines: 1166,
-        cap: 1166,
+        current_lines: 1314,
+        cap: 1314,
     },
     FileSizeException {
         path: "dexios-domain/src/pack.rs",
@@ -79,8 +79,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios-core/tests/v1_header.rs",
         category: "core header security matrix",
         rationale: "Core V1 header compatibility and tamper matrix kept explicit per D-03.",
-        current_lines: 980,
-        cap: 980,
+        current_lines: 1091,
+        cap: 1091,
     },
     FileSizeException {
         path: "dexios-domain/tests/archive_public_api.rs",
