@@ -101,9 +101,13 @@ The matrix records docs/spec freshness as a gate, not as part of the published a
   metadata, toolchain version, and linker flags affect the output binary. Reproducibility
   infrastructure is deferred to future milestone scope.
 
-- **SBOM completeness or supply-chain prevention:** No Software Bill of Materials is
-  generated or attested. Supply-chain hardening beyond `cargo deny` policy and `cargo audit`
-  advisory scanning is deferred to ASR-02 and is out of scope for v3.0.
+- **SBOM completeness, SBOM protection, or supply-chain prevention:** The release workflow
+  generates one CycloneDX SBOM artifact per platform binary and publishes it alongside the
+  binary and checksum. That is an artifact-generation contract only; it does not claim SBOM
+  completeness, SBOM protection, or supply-chain prevention. Broader supply-chain hardening
+  beyond pinned release actions, `cargo auditable`, `cargo deny`, `cargo audit`, SBOM artifact
+  generation, and release-workflow provenance is deferred to ASR-02 and is out of scope for
+  v3.0.
 
 - **Secure erase or physical media sanitization:** Dexios deletion uses ordinary filesystem
   `unlink` operations. No overwrite pass, secure-delete primitive, or physical sanitization
@@ -117,9 +121,10 @@ The matrix records docs/spec freshness as a gate, not as part of the published a
   to ASR-01. Phase 21 assessed targeted proptest for archive path normalization and concluded
   existing example tests cover the known traversal sequences; no proptest was added.
 
-- **Signed artifact attestations (deferred to ASR-02):** Signed release artifacts, SLSA
-  provenance attestations, and keyless signing via Sigstore are deferred to ASR-02 and are
-  out of scope for v3.0.
+- **Independent artifact signing and stronger release-trust model (deferred to ASR-02):**
+  The release workflow attaches GitHub build-provenance attestations to published assets.
+  Independent binary signing, project-managed signing keys, stronger SLSA guarantees, and a
+  broader release-trust model are deferred to ASR-02 and are out of scope for v3.0.
 
 ## Property and Fuzz Coverage Decision (RCEV-03)
 

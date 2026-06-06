@@ -229,12 +229,46 @@ fn header_dump_force_replaces_only_after_commit() {
 fn header_strip_failure_preserves_original_file() {
     let test_dir = TestDir::new("header-strip-failure-transaction");
     let invalid_input = test_dir.path().join("plain.txt");
+    let encrypted_for_header = test_dir.path().join("fixture.enc");
     let original = b"not a dexios encrypted file";
     fs::write(&invalid_input, original).unwrap();
+    fs::write(
+        test_dir.path().join("fixture.txt"),
+        b"header strip backup fixture",
+    )
+    .unwrap();
+
+    let encrypt_output = run_cli(
+        test_dir.path(),
+        &["encrypt", "--force", "fixture.txt", "fixture.enc"],
+    );
+    assert!(
+        encrypt_output.status.success(),
+        "encrypt fixture failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&encrypt_output.stdout),
+        String::from_utf8_lossy(&encrypt_output.stderr)
+    );
+    let dump_output = run_cli(
+        test_dir.path(),
+        &["header", "dump", "--force", "fixture.enc", "fixture.hdr"],
+    );
+    assert!(
+        dump_output.status.success(),
+        "header dump fixture failed: stdout={}\nstderr={}",
+        String::from_utf8_lossy(&dump_output.stdout),
+        String::from_utf8_lossy(&dump_output.stderr)
+    );
 
     let output = run_cli(
         test_dir.path(),
-        &["header", "strip", "--force", "plain.txt"],
+        &[
+            "header",
+            "strip",
+            "--force",
+            "--header",
+            "fixture.hdr",
+            "plain.txt",
+        ],
     );
 
     assert!(
@@ -244,6 +278,7 @@ fn header_strip_failure_preserves_original_file() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(fs::read(&invalid_input).unwrap(), original);
+    assert!(encrypted_for_header.exists());
 }
 
 #[test]

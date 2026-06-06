@@ -100,7 +100,7 @@ jobs:
     - name: Dump Header
       run: '"$DEXIOS_BIN" header dump 100MB.enc 100MB.enc.header'
     - name: Strip Header
-      run: '"$DEXIOS_BIN" header strip -f 100MB.enc'
+      run: '"$DEXIOS_BIN" header strip -f --header 100MB.enc.header 100MB.enc'
     - name: Restore Header
       run: '"$DEXIOS_BIN" header restore -f 100MB.enc.header 100MB.enc'
     - name: Decrypt in stream mode (XChaCha20-Poly1305)
@@ -108,7 +108,7 @@ jobs:
     - name: Verify restored-header plaintext
       run: sha256sum -c 100MB.bin.sha256
     - name: Strip Header
-      run: '"$DEXIOS_BIN" header strip -f 100MB.enc'
+      run: '"$DEXIOS_BIN" header strip -f --header 100MB.enc.header 100MB.enc'
     - name: Decrypt in stream mode with detached header (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -dHfk keyfile --header 100MB.enc.header 100MB.enc 100MB.bin'
     - name: Verify detached-header plaintext
@@ -349,7 +349,7 @@ jobs:
     - name: Encrypt in stream mode (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -eHfk keyfile 100MB.bin 100MB.enc'
     - name: Change the key (from new keyfile)
-      run: '"$DEXIOS_BIN" key change -k keyfile -n keyfile-new 100MB.enc'
+      run: '"$DEXIOS_BIN" key change -f -k keyfile -n keyfile-new 100MB.enc'
     - name: Decrypt in stream mode with changed key (XChaCha20-Poly1305)
       run: '"$DEXIOS_BIN" -dHfk keyfile-new 100MB.enc 100MB.bin'
     - name: Verify decrypted plaintext

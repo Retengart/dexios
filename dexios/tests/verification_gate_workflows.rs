@@ -224,6 +224,20 @@ fn ci_workflow_determinism_contract_is_source_gated() {
 }
 
 #[test]
+fn dexios_tests_workflow_tracks_current_mutating_cli_contracts() {
+    for required in [
+        "header strip -f --header 100MB.enc.header 100MB.enc",
+        "key change -f -k keyfile -n keyfile-new 100MB.enc",
+    ] {
+        assert_contains(
+            ".github/workflows/dexios-tests.yml",
+            DEXIOS_TESTS_WORKFLOW,
+            required,
+        );
+    }
+}
+
+#[test]
 fn phase21_release_workflow_tool_pins_and_locked_build_are_source_gated() {
     // CIGR-01, CIGR-03, D-01, D-07: release.yml build uses --locked; mdbook and
     // typst-cli are version-pinned in the maintainer_gate job.
