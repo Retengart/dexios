@@ -68,9 +68,7 @@ impl std::fmt::Display for Error {
             Self::FlushFile | Self::FlushFileWithSource(_) => {
                 f.write_str("Unable to flush the file")
             }
-            Self::SyncFile | Self::SyncFileWithSource(_) => {
-                f.write_str("Unable to sync the file")
-            }
+            Self::SyncFile | Self::SyncFileWithSource(_) => f.write_str("Unable to sync the file"),
             Self::RemoveFile | Self::RemoveFileWithSource(_) => {
                 f.write_str("Unable to remove the file")
             }
@@ -79,9 +77,7 @@ impl std::fmt::Display for Error {
                 f.write_str("Unable to read directory")
             }
             Self::FileAccess | Self::FileAccessWithSource(_) => f.write_str("Permission denied"),
-            Self::FileLen | Self::FileLenWithSource(_) => {
-                f.write_str("Unable to get file length")
-            }
+            Self::FileLen | Self::FileLenWithSource(_) => f.write_str("Unable to get file length"),
             Self::UnsafePath(path) => {
                 write!(f, "Unsafe extraction path: {}", path.display())
             }

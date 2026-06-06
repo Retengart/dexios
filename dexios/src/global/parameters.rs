@@ -47,7 +47,10 @@ pub(crate) fn get_param(name: &str, sub_matches: &ArgMatches) -> Result<String> 
     Ok(value)
 }
 
-pub(crate) fn get_optional_param<'a>(name: &str, sub_matches: &'a ArgMatches) -> Result<Option<&'a str>> {
+pub(crate) fn get_optional_param<'a>(
+    name: &str,
+    sub_matches: &'a ArgMatches,
+) -> Result<Option<&'a str>> {
     match sub_matches.try_get_one::<String>(name) {
         Ok(value) => Ok(value.map(String::as_str)),
         // An OPTIONAL argument that isn't defined for this subcommand is legitimately

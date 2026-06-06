@@ -1,4 +1,29 @@
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::arithmetic_side_effects,
+        clippy::unreachable,
+        clippy::string_slice,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        clippy::match_same_arms,
+        clippy::items_after_statements,
+        clippy::redundant_closure_for_method_calls,
+        clippy::needless_collect,
+        clippy::manual_let_else,
+        clippy::format_collect,
+        clippy::case_sensitive_file_extension_comparisons,
+        clippy::struct_excessive_bools,
+        reason = "integration tests assert exact behavior and may panic on failure"
+    )
+)]
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -268,7 +293,14 @@ fn header_strip_requires_matching_header_backup_and_preserves_payload_bytes() {
 
     let output = run_cli(
         test_dir.path(),
-        &["header", "strip", "--force", "--header", "plain.hdr", "plain.enc"],
+        &[
+            "header",
+            "strip",
+            "--force",
+            "--header",
+            "plain.hdr",
+            "plain.enc",
+        ],
     );
     assert_success(&output, "header strip");
 
@@ -306,7 +338,14 @@ fn header_strip_rejects_wrong_header_backup_without_mutation() {
 
     let output = run_cli(
         test_dir.path(),
-        &["header", "strip", "--force", "--header", "wrong.hdr", "plain.enc"],
+        &[
+            "header",
+            "strip",
+            "--force",
+            "--header",
+            "wrong.hdr",
+            "plain.enc",
+        ],
     );
     assert_failure(&output, "header strip with wrong detached header backup");
     assert_eq!(
@@ -320,9 +359,19 @@ fn header_strip_rejects_wrong_header_backup_without_mutation() {
     fs::write(&short, &original[..HEADER_LEN - 1]).unwrap();
     let output = run_cli(
         test_dir.path(),
-        &["header", "strip", "--force", "--header", "short.hdr", "plain.enc"],
+        &[
+            "header",
+            "strip",
+            "--force",
+            "--header",
+            "short.hdr",
+            "plain.enc",
+        ],
     );
-    assert_failure(&output, "header strip with wrong-size detached header backup");
+    assert_failure(
+        &output,
+        "header strip with wrong-size detached header backup",
+    );
     assert_eq!(fs::read(&encrypted).unwrap(), original);
 }
 

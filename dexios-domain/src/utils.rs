@@ -28,7 +28,9 @@ pub fn hex_encode(bytes: &[u8]) -> String {
 // No production path can reach `StdRng::seed_from_u64`: it lives inside `mod test`,
 // which is itself gated on `cfg(test)`.
 #[cfg(test)]
-pub use test::{gen_master_key_seeded_for_tests as gen_master_key, gen_salt_seeded_for_tests as gen_salt};
+pub use test::{
+    gen_master_key_seeded_for_tests as gen_master_key, gen_salt_seeded_for_tests as gen_salt,
+};
 
 #[cfg(not(test))]
 pub use core::primitives::{gen_master_key, gen_salt};

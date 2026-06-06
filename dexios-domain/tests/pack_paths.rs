@@ -1,4 +1,29 @@
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::arithmetic_side_effects,
+        clippy::unreachable,
+        clippy::string_slice,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        clippy::match_same_arms,
+        clippy::items_after_statements,
+        clippy::redundant_closure_for_method_calls,
+        clippy::needless_collect,
+        clippy::manual_let_else,
+        clippy::format_collect,
+        clippy::case_sensitive_file_extension_comparisons,
+        clippy::struct_excessive_bools,
+        reason = "integration tests assert exact behavior and may panic on failure"
+    )
+)]
 #[cfg(unix)]
 use std::error::Error as _;
 use std::fs;
@@ -460,7 +485,10 @@ fn pack_recursive_detached_header_preserves_v1_manifest_first_payload() {
     }
 
     assert_eq!(fs::read(source_dir.join("hello.txt")).unwrap(), b"hello");
-    assert_eq!(fs::read(source_dir.join("nested/world.txt")).unwrap(), b"world");
+    assert_eq!(
+        fs::read(source_dir.join("nested/world.txt")).unwrap(),
+        b"world"
+    );
 }
 
 #[test]
@@ -579,8 +607,8 @@ fn pack_rejects_path_deeper_than_archive_limit_and_preserves_source() {
     let (source_dir, deep_file) = create_deep_source_file(root.path(), 65);
     let output_path = root.path().join("archive.enc");
 
-    let result = pack_intent(vec![source_dir], &output_path, None)
-        .and_then(pack::execute_transactional);
+    let result =
+        pack_intent(vec![source_dir], &output_path, None).and_then(pack::execute_transactional);
 
     assert!(
         matches!(

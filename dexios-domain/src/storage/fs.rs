@@ -149,11 +149,11 @@ impl FileStorage {
             // use (fs-1, fs-2). A symlinked/non-dir component is refused as UnsafePath.
             let root_fd = super::temp::open_absolute_dir(root)
                 .map_err(|_| Error::UnsafePath(full_path.clone()))?;
-            super::temp::create_dirs_fd_relative(&root_fd, root, relative).map_err(|err| {
-                match err.kind() {
-                    io::ErrorKind::AlreadyExists => Error::CreateDirWithSource(err),
-                    _ => Error::UnsafePath(full_path.clone()),
-                }
+            super::temp::create_dirs_fd_relative(&root_fd, root, relative).map_err(|err| match err
+                .kind()
+            {
+                io::ErrorKind::AlreadyExists => Error::CreateDirWithSource(err),
+                _ => Error::UnsafePath(full_path.clone()),
             })
         }
 

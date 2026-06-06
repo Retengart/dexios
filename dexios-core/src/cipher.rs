@@ -114,7 +114,8 @@ pub fn unwrap_v1_master_key(
     let mut buffer: Zeroizing<[u8; crate::primitives::MASTER_KEY_LEN]> =
         Zeroizing::new([0u8; crate::primitives::MASTER_KEY_LEN]);
     buffer.copy_from_slice(&bytes[..crate::primitives::MASTER_KEY_LEN]);
-    let tag = aead::Tag::<XChaCha20Poly1305>::from_slice(&bytes[crate::primitives::MASTER_KEY_LEN..]);
+    let tag =
+        aead::Tag::<XChaCha20Poly1305>::from_slice(&bytes[crate::primitives::MASTER_KEY_LEN..]);
 
     cipher
         .0

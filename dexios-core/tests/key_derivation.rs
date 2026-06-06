@@ -1,4 +1,29 @@
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::arithmetic_side_effects,
+        clippy::unreachable,
+        clippy::string_slice,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        clippy::match_same_arms,
+        clippy::items_after_statements,
+        clippy::redundant_closure_for_method_calls,
+        clippy::needless_collect,
+        clippy::manual_let_else,
+        clippy::format_collect,
+        clippy::case_sensitive_file_extension_comparisons,
+        clippy::struct_excessive_bools,
+        reason = "integration tests assert exact behavior and may panic on failure"
+    )
+)]
 use dexios_core::kdf::{
     ARGON2ID_KDF_PARAM_PROFILE_ID, ARGON2ID_KDF_PROFILE_ID, ARGON2ID_M_COST, ARGON2ID_OUTPUT_LEN,
     ARGON2ID_P_COST, ARGON2ID_SALT_LEN, ARGON2ID_T_COST, Kdf, Salt,
@@ -159,7 +184,9 @@ fn workspace_manifest_source_gates_kdf_dependency_policy() {
         Some("0.5.3")
     );
     assert_eq!(
-        argon2.get("default-features").and_then(toml::Value::as_bool),
+        argon2
+            .get("default-features")
+            .and_then(toml::Value::as_bool),
         Some(false),
         "argon2 must disable default features (no PHC parser / std)"
     );
@@ -211,7 +238,10 @@ fn argon2id_distinct_inputs_yield_distinct_keys() {
         .derive(&password, &Salt::new([6u8; 16]))
         .unwrap();
     let other_password = Kdf::Argon2id
-        .derive(&Protected::new(b"test-password!".to_vec()), &Salt::new([5u8; 16]))
+        .derive(
+            &Protected::new(b"test-password!".to_vec()),
+            &Salt::new([5u8; 16]),
+        )
         .unwrap();
 
     base.with_exposed(|base| {

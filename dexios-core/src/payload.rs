@@ -649,7 +649,9 @@ impl ManifestFirstPayload {
         let offset =
             usize::try_from(reader.position()).expect("cursor position for in-memory payload fits");
         if offset != bytes.len() {
-            return Err(PayloadError::TrailingBytes(bytes.len().saturating_sub(offset)));
+            return Err(PayloadError::TrailingBytes(
+                bytes.len().saturating_sub(offset),
+            ));
         }
 
         Self::new(manifest, body_frames)

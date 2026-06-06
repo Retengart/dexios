@@ -1,5 +1,33 @@
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
-#[expect(unused_imports, reason = "Error trait import documents the error-source surface under test")]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::arithmetic_side_effects,
+        clippy::unreachable,
+        clippy::string_slice,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        clippy::match_same_arms,
+        clippy::items_after_statements,
+        clippy::redundant_closure_for_method_calls,
+        clippy::needless_collect,
+        clippy::manual_let_else,
+        clippy::format_collect,
+        clippy::case_sensitive_file_extension_comparisons,
+        clippy::struct_excessive_bools,
+        reason = "integration tests assert exact behavior and may panic on failure"
+    )
+)]
+#[expect(
+    unused_imports,
+    reason = "Error trait import documents the error-source surface under test"
+)]
 use std::error::Error as _;
 use std::io;
 use std::path::PathBuf;
@@ -311,10 +339,9 @@ fn replacement_path_failures_keep_unsafe_or_io_classes_and_sources() {
         "pack source replacement storage wrapper",
     );
 
-    let pack_missing_source =
-        pack::Error::ReadSourceWithSource(storage::Error::FileAccessWithSource(io::Error::from(
-            io::ErrorKind::NotFound,
-        )));
+    let pack_missing_source = pack::Error::ReadSourceWithSource(
+        storage::Error::FileAccessWithSource(io::Error::from(io::ErrorKind::NotFound)),
+    );
     assert_eq!(
         pack_missing_source.workflow_class(),
         WorkflowErrorClass::IoFailure
@@ -331,10 +358,9 @@ fn replacement_path_failures_keep_unsafe_or_io_classes_and_sources() {
         "unpack root replacement",
     );
 
-    let unpack_access_failure =
-        unpack::Error::Storage(storage::Error::FileAccessWithSource(io::Error::from(
-            io::ErrorKind::PermissionDenied,
-        )));
+    let unpack_access_failure = unpack::Error::Storage(storage::Error::FileAccessWithSource(
+        io::Error::from(io::ErrorKind::PermissionDenied),
+    ));
     assert_eq!(
         unpack_access_failure.workflow_class(),
         WorkflowErrorClass::IoFailure
@@ -373,10 +399,7 @@ fn pack_source_root_revalidation_failure_keeps_unsafe_path_classification() {
         ),
         "replaced source root must remain a storage unsafe-path read-source failure, got {error:?}"
     );
-    assert_unsafe_path_revalidation_class(
-        error.workflow_class(),
-        "pack source-root replacement",
-    );
+    assert_unsafe_path_revalidation_class(error.workflow_class(), "pack source-root replacement");
     assert!(
         !matches!(
             error.workflow_class(),
@@ -437,10 +460,7 @@ fn pack_walked_entry_revalidation_failure_keeps_unsafe_path_classification() {
         ),
         "swapped walked entry must remain a storage unsafe-path read-source failure, got {error:?}"
     );
-    assert_unsafe_path_revalidation_class(
-        error.workflow_class(),
-        "pack walked-entry replacement",
-    );
+    assert_unsafe_path_revalidation_class(error.workflow_class(), "pack walked-entry replacement");
     assert!(
         !matches!(
             error.workflow_class(),

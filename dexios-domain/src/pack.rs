@@ -30,8 +30,7 @@ use crate::storage::transaction::{
     CommitReceipt, DetachedPublicationFailure, LinkedOutputTransaction, TransactionError,
 };
 use crate::workflow_error::{
-    WorkflowErrorClass, classify_identity_error, classify_storage_error,
-    classify_transaction_error,
+    WorkflowErrorClass, classify_identity_error, classify_storage_error, classify_transaction_error,
 };
 
 #[derive(Debug)]
@@ -72,9 +71,9 @@ impl std::fmt::Display for Error {
             Self::FinishArchive | Self::FinishArchiveIoWithSource(_) => {
                 f.write_str("Unable to finish archive")
             }
-            Self::ReadData
-            | Self::ReadDataWithSource(_)
-            | Self::ReadDataStorageWithSource(_) => f.write_str("Unable to read data"),
+            Self::ReadData | Self::ReadDataWithSource(_) | Self::ReadDataStorageWithSource(_) => {
+                f.write_str("Unable to read data")
+            }
             Self::WriteData | Self::WriteDataWithSource(_) => f.write_str("Unable to write data"),
             Self::Encrypt(inner) => write!(f, "Unable to encrypt archive: {inner}"),
             Self::PathIdentity(inner) => write!(f, "Pack path identity check failed: {inner}"),

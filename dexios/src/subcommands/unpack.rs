@@ -110,12 +110,9 @@ mod tests {
         let path = std::env::temp_dir().join(format!("dexios-unpack-{unique}.txt"));
         std::fs::write(&path, b"existing").unwrap();
 
-        let result = should_unpack_entry(
-            &path,
-            ForceMode::Prompt,
-            false,
-            |_p, _d, _f| Err(anyhow::anyhow!("tty failure")),
-        );
+        let result = should_unpack_entry(&path, ForceMode::Prompt, false, |_p, _d, _f| {
+            Err(anyhow::anyhow!("tty failure"))
+        });
 
         std::fs::remove_file(path).ok();
 
@@ -129,12 +126,7 @@ mod tests {
         use std::os::unix::ffi::OsStringExt;
 
         let path = PathBuf::from(OsString::from_vec(vec![0x66, 0x6f, 0x80, 0x6f]));
-        let result = should_unpack_entry(
-            &path,
-            ForceMode::Prompt,
-            false,
-            |_p, _d, _f| Ok(true),
-        );
+        let result = should_unpack_entry(&path, ForceMode::Prompt, false, |_p, _d, _f| Ok(true));
 
         assert!(result.is_ok());
     }

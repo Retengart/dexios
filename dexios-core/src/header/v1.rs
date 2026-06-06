@@ -38,9 +38,7 @@ impl KeyslotKdf {
 
     fn deserialize(profile: u8, param_profile: u8) -> Result<Self, HeaderReadError> {
         match (profile, param_profile) {
-            (ARGON2ID_KDF_PROFILE_ID, ARGON2ID_KDF_PARAM_PROFILE_ID) => {
-                Ok(Self::Argon2id)
-            }
+            (ARGON2ID_KDF_PROFILE_ID, ARGON2ID_KDF_PARAM_PROFILE_ID) => Ok(Self::Argon2id),
             (KDF_PROFILE_HISTORICAL_ARGON2ID, KDF_PARAM_PROFILE_HISTORICAL_ARGON2ID) => {
                 Ok(Self::UnsupportedArgon2id)
             }
@@ -343,7 +341,9 @@ impl V1Keyslots {
 
     pub fn push(&mut self, keyslot: V1Keyslot) -> Result<(), HeaderWriteError> {
         if self.is_full() {
-            return Err(HeaderWriteError::TooManyKeyslots(self.inner.len().saturating_add(1)));
+            return Err(HeaderWriteError::TooManyKeyslots(
+                self.inner.len().saturating_add(1),
+            ));
         }
         let physical_index = self
             .first_empty_physical_slot()
@@ -357,7 +357,9 @@ impl V1Keyslots {
         keyslot: V1Keyslot,
     ) -> Result<(), HeaderWriteError> {
         if self.is_full() {
-            return Err(HeaderWriteError::TooManyKeyslots(self.inner.len().saturating_add(1)));
+            return Err(HeaderWriteError::TooManyKeyslots(
+                self.inner.len().saturating_add(1),
+            ));
         }
         if self.get_physical(index.get()).is_some() {
             return Err(HeaderWriteError::InvalidKeyslotIndex(index.get()));

@@ -77,9 +77,7 @@ impl Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::OpenInput | Self::OpenInputWithSource(_) => {
-                f.write_str("Cannot open input file")
-            }
+            Self::OpenInput | Self::OpenInputWithSource(_) => f.write_str("Cannot open input file"),
             Self::ResetCursorPosition | Self::ResetCursorPositionWithSource(_) => {
                 f.write_str("Unable to reset cursor position")
             }

@@ -1,4 +1,29 @@
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::arithmetic_side_effects,
+        clippy::unreachable,
+        clippy::string_slice,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        clippy::match_same_arms,
+        clippy::items_after_statements,
+        clippy::redundant_closure_for_method_calls,
+        clippy::needless_collect,
+        clippy::manual_let_else,
+        clippy::format_collect,
+        clippy::case_sensitive_file_extension_comparisons,
+        clippy::struct_excessive_bools,
+        reason = "integration tests assert exact behavior and may panic on failure"
+    )
+)]
 #[path = "support/keyslots_v1.rs"]
 mod keyslots_support;
 
@@ -13,12 +38,8 @@ fn key_add_intent_adds_supported_v1_without_mutating_payload() {
     let proven = intent
         .verify_old_key(Protected::new(b"old-pass".to_vec()))
         .expect("old key proof");
-    key::add::execute(
-        proven,
-        Protected::new(b"new-pass".to_vec()),
-        Kdf::Argon2id,
-    )
-    .expect("add second keyslot");
+    key::add::execute(proven, Protected::new(b"new-pass".to_vec()), Kdf::Argon2id)
+        .expect("add second keyslot");
 
     let changed = fs::read(&encrypted_path).expect("read after add");
     assert_eq!(
@@ -88,11 +109,7 @@ fn key_add_rejects_target_changed_after_old_key_proof() {
         .expect("old key proof");
     fs::write(&encrypted_path, b"changed target").expect("mutate target after proof");
 
-    let result = key::add::execute(
-        proven,
-        Protected::new(b"new-pass".to_vec()),
-        Kdf::Argon2id,
-    );
+    let result = key::add::execute(proven, Protected::new(b"new-pass".to_vec()), Kdf::Argon2id);
 
     assert!(matches!(result, Err(key::Error::TargetChanged)));
     assert_eq!(fs::read(&encrypted_path).unwrap(), b"changed target");
@@ -111,11 +128,7 @@ fn key_add_rejects_target_replacement_after_old_key_proof() {
 
     fs::rename(&replacement_path, &encrypted_path).expect("replace target after proof");
 
-    let result = key::add::execute(
-        proven,
-        Protected::new(b"new-pass".to_vec()),
-        Kdf::Argon2id,
-    );
+    let result = key::add::execute(proven, Protected::new(b"new-pass".to_vec()), Kdf::Argon2id);
 
     assert!(matches!(result, Err(key::Error::TargetChanged)));
     assert_eq!(fs::read(&encrypted_path).unwrap(), original);

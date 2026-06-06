@@ -1,4 +1,29 @@
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::arithmetic_side_effects,
+        clippy::unreachable,
+        clippy::string_slice,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        clippy::match_same_arms,
+        clippy::items_after_statements,
+        clippy::redundant_closure_for_method_calls,
+        clippy::needless_collect,
+        clippy::manual_let_else,
+        clippy::format_collect,
+        clippy::case_sensitive_file_extension_comparisons,
+        clippy::struct_excessive_bools,
+        reason = "integration tests assert exact behavior and may panic on failure"
+    )
+)]
 const CORE_PAYLOAD: &str = include_str!("../../dexios-core/src/payload.rs");
 const CORE_HEADER_V1: &str = include_str!("../../dexios-core/src/header/v1.rs");
 const DOMAIN_ARCHIVE: &str = include_str!("../src/archive.rs");
@@ -615,8 +640,10 @@ fn source_section<'a>(source_name: &str, source: &'a str, start: &str, end: &str
     let start_index = source
         .find(start)
         .unwrap_or_else(|| panic!("{source_name} must contain section start {start:?}"));
-    let end_index = source[start_index..]
-        .find(end).map_or_else(|| panic!("{source_name} must contain section end {end:?}"), |index| start_index + index);
+    let end_index = source[start_index..].find(end).map_or_else(
+        || panic!("{source_name} must contain section end {end:?}"),
+        |index| start_index + index,
+    );
     &source[start_index..end_index]
 }
 

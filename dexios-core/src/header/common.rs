@@ -16,7 +16,10 @@ const _: () = {
         "header geometry: static + slots must equal HEADER_LEN"
     );
     // V1Keyslot::deserialize slices slot_bytes[..92]; padding is KEYSLOT_LEN - 92.
-    assert!(KEYSLOT_LEN >= 92, "keyslot record must hold at least 92 bytes");
+    assert!(
+        KEYSLOT_LEN >= 92,
+        "keyslot record must hold at least 92 bytes"
+    );
 };
 
 pub const MAGIC: [u8; 4] = *b"DXIO";

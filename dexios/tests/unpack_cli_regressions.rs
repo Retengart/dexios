@@ -1,4 +1,29 @@
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::arithmetic_side_effects,
+        clippy::unreachable,
+        clippy::string_slice,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        clippy::match_same_arms,
+        clippy::items_after_statements,
+        clippy::redundant_closure_for_method_calls,
+        clippy::needless_collect,
+        clippy::manual_let_else,
+        clippy::format_collect,
+        clippy::case_sensitive_file_extension_comparisons,
+        clippy::struct_excessive_bools,
+        reason = "integration tests assert exact behavior and may panic on failure"
+    )
+)]
 use std::fs;
 use std::io::{Cursor, ErrorKind, Write};
 use std::path::{Path, PathBuf};
@@ -237,8 +262,7 @@ fn manifest_archive_header_and_master_key() -> (V1Header, MasterKey) {
     let master_key = MasterKey::new([31u8; 32]);
     let keyslot_nonce = KeyslotNonce::new([13u8; 24]);
     let payload_nonce = PayloadNonce::new([7u8; 20]);
-    let placeholder_keyslot =
-        V1Keyslot::new(Kdf::Argon2id, [0u8; 48], keyslot_nonce, header_salt);
+    let placeholder_keyslot = V1Keyslot::new(Kdf::Argon2id, [0u8; 48], keyslot_nonce, header_salt);
     let placeholder_header =
         V1Header::new_manifest_archive(payload_nonce, V1Keyslots::single(placeholder_keyslot))
             .unwrap();

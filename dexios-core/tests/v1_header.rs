@@ -1,4 +1,29 @@
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::arithmetic_side_effects,
+        clippy::unreachable,
+        clippy::string_slice,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        clippy::match_same_arms,
+        clippy::items_after_statements,
+        clippy::redundant_closure_for_method_calls,
+        clippy::needless_collect,
+        clippy::manual_let_else,
+        clippy::format_collect,
+        clippy::case_sensitive_file_extension_comparisons,
+        clippy::struct_excessive_bools,
+        reason = "integration tests assert exact behavior and may panic on failure"
+    )
+)]
 use dexios_core::header::common::{
     CANONICAL_HEADER_LEN, CANONICAL_HEADER_STATIC_LEN, CANONICAL_V1_DISCRIMINATOR, HEADER_LEN,
     HEADER_STATIC_LEN, KEYSLOT_LEN, KeyslotNonce, MAGIC, PayloadNonce, Salt as HeaderSalt,
@@ -8,9 +33,7 @@ use dexios_core::header::v1::{
     EncryptedMasterKey, KeyslotKdf, V1Header, V1Keyslot, V1KeyslotIndex, V1Keyslots,
 };
 use dexios_core::header::{HeaderReadError, ParsedHeader, ParsedV1Payload};
-use dexios_core::kdf::{
-    ARGON2ID_KDF_PARAM_PROFILE_ID, ARGON2ID_KDF_PROFILE_ID, Kdf, Salt,
-};
+use dexios_core::kdf::{ARGON2ID_KDF_PARAM_PROFILE_ID, ARGON2ID_KDF_PROFILE_ID, Kdf, Salt};
 use dexios_core::payload::{PayloadFramingProfile, PayloadKind};
 use dexios_core::primitives::{MasterKey, WrappingKey};
 use dexios_core::stream::{StreamError, V1PayloadDecryptor, V1PayloadEncryptor, V1PayloadStream};
@@ -723,10 +746,7 @@ fn read_header_rejects_truncated_header() {
     let error = dexios_core::header::read_header(&mut std::io::Cursor::new(truncated))
         .expect_err("truncated V1 header should fail");
 
-    assert!(matches!(
-        error,
-        HeaderReadError::TruncatedHeader
-    ));
+    assert!(matches!(error, HeaderReadError::TruncatedHeader));
 }
 
 #[test]
@@ -874,10 +894,7 @@ fn v1_header_rejects_keyslot_count_above_max() {
     let error = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
         .expect_err("invalid canonical slot capacity should fail");
 
-    assert!(matches!(
-        error,
-        HeaderReadError::InvalidKeyslotCount(5)
-    ));
+    assert!(matches!(error, HeaderReadError::InvalidKeyslotCount(5)));
 }
 
 #[test]
@@ -888,10 +905,7 @@ fn v1_header_rejects_invalid_kdf_tag() {
     let error = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
         .expect_err("invalid KDF profile should fail");
 
-    assert!(matches!(
-        error,
-        HeaderReadError::InvalidKdfProfile(0xAA)
-    ));
+    assert!(matches!(error, HeaderReadError::InvalidKdfProfile(0xAA)));
 }
 
 #[test]
@@ -945,10 +959,7 @@ fn canonical_header_serializes_kdf_profile_ids_not_parameter_values() {
 
     assert_eq!(bytes[13], ARGON2ID_KDF_PARAM_PROFILE_ID);
     assert_eq!(bytes[HEADER_STATIC_LEN + 2], ARGON2ID_KDF_PROFILE_ID);
-    assert_eq!(
-        bytes[HEADER_STATIC_LEN + 3],
-        ARGON2ID_KDF_PARAM_PROFILE_ID
-    );
+    assert_eq!(bytes[HEADER_STATIC_LEN + 3], ARGON2ID_KDF_PARAM_PROFILE_ID);
 
     let header_source = include_str!("../src/header/v1.rs");
     assert!(
@@ -1007,10 +1018,7 @@ fn v1_header_rejects_nonzero_reserved_bytes() {
     let error = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
         .expect_err("non-zero reserved byte should fail");
 
-    assert!(matches!(
-        error,
-        HeaderReadError::NonZeroReservedBytes
-    ));
+    assert!(matches!(error, HeaderReadError::NonZeroReservedBytes));
 }
 
 #[test]

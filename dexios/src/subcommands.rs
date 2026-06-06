@@ -190,7 +190,10 @@ pub(crate) fn header_strip(sub_matches: &ArgMatches) -> Result<()> {
 }
 
 pub(crate) fn header_details(sub_matches: &ArgMatches) -> Result<()> {
-    header::details(&get_param("input", sub_matches)?, sub_matches.get_flag("raw"))
+    header::details(
+        &get_param("input", sub_matches)?,
+        sub_matches.get_flag("raw"),
+    )
 }
 
 pub(crate) fn key_change(sub_matches: &ArgMatches) -> Result<()> {
