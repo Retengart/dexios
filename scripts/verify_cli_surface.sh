@@ -11,6 +11,9 @@ resolve_selected_binary() {
     if [[ "$selected" = /* ]]; then
         printf '%s\n' "$selected"
     else
+        while [[ "$selected" == ./* ]]; do
+            selected="${selected#./}"
+        done
         printf '%s/%s\n' "$REPO_ROOT" "$selected"
     fi
 }

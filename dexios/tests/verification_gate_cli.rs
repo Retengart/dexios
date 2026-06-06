@@ -1,5 +1,32 @@
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::arithmetic_side_effects,
+        clippy::unreachable,
+        clippy::string_slice,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        clippy::match_same_arms,
+        clippy::items_after_statements,
+        clippy::redundant_closure_for_method_calls,
+        clippy::needless_collect,
+        clippy::manual_let_else,
+        clippy::format_collect,
+        clippy::case_sensitive_file_extension_comparisons,
+        clippy::struct_excessive_bools,
+        reason = "integration tests assert exact behavior and may panic on failure"
+    )
+)]
 mod verification_gate_support;
+
+use std::{path::Path, process::Command};
 
 use verification_gate_support::*;
 
@@ -36,6 +63,8 @@ fn cli_surface_harness_resolves_selected_binary_before_directory_changes() {
             "SELECTED_BIN=\"${1:-$REPO_ROOT/target/release-lto/dexios}\"",
             "resolve_selected_binary()",
             "BIN=\"$(resolve_selected_binary \"$SELECTED_BIN\")\"",
+            "echo \"Binary not found or not executable: $BIN\" >&2",
+            "echo \"Build it first, for example: cargo build -p dexios --profile release-lto\" >&2",
             "echo \"Using binary: $BIN\"",
         ],
     );
@@ -58,7 +87,61 @@ fn cli_surface_harness_resolves_selected_binary_before_directory_changes() {
         "BIN=\"$(resolve_selected_binary \"$SELECTED_BIN\")\"",
         "cd \"$dir\"",
     );
+    assert_occurs_before(
+        "scripts/verify_cli_surface.sh",
+        VERIFY_CLI_SURFACE,
+        "if [[ ! -x \"$BIN\" ]]",
+        "echo \"Using binary: $BIN\"",
+    );
 }
+
+#[test]
+fn cli_surface_harness_preflight_names_normalized_missing_binary_before_smoke_cases() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("dexios crate has repository root parent");
+    let selected_binary = "./Cargo.toml.missing-dexios";
+    let expected_binary = repo_root.join("Cargo.toml.missing-dexios");
+
+    let output = Command::new("bash")
+        .arg("scripts/verify_cli_surface.sh")
+        .arg(selected_binary)
+        .current_dir(repo_root)
+        .output()
+        .expect("run CLI surface harness preflight");
+
+    let stdout = String::from_utf8(output.stdout).expect("harness stdout is UTF-8");
+    let stderr = String::from_utf8(output.stderr).expect("harness stderr is UTF-8");
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "missing selected binary must fail during preflight: stdout={stdout}\nstderr={stderr}"
+    );
+    assert!(
+        stdout.is_empty(),
+        "missing selected binary must stop before smoke output: stdout={stdout}\nstderr={stderr}"
+    );
+    assert!(
+        stderr.contains(&format!(
+            "Binary not found or not executable: {}",
+            expected_binary.display()
+        )),
+        "preflight diagnostic must name the normalized selected binary: stdout={stdout}\nstderr={stderr}"
+    );
+    assert!(
+        stderr.contains("Build it first, for example: cargo build -p dexios --profile release-lto"),
+        "preflight diagnostic must retain the build hint: stdout={stdout}\nstderr={stderr}"
+    );
+
+    for smoke_output in ["Using binary:", "Working root:", "PASS ", "FAIL "] {
+        assert!(
+            !stdout.contains(smoke_output) && !stderr.contains(smoke_output),
+            "missing selected binary must fail before smoke cases emit {smoke_output:?}: stdout={stdout}\nstderr={stderr}"
+        );
+    }
+}
+
 #[test]
 fn phase13_cli_output_and_decrypt_contract_is_source_gated() {
     assert_contains(
