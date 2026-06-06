@@ -231,6 +231,17 @@ enum ExtractionKind {
     File(ResolvedTarget),
 }
 
+struct PreparedExtraction {
+    output_root: ResolvedTarget,
+    entities: Vec<ExtractionEntity>,
+}
+
+impl PreparedExtraction {
+    fn output_dir(&self) -> &Path {
+        self.output_root.target_path()
+    }
+}
+
 struct ScannedEntry {
     full_path: PathBuf,
     relative_path: PathBuf,
@@ -378,9 +389,9 @@ where
             .map_err(decrypt::map_stream_error)
             .map_err(Error::Decrypt)?;
 
-    let (output_dir, entities, transaction) = {
+    let (prepared, transaction) = {
         let mut uncommitted_reader = UncommittedPlaintextReader(&mut plaintext_reader);
-        let (output_dir, entities, transaction) = stage_manifest_extraction(
+        let (prepared, transaction) = stage_manifest_extraction(
             &stor,
             &mut uncommitted_reader,
             &req.output_dir_path,
@@ -390,19 +401,22 @@ where
             transaction,
         )?;
         drain_trailing_plaintext_to_final_auth(&mut uncommitted_reader)?;
-        (output_dir, entities, transaction)
+        (prepared, transaction)
     };
     if let Some(on_archive_info) = req.on_archive_info {
-        on_archive_info(entities.len());
+        on_archive_info(prepared.entities.len());
     }
 
     let _final_auth = plaintext_reader
         .finish()
         .map_err(decrypt::map_stream_error)
         .map_err(Error::Decrypt)?;
-    revalidate_extraction_targets(&stor, &output_dir, &entities)?;
-    let directory_creation =
-        create_selected_directories_after_final_auth(&stor, &output_dir, &entities)?;
+    revalidate_extraction_targets(&stor, prepared.output_dir(), &prepared.entities)?;
+    let directory_creation = create_selected_directories_after_final_auth(
+        &stor,
+        prepared.output_dir(),
+        &prepared.entities,
+    )?;
     match transaction.commit_all() {
         Ok(mut receipt) => {
             receipt.extend_artifacts(directory_creation.artifacts);
@@ -431,9 +445,9 @@ fn stage_manifest_extraction<R: Read>(
     detached_header_path: Option<&Path>,
     on_archive_file: Option<&OnArchiveFileFn>,
     mut transaction: LinkedOutputTransaction,
-) -> Result<(PathBuf, Vec<ExtractionEntity>, LinkedOutputTransaction), Error> {
+) -> Result<(PreparedExtraction, LinkedOutputTransaction), Error> {
     let manifest = ArchiveManifest::read_from(plaintext_reader).map_err(map_payload_error)?;
-    let (output_dir, entities) = prepare_manifest_extraction_entities(
+    let prepared = prepare_manifest_extraction_entities(
         stor,
         &manifest,
         output_dir_path,
@@ -442,9 +456,9 @@ fn stage_manifest_extraction<R: Read>(
         on_archive_file,
     )?;
     let mut file_entities_by_index = BTreeMap::new();
-    for entity in &entities {
+    for (entity_index, entity) in prepared.entities.iter().enumerate() {
         if matches!(entity.kind, ExtractionKind::File(_)) {
-            file_entities_by_index.insert(entity.archive_index, entity);
+            file_entities_by_index.insert(entity.archive_index, entity_index);
         }
     }
 
@@ -481,11 +495,12 @@ fn stage_manifest_extraction<R: Read>(
             .check_total_body_bytes(total_body)
             .map_err(Error::ArchiveLimit)?;
 
-        if let Some(entity) = file_entities_by_index.get(&index) {
+        if let Some(entity_index) = file_entities_by_index.get(&index) {
+            let entity = &prepared.entities[*entity_index];
             stage_manifest_file_body(
                 stor,
                 plaintext_reader,
-                &output_dir,
+                &prepared.output_root,
                 &mut transaction,
                 entity,
                 frame_header.body_len(),
@@ -495,7 +510,7 @@ fn stage_manifest_extraction<R: Read>(
         }
     }
 
-    Ok((output_dir, entities, transaction))
+    Ok((prepared, transaction))
 }
 
 fn read_manifest_body_frame_header<R: Read>(
@@ -518,7 +533,7 @@ fn prepare_manifest_extraction_entities(
     input_path: &Path,
     detached_header_path: Option<&Path>,
     on_archive_file: Option<&OnArchiveFileFn>,
-) -> Result<(PathBuf, Vec<ExtractionEntity>), Error> {
+) -> Result<PreparedExtraction, Error> {
     let output_dir = stor
         .prepare_unpack_root(output_dir_path)
         .map_err(map_storage_path_error)?;
@@ -535,7 +550,7 @@ fn prepare_manifest_extraction_entities(
             .add_existing(detached_header_path, PathRole::DetachedHeader)
             .map_err(map_identity_error)?;
     }
-    identity_graph
+    let output_root = identity_graph
         .add_unpack_root(&output_dir)
         .map_err(map_identity_error)?;
 
@@ -597,13 +612,16 @@ fn prepare_manifest_extraction_entities(
         });
     }
 
-    Ok((output_dir, entities))
+    Ok(PreparedExtraction {
+        output_root,
+        entities,
+    })
 }
 
 fn stage_manifest_file_body<R: Read>(
     stor: &storage::FileStorage,
     plaintext_reader: &mut R,
-    output_dir: &Path,
+    output_root: &ResolvedTarget,
     transaction: &mut LinkedOutputTransaction,
     entity: &ExtractionEntity,
     body_len: u64,
@@ -612,16 +630,18 @@ fn stage_manifest_file_body<R: Read>(
         clippy::unreachable,
         reason = "stage_manifest_file_body is only dispatched for File entities by the manifest staging loop"
     )]
-    let ExtractionKind::File(target) = &entity.kind
-    else {
+    let ExtractionKind::File(target) = &entity.kind else {
         unreachable!();
     };
 
-    stor.revalidate_unpack_target(output_dir, &entity.relative_path, target)
+    let output_dir = stor
+        .revalidate_resolved_directory_root(output_root)
+        .map_err(map_storage_path_error)?;
+    stor.revalidate_unpack_target(&output_dir, &entity.relative_path, target)
         .map_err(map_storage_path_error)?;
 
     let transaction_index = transaction
-        .stage_in(target.clone(), output_dir)
+        .stage_in(target.clone(), &output_dir)
         .map_err(Error::Transaction)?;
     let staged = transaction
         .staged_output_mut(transaction_index)
@@ -684,8 +704,7 @@ fn create_selected_directories_after_final_auth(
             clippy::unreachable,
             reason = "the surrounding filter() only yields Directory entities, so this binding always matches"
         )]
-        let ExtractionKind::Directory(target) = &entity.kind
-        else {
+        let ExtractionKind::Directory(target) = &entity.kind else {
             unreachable!();
         };
         if let Err(error) =

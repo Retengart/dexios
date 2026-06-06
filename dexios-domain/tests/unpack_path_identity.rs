@@ -203,3 +203,85 @@ fn unpack_rejects_duplicate_targets_after_path_normalization() {
     );
     assert!(!output_dir.join("collision.txt").exists());
 }
+
+#[cfg(unix)]
+#[test]
+fn unpack_rejects_output_root_replaced_before_selected_file_staging() {
+    let test_dir = TestDir::new("unpack-root-replaced-before-staging");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+    let original_root = test_dir.path().join("original-out");
+    let existing_file = output_dir.join("existing.txt");
+    let selected_file = output_dir.join("selected.txt");
+    let selected_body = b"selected body";
+
+    fs::create_dir_all(&output_dir).unwrap();
+    fs::write(&existing_file, b"original pre-existing output").unwrap();
+    write_manifest_archive_with_entries(&encrypted_archive, &[("selected.txt", selected_body)]);
+
+    let result = unpack_archive(
+        &encrypted_archive,
+        &output_dir,
+        Some(Box::new({
+            let output_dir = output_dir.clone();
+            let original_root = original_root.clone();
+            let selected_file = selected_file.clone();
+            move |path| {
+                assert_eq!(
+                    path, selected_file,
+                    "test archive should select the single file body"
+                );
+                fs::rename(&output_dir, &original_root).unwrap();
+                fs::create_dir_all(&output_dir).unwrap();
+                fs::write(
+                    output_dir.join("replacement-marker.txt"),
+                    b"replacement root",
+                )
+                .unwrap();
+                Ok(true)
+            }
+        })),
+    );
+
+    assert_eq!(
+        fs::read(original_root.join("existing.txt")).unwrap(),
+        b"original pre-existing output",
+        "pre-existing outputs in the original root must be preserved"
+    );
+    assert!(
+        !original_root.join("selected.txt").exists(),
+        "selected output must not be committed into the preserved original root"
+    );
+    assert!(
+        !output_dir.join("selected.txt").exists(),
+        "selected output must not be committed through the replacement root; result was {result:?}"
+    );
+    assert_no_plaintext_under(&output_dir, selected_body);
+
+    let error = result.expect_err("replaced output root must fail before selected body staging");
+    assert!(
+        !matches!(error, unpack::Error::Transaction(_)),
+        "replaced output root must be rejected before transaction staging/commit, got {error:?}"
+    );
+}
+
+#[cfg(unix)]
+fn assert_no_plaintext_under(root: &Path, forbidden: &[u8]) {
+    if !root.exists() {
+        return;
+    }
+
+    for entry in fs::read_dir(root).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            assert_no_plaintext_under(&path, forbidden);
+        } else {
+            assert_ne!(
+                fs::read(&path).unwrap(),
+                forbidden,
+                "plaintext body must not appear under replacement root at {}",
+                path.display()
+            );
+        }
+    }
+}
