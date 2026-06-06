@@ -142,6 +142,7 @@ fn classify_payload_error(error: &PayloadError) -> WorkflowErrorClass {
 
 type OnArchiveInfo = Box<dyn FnOnce(usize)>;
 type OnArchiveFileFn = Box<dyn Fn(PathBuf) -> Result<bool, String>>;
+type OnAfterFinalAuthFn = Box<dyn FnOnce()>;
 
 pub struct UnpackIntent {
     input: storage::Entry<fs::File>,
@@ -152,6 +153,7 @@ pub struct UnpackIntent {
     on_decrypted_header: Option<decrypt::OnDecryptedHeaderFn>,
     on_archive_info: Option<OnArchiveInfo>,
     on_archive_file: Option<OnArchiveFileFn>,
+    on_after_final_auth: Option<OnAfterFinalAuthFn>,
 }
 
 impl UnpackIntent {
@@ -200,7 +202,15 @@ impl UnpackIntent {
             on_decrypted_header,
             on_archive_info,
             on_archive_file,
+            on_after_final_auth: None,
         })
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_after_final_auth_observer(mut self, observer: OnAfterFinalAuthFn) -> Self {
+        self.on_after_final_auth = Some(observer);
+        self
     }
 }
 
@@ -217,6 +227,7 @@ where
     on_decrypted_header: Option<decrypt::OnDecryptedHeaderFn>,
     on_archive_info: Option<OnArchiveInfo>,
     on_archive_file: Option<OnArchiveFileFn>,
+    on_after_final_auth: Option<OnAfterFinalAuthFn>,
 }
 
 struct ExtractionEntity {
@@ -234,12 +245,6 @@ enum ExtractionKind {
 struct PreparedExtraction {
     output_root: ResolvedTarget,
     entities: Vec<ExtractionEntity>,
-}
-
-impl PreparedExtraction {
-    fn output_dir(&self) -> &Path {
-        self.output_root.target_path()
-    }
 }
 
 struct ScannedEntry {
@@ -334,6 +339,7 @@ fn execute_with_transaction(
         on_decrypted_header,
         on_archive_info,
         on_archive_file,
+        on_after_final_auth,
     } = intent;
 
     let input_path = input.path().to_path_buf();
@@ -356,6 +362,7 @@ fn execute_with_transaction(
         on_decrypted_header,
         on_archive_info,
         on_archive_file,
+        on_after_final_auth,
     };
 
     let stor = Arc::new(storage::FileStorage);
@@ -411,10 +418,13 @@ where
         .finish()
         .map_err(decrypt::map_stream_error)
         .map_err(Error::Decrypt)?;
-    revalidate_extraction_targets(&stor, prepared.output_dir(), &prepared.entities)?;
+    if let Some(on_after_final_auth) = req.on_after_final_auth {
+        on_after_final_auth();
+    }
+    revalidate_extraction_targets(&stor, &prepared.output_root, &prepared.entities)?;
     let directory_creation = create_selected_directories_after_final_auth(
         &stor,
-        prepared.output_dir(),
+        &prepared.output_root,
         &prepared.entities,
     )?;
     match transaction.commit_all() {
@@ -691,9 +701,12 @@ fn drain_trailing_plaintext_to_final_auth<R: Read>(reader: &mut R) -> Result<(),
 
 fn create_selected_directories_after_final_auth(
     stor: &storage::FileStorage,
-    output_dir: &Path,
+    output_root: &ResolvedTarget,
     entities: &[ExtractionEntity],
 ) -> Result<DirectoryCreation, Error> {
+    let output_dir = stor
+        .revalidate_resolved_directory_root(output_root)
+        .map_err(map_storage_path_error)?;
     let mut artifacts = Vec::new();
     let mut rollback_dirs = Vec::new();
     for entity in entities
@@ -708,13 +721,13 @@ fn create_selected_directories_after_final_auth(
             unreachable!();
         };
         if let Err(error) =
-            stor.revalidate_unpack_directory_target(output_dir, &entity.relative_path, target)
+            stor.revalidate_unpack_directory_target(&output_dir, &entity.relative_path, target)
         {
             let _rollback =
                 storage::cleanup::rollback_empty_directories_best_effort(&rollback_dirs);
             return Err(map_storage_path_error(error));
         }
-        match stor.create_unpack_dir_all(output_dir, &entity.relative_path) {
+        match stor.create_unpack_dir_all(&output_dir, &entity.relative_path) {
             Ok(created_dirs) => rollback_dirs.extend(created_dirs),
             Err(error) => {
                 let _rollback =
@@ -735,16 +748,19 @@ fn create_selected_directories_after_final_auth(
 
 fn revalidate_extraction_targets(
     stor: &storage::FileStorage,
-    output_dir: &Path,
+    output_root: &ResolvedTarget,
     entities: &[ExtractionEntity],
 ) -> Result<(), Error> {
+    let output_dir = stor
+        .revalidate_resolved_directory_root(output_root)
+        .map_err(map_storage_path_error)?;
     for entity in entities {
         match &entity.kind {
             ExtractionKind::Directory(target) => stor
-                .revalidate_unpack_directory_target(output_dir, &entity.relative_path, target)
+                .revalidate_unpack_directory_target(&output_dir, &entity.relative_path, target)
                 .map_err(map_storage_path_error)?,
             ExtractionKind::File(target) => stor
-                .revalidate_unpack_target(output_dir, &entity.relative_path, target)
+                .revalidate_unpack_target(&output_dir, &entity.relative_path, target)
                 .map_err(map_storage_path_error)?,
         }
     }

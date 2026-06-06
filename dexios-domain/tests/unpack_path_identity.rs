@@ -269,6 +269,76 @@ fn unpack_rejects_output_root_replaced_before_selected_file_staging() {
     );
 }
 
+#[cfg(all(unix, feature = "test-support"))]
+#[test]
+fn unpack_rejects_output_root_replaced_after_final_auth_before_selected_directory_creation() {
+    let test_dir = TestDir::new("unpack-root-replaced-after-final-auth");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+    let original_root = test_dir.path().join("original-out");
+    let existing_file = output_dir.join("existing.txt");
+
+    fs::create_dir_all(&output_dir).unwrap();
+    fs::write(&existing_file, b"original pre-existing output").unwrap();
+    write_manifest_archive_with_entries(&encrypted_archive, &[("selected-dir/", b"")]);
+
+    let final_auth_observer_count = Arc::new(AtomicUsize::new(0));
+    let intent = unpack::UnpackIntent::new(
+        &encrypted_archive,
+        None,
+        &output_dir,
+        Protected::new(PASSWORD.to_vec()),
+        None,
+        None,
+        None,
+    )
+    .unwrap()
+    .with_after_final_auth_observer(Box::new({
+        let output_dir = output_dir.clone();
+        let original_root = original_root.clone();
+        let final_auth_observer_count = Arc::clone(&final_auth_observer_count);
+        move || {
+            final_auth_observer_count.fetch_add(1, Ordering::SeqCst);
+            fs::rename(&output_dir, &original_root).unwrap();
+            fs::create_dir_all(&output_dir).unwrap();
+            fs::write(
+                output_dir.join("replacement-marker.txt"),
+                b"replacement root",
+            )
+            .unwrap();
+        }
+    }));
+
+    let result = unpack::execute(intent);
+
+    assert_eq!(
+        final_auth_observer_count.load(Ordering::SeqCst),
+        1,
+        "regression must replace the output root after final authentication"
+    );
+    assert_eq!(
+        fs::read(original_root.join("existing.txt")).unwrap(),
+        b"original pre-existing output",
+        "pre-existing outputs in the original root must be preserved"
+    );
+    assert!(
+        !original_root.join("selected-dir").exists(),
+        "selected directory must not be created in the preserved original root"
+    );
+    assert!(
+        !output_dir.join("selected-dir").exists(),
+        "selected directory must not be created through the replacement root; result was {result:?}"
+    );
+
+    let error =
+        result.expect_err("replaced output root must fail before selected directory creation");
+    assert_replacement_path_workflow_error(&error, "post-auth replaced output root");
+    assert!(
+        !matches!(error, unpack::Error::Transaction(_)),
+        "post-auth output-root replacement must be rejected before transaction commit, got {error:?}"
+    );
+}
+
 #[cfg(unix)]
 fn assert_replacement_path_workflow_error(error: &unpack::Error, label: &str) {
     let class = error.workflow_class();
