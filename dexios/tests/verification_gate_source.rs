@@ -526,6 +526,10 @@ fn phase16_processed_source_cleanup_authorization_is_source_gated() {
         "ProcessedSourceCleanupResult",
         "cleanup target is not processed-source evidence",
         "changed cleanup target tree",
+        "struct CapturedTarget",
+        "let (file_content, handle) = CleanupFileStamp::capture(path)?;",
+        "CleanupTargetIdentity::from_handle(handle, is_symlink)",
+        "same_file::Handle::from_file(file.try_clone()?)?",
         "pub fn from_commit_and_hash",
         "HashVerification::Failed",
     ] {

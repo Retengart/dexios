@@ -39,11 +39,15 @@ pub enum CleanupTargetIdentity {
 impl CleanupTargetIdentity {
     fn verified(path: &Path, is_symlink: bool) -> io::Result<Self> {
         let handle = same_file::Handle::from_path(path)?;
-        Ok(Self::Verified {
+        Ok(Self::from_handle(handle, is_symlink))
+    }
+
+    fn from_handle(handle: same_file::Handle, is_symlink: bool) -> Self {
+        Self::Verified {
             source: "cleanup target identity snapshot from same_file::Handle",
             handle: Arc::new(handle),
             is_symlink,
-        })
+        }
     }
 
     #[must_use]
@@ -105,8 +109,8 @@ impl CleanupTarget {
         let metadata = fs::symlink_metadata(path)?;
         let kind = cleanup_kind(&metadata);
         let is_symlink = metadata.file_type().is_symlink();
-        let identity = CleanupTargetIdentity::verified(path, is_symlink)?;
-        let stamp = CleanupTargetStamp::capture(path, &metadata)?;
+        let CapturedTarget { identity, stamp } =
+            CapturedTarget::capture(path, &metadata, is_symlink)?;
 
         Ok(Self {
             path: path.to_path_buf(),
@@ -150,6 +154,31 @@ impl CleanupTarget {
     }
 }
 
+/// Identity and content evidence captured from a single open descriptor.
+struct CapturedTarget {
+    identity: CleanupTargetIdentity,
+    stamp: CleanupTargetStamp,
+}
+
+impl CapturedTarget {
+    fn capture(path: &Path, metadata: &fs::Metadata, is_symlink: bool) -> io::Result<Self> {
+        if metadata.file_type().is_file() {
+            let (file_content, handle) = CleanupFileStamp::capture(path)?;
+            Ok(Self {
+                identity: CleanupTargetIdentity::from_handle(handle, is_symlink),
+                stamp: CleanupTargetStamp::Verified {
+                    file_content: Some(file_content),
+                },
+            })
+        } else {
+            Ok(Self {
+                identity: CleanupTargetIdentity::verified(path, is_symlink)?,
+                stamp: CleanupTargetStamp::Verified { file_content: None },
+            })
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum CleanupTargetStamp {
     Verified {
@@ -159,12 +188,6 @@ enum CleanupTargetStamp {
 }
 
 impl CleanupTargetStamp {
-    fn capture(path: &Path, metadata: &fs::Metadata) -> io::Result<Self> {
-        Ok(Self::Verified {
-            file_content: CleanupFileStamp::capture(path, metadata)?,
-        })
-    }
-
     const fn unchecked() -> Self {
         Self::Unchecked
     }
@@ -172,7 +195,12 @@ impl CleanupTargetStamp {
     fn revalidate(&self, path: &Path, metadata: &fs::Metadata) -> io::Result<()> {
         match self {
             Self::Verified { file_content } => {
-                if *file_content != CleanupFileStamp::capture(path, metadata)? {
+                let current = if metadata.file_type().is_file() {
+                    Some(CleanupFileStamp::capture(path)?.0)
+                } else {
+                    None
+                };
+                if *file_content != current {
                     return Err(changed_target_error("changed cleanup target contents"));
                 }
             }
@@ -190,45 +218,46 @@ struct CleanupFileStamp {
 }
 
 impl CleanupFileStamp {
-    fn capture(path: &Path, metadata: &fs::Metadata) -> io::Result<Option<Self>> {
-        if !metadata.file_type().is_file() {
-            return Ok(None);
-        }
-
-        // Hash the content from a no-follow descriptor (fs-3): a symlink swapped in at
-        // `path` yields ELOOP rather than letting us hash the link target, and the fstat
-        // inside `open_regular_file_no_follow` confirms the opened object is still a
-        // regular file — the same inode the dev/ino identity check observes.
+    fn capture(path: &Path) -> io::Result<(Self, same_file::Handle)> {
         let file = open_regular_file_no_follow(path)?;
+        let handle = same_file::Handle::from_file(file.try_clone()?)?;
         let mut hasher = blake3::Hasher::new();
         hasher.update_reader(&file)?;
-        Ok(Some(Self {
-            len: metadata.len(),
-            digest: *hasher.finalize().as_bytes(),
-        }))
+        Ok((
+            Self {
+                len: file.metadata()?.len(),
+                digest: *hasher.finalize().as_bytes(),
+            },
+            handle,
+        ))
     }
 }
 
 #[cfg(unix)]
 fn open_regular_file_no_follow(path: &Path) -> io::Result<fs::File> {
-    use rustix::fs::{CWD, Mode, OFlags, openat};
+    use rustix::fs::{CWD, FileType, Mode, OFlags, fstat, openat};
 
     let fd = openat(
         CWD,
         path,
         OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
         Mode::empty(),
-    )?;
-    let file = fs::File::from(fd);
-    if !file.metadata()?.file_type().is_file() {
-        return Err(io::Error::other("cleanup target is not a regular file"));
+    )
+    .map_err(io::Error::from)?;
+    let stat = fstat(&fd).map_err(io::Error::from)?;
+    if !FileType::from_raw_mode(stat.st_mode).is_file() {
+        return Err(changed_target_error("cleanup target is not a regular file"));
     }
-    Ok(file)
+    Ok(fs::File::from(fd))
 }
 
 #[cfg(not(unix))]
 fn open_regular_file_no_follow(path: &Path) -> io::Result<fs::File> {
-    fs::File::open(path)
+    let file = fs::File::open(path)?;
+    if !file.metadata()?.file_type().is_file() {
+        return Err(changed_target_error("cleanup target is not a regular file"));
+    }
+    Ok(file)
 }
 
 #[cfg(all(test, unix))]
@@ -276,8 +305,9 @@ impl CleanupTreeIdentity {
                 .to_path_buf();
             let kind = cleanup_kind(&metadata);
             let is_symlink = metadata.file_type().is_symlink();
-            let identity = CleanupTargetIdentity::verified(path, is_symlink)?;
-            let stamp = CleanupTreeEntryStamp::capture(path, &metadata)?;
+            let CapturedTarget { identity, stamp } =
+                CapturedTarget::capture(path, &metadata, is_symlink)?;
+            let stamp = CleanupTreeEntryStamp::from_target_stamp(&metadata, stamp);
 
             entries.push(CleanupTreeEntry {
                 relative_path,
@@ -317,12 +347,16 @@ struct CleanupTreeEntryStamp {
 }
 
 impl CleanupTreeEntryStamp {
-    fn capture(path: &Path, metadata: &fs::Metadata) -> io::Result<Self> {
-        Ok(Self {
+    fn from_target_stamp(metadata: &fs::Metadata, stamp: CleanupTargetStamp) -> Self {
+        let file_content = match stamp {
+            CleanupTargetStamp::Verified { file_content } => file_content,
+            CleanupTargetStamp::Unchecked => None,
+        };
+        Self {
             len: metadata.len(),
             modified: metadata.modified().ok(),
-            file_content: CleanupFileStamp::capture(path, metadata)?,
-        })
+            file_content,
+        }
     }
 }
 

@@ -69,8 +69,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios/tests/verification_gate_source.rs",
         category: "Phase 25 source-gate evidence",
         rationale: "Phase 25 fail-closed source/API safety evidence per D-11.",
-        current_lines: 1842,
-        cap: 1842,
+        current_lines: 1846,
+        cap: 1846,
     },
     FileSizeException {
         path: "dexios-core/tests/stream_v1.rs",
@@ -180,9 +180,9 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
     FileSizeException {
         path: "dexios-domain/src/storage/cleanup.rs",
         category: "cleanup digest security evidence",
-        rationale: "No-follow content digest + identity revalidation (fs-3) kept centralized.",
-        current_lines: 708,
-        cap: 708,
+        rationale: "No-follow digest plus fd-bound identity revalidation (fs-3) kept centralized.",
+        current_lines: 742,
+        cap: 742,
     },
 ];
 
