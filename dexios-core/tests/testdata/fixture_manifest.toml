@@ -232,12 +232,12 @@ owner_phase = "Phase 1"
 [[fixture]]
 id = "phase01-header-malformed-evidence"
 group = "phase01-header-assurance"
-path = "dexios-core/tests/v1_header.rs::fixture_v1_malformed_reserved_byte_is_rejected"
-purpose = "Link existing reviewable malformed V1 header evidence into the Phase 1 assurance corpus."
+path = "dexios-core/tests/v1_header.rs::retired_current_v1_malformed_reserved_byte_is_rejection_evidence"
+purpose = "Link existing reviewable retired-layout malformed V1 header rejection evidence into the Phase 1 assurance corpus."
 invariant = "D-04"
 requirement = "ASSR-02"
 source = "Checked-in lowercase hex fixture v1_malformed_reserved_byte.hex derived from the valid single-keyslot V1 header by one reserved-byte mutation."
-expected = "dexios_core::header::read_header rejects the fixture with HeaderReadError::NonZeroReservedBytes."
+expected = "dexios_core::header::read_header rejects the fixture with HeaderReadError::RetiredV1Layout."
 owner_phase = "Phase 1"
 
 [[fixture]]
