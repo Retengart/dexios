@@ -556,9 +556,7 @@ impl V1Header {
     }
 
     pub fn deserialize(reader: &mut impl Read) -> Result<Self, HeaderReadError> {
-        let mut bytes = [0u8; HEADER_LEN];
-        reader.read_exact(&mut bytes)?;
-
+        let bytes = super::read_canonical_v1_header_bytes(reader)?;
         Self::deserialize_bytes(&bytes)
     }
 

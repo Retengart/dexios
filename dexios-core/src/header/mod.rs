@@ -39,14 +39,20 @@ impl ParsedV1Payload {
 }
 
 pub fn read_header(reader: &mut impl std::io::Read) -> Result<ParsedHeader, HeaderReadError> {
+    let bytes = read_canonical_v1_header_bytes(reader)?;
+    let header = v1::V1Header::deserialize_bytes(&bytes)?;
+    let aad = header.aad();
+    Ok(ParsedHeader::V1(ParsedV1Payload { header, aad }))
+}
+
+pub(crate) fn read_canonical_v1_header_bytes(
+    reader: &mut impl std::io::Read,
+) -> Result<[u8; HEADER_LEN], HeaderReadError> {
     let mut prefix = [0u8; 10];
     reader.read_exact(&mut prefix)?;
 
     let format_prefix = [prefix[0], prefix[1]];
-    if matches!(
-        format_prefix,
-        [0xDE, 0x01..=0x05]
-    ) {
+    if matches!(format_prefix, [0xDE, 0x01..=0x05]) {
         return Err(HeaderReadError::UnsupportedFormat(format_prefix));
     }
 
@@ -77,7 +83,5 @@ pub fn read_header(reader: &mut impl std::io::Read) -> Result<ParsedHeader, Head
     bytes[..10].copy_from_slice(&prefix);
     reader.read_exact(&mut bytes[10..])?;
 
-    let header = v1::V1Header::deserialize_bytes(&bytes)?;
-    let aad = header.aad();
-    Ok(ParsedHeader::V1(ParsedV1Payload { header, aad }))
+    Ok(bytes)
 }
