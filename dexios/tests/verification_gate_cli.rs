@@ -83,6 +83,59 @@ fn removed_surface_probe_rejects_generic_runtime_error_fallbacks() {
 }
 
 #[test]
+fn removed_surface_probe_keeps_black_box_failure_diagnostics() {
+    let helper_body = VERIFY_CLI_SURFACE
+        .split_once("expect_rejected() {")
+        .expect("removed-surface rejection helper is present")
+        .1
+        .split_once("\n}\n")
+        .expect("removed-surface rejection helper has a closing brace")
+        .0;
+
+    assert_all_contains(
+        "scripts/verify_cli_surface.sh::expect_rejected",
+        helper_body,
+        &[
+            "stdout=\"$ROOT/rejected-$safe_name.stdout\"",
+            "stderr=\"$ROOT/rejected-$safe_name.stderr\"",
+            "> \"$stdout\" 2> \"$stderr\"",
+            "echo \"Captured stdout: $stdout\" >&2",
+            "echo \"Captured stderr: $stderr\" >&2",
+            "cat \"$stderr\" >&2",
+        ],
+    );
+    assert_occurs_before(
+        "scripts/verify_cli_surface.sh::expect_rejected",
+        helper_body,
+        "echo \"Captured stderr: $stderr\" >&2",
+        "cat \"$stderr\" >&2",
+    );
+
+    for parser_fixture_detail in [
+        "clap::error::ErrorKind",
+        "try_get_matches_from",
+        "UnknownArgument",
+        "InvalidSubcommand",
+    ] {
+        assert_not_contains(
+            "scripts/verify_cli_surface.sh::expect_rejected",
+            helper_body,
+            parser_fixture_detail,
+        );
+    }
+
+    assert_all_contains(
+        "dexios/src/cli/tests.rs",
+        DEXIOS_CLI_TESTS_RS,
+        &[
+            "removed_top_level_erase_subcommand_is_rejected",
+            "clap::error::ErrorKind::UnknownArgument",
+            "clap::error::ErrorKind::InvalidSubcommand",
+        ],
+    );
+}
+
+#[test]
 fn cli_surface_harness_resolves_selected_binary_before_directory_changes() {
     assert_all_contains(
         "scripts/verify_cli_surface.sh",

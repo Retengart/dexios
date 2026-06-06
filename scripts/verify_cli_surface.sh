@@ -127,6 +127,8 @@ expect_rejected() {
     fi
 
     echo "$name did not produce parser-style $expected_parser_rejection rejection" >&2
+    echo "Captured stdout: $stdout" >&2
+    echo "Captured stderr: $stderr" >&2
     cat "$stderr" >&2
     return 1
 }
