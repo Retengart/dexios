@@ -130,6 +130,8 @@ pub(crate) const DEXIOS_DOMAIN_TEMP_RS: &str =
     include_str!("../../../dexios-domain/src/storage/temp.rs");
 pub(crate) const DEXIOS_DOMAIN_HEADER_RS: &str =
     include_str!("../../../dexios-domain/src/header.rs");
+pub(crate) const DEXIOS_DOMAIN_HEADER_DUMP_RS: &str =
+    include_str!("../../../dexios-domain/src/header/dump.rs");
 pub(crate) const DEXIOS_DOMAIN_HEADER_STRIP_RS: &str =
     include_str!("../../../dexios-domain/src/header/strip.rs");
 pub(crate) const DEXIOS_DOMAIN_HEADER_RESTORE_RS: &str =

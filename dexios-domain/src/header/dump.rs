@@ -1,13 +1,17 @@
 //! This provides functionality for dumping a header that adheres to the Dexios format.
 
 use super::Error;
-use std::fs;
+use std::fs::File;
+use std::io;
 use std::path::Path;
 
 use core::header::common::HEADER_LEN;
 use core::header::{ParsedHeader, read_header};
 
-use crate::storage::identity::{OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget};
+use crate::storage::Entry;
+use crate::storage::identity::{
+    IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
+};
 use crate::storage::transaction::{CommitReceipt, StagedOutputTransaction, TransactionError};
 
 #[derive(Debug)]
@@ -49,7 +53,11 @@ pub fn execute(intent: DumpIntent) -> Result<CommitReceipt, Error> {
         output_target,
     } = intent;
 
-    let header_bytes = read_header_only(input_target.target_path())?;
+    let stor = crate::storage::FileStorage;
+    let input = stor
+        .read_resolved_existing_no_follow(&input_target)
+        .map_err(map_read_storage_error)?;
+    let header_bytes = read_header_only(&input)?;
     let mut transaction =
         StagedOutputTransaction::new(output_target).map_err(Error::Transaction)?;
     transaction
@@ -66,8 +74,11 @@ pub fn execute_transactional(intent: DumpIntent) -> Result<CommitReceipt, Error>
 // multi-GB) file: `read_header` consumes exactly `HEADER_LEN` bytes from the reader, and
 // the length is confirmed via `metadata()` (parse-2). `dump` is read-only, so there is no
 // mutation-freshness contract to preserve here.
-fn read_header_only(path: &Path) -> Result<Vec<u8>, Error> {
-    let mut file = fs::File::open(path).map_err(|_| Error::ReadIo)?;
+fn read_header_only(input: &Entry<File>) -> Result<Vec<u8>, Error> {
+    let mut file = input
+        .try_reader()
+        .map_err(map_read_storage_error)?
+        .borrow_mut();
     let len = file.metadata().map_err(|_| Error::ReadIo)?.len();
     if len <= HEADER_LEN as u64 {
         return Err(Error::MissingPayload {
@@ -75,12 +86,26 @@ fn read_header_only(path: &Path) -> Result<Vec<u8>, Error> {
         });
     }
 
-    let parsed = read_header(&mut file).map_err(Error::from)?;
+    let parsed = read_header(&mut *file).map_err(Error::from)?;
     let ParsedHeader::V1(payload) = parsed;
     let serialized = payload.header().serialize().map_err(|_| Error::WriteIo)?;
     debug_assert_eq!(serialized.len(), HEADER_LEN);
 
     Ok(serialized)
+}
+
+fn map_read_storage_error(error: crate::storage::Error) -> Error {
+    match error {
+        crate::storage::Error::UnsafePath(path) => {
+            Error::PathIdentity(IdentityError::UnsafePath(path))
+        }
+        crate::storage::Error::OpenFileWithSource { source, .. }
+        | crate::storage::Error::FileAccessWithSource(source) => Error::ReadIoWithSource(source),
+        crate::storage::Error::FileAccess => Error::ReadIoWithSource(io::Error::other(
+            "captured header input is not a readable file",
+        )),
+        _ => Error::ReadIo,
+    }
 }
 
 fn map_write_transaction_error(error: TransactionError) -> Error {

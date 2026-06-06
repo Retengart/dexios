@@ -1,7 +1,6 @@
 //! This provides functionality for decryption that adheres to the Dexios format.
 
 use std::cell::RefCell;
-use std::fs::File;
 use std::io::{self, Read, Seek, Write};
 use std::path::Path;
 
@@ -233,17 +232,25 @@ pub fn execute(intent: DecryptIntent) -> Result<CommitReceipt, Error> {
         on_decrypted_header,
     } = intent;
 
-    let reader = RefCell::new(
-        File::open(input_target.target_path()).map_err(Error::ReadEncryptedDataWithSource)?,
-    );
-    let header_reader = detached_header_target
-        .map(|target| File::open(target.target_path()).map(RefCell::new))
+    let stor = crate::storage::FileStorage;
+    let input = stor
+        .read_resolved_existing_no_follow(&input_target)
+        .map_err(map_read_storage_error)?;
+    let reader = input.try_reader().map_err(map_read_storage_error)?;
+    let detached_header = detached_header_target
+        .as_ref()
+        .map(|target| stor.read_resolved_existing_no_follow(target))
         .transpose()
-        .map_err(Error::ReadEncryptedDataWithSource)?;
+        .map_err(map_read_storage_error)?;
+    let header_reader = detached_header
+        .as_ref()
+        .map(|entry| entry.try_reader())
+        .transpose()
+        .map_err(map_read_storage_error)?;
 
     execute_transactional_target(
-        header_reader.as_ref(),
-        &reader,
+        header_reader,
+        reader,
         output_target,
         raw_key,
         on_decrypted_header,
@@ -290,6 +297,22 @@ where
             StagedWriteError::Transaction(error) => map_decrypt_transaction_error(error),
         })?;
     commit_after_final_auth(transaction, final_auth)
+}
+
+fn map_read_storage_error(error: crate::storage::Error) -> Error {
+    match error {
+        crate::storage::Error::UnsafePath(path) => {
+            Error::PathIdentity(IdentityError::UnsafePath(path))
+        }
+        crate::storage::Error::OpenFileWithSource { source, .. }
+        | crate::storage::Error::FileAccessWithSource(source) => {
+            Error::ReadEncryptedDataWithSource(source)
+        }
+        crate::storage::Error::FileAccess => Error::ReadEncryptedDataWithSource(io::Error::other(
+            "captured decrypt input is not a readable file",
+        )),
+        _ => Error::ReadEncryptedData,
+    }
 }
 
 pub(crate) fn read_v1_payload<R>(

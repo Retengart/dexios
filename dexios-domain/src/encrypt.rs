@@ -1,7 +1,6 @@
 //! This provides functionality for V1 encryption that adheres to the Dexios format.
 
 use std::cell::RefCell;
-use std::fs::File;
 use std::io::{self, Read, Seek, Write};
 use std::path::{Path, PathBuf};
 
@@ -305,10 +304,13 @@ pub fn execute(intent: EncryptIntent) -> Result<CommitReceipt, Error> {
         raw_key,
         kdf,
     } = intent;
-    let reader =
-        RefCell::new(File::open(input_target.target_path()).map_err(Error::OpenInputWithSource)?);
+    let stor = crate::storage::FileStorage;
+    let input = stor
+        .read_resolved_existing_no_follow(&input_target)
+        .map_err(map_input_storage_error)?;
+    let reader = input.try_reader().map_err(map_input_storage_error)?;
 
-    execute_transactional_targets(&reader, output_target, header_target, raw_key, kdf)
+    execute_transactional_targets(reader, output_target, header_target, raw_key, kdf)
 }
 
 pub fn execute_transactional(intent: EncryptIntent) -> Result<CommitReceipt, Error> {
@@ -370,6 +372,20 @@ where
             .with_writer_result(|writer| encrypt_payload(reader, writer, master_key, &header))
             .map_err(map_encrypt_staged_write_error)?;
         transaction.commit().map_err(Error::Transaction)
+    }
+}
+
+fn map_input_storage_error(error: crate::storage::Error) -> Error {
+    match error {
+        crate::storage::Error::UnsafePath(path) => {
+            Error::PathIdentity(IdentityError::UnsafePath(path))
+        }
+        crate::storage::Error::OpenFileWithSource { source, .. }
+        | crate::storage::Error::FileAccessWithSource(source) => Error::OpenInputWithSource(source),
+        crate::storage::Error::FileAccess => Error::OpenInputWithSource(io::Error::other(
+            "captured encrypt input is not a readable file",
+        )),
+        _ => Error::OpenInput,
     }
 }
 
