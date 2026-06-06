@@ -120,6 +120,8 @@ pub(crate) const DEXIOS_DOMAIN_IDENTITY_RS: &str =
     include_str!("../../../dexios-domain/src/storage/identity.rs");
 pub(crate) const DEXIOS_DOMAIN_STORAGE_RS: &str =
     include_str!("../../../dexios-domain/src/storage/mod.rs");
+pub(crate) const DEXIOS_DOMAIN_STORAGE_FS_RS: &str =
+    include_str!("../../../dexios-domain/src/storage/fs.rs");
 pub(crate) const DEXIOS_DOMAIN_MUTATION_RS: &str =
     include_str!("../../../dexios-domain/src/storage/mutation.rs");
 pub(crate) const DEXIOS_DOMAIN_CLEANUP_RS: &str =

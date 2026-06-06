@@ -90,6 +90,49 @@ fn read_side_domain_consumers_reopen_captured_existing_targets_through_storage_b
         ],
     );
 
+    let storage_reopen = normalized_rust_production_section(
+        "dexios-domain/src/storage/fs.rs",
+        DEXIOS_DOMAIN_STORAGE_FS_RS,
+        "pub fn read_resolved_existing_no_follow",
+        "pub fn revalidate_resolved_directory_root",
+    );
+    assert_normalized_section_order(
+        "dexios-domain/src/storage/fs.rs::read_resolved_existing_no_follow",
+        &storage_reopen,
+        &[
+            "if !target.exists()",
+            "let entry = self.read_file_no_follow(target.target_path())?",
+            "if entry.is_dir() != target.is_dir()",
+            "verify_entry_matches_resolved_target(&entry, target)?",
+            "Ok(entry)",
+        ],
+    );
+    assert_rust_production_source_excludes(
+        "dexios-domain/src/storage/fs.rs",
+        DEXIOS_DOMAIN_STORAGE_FS_RS,
+        &[
+            "std_fs::File::open(target.target_path())",
+            "read_file(target.target_path())",
+        ],
+    );
+
+    let unix_storage_identity = normalized_rust_production_section(
+        "dexios-domain/src/storage/fs.rs",
+        DEXIOS_DOMAIN_STORAGE_FS_RS,
+        "fn verify_entry_matches_resolved_target",
+        "fn open_no_follow",
+    );
+    assert_normalized_section_order(
+        "dexios-domain/src/storage/fs.rs::verify_entry_matches_resolved_target",
+        &unix_storage_identity,
+        &[
+            "expected.existing_target_identity()",
+            "actual.dev() != expected_identity.dev || actual.ino() != expected_identity.ino",
+            "Error::UnsafePath(expected.original_path().to_path_buf())",
+            "Ok(())",
+        ],
+    );
+
     let unpack_intent = normalized_rust_production_section(
         "dexios-domain/src/unpack.rs",
         DEXIOS_DOMAIN_UNPACK_RS,
@@ -121,6 +164,8 @@ fn read_side_domain_consumers_reopen_captured_existing_targets_through_storage_b
             ".revalidate_resolved_directory_root(&source_root.target)",
             "walkdir::WalkDir::new(&root_path)",
             ".read_file_no_follow(source.path())",
+            "verify_walked_entry_matches_opened(&source, &walked_metadata)?",
+            "push_archive_entry",
         ],
     );
 }
