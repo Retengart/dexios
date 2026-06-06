@@ -977,6 +977,43 @@ fn phase20_release_metadata_boundaries_are_source_gated() {
 }
 
 #[test]
+fn release_hygiene_evidence_wording_is_source_gated() {
+    assert_all_contains(
+        "book/src/Installing-and-Building.md",
+        INSTALLING_AND_BUILDING,
+        &[
+            "clean release-equivalent working tree",
+            "release-sensitive untracked files fail closed",
+            "non-release-equivalent dirty state",
+            "release-sensitive untracked state",
+            "release-equivalence status",
+            "release-equivalent tool-version state",
+        ],
+    );
+
+    assert_all_contains(
+        "book/src/Safety-Contract.md",
+        SAFETY_CONTRACT,
+        &[
+            "release-sensitive untracked state",
+            "release-equivalence status",
+            "release-equivalent tool versions",
+            "non-release-equivalent local dry runs",
+            ".gitattributes",
+            "*.pdf binary",
+        ],
+    );
+
+    let release_evidence_corpus = format!("{SAFETY_CONTRACT}\n{INSTALLING_AND_BUILDING}");
+    for stale_claim in [
+        "Untracked local files are ignored by the dirty check",
+        "Untracked files\nare ignored by the dirty check",
+    ] {
+        assert_not_contains("release evidence docs corpus", &release_evidence_corpus, stale_claim);
+    }
+}
+
+#[test]
 fn phase20_pdf_authority_policy_is_source_gated() {
     assert_all_contains(
         "README.md",

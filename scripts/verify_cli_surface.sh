@@ -3,7 +3,22 @@
 set -u -o pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BIN="${1:-$REPO_ROOT/target/release-lto/dexios}"
+SELECTED_BIN="${1:-$REPO_ROOT/target/release-lto/dexios}"
+
+resolve_selected_binary() {
+    local selected=$1
+
+    if [[ "$selected" = /* ]]; then
+        printf '%s\n' "$selected"
+    else
+        while [[ "$selected" == ./* ]]; do
+            selected="${selected#./}"
+        done
+        printf '%s/%s\n' "$REPO_ROOT" "$selected"
+    fi
+}
+
+BIN="$(resolve_selected_binary "$SELECTED_BIN")"
 
 if [[ ! -x "$BIN" ]]; then
     echo "Binary not found or not executable: $BIN" >&2
@@ -91,6 +106,8 @@ safe_case_name() {
 
 expect_rejected() {
     local name=$1
+    local expected_parser_rejection=$2
+    shift
     shift
     local safe_name
     local stdout
@@ -105,11 +122,13 @@ expect_rejected() {
         return 1
     fi
 
-    if grep -Eq 'unexpected argument|unrecognized subcommand|error:' "$stderr"; then
+    if grep -F "$expected_parser_rejection" "$stderr" >/dev/null; then
         return 0
     fi
 
-    echo "$name did not produce a parser-style rejection" >&2
+    echo "$name did not produce parser-style $expected_parser_rejection rejection" >&2
+    echo "Captured stdout: $stdout" >&2
+    echo "Captured stderr: $stderr" >&2
     cat "$stderr" >&2
     return 1
 }
@@ -227,7 +246,7 @@ case_header_subcommands() {
     contains_file "$dir/details-hdr.stdout" "Header version:" "header details should describe dumped header" || return 1
 
     cp "$dir/plain.enc" "$dir/stripped.enc"
-    "$BIN" header strip -f "$dir/stripped.enc" || return 1
+    "$BIN" header strip -f --header "$dir/plain.hdr" "$dir/stripped.enc" || return 1
     DEXIOS_KEY=12345678 "$BIN" decrypt -f --header "$dir/plain.hdr" "$dir/stripped.enc" "$dir/stripped-via-header.out" || return 1
     file_eq "$dir/plain.txt" "$dir/stripped-via-header.out" "decrypt with dumped header after strip should work" || return 1
 
@@ -253,7 +272,7 @@ case_key_subcommands() {
     file_eq "$dir/plain.txt" "$dir/multi.out" "key add should preserve decryptability with added key" || return 1
 
     "$BIN" encrypt -f -k "$dir/old.key" "$dir/plain.txt" "$dir/change.enc" || return 1
-    "$BIN" key change -k "$dir/old.key" -n "$dir/changed.key" "$dir/change.enc" || return 1
+    "$BIN" key change -f -k "$dir/old.key" -n "$dir/changed.key" "$dir/change.enc" || return 1
 
     if "$BIN" key verify -k "$dir/old.key" "$dir/change.enc" >/dev/null 2>&1; then
         echo "changed old key should no longer verify" >&2
@@ -350,16 +369,16 @@ case_removed_cli_surface_rejected() {
     printf 'old-key-material' > "$dir/old.key"
     printf 'new-key-material' > "$dir/new.key"
 
-    expect_rejected "encrypt removed aes flag" "$BIN" encrypt --aes "$dir/plain.txt" "$dir/plain.enc" || return 1
-    expect_rejected "pack removed aes flag" "$BIN" pack --aes "$dir" "$dir/archive.enc" || return 1
-    expect_rejected "encrypt removed argon flag" "$BIN" encrypt --argon "$dir/plain.txt" "$dir/plain.enc" || return 1
-    expect_rejected "pack removed argon flag" "$BIN" pack --argon "$dir" "$dir/archive.enc" || return 1
-    expect_rejected "pack removed zstd flag" "$BIN" pack --zstd "$dir" "$dir/archive.enc" || return 1
-    expect_rejected "encrypt removed erase flag" "$BIN" encrypt --erase "$dir/plain.txt" "$dir/plain.enc" || return 1
-    expect_rejected "decrypt removed erase flag" "$BIN" decrypt --erase "$dir/plain.enc" "$dir/plain.out" || return 1
-    expect_rejected "pack removed erase flag" "$BIN" pack --erase "$dir" "$dir/archive.enc" || return 1
-    expect_rejected "unpack removed erase flag" "$BIN" unpack --erase "$dir/archive.enc" "$dir/out" || return 1
-    expect_rejected "removed top level erase subcommand" "$BIN" erase "$dir/plain.txt" || return 1
+    expect_rejected "encrypt removed aes flag" "unexpected argument" "$BIN" encrypt --aes "$dir/plain.txt" "$dir/plain.enc" || return 1
+    expect_rejected "pack removed aes flag" "unexpected argument" "$BIN" pack --aes "$dir" "$dir/archive.enc" || return 1
+    expect_rejected "encrypt removed argon flag" "unexpected argument" "$BIN" encrypt --argon "$dir/plain.txt" "$dir/plain.enc" || return 1
+    expect_rejected "pack removed argon flag" "unexpected argument" "$BIN" pack --argon "$dir" "$dir/archive.enc" || return 1
+    expect_rejected "pack removed zstd flag" "unexpected argument" "$BIN" pack --zstd "$dir" "$dir/archive.enc" || return 1
+    expect_rejected "encrypt removed erase flag" "unexpected argument" "$BIN" encrypt --erase "$dir/plain.txt" "$dir/plain.enc" || return 1
+    expect_rejected "decrypt removed erase flag" "unexpected argument" "$BIN" decrypt --erase "$dir/plain.enc" "$dir/plain.out" || return 1
+    expect_rejected "pack removed erase flag" "unexpected argument" "$BIN" pack --erase "$dir" "$dir/archive.enc" || return 1
+    expect_rejected "unpack removed erase flag" "unexpected argument" "$BIN" unpack --erase "$dir/archive.enc" "$dir/out" || return 1
+    expect_rejected "removed top level erase subcommand" "unrecognized subcommand" "$BIN" erase "$dir/plain.txt" || return 1
 }
 
 echo "Using binary: $BIN"

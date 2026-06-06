@@ -115,11 +115,11 @@ bash scripts/generate_release_manifest.sh \
   --asset target/release-lto/dexios
 ```
 
-For release use, run the manifest command from a clean tracked working tree.
-Without `--allow-dirty`, tracked working tree changes fail closed. Untracked
-local files are ignored by the dirty check. `--tag <tag>` requires the tag to
+For release use, run the manifest command from a clean release-equivalent working tree.
+Without `--allow-dirty`, tracked working tree changes fail closed, and
+release-sensitive untracked files fail closed. `--tag <tag>` requires the tag to
 point at the current commit. `--allow-dirty` is only for local dry runs where
-the manifest must explicitly record that tracked changes were present:
+the manifest must explicitly record non-release-equivalent dirty state:
 
 ```bash
 bash scripts/generate_release_manifest.sh \
@@ -128,10 +128,11 @@ bash scripts/generate_release_manifest.sh \
   --asset target/release-lto/dexios
 ```
 
-The manifest records commit and tag status, tracked dirty state, `Cargo.lock`
-SHA256, `cargo metadata --format-version=1 --locked` evidence, tool versions,
-the verification command contract, and asset SHA256 hashes. The command contract
-is not a pass/fail log; use a completed gate log or current
+The manifest records commit and tag status, tracked dirty state,
+release-sensitive untracked state, release-equivalence status, `Cargo.lock`
+SHA256, `cargo metadata --format-version=1 --locked` evidence,
+release-equivalent tool-version state, the verification command contract, and
+asset SHA256 hashes. The command contract is not a pass/fail log; use a completed gate log or current
 `bash scripts/verify_phase_gate.sh` run for pass/fail evidence. That evidence is
 intentionally narrow: it does not claim bit-for-bit reproducibility, signing
 trust, SBOM completeness, SBOM protection, supply-chain prevention, completed

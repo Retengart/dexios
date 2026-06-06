@@ -5,15 +5,44 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-require_tool() {
-    local tool=$1
-    local hint=$2
+require_tool_version() {
+    local executable=$1
+    local label=$2
+    local expected=$3
+    local hint=$4
+    shift 4
 
-    if ! command -v "$tool" >/dev/null 2>&1; then
-        echo "Required tool not found: $tool" >&2
+    if ! command -v "$executable" >/dev/null 2>&1; then
+        echo "Required tool not found: $executable" >&2
         echo "Install hint: $hint" >&2
         exit 2
     fi
+
+    local observed=""
+    local observed_version=""
+    if ! observed="$("$@" 2>/dev/null | head -1)"; then
+        observed="unavailable"
+    fi
+    [[ -n "$observed" ]] || observed="unavailable"
+    observed_version="$(observed_tool_version_token "$observed")"
+
+    if [[ "$observed_version" != "$expected" ]]; then
+        echo "Required $label version mismatch: expected $expected, observed $observed" >&2
+        echo "Install hint: $hint" >&2
+        exit 2
+    fi
+}
+
+observed_tool_version_token() {
+    local observed=$1
+    local word
+
+    for word in $observed; do
+        if [[ "$word" =~ ^v?([0-9]+[.][0-9]+[.][0-9]+([-+.][0-9A-Za-z][0-9A-Za-z.+-]*)?)$ ]]; then
+            printf '%s' "${BASH_REMATCH[1]}"
+            return
+        fi
+    done
 }
 
 run() {
@@ -39,16 +68,12 @@ verify_no_unsafe_crate_roots() {
     done
 }
 
-require_tool cargo-audit "cargo install cargo-audit --locked --version 0.22.1"
-require_tool cargo-deny "cargo install cargo-deny --locked --version 0.19.6"
-require_tool mdbook "cargo install mdbook --locked --version 0.5.3"
-require_tool typst "install Typst from https://typst.app/docs/install/ or your OS package manager"
-typst_version="$(typst --version 2>/dev/null | head -1)"
-if [[ "$typst_version" != typst\ 0.14.2* ]]; then
-    echo "Required typst version 0.14.2 not found (got: $typst_version)" >&2
-    exit 1
-fi
+require_tool_version cargo-audit cargo-audit 0.22.1 "cargo install cargo-audit --locked --version 0.22.1" cargo audit --version
+require_tool_version cargo-deny cargo-deny 0.19.6 "cargo install cargo-deny --locked --version 0.19.6" cargo deny --version
+require_tool_version mdbook mdbook 0.5.3 "cargo install mdbook --locked --version 0.5.3" mdbook --version
+require_tool_version typst typst 0.14.2 "install Typst from https://typst.app/docs/install/ or your OS package manager" typst --version
 
+run bash scripts/verify_repo_hygiene.sh
 run cargo metadata --format-version=1 --locked --no-deps > /dev/null
 run verify_no_unsafe_crate_roots
 run cargo fmt --all --check

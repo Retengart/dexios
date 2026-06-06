@@ -40,7 +40,7 @@ jobs:
           key: ${{ runner.os }}-cargo-cli-surface-stable-${{ hashFiles('Cargo.lock') }}
 
       - name: Build release-lto dexios
-        run: cargo build -p dexios --profile release-lto
+        run: cargo build --locked -p dexios --profile release-lto
 
       - name: Run CLI surface harness
         run: |

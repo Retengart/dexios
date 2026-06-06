@@ -1,5 +1,32 @@
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::arithmetic_side_effects,
+        clippy::unreachable,
+        clippy::string_slice,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        clippy::match_same_arms,
+        clippy::items_after_statements,
+        clippy::redundant_closure_for_method_calls,
+        clippy::needless_collect,
+        clippy::manual_let_else,
+        clippy::format_collect,
+        clippy::case_sensitive_file_extension_comparisons,
+        clippy::struct_excessive_bools,
+        reason = "integration tests assert exact behavior and may panic on failure"
+    )
+)]
 mod verification_gate_support;
+
+use std::process::Command;
 
 use verification_gate_support::*;
 
@@ -103,6 +130,31 @@ fn planning_artifacts_are_committed_project_state() {
 }
 
 #[test]
+fn release_hygiene_repository_policy_is_source_gated() {
+    assert_contains(".gitattributes", GITATTRIBUTES, "*.pdf binary");
+
+    assert_all_contains(
+        "scripts/verify_repo_hygiene.sh",
+        VERIFY_REPO_HYGIENE,
+        &[
+            "git ls-files --error-unmatch .gitattributes",
+            ".gitattributes must be tracked",
+            "*.pdf binary",
+            "git status --porcelain --untracked-files=all",
+            "release-sensitive untracked path",
+            "track or remove it before release-equivalent evidence",
+            ".github/workflows/*",
+            "book/src/*",
+            "dexios*/src/*",
+            "dexios*/tests/*",
+            "scripts/*",
+            "spec/*",
+            "release-evidence/*",
+        ],
+    );
+}
+
+#[test]
 fn local_scripts_expose_the_full_maintainer_gate() {
     assert_all_contains(
         "scripts/verify_phase_gate.sh",
@@ -122,10 +174,10 @@ fn local_scripts_expose_the_full_maintainer_gate() {
     );
 
     for required in [
-        "require_tool cargo-audit \"cargo install cargo-audit --locked --version 0.22.1\"",
-        "require_tool cargo-deny \"cargo install cargo-deny --locked --version 0.19.6\"",
-        "require_tool mdbook \"cargo install mdbook --locked --version 0.5.3\"",
-        "require_tool typst \"install Typst from https://typst.app/docs/install/ or your OS package manager\"",
+        "require_tool_version cargo-audit cargo-audit 0.22.1 \"cargo install cargo-audit --locked --version 0.22.1\" cargo audit --version",
+        "require_tool_version cargo-deny cargo-deny 0.19.6 \"cargo install cargo-deny --locked --version 0.19.6\" cargo deny --version",
+        "require_tool_version mdbook mdbook 0.5.3 \"cargo install mdbook --locked --version 0.5.3\" mdbook --version",
+        "require_tool_version typst typst 0.14.2 \"install Typst from https://typst.app/docs/install/ or your OS package manager\" typst --version",
         "verify_no_unsafe_crate_roots",
         "grep -Fxq '#![forbid(unsafe_code)]'",
         "dexios/src/main.rs",
@@ -156,6 +208,115 @@ fn local_scripts_expose_the_full_maintainer_gate() {
 }
 
 #[test]
+fn phase_gate_tool_version_equivalence_is_source_gated() {
+    assert_all_contains(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        &[
+            "require_tool_version()",
+            "expected=$3",
+            "observed=",
+            "observed_version=",
+            "observed_tool_version_token()",
+            "BASH_REMATCH[1]",
+            "for word in $observed",
+            "[[ \"$observed_version\" != \"$expected\" ]]",
+            "Required $label version mismatch: expected $expected, observed $observed",
+            "require_tool_version cargo-audit cargo-audit 0.22.1",
+            "require_tool_version cargo-deny cargo-deny 0.19.6",
+            "require_tool_version mdbook mdbook 0.5.3",
+            "require_tool_version typst typst 0.14.2",
+        ],
+    );
+
+    for forbidden in [
+        "require_tool cargo-audit",
+        "require_tool cargo-deny",
+        "require_tool mdbook",
+        "typst_version=\"$(typst --version",
+    ] {
+        assert_non_comment_lines_exclude(
+            "scripts/verify_phase_gate.sh",
+            VERIFY_PHASE_GATE,
+            &[forbidden],
+        );
+    }
+
+    assert_non_comment_line_occurs_before(
+        "scripts/verify_phase_gate.sh",
+        VERIFY_PHASE_GATE,
+        "require_tool_version cargo-audit cargo-audit 0.22.1 \"cargo install cargo-audit --locked --version 0.22.1\" cargo audit --version",
+        "run cargo metadata --format-version=1 --locked --no-deps > /dev/null",
+    );
+
+    assert!(
+        !VERIFY_PHASE_GATE.contains("[[ \"$observed\" != *\"$expected\"* ]]"),
+        "scripts/verify_phase_gate.sh must reject adjacent-prefix versions exactly, not by substring"
+    );
+}
+
+fn shell_function(source_name: &str, source: &str, function_name: &str) -> String {
+    let start = source
+        .find(&format!("{function_name}() {{"))
+        .unwrap_or_else(|| panic!("{source_name} must define shell function {function_name}"));
+    let relative_end = source[start..]
+        .find("\n}")
+        .unwrap_or_else(|| panic!("{source_name} shell function {function_name} must close"));
+    source[start..start + relative_end + 3].to_owned()
+}
+
+fn observed_tool_version_token_from_source(
+    source_name: &str,
+    source: &str,
+    observed: &str,
+) -> String {
+    let function = shell_function(source_name, source, "observed_tool_version_token");
+    let script = format!("{function}\nobserved_tool_version_token \"$1\"\n");
+    let output = Command::new("bash")
+        .arg("-c")
+        .arg(script)
+        .arg("observed_tool_version_token")
+        .arg(observed)
+        .output()
+        .unwrap_or_else(|error| panic!("{source_name} parser probe must run bash: {error}"));
+
+    assert!(
+        output.status.success(),
+        "{source_name} parser probe failed: status={:?} stderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    String::from_utf8(output.stdout)
+        .unwrap_or_else(|error| panic!("{source_name} parser probe stdout must be utf8: {error}"))
+}
+
+#[test]
+fn release_tool_version_parser_rejects_suffix_and_extra_component_canaries() {
+    for (source_name, source) in [
+        ("scripts/verify_phase_gate.sh", VERIFY_PHASE_GATE),
+        (
+            "scripts/generate_release_manifest.sh",
+            GENERATE_RELEASE_MANIFEST,
+        ),
+    ] {
+        for (observed, expected_token) in [
+            ("cargo-audit-audit 0.22.10", "0.22.10"),
+            ("cargo-audit-audit 0.22.1-beta", "0.22.1-beta"),
+            ("cargo-audit-audit 0.22.1.1", "0.22.1.1"),
+            ("mdbook v0.5.3", "0.5.3"),
+            ("typst 0.14.2 (b33de9de)", "0.14.2"),
+        ] {
+            let token = observed_tool_version_token_from_source(source_name, source, observed);
+            assert_eq!(
+                token, expected_token,
+                "{source_name} must parse the full version token from {observed:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn release_manifest_dirty_policy_is_split_between_local_dry_run_and_release_gate() {
     for required in [
         "bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release-lto/dexios",
@@ -178,6 +339,66 @@ fn release_manifest_dirty_policy_is_split_between_local_dry_run_and_release_gate
         "book/src/Safety-Contract.md",
         SAFETY_CONTRACT,
         "verify_phase_gate.sh` may pass `--allow-dirty`",
+    );
+}
+
+#[test]
+fn release_manifest_equivalence_policy_is_source_gated() {
+    assert_all_contains(
+        "scripts/generate_release_manifest.sh",
+        GENERATE_RELEASE_MANIFEST,
+        &[
+            "release_sensitive_untracked_state",
+            "release_sensitive_untracked_paths",
+            "Release-sensitive untracked files are present",
+            "track or remove them before release-equivalent evidence",
+            "local_dry_run=yes",
+            "release_equivalent=no",
+            "release_equivalent=yes",
+            "release-sensitive untracked state: `%s`",
+            "local dry run: `%s`",
+            "release-equivalent: `%s`",
+            "This manifest is a local dry run and is not release-equivalent.",
+        ],
+    );
+
+    let release_evidence_corpus = format!("{GENERATE_RELEASE_MANIFEST}\n{INSTALLING_AND_BUILDING}");
+    for stale_claim in [
+        "Untracked files\nare ignored by the dirty check",
+        "Untracked local files are ignored by the dirty check",
+    ] {
+        assert_not_contains(
+            "release evidence corpus",
+            &release_evidence_corpus,
+            stale_claim,
+        );
+    }
+}
+
+#[test]
+fn release_manifest_tool_equivalence_policy_is_source_gated() {
+    assert_all_contains(
+        "scripts/generate_release_manifest.sh",
+        GENERATE_RELEASE_MANIFEST,
+        &[
+            "EXPECTED_CARGO_AUDIT_VERSION=0.22.1",
+            "EXPECTED_CARGO_DENY_VERSION=0.19.6",
+            "EXPECTED_MDBOOK_VERSION=0.5.3",
+            "EXPECTED_TYPST_VERSION=0.14.2",
+            "release_tool_equivalence_state",
+            "observed_tool_version_token()",
+            "[[ \"$observed_version\" == \"$expected\" ]]",
+            "Release-equivalent tool version mismatch",
+            "release-equivalent tool versions: `%s`",
+            "expected `cargo-audit`: `%s`",
+            "observed `cargo audit --version`: `%s`",
+            "expected `cargo-deny`: `%s`",
+            "observed `cargo deny --version`: `%s`",
+            "expected `mdbook`: `%s`",
+            "observed `mdbook --version`: `%s`",
+            "expected `typst`: `%s`",
+            "observed `typst --version`: `%s`",
+        ],
     );
 }
 
