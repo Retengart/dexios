@@ -1,7 +1,8 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, reason = "integration tests assert exact behavior and may panic on failure"))]
 use dexios_core::header::common::{
     CANONICAL_HEADER_LEN, CANONICAL_HEADER_STATIC_LEN, CANONICAL_V1_DISCRIMINATOR, HEADER_LEN,
-    HEADER_STATIC_LEN, KEYSLOT_LEN, KeyslotNonce, PayloadNonce, Salt as HeaderSalt,
+    HEADER_STATIC_LEN, KEYSLOT_LEN, KeyslotNonce, MAGIC, PayloadNonce, Salt as HeaderSalt,
+    VERSION_V1,
 };
 use dexios_core::header::v1::{
     EncryptedMasterKey, KeyslotKdf, V1Header, V1Keyslot, V1KeyslotIndex, V1Keyslots,
@@ -13,6 +14,7 @@ use dexios_core::kdf::{
 use dexios_core::payload::{PayloadFramingProfile, PayloadKind};
 use dexios_core::primitives::{MasterKey, WrappingKey};
 use dexios_core::stream::{StreamError, V1PayloadDecryptor, V1PayloadEncryptor, V1PayloadStream};
+use std::io::Read;
 use std::path::Path;
 
 mod support {
@@ -98,6 +100,39 @@ fn assert_nonzero_reserved_bytes_public_entry_points(case: &str, bytes: &[u8]) {
         matches!(direct_v1_error, HeaderReadError::NonZeroReservedBytes),
         "{case}: V1Header::deserialize returned {direct_v1_error:?}"
     );
+}
+
+#[derive(Clone)]
+struct RetiredPrefixOnlyReader {
+    prefix: [u8; 10],
+    offset: usize,
+}
+
+impl RetiredPrefixOnlyReader {
+    fn new() -> Self {
+        let mut prefix = [0u8; 10];
+        prefix[..4].copy_from_slice(&MAGIC);
+        prefix[4..6].copy_from_slice(&VERSION_V1);
+        prefix[6..10].copy_from_slice(b"RV1\0");
+
+        Self { prefix, offset: 0 }
+    }
+}
+
+impl Read for RetiredPrefixOnlyReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.offset == self.prefix.len() {
+            return Err(std::io::Error::other(
+                "canonical body must not be read before retired-layout classification",
+            ));
+        }
+
+        let remaining = self.prefix.len() - self.offset;
+        let count = remaining.min(buf.len());
+        buf[..count].copy_from_slice(&self.prefix[self.offset..self.offset + count]);
+        self.offset += count;
+        Ok(count)
+    }
 }
 
 #[test]
@@ -497,6 +532,44 @@ fn canonical_reserved_byte_mutation_remains_reserved_byte_diagnostic() {
     bytes[36] = 0x01;
 
     assert_nonzero_reserved_bytes_public_entry_points("canonical reserved-byte mutation", &bytes);
+}
+
+#[test]
+fn retired_prefix_classification_happens_before_canonical_body_loading() {
+    let top_level_error = dexios_core::header::read_header(&mut RetiredPrefixOnlyReader::new())
+        .expect_err("top-level parser should classify retired prefix before canonical body read");
+    assert!(matches!(top_level_error, HeaderReadError::RetiredV1Layout));
+
+    let direct_v1_error = V1Header::deserialize(&mut RetiredPrefixOnlyReader::new())
+        .expect_err("direct V1 parser should classify retired prefix before canonical body read");
+    assert!(matches!(direct_v1_error, HeaderReadError::RetiredV1Layout));
+}
+
+#[test]
+fn public_header_readers_share_prefix_classified_canonical_byte_loader() {
+    let header_mod_source = include_str!("../src/header/mod.rs");
+    let v1_source = include_str!("../src/header/v1.rs");
+
+    assert!(
+        header_mod_source.contains("fn read_canonical_v1_header_bytes("),
+        "header module must expose one crate-private prefix-classified canonical byte loader"
+    );
+    assert!(
+        header_mod_source.contains("let bytes = read_canonical_v1_header_bytes(reader)?;"),
+        "read_header must use the shared prefix-classified canonical byte loader"
+    );
+    assert!(
+        v1_source.contains("let bytes = super::read_canonical_v1_header_bytes(reader)?;"),
+        "V1Header::deserialize must use the shared prefix-classified canonical byte loader"
+    );
+    assert!(
+        !v1_source.contains("reader.read_exact(&mut bytes[..10])?;"),
+        "direct V1 deserialization must not own duplicate prefix loading"
+    );
+    assert!(
+        !v1_source.contains("reader.read_exact(&mut bytes[10..])?;"),
+        "direct V1 deserialization must not own duplicate canonical body loading"
+    );
 }
 
 #[test]
