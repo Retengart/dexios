@@ -258,25 +258,32 @@ fn phase21_tool_version_pins_are_source_gated() {
     // CIGR-03 / D-07 / D-08: tool version pins are structurally asserted on the
     // gate script only. release.yml tool-version assertions belong to Plan 04.
 
-    // mdbook version pin: active require_tool call with version 0.5.3
+    // mdbook version pin: active require_tool_version call with version 0.5.3
     assert_contains(
         "scripts/verify_phase_gate.sh",
         VERIFY_PHASE_GATE,
-        "require_tool mdbook \"cargo install mdbook --locked --version 0.5.3\"",
+        "require_tool_version mdbook mdbook 0.5.3 \"cargo install mdbook --locked --version 0.5.3\" mdbook --version",
     );
 
     // Old unversioned mdbook hint must be gone
     assert_not_contains(
         "scripts/verify_phase_gate.sh",
         VERIFY_PHASE_GATE,
-        "require_tool mdbook \"cargo install mdbook --locked\"",
+        "require_tool_version mdbook mdbook 0.5.3 \"cargo install mdbook --locked\"",
     );
 
-    // typst version pin: 0.14.2 appears in a non-comment active check
+    for required in [
+        "require_tool_version cargo-audit cargo-audit 0.22.1",
+        "require_tool_version cargo-deny cargo-deny 0.19.6",
+        "require_tool_version typst typst 0.14.2",
+    ] {
+        assert_contains("scripts/verify_phase_gate.sh", VERIFY_PHASE_GATE, required);
+    }
+
     assert_contains(
         "scripts/verify_phase_gate.sh",
         VERIFY_PHASE_GATE,
-        "typst version 0.14.2",
+        "Required $label version mismatch: expected $expected, observed $observed",
     );
 
     // D-08: action-pin coverage — unit_tests workflow already has full SHA pins

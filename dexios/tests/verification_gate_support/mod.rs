@@ -1,5 +1,35 @@
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::unreachable, clippy::string_slice, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::match_same_arms, clippy::items_after_statements, clippy::redundant_closure_for_method_calls, clippy::needless_collect, clippy::manual_let_else, clippy::format_collect, clippy::case_sensitive_file_extension_comparisons, clippy::struct_excessive_bools, clippy::allow_attributes, clippy::redundant_pub_crate, reason = "shared gate helpers assert exact behavior and may panic on failure"))]
-#![allow(dead_code, reason = "shared gate helpers are used selectively across gate modules")]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::arithmetic_side_effects,
+        clippy::unreachable,
+        clippy::string_slice,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        clippy::match_same_arms,
+        clippy::items_after_statements,
+        clippy::redundant_closure_for_method_calls,
+        clippy::needless_collect,
+        clippy::manual_let_else,
+        clippy::format_collect,
+        clippy::case_sensitive_file_extension_comparisons,
+        clippy::struct_excessive_bools,
+        clippy::allow_attributes,
+        clippy::redundant_pub_crate,
+        reason = "shared gate helpers assert exact behavior and may panic on failure"
+    )
+)]
+#![allow(
+    dead_code,
+    reason = "shared gate helpers are used selectively across gate modules"
+)]
 
 pub(crate) const SAFETY_CONTRACT: &str = include_str!("../../../book/src/Safety-Contract.md");
 pub(crate) const CONTRIBUTING: &str = include_str!("../../../CONTRIBUTING.md");
@@ -36,6 +66,7 @@ pub(crate) const FLAKE_LOCK: &str = include_str!("../../../flake.lock");
 pub(crate) const DEXIOS_DOMAIN_CARGO_TOML: &str = include_str!("../../../dexios-domain/Cargo.toml");
 pub(crate) const DEXIOS_CARGO_TOML: &str = include_str!("../../../dexios/Cargo.toml");
 pub(crate) const GITIGNORE: &str = include_str!("../../../.gitignore");
+pub(crate) const GITATTRIBUTES: &str = include_str!("../../../.gitattributes");
 pub(crate) const DENY_TOML: &str = include_str!("../../../deny.toml");
 pub(crate) const VERIFY_PHASE_GATE: &str = include_str!("../../../scripts/verify_phase_gate.sh");
 pub(crate) const VERIFY_ASSURANCE_REPLAY: &str =
@@ -358,10 +389,7 @@ pub(crate) fn spec_format_reference_alignment_issues(source: &str) -> Vec<&'stat
             "112-byte physical keyslot",
             "missing current physical keyslot size",
         ),
-        (
-            "Argon2id",
-            "missing current Argon2id write policy",
-        ),
+        ("Argon2id", "missing current Argon2id write policy"),
         (
             "historical Argon2id tag",
             "missing unsupported historical Argon2id metadata boundary",
@@ -627,8 +655,10 @@ pub(crate) fn normalized_rust_production_section(
     let start_index = source
         .find(start)
         .unwrap_or_else(|| panic!("{source_name} must contain section start {start:?}"));
-    let end_index = source[start_index..]
-        .find(end).map_or_else(|| panic!("{source_name} must contain section end {end:?}"), |index| start_index + index);
+    let end_index = source[start_index..].find(end).map_or_else(
+        || panic!("{source_name} must contain section end {end:?}"),
+        |index| start_index + index,
+    );
     normalized_rust_production_source(&source[start_index..end_index])
 }
 
