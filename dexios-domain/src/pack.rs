@@ -668,6 +668,8 @@ fn verify_walked_entry_matches_opened(
     entry: &crate::storage::Entry<fs::File>,
     walked_metadata: &fs::Metadata,
 ) -> Result<(), Error> {
+    // Unix pack traversal verifies the no-follow opened entry against walked
+    // identity evidence before archive acceptance.
     if entry.is_dir() {
         let current_metadata = fs::symlink_metadata(entry.path()).map_err(|source| {
             Error::ReadSourceWithSource(crate::storage::Error::FileAccessWithSource(source))
@@ -707,6 +709,8 @@ fn verify_walked_entry_matches_opened(
     _entry: &crate::storage::Entry<fs::File>,
     _walked_metadata: &fs::Metadata,
 ) -> Result<(), Error> {
+    // non-Unix fallback is limited by platform identity APIs.
+    // It does not provide Unix-equivalent identity evidence.
     Ok(())
 }
 

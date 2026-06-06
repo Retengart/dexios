@@ -194,6 +194,8 @@ fn verify_entry_matches_resolved_target(
     let Some(expected_identity) = expected.existing_target_identity() else {
         return Err(Error::UnsafePath(expected.original_path().to_path_buf()));
     };
+    // Unix read-side reopen verifies the no-follow opened entry against
+    // captured identity evidence.
     let actual = match entry {
         Entry::File(FileData { stream, .. }) => stream
             .borrow()
@@ -239,6 +241,8 @@ fn verify_opened_file_matches_metadata(
 
 #[cfg(not(unix))]
 fn open_no_follow(path: &Path) -> Result<std_fs::File, Error> {
+    // non-Unix fallback is limited by platform identity APIs.
+    // It does not provide Unix-equivalent identity evidence.
     std_fs::File::open(path).map_err(|source| Error::OpenFileWithSource {
         mode: FileMode::Read,
         source,

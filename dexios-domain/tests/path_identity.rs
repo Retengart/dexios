@@ -11,6 +11,10 @@ use dexios_domain::storage::identity::{
 
 const STORAGE_FS_RS: &str = include_str!("../src/storage/fs.rs");
 const DOMAIN_PACK_RS: &str = include_str!("../src/pack.rs");
+const NON_UNIX_PLATFORM_LIMITATION_WORDING: &str =
+    "non-Unix fallback is limited by platform identity APIs";
+const NON_UNIX_NO_PARITY_WORDING: &str =
+    "does not provide Unix-equivalent identity evidence";
 
 struct TestDir {
     _dir: tempfile::TempDir,
@@ -109,6 +113,37 @@ fn source_section<'a>(source_name: &str, source: &'a str, start: &str, end: &str
     section
 }
 
+fn assert_unix_strong_identity_wording(source_name: &str, section: &str) {
+    assert!(
+        section.contains("no-follow opened entry") && section.contains("identity evidence"),
+        "{source_name} must describe Unix strong identity as no-follow open plus identity evidence"
+    );
+}
+
+fn assert_non_unix_limited_identity_wording(source_name: &str, section: &str) {
+    let normalized = section.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        normalized.contains(NON_UNIX_PLATFORM_LIMITATION_WORDING),
+        "{source_name} must label non-Unix identity fallback as limited by platform APIs"
+    );
+    assert!(
+        normalized.contains(NON_UNIX_NO_PARITY_WORDING),
+        "{source_name} must not imply Unix-equivalent non-Unix identity evidence"
+    );
+
+    for overclaim in [
+        "Unix-equivalent parity",
+        "Windows/non-Unix parity",
+        "non-Unix parity",
+        "same guarantees as Unix",
+    ] {
+        assert!(
+            !normalized.contains(overclaim),
+            "{source_name} must not claim unsupported platform parity via {overclaim:?}"
+        );
+    }
+}
+
 #[test]
 fn platform_identity_contract_distinguishes_unix_revalidation_from_non_unix_fallback() {
     let unix_read_reopen = source_section(
@@ -120,6 +155,10 @@ fn platform_identity_contract_distinguishes_unix_revalidation_from_non_unix_fall
     assert!(
         unix_read_reopen.contains("existing_target_identity()"),
         "Unix read-side reopen must be bound to captured identity evidence"
+    );
+    assert_unix_strong_identity_wording(
+        "dexios-domain/src/storage/fs.rs::verify_entry_matches_resolved_target",
+        unix_read_reopen,
     );
     assert!(
         unix_read_reopen.contains("actual.dev() != expected_identity.dev")
@@ -137,6 +176,10 @@ fn platform_identity_contract_distinguishes_unix_revalidation_from_non_unix_fall
         non_unix_open.contains("std_fs::File::open(path)"),
         "non-Unix fallback must remain visibly weaker than Unix no-follow reopen"
     );
+    assert_non_unix_limited_identity_wording(
+        "dexios-domain/src/storage/fs.rs::open_no_follow non-Unix fallback",
+        non_unix_open,
+    );
     assert!(
         !non_unix_open.contains(".dev()") && !non_unix_open.contains(".ino()"),
         "non-Unix fallback must not pretend to perform Unix dev/inode revalidation"
@@ -153,6 +196,10 @@ fn platform_identity_contract_distinguishes_unix_revalidation_from_non_unix_fall
             && unix_walk_entry.contains("opened_metadata.ino() != walked_metadata.ino()"),
         "Unix pack entry materialization must compare walked and opened identities"
     );
+    assert_unix_strong_identity_wording(
+        "dexios-domain/src/pack.rs::verify_walked_entry_matches_opened Unix",
+        unix_walk_entry,
+    );
 
     let non_unix_walk_entry = source_section(
         "dexios-domain/src/pack.rs",
@@ -163,6 +210,10 @@ fn platform_identity_contract_distinguishes_unix_revalidation_from_non_unix_fall
     assert!(
         non_unix_walk_entry.contains("Ok(())"),
         "non-Unix pack entry identity fallback is intentionally limited"
+    );
+    assert_non_unix_limited_identity_wording(
+        "dexios-domain/src/pack.rs::verify_walked_entry_matches_opened non-Unix fallback",
+        non_unix_walk_entry,
     );
     assert!(
         !non_unix_walk_entry.contains(".dev()") && !non_unix_walk_entry.contains(".ino()"),
