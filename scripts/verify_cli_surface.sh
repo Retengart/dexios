@@ -3,7 +3,19 @@
 set -u -o pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BIN="${1:-$REPO_ROOT/target/release-lto/dexios}"
+SELECTED_BIN="${1:-$REPO_ROOT/target/release-lto/dexios}"
+
+resolve_selected_binary() {
+    local selected=$1
+
+    if [[ "$selected" = /* ]]; then
+        printf '%s\n' "$selected"
+    else
+        printf '%s/%s\n' "$REPO_ROOT" "$selected"
+    fi
+}
+
+BIN="$(resolve_selected_binary "$SELECTED_BIN")"
 
 if [[ ! -x "$BIN" ]]; then
     echo "Binary not found or not executable: $BIN" >&2

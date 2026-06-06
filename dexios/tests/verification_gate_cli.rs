@@ -26,6 +26,39 @@ fn repaired_cli_surface_is_rejection_only_for_removed_behavior() {
         }
     }
 }
+
+#[test]
+fn cli_surface_harness_resolves_selected_binary_before_directory_changes() {
+    assert_all_contains(
+        "scripts/verify_cli_surface.sh",
+        VERIFY_CLI_SURFACE,
+        &[
+            "SELECTED_BIN=\"${1:-$REPO_ROOT/target/release-lto/dexios}\"",
+            "resolve_selected_binary()",
+            "BIN=\"$(resolve_selected_binary \"$SELECTED_BIN\")\"",
+            "echo \"Using binary: $BIN\"",
+        ],
+    );
+
+    assert_occurs_before(
+        "scripts/verify_cli_surface.sh",
+        VERIFY_CLI_SURFACE,
+        "BIN=\"$(resolve_selected_binary \"$SELECTED_BIN\")\"",
+        "if [[ ! -x \"$BIN\" ]]",
+    );
+    assert_occurs_before(
+        "scripts/verify_cli_surface.sh",
+        VERIFY_CLI_SURFACE,
+        "BIN=\"$(resolve_selected_binary \"$SELECTED_BIN\")\"",
+        "ROOT=\"$(mktemp -d /tmp/dexios-cli-surface.XXXXXX)\"",
+    );
+    assert_occurs_before(
+        "scripts/verify_cli_surface.sh",
+        VERIFY_CLI_SURFACE,
+        "BIN=\"$(resolve_selected_binary \"$SELECTED_BIN\")\"",
+        "cd \"$dir\"",
+    );
+}
 #[test]
 fn phase13_cli_output_and_decrypt_contract_is_source_gated() {
     assert_contains(
