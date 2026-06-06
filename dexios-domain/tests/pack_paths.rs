@@ -127,8 +127,7 @@ fn decrypted_manifest_archive(
     ManifestFirstPayload::parse(&bytes).unwrap()
 }
 
-fn decrypted_archive_entry_names(archive_path: &Path, header_path: Option<&Path>) -> Vec<String> {
-    let payload = decrypted_manifest_archive(archive_path, header_path);
+fn manifest_entry_names(payload: &ManifestFirstPayload) -> Vec<String> {
     let mut names = payload
         .manifest()
         .entries()
@@ -145,6 +144,11 @@ fn decrypted_archive_entry_names(archive_path: &Path, header_path: Option<&Path>
         .collect::<Vec<_>>();
     names.sort();
     names
+}
+
+fn decrypted_archive_entry_names(archive_path: &Path, header_path: Option<&Path>) -> Vec<String> {
+    let payload = decrypted_manifest_archive(archive_path, header_path);
+    manifest_entry_names(&payload)
 }
 
 #[cfg(unix)]
@@ -394,6 +398,69 @@ fn pack_recursive_real_tree_still_succeeds() {
             "source/nested/world.txt",
         ]
     );
+}
+
+#[test]
+fn pack_recursive_detached_header_preserves_v1_manifest_first_payload() {
+    let root = tempfile::tempdir().unwrap();
+    let source_dir = create_source_dir(root.path());
+    let output_path = root.path().join("archive.enc");
+    let header_path = root.path().join("archive.header");
+
+    let intent = pack_intent(vec![source_dir.clone()], &output_path, Some(&header_path)).unwrap();
+    pack::execute_transactional(intent).unwrap();
+
+    let header_bytes = fs::read(&header_path).unwrap();
+    let ParsedHeader::V1(parsed_header) = read_header(&mut Cursor::new(&header_bytes)).unwrap();
+    assert_eq!(
+        parsed_header.header().payload_kind(),
+        PayloadKind::ManifestArchive
+    );
+    assert_eq!(
+        parsed_header.header().payload_framing(),
+        PayloadFramingProfile::ManifestFirst
+    );
+
+    let payload = decrypted_manifest_archive(&output_path, Some(&header_path));
+    assert_eq!(
+        manifest_entry_names(&payload),
+        vec![
+            "source/",
+            "source/hello.txt",
+            "source/nested/",
+            "source/nested/world.txt",
+        ]
+    );
+    assert_eq!(
+        payload.body_frames().len(),
+        2,
+        "manifest-first payload must keep body frames only for file entries"
+    );
+
+    for (entry_name, expected_body) in [
+        ("source/hello.txt", b"hello".as_slice()),
+        ("source/nested/world.txt", b"world".as_slice()),
+    ] {
+        let entry_index = payload
+            .manifest()
+            .entries()
+            .iter()
+            .position(|entry| entry.normalized_path() == entry_name.as_bytes())
+            .unwrap_or_else(|| panic!("missing manifest entry {entry_name}"));
+        let frame = payload
+            .body_frames()
+            .iter()
+            .find(|frame| frame.entry_index() == u32::try_from(entry_index).unwrap())
+            .unwrap_or_else(|| panic!("missing body frame for {entry_name}"));
+        assert_eq!(frame.body(), expected_body);
+        assert_eq!(
+            payload.manifest().entries()[entry_index].body_len(),
+            Some(u64::try_from(expected_body.len()).unwrap())
+        );
+    }
+
+    assert_eq!(fs::read(source_dir.join("hello.txt")).unwrap(), b"hello");
+    assert_eq!(fs::read(source_dir.join("nested/world.txt")).unwrap(), b"world");
 }
 
 #[test]
