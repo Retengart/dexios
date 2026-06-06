@@ -13,6 +13,18 @@ const STREAM_RS: &str = include_str!("../src/stream.rs");
 const V1_RS: &str = include_str!("../src/header/v1.rs");
 const CARGO_TOML: &str = include_str!("../Cargo.toml");
 
+fn master_key_same_secret_as_source() -> &'static str {
+    let start = PRIMITIVES_RS
+        .find("pub fn same_secret_as")
+        .expect("MasterKey::same_secret_as source must remain inspectable");
+    let tail = &PRIMITIVES_RS[start..];
+    let end = tail
+        .find("\n}\n\nimpl From<Protected")
+        .expect("MasterKey impl boundary must remain inspectable");
+
+    &tail[..end]
+}
+
 fn sample_keyslot(seed: u8) -> V1Keyslot {
     V1Keyslot::new(
         Kdf::Argon2id,
@@ -113,16 +125,29 @@ fn master_key_same_secret_as_preserves_equality_semantics_without_direct_array_e
     let first = MasterKey::new([31u8; 32]);
     let same = MasterKey::new([31u8; 32]);
     let different = MasterKey::new([32u8; 32]);
+    let same_secret_as_source = master_key_same_secret_as_source();
 
     assert!(first.same_secret_as(&same));
     assert!(!first.same_secret_as(&different));
     assert!(
-        !PRIMITIVES_RS.contains("left == right"),
+        !same_secret_as_source.contains("left == right"),
         "same_secret_as must not use direct array equality for secret material"
     );
     assert!(
-        PRIMITIVES_RS.contains("use subtle::ConstantTimeEq;"),
+        same_secret_as_source.contains("left.ct_eq(right)"),
         "same_secret_as must use the crypto constant-time equality primitive directly"
+    );
+    assert!(
+        same_secret_as_source.contains("bool::from(left.ct_eq(right))"),
+        "same_secret_as must convert the final Choice to bool with the documented From boundary"
+    );
+    assert!(
+        !same_secret_as_source.contains(".unwrap_u8()"),
+        "same_secret_as must not use the raw Choice u8 escape hatch at the public bool boundary"
+    );
+    assert!(
+        PRIMITIVES_RS.contains("use subtle::ConstantTimeEq;"),
+        "dexios-core must import the direct constant-time equality trait"
     );
     assert!(
         CARGO_TOML.contains("subtle"),

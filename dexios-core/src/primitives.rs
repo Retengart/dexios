@@ -42,7 +42,7 @@ impl MasterKey {
 
     #[must_use]
     pub fn same_secret_as(&self, other: &Self) -> bool {
-        self.with_exposed(|left| other.with_exposed(|right| left.ct_eq(right).unwrap_u8() == 1))
+        self.with_exposed(|left| other.with_exposed(|right| bool::from(left.ct_eq(right))))
     }
 }
 
