@@ -246,7 +246,7 @@ case_header_subcommands() {
     contains_file "$dir/details-hdr.stdout" "Header version:" "header details should describe dumped header" || return 1
 
     cp "$dir/plain.enc" "$dir/stripped.enc"
-    "$BIN" header strip -f "$dir/stripped.enc" || return 1
+    "$BIN" header strip -f --header "$dir/plain.hdr" "$dir/stripped.enc" || return 1
     DEXIOS_KEY=12345678 "$BIN" decrypt -f --header "$dir/plain.hdr" "$dir/stripped.enc" "$dir/stripped-via-header.out" || return 1
     file_eq "$dir/plain.txt" "$dir/stripped-via-header.out" "decrypt with dumped header after strip should work" || return 1
 
@@ -272,7 +272,7 @@ case_key_subcommands() {
     file_eq "$dir/plain.txt" "$dir/multi.out" "key add should preserve decryptability with added key" || return 1
 
     "$BIN" encrypt -f -k "$dir/old.key" "$dir/plain.txt" "$dir/change.enc" || return 1
-    "$BIN" key change -k "$dir/old.key" -n "$dir/changed.key" "$dir/change.enc" || return 1
+    "$BIN" key change -f -k "$dir/old.key" -n "$dir/changed.key" "$dir/change.enc" || return 1
 
     if "$BIN" key verify -k "$dir/old.key" "$dir/change.enc" >/dev/null 2>&1; then
         echo "changed old key should no longer verify" >&2

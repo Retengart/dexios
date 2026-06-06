@@ -524,6 +524,8 @@ fn phase22_cli_parser_baseline_and_surface_gate_are_source_gated() {
             "case_encrypt_decrypt_env_hash_delete_input",
             "case_encrypt_decrypt_keyfile_detached_defaults",
             "case_pack_unpack_complex_success_path",
+            "\"$BIN\" header strip -f --header \"$dir/plain.hdr\" \"$dir/stripped.enc\"",
+            "\"$BIN\" key change -f -k \"$dir/old.key\" -n \"$dir/changed.key\" \"$dir/change.enc\"",
         ],
     );
 
