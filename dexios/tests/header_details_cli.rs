@@ -74,7 +74,7 @@ impl Drop for TestDir {
 fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
     command.current_dir(current_dir).env("DEXIOS_KEY", PASSWORD);
-    command.args(args).output().unwrap()
+    command.arg("--env-key").args(args).output().unwrap()
 }
 
 fn encrypt_fixture(input_path: &Path, output_path: &Path) {

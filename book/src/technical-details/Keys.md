@@ -45,7 +45,7 @@ If the keyfile path is `-`, Dexios reads the key material from standard input in
 
 ## Reading from Environment Variables
 
-If `DEXIOS_KEY` is available and no higher-priority key source is selected, Dexios reads it, converts it to bytes, and wraps it in `Protected<Vec<u8>>`.
+If `DEXIOS_KEY` is available, `--env-key` is passed, and no higher-priority key source is selected, Dexios reads it, converts it to bytes, and wraps it in `Protected<Vec<u8>>`. Without `--env-key`, an inherited `DEXIOS_KEY` is ignored.
 
 ## V1 Key Workflows
 

@@ -5,7 +5,6 @@ use core::header::common::HEADER_LEN;
 use core::header::v1::V1Header;
 use core::header::{ParsedHeader, read_header};
 use core::protected::Protected;
-use std::fs;
 use std::io::Cursor;
 use std::path::Path;
 
@@ -34,7 +33,7 @@ impl DeleteIntent {
             .map_err(Error::PathIdentity)?;
         graph.validate().map_err(Error::PathIdentity)?;
 
-        let original = fs::read(target.target_path()).map_err(|_| Error::ReadIo)?;
+        let (target, original) = super::read_mutation_target(target)?;
         let header = parse_v1_header(&original)?;
 
         if let Some(tag) = super::all_keyslots_have_unsupported_kdf(header.keyslots_collection()) {

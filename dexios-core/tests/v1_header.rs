@@ -40,6 +40,14 @@ use dexios_core::stream::{StreamError, V1PayloadDecryptor, V1PayloadEncryptor, V
 use std::io::Read;
 use std::path::Path;
 
+fn keyslot_nonce(bytes: [u8; 24]) -> KeyslotNonce {
+    KeyslotNonce::try_from_slice(&bytes).expect("valid keyslot nonce")
+}
+
+fn payload_nonce(bytes: [u8; 20]) -> PayloadNonce {
+    PayloadNonce::try_from_slice(&bytes).expect("valid payload nonce")
+}
+
 mod support {
     use super::*;
 
@@ -47,11 +55,11 @@ mod support {
         let keyslots = V1Keyslots::single(V1Keyslot::new(
             Kdf::Argon2id,
             [11u8; 48],
-            KeyslotNonce::new([13u8; 24]),
+            keyslot_nonce([13u8; 24]),
             HeaderSalt::new([17u8; 16]),
         ));
 
-        V1Header::new(PayloadNonce::new([7u8; 20]), keyslots).expect("sample v1 header")
+        V1Header::new(payload_nonce([7u8; 20]), keyslots).expect("sample v1 header")
     }
 
     pub(crate) fn parsed_payload_for(header: &V1Header) -> ParsedV1Payload {
@@ -181,7 +189,7 @@ fn v1_keyslot_collection_rejects_more_than_max() {
     let keyslot = V1Keyslot::new(
         Kdf::Argon2id,
         [11u8; 48],
-        KeyslotNonce::new([13u8; 24]),
+        keyslot_nonce([13u8; 24]),
         HeaderSalt::new([17u8; 16]),
     );
     let too_many = vec![keyslot; 5];
@@ -208,7 +216,7 @@ fn keyslot_nonce_length_is_fixed_for_v1() {
 fn keyslot_wrap_unwrap_uses_typed_nonce_and_key_inputs() {
     let header = support::sample_v1_header();
     let payload = support::parsed_payload_for(&header);
-    let nonce = KeyslotNonce::new([13u8; 24]);
+    let nonce = keyslot_nonce([13u8; 24]);
     let wrapping_aad = header
         .slot_wrapping_aad_for_physical_slot(
             V1KeyslotIndex::try_from_physical_index(0).expect("slot zero index"),
@@ -338,11 +346,11 @@ fn keyslot_salt_has_named_kdf_salt_boundary() {
 fn v1_payload_stream_uses_header_derived_aad() {
     let header = support::sample_v1_header();
     let other_header = V1Header::new(
-        PayloadNonce::new([8u8; 20]),
+        payload_nonce([8u8; 20]),
         V1Keyslots::single(V1Keyslot::new(
             Kdf::Argon2id,
             [21u8; 48],
-            KeyslotNonce::new([23u8; 24]),
+            keyslot_nonce([23u8; 24]),
             HeaderSalt::new([29u8; 16]),
         )),
     )
@@ -450,7 +458,7 @@ fn shared_payload_kind_and_framing_roundtrip_through_header_bytes() {
 fn new_manifest_archive_constructor_sets_canonical_payload_metadata() {
     let raw_header = support::sample_v1_header();
     let header = V1Header::new_manifest_archive(
-        PayloadNonce::new([9u8; 20]),
+        payload_nonce([9u8; 20]),
         raw_header.keyslots_collection().clone(),
     )
     .expect("manifest archive header");
@@ -619,21 +627,21 @@ fn payload_aad_excludes_mutable_keyslot_table_state() {
     let second_keyslot = V1Keyslot::new(
         Kdf::Argon2id,
         [29u8; 48],
-        KeyslotNonce::new([31u8; 24]),
+        keyslot_nonce([31u8; 24]),
         HeaderSalt::new([37u8; 16]),
     );
     let two_slot_header = V1Header::new(
-        PayloadNonce::new([7u8; 20]),
+        payload_nonce([7u8; 20]),
         V1Keyslots::try_from_vec(vec![first_header.keyslots()[0], second_keyslot])
             .expect("two physical keyslots"),
     )
     .expect("two-slot header");
     let changed_slot_header = V1Header::new(
-        PayloadNonce::new([7u8; 20]),
+        payload_nonce([7u8; 20]),
         V1Keyslots::single(V1Keyslot::new(
             Kdf::Argon2id,
             [41u8; 48],
-            KeyslotNonce::new([43u8; 24]),
+            keyslot_nonce([43u8; 24]),
             HeaderSalt::new([47u8; 16]),
         )),
     )
@@ -663,18 +671,18 @@ fn slot_wrapping_aad_binds_static_header_and_physical_slot_metadata() {
     assert_eq!(aad, expected);
 
     let two_slot_header = V1Header::new(
-        PayloadNonce::new([7u8; 20]),
+        payload_nonce([7u8; 20]),
         V1Keyslots::try_from_vec(vec![
             V1Keyslot::new(
                 Kdf::Argon2id,
                 [11u8; 48],
-                KeyslotNonce::new([13u8; 24]),
+                keyslot_nonce([13u8; 24]),
                 HeaderSalt::new([17u8; 16]),
             ),
             V1Keyslot::new(
                 Kdf::Argon2id,
                 [19u8; 48],
-                KeyslotNonce::new([23u8; 24]),
+                keyslot_nonce([23u8; 24]),
                 HeaderSalt::new([29u8; 16]),
             ),
         ])
@@ -939,10 +947,10 @@ fn new_keyslot_constructor_uses_supported_kdf_selector() {
     let keyslot = V1Keyslot::new(
         Kdf::Argon2id,
         [11u8; 48],
-        KeyslotNonce::new([13u8; 24]),
+        keyslot_nonce([13u8; 24]),
         HeaderSalt::new([17u8; 16]),
     );
-    let header = V1Header::new(PayloadNonce::new([7u8; 20]), V1Keyslots::single(keyslot))
+    let header = V1Header::new(payload_nonce([7u8; 20]), V1Keyslots::single(keyslot))
         .expect("sample v1 header");
     let bytes = header.serialize().unwrap();
 
@@ -1044,11 +1052,11 @@ fn v1_primitives_reject_invalid_lengths() {
 #[test]
 fn with_keyslots_preserves_manifest_archive_payload_metadata() {
     let source = V1Header::new_manifest_archive(
-        PayloadNonce::new([9u8; 20]),
+        payload_nonce([9u8; 20]),
         V1Keyslots::single(V1Keyslot::new(
             Kdf::Argon2id,
             [11u8; 48],
-            KeyslotNonce::new([13u8; 24]),
+            keyslot_nonce([13u8; 24]),
             HeaderSalt::new([17u8; 16]),
         )),
     )
@@ -1057,7 +1065,7 @@ fn with_keyslots_preserves_manifest_archive_payload_metadata() {
     let new_keyslots = V1Keyslots::single(V1Keyslot::new(
         Kdf::Argon2id,
         [22u8; 48],
-        KeyslotNonce::new([23u8; 24]),
+        keyslot_nonce([23u8; 24]),
         HeaderSalt::new([27u8; 16]),
     ));
     let rebuilt = source

@@ -361,8 +361,8 @@ scenario_stream() {
         dry_run cargo build -p dexios --release
         dry_run mkdir -p "$dir"
         dry_run dd if=/dev/urandom of="$plain" bs=1M count=16
-        dry_run env DEXIOS_KEY=12345678 "$BIN" encrypt -f "$plain" "$enc"
-        dry_run env DEXIOS_KEY=12345678 "$BIN" decrypt -f "$enc" "$out"
+        dry_run env DEXIOS_KEY=12345678 "$BIN" --env-key encrypt -f "$plain" "$enc"
+        dry_run env DEXIOS_KEY=12345678 "$BIN" --env-key decrypt -f "$enc" "$out"
         dry_run cmp "$plain" "$out"
         return
     fi
@@ -370,9 +370,9 @@ scenario_stream() {
     build_cli
     mkdir -p "$dir"
     run_timed "stream fixture generation" dd if=/dev/urandom of="$plain" bs=1M count=16
-    run_timed "stream encrypt throughput" env DEXIOS_KEY=12345678 "$BIN" encrypt -f "$plain" "$enc"
+    run_timed "stream encrypt throughput" env DEXIOS_KEY=12345678 "$BIN" --env-key encrypt -f "$plain" "$enc"
     check_elapsed_threshold "stream encrypt throughput" "$STREAM_ENCRYPT_MAX_SECONDS"
-    run_timed "stream decrypt throughput" env DEXIOS_KEY=12345678 "$BIN" decrypt -f "$enc" "$out"
+    run_timed "stream decrypt throughput" env DEXIOS_KEY=12345678 "$BIN" --env-key decrypt -f "$enc" "$out"
     check_elapsed_threshold "stream decrypt throughput" "$STREAM_DECRYPT_MAX_SECONDS"
     run_timed "stream roundtrip compare" cmp "$plain" "$out"
 }
@@ -388,8 +388,8 @@ scenario_pack_unpack() {
         dry_run mkdir -p "$src/nested" "$out"
         dry_run dd if=/dev/urandom of="$src/root.bin" bs=1M count=8
         dry_run dd if=/dev/urandom of="$src/nested/inner.bin" bs=1M count=8
-        dry_run env DEXIOS_KEY=12345678 "$BIN" pack -f "$src" "$enc"
-        dry_run env DEXIOS_KEY=12345678 "$BIN" unpack -f "$enc" "$out"
+        dry_run env DEXIOS_KEY=12345678 "$BIN" --env-key pack -f "$src" "$enc"
+        dry_run env DEXIOS_KEY=12345678 "$BIN" --env-key unpack -f "$enc" "$out"
         dry_run test -f "$out/src/root.bin"
         dry_run test -f "$out/src/nested/inner.bin"
         return
@@ -399,9 +399,9 @@ scenario_pack_unpack() {
     mkdir -p "$src/nested" "$out"
     run_timed "pack/unpack fixture root" dd if=/dev/urandom of="$src/root.bin" bs=1M count=8
     run_timed "pack/unpack fixture nested" dd if=/dev/urandom of="$src/nested/inner.bin" bs=1M count=8
-    run_timed "pack memory and elapsed time" env DEXIOS_KEY=12345678 "$BIN" pack -f "$src" "$enc"
+    run_timed "pack memory and elapsed time" env DEXIOS_KEY=12345678 "$BIN" --env-key pack -f "$src" "$enc"
     check_elapsed_threshold "pack memory and elapsed time" "$PACK_MAX_SECONDS"
-    run_timed "unpack memory and elapsed time" env DEXIOS_KEY=12345678 "$BIN" unpack -f "$enc" "$out"
+    run_timed "unpack memory and elapsed time" env DEXIOS_KEY=12345678 "$BIN" --env-key unpack -f "$enc" "$out"
     check_elapsed_threshold "unpack memory and elapsed time" "$UNPACK_MAX_SECONDS"
     run_timed "pack/unpack restored root" test -f "$out/src/root.bin"
     run_timed "pack/unpack restored nested" test -f "$out/src/nested/inner.bin"
@@ -418,9 +418,9 @@ scenario_temp_space() {
         dry_run mkdir -p "$src" "$out"
         dry_run du -sk "$dir"
         dry_run dd if=/dev/urandom of="$src/blob.bin" bs=1M count=16
-        dry_run env DEXIOS_KEY=12345678 "$BIN" pack -f "$src" "$enc"
+        dry_run env DEXIOS_KEY=12345678 "$BIN" --env-key pack -f "$src" "$enc"
         dry_run du -sk "$dir"
-        dry_run env DEXIOS_KEY=12345678 "$BIN" unpack -f "$enc" "$out"
+        dry_run env DEXIOS_KEY=12345678 "$BIN" --env-key unpack -f "$enc" "$out"
         dry_run du -sk "$dir"
         return
     fi
@@ -429,10 +429,10 @@ scenario_temp_space() {
     mkdir -p "$src" "$out"
     run_timed "temp-space before fixture" du -sk "$dir"
     run_timed "temp-space fixture" dd if=/dev/urandom of="$src/blob.bin" bs=1M count=16
-    run_timed "temp-space pack" env DEXIOS_KEY=12345678 "$BIN" pack -f "$src" "$enc"
+    run_timed "temp-space pack" env DEXIOS_KEY=12345678 "$BIN" --env-key pack -f "$src" "$enc"
     run_timed "temp-space after pack" du -sk "$dir"
     record_temp_space_observed "temp-space after pack" "$dir"
-    run_timed "temp-space unpack" env DEXIOS_KEY=12345678 "$BIN" unpack -f "$enc" "$out"
+    run_timed "temp-space unpack" env DEXIOS_KEY=12345678 "$BIN" --env-key unpack -f "$enc" "$out"
     run_timed "temp-space after unpack" du -sk "$dir"
     record_temp_space_observed "temp-space after unpack" "$dir"
 }

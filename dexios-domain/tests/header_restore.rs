@@ -37,6 +37,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 
+fn keyslot_nonce(bytes: [u8; 24]) -> KeyslotNonce {
+    KeyslotNonce::try_from_slice(&bytes).expect("valid keyslot nonce")
+}
+
+fn payload_nonce(bytes: [u8; 20]) -> PayloadNonce {
+    PayloadNonce::try_from_slice(&bytes).expect("valid payload nonce")
+}
+
 struct TestDir {
     path: PathBuf,
 }
@@ -72,10 +80,10 @@ fn v1_header_bytes() -> Vec<u8> {
     let keyslot = V1Keyslot::new(
         Kdf::Argon2id,
         [1u8; 48],
-        KeyslotNonce::new([2u8; 24]),
+        keyslot_nonce([2u8; 24]),
         Salt::new([3u8; 16]),
     );
-    let header = V1Header::new(PayloadNonce::new([4u8; 20]), V1Keyslots::single(keyslot))
+    let header = V1Header::new(payload_nonce([4u8; 20]), V1Keyslots::single(keyslot))
         .expect("create V1 header");
 
     header.serialize().expect("serialize V1 header")
@@ -104,6 +112,33 @@ fn resolved_mutation_target(path: &Path) -> dexios_domain::storage::identity::Re
         .expect("resolve mutation target");
     graph.validate().expect("validate graph");
     target
+}
+
+#[cfg(unix)]
+#[test]
+fn mutation_snapshot_rejects_symlink_swap_before_initial_read() {
+    use std::os::unix::fs::symlink;
+
+    let test_dir = TestDir::new("mutation-snapshot-initial-symlink-swap");
+    let target_path = test_dir.path().join("target.enc");
+    let replacement_path = test_dir.path().join("replacement.enc");
+    fs::write(&target_path, b"original bytes").unwrap();
+    fs::write(&replacement_path, b"replacement bytes").unwrap();
+
+    let target = resolved_mutation_target(&target_path);
+    fs::remove_file(&target_path).unwrap();
+    symlink(&replacement_path, &target_path).unwrap();
+
+    let error = MutationSnapshot::read(target)
+        .expect_err("snapshot read must not follow a symlink swapped in after identity capture");
+    assert!(matches!(
+        error,
+        MutationFreshnessError::IdentityChanged {
+            role: PathRole::MutationTarget,
+            ..
+        }
+    ));
+    assert_eq!(fs::read(&replacement_path).unwrap(), b"replacement bytes");
 }
 
 #[test]

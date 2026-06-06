@@ -29,6 +29,14 @@ use dexios_core::header::v1::{V1Header, V1Keyslot, V1Keyslots};
 use dexios_core::kdf::Kdf;
 use std::io::{Cursor, Seek, SeekFrom, Write};
 
+fn keyslot_nonce(bytes: [u8; 24]) -> KeyslotNonce {
+    KeyslotNonce::try_from_slice(&bytes).expect("valid keyslot nonce")
+}
+
+fn payload_nonce(bytes: [u8; 20]) -> PayloadNonce {
+    PayloadNonce::try_from_slice(&bytes).expect("valid payload nonce")
+}
+
 #[derive(Default)]
 struct ShortWriteCursor {
     inner: Cursor<Vec<u8>>,
@@ -76,11 +84,11 @@ impl Write for FailingWriter {
 #[test]
 fn v1_header_write_must_write_the_full_serialized_header() {
     let header = V1Header::new(
-        PayloadNonce::new([7u8; 20]),
+        payload_nonce([7u8; 20]),
         V1Keyslots::single(V1Keyslot::new(
             Kdf::Argon2id,
             [5u8; 48],
-            KeyslotNonce::new([9u8; 24]),
+            keyslot_nonce([9u8; 24]),
             Salt::new([3u8; 16]),
         )),
     )
@@ -95,11 +103,11 @@ fn v1_header_write_must_write_the_full_serialized_header() {
 #[test]
 fn v1_header_write_preserves_underlying_io_error_details() {
     let header = V1Header::new(
-        PayloadNonce::new([7u8; 20]),
+        payload_nonce([7u8; 20]),
         V1Keyslots::single(V1Keyslot::new(
             Kdf::Argon2id,
             [5u8; 48],
-            KeyslotNonce::new([9u8; 24]),
+            keyslot_nonce([9u8; 24]),
             Salt::new([3u8; 16]),
         )),
     )

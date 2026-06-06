@@ -96,7 +96,8 @@ checks, and release-note triggers.
 
 The mdBook source for the project documentation lives in `book/src/`.
 
-- generated site output lives in `docs/`
+- generated site output is not committed; `mdbook build --dest-dir target/mdbook`
+  writes it under the ignored `target/` tree
 - crate API docs are published separately on docs.rs
 - the whitepaper-style format source lives in `spec/dexios-paper.typ`
 - the current PDF `spec/dexios-paper.pdf` is generated from that Typst source
@@ -109,7 +110,7 @@ Release-facing metadata is source-backed:
 
 - release manifest wording lives in `scripts/generate_release_manifest.sh`
 - release workflow asset-name construction lives in `.github/workflows/release.yml`
-- source-backed docs/spec locations are `book/src/`, `docs/`, and `spec/dexios-paper.typ`
+- source-backed docs/spec locations are `book/src/` and `spec/dexios-paper.typ`
 - manifest asset entries record supplied basenames and SHA256 values only, and
   this wording does not claim a complete platform asset set
 

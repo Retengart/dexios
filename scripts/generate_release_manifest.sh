@@ -166,7 +166,6 @@ is_release_sensitive_untracked_path() {
         .gitattributes | \
         .github/workflows/* | \
         book/src/* | \
-        docs/* | \
         scripts/* | \
         spec/* | \
         release-evidence/* | \
@@ -387,9 +386,7 @@ mkdir -p "$(dirname "$output")"
     [[ -z "$tag" ]] || printf ' --tag %q' "$tag"
     [[ "$allow_dirty" -eq 0 ]] || printf ' --allow-dirty'
     printf '`\n'
-    printf -- '- `mdbook build`\n'
-    printf -- '- `git diff --exit-code -- docs`\n'
-    printf -- '- `git status --porcelain --untracked-files=all -- docs`\n'
+    printf -- '- `mdbook build --dest-dir target/mdbook`\n'
     printf -- '- `typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf`\n'
     printf -- '- `git diff --exit-code -- spec/dexios-paper.pdf`\n'
     printf -- '- `bash scripts/verify_repo_hygiene.sh`\n'
@@ -412,10 +409,11 @@ mkdir -p "$(dirname "$output")"
     fi
 
     printf '## RC Evidence\n\n'
-    printf 'The v3.0 release candidate closeout evidence artifact is recorded at\n'
+    printf 'The release candidate closeout evidence artifact is recorded at\n'
     printf '`release-evidence/RC-CLOSEOUT.md` in the source tree. That document names the\n'
     printf 'blocker-to-check traceability matrix, accepted residual risks, platform limits,\n'
-    printf 'non-goals, property/fuzz coverage decision, and performance gate status for v3.0.\n'
+    printf 'non-goals, property/fuzz coverage decision, and performance gate status for the\n'
+    printf 'release candidate.\n'
     printf 'This manifest entry records the reference; it does not independently verify the\n'
     printf 'matrix entries. Use a completed `bash scripts/verify_phase_gate.sh` run for\n'
     printf 'pass/fail evidence against the contracts named in RC-CLOSEOUT.md.\n\n'

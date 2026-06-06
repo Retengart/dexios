@@ -917,11 +917,28 @@ fn phase18_header_and_key_mutation_guards_are_source_gated() {
 
     for required in [
         "crate::storage::mutation::ensure_fresh",
+        "storage::mutation::{MutationFreshnessError, MutationSnapshot}",
+        "read_mutation_target",
         "MutationFreshnessError::IdentityChanged",
         "MutationFreshnessError::ContentChanged",
         "Error::TargetChanged",
     ] {
         assert_contains("dexios-domain/src/key.rs", DEXIOS_DOMAIN_KEY_RS, required);
+    }
+
+    for (source_name, source) in [
+        ("dexios-domain/src/key/add.rs", DEXIOS_DOMAIN_KEY_ADD_RS),
+        (
+            "dexios-domain/src/key/change.rs",
+            DEXIOS_DOMAIN_KEY_CHANGE_RS,
+        ),
+        (
+            "dexios-domain/src/key/delete.rs",
+            DEXIOS_DOMAIN_KEY_DELETE_RS,
+        ),
+    ] {
+        assert_contains(source_name, source, "super::read_mutation_target(target)?");
+        assert_not_contains(source_name, source, "fs::read(target.target_path())");
     }
 
     for required in [
@@ -1503,18 +1520,6 @@ fn phase11_filesystem_transaction_and_cleanup_contract_is_source_gated() {
         ),
         ("dexios-domain/src/storage/temp.rs", DEXIOS_DOMAIN_TEMP_RS),
     ];
-    let generated_docs = [
-        ("docs/Safety-Contract.html", GENERATED_SAFETY_CONTRACT),
-        (
-            "docs/technical-details/Secure-Erase.html",
-            GENERATED_SECURE_ERASE,
-        ),
-        (
-            "docs/technical-details/Directory-Packing.html",
-            GENERATED_DIRECTORY_PACKING,
-        ),
-    ];
-
     for (source_name, source) in docs {
         for forbidden in [
             "secure erase guarantee",
@@ -1566,21 +1571,6 @@ fn phase11_filesystem_transaction_and_cleanup_contract_is_source_gated() {
         "no full plaintext archive temporary file",
     ] {
         assert_contains("CHANGELOG.md", CHANGELOG, required);
-    }
-
-    for required in [
-        "ordinary delete-after-success cleanup",
-        "changed cleanup identity",
-        "partial commit evidence",
-        "committed outputs are not rolled back",
-        "no secure erase",
-        "no physical sanitization",
-        "no full power-failure proof",
-        "manifest-first archive payload",
-        "no full plaintext archive temporary file",
-        "selected staged file bodies",
-    ] {
-        assert_corpus_contains("generated Phase 11 docs", &generated_docs, required);
     }
 
     for required in [
@@ -1771,11 +1761,6 @@ fn phase12_unpack_directory_rollback_contract_is_source_gated() {
             DIRECTORY_PACKING,
             required,
         );
-        assert_contains(
-            "docs/technical-details/Directory-Packing.html",
-            GENERATED_DIRECTORY_PACKING,
-            required.trim_matches('`'),
-        );
     }
 
     for required in [
@@ -1822,7 +1807,16 @@ fn phase7_decision_groups_are_source_gated() {
         VERIFY_PHASE_GATE,
         "bash scripts/verify_cli_surface.sh",
     );
-    assert_contains(".github/workflows/docs.yml", DOCS_WORKFLOW, "mdbook build");
+    assert_contains(
+        ".github/workflows/docs.yml",
+        DOCS_WORKFLOW,
+        "mdbook build --dest-dir target/mdbook",
+    );
+    assert_contains(
+        ".github/workflows/docs.yml",
+        DOCS_WORKFLOW,
+        "cargo install mdbook --locked --version 0.5.3",
+    );
 
     // D-11 through D-15: resource-sensitive defaults require measured evidence.
     assert_contains("book/src/Safety-Contract.md", SAFETY_CONTRACT, "VERI-05");
@@ -1835,6 +1829,18 @@ fn phase7_decision_groups_are_source_gated() {
     // D-16 through D-20: breaking safety changes require release notes.
     assert_contains("book/src/Safety-Contract.md", SAFETY_CONTRACT, "VERI-06");
     assert_contains("CHANGELOG.md", CHANGELOG, "## Unreleased");
+    assert_contains("dexios/src/cli/args.rs", DEXIOS_CLI_ARGS_RS, "env_key_arg");
+    assert_contains("dexios/src/cli.rs", DEXIOS_CLI_RS, "args::env_key_arg()");
+    assert_contains(
+        "dexios/src/global/states.rs",
+        DEXIOS_STATES_RS,
+        "env_key_requested",
+    );
+    assert_contains(
+        "book/src/Environment-Variables.md",
+        include_str!("../../book/src/Environment-Variables.md"),
+        "--env-key",
+    );
 
     // D-21 through D-23 (reversed 2026-05-29): local-notes/ is committed project state.
     assert_not_contains(".gitignore", GITIGNORE, "local-notes/");
@@ -1842,5 +1848,15 @@ fn phase7_decision_groups_are_source_gated() {
         "scripts/verify_repo_hygiene.sh",
         VERIFY_REPO_HYGIENE,
         "local-notes/",
+    );
+    assert_contains(
+        "book/src/Safety-Contract.md",
+        SAFETY_CONTRACT,
+        "`local-notes/` is committed maintainer project state",
+    );
+    assert_not_contains(
+        "book/src/Safety-Contract.md",
+        SAFETY_CONTRACT,
+        "local-notes/ is local-only working context",
     );
 }

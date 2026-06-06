@@ -80,6 +80,7 @@ fn run_cli(current_dir: &Path, key: &str, args: &[&str]) -> std::process::Output
     command
         .current_dir(current_dir)
         .env("DEXIOS_KEY", key)
+        .arg("--env-key")
         .args(args)
         .output()
         .unwrap()

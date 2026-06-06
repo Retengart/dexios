@@ -376,6 +376,30 @@ fn release_manifest_equivalence_policy_is_source_gated() {
 }
 
 #[test]
+fn release_manifest_rc_evidence_wording_is_version_neutral() {
+    assert_contains(
+        "scripts/generate_release_manifest.sh",
+        GENERATE_RELEASE_MANIFEST,
+        "release candidate closeout evidence artifact is recorded at",
+    );
+    assert_contains(
+        "scripts/generate_release_manifest.sh",
+        GENERATE_RELEASE_MANIFEST,
+        "release candidate.",
+    );
+    assert_not_contains(
+        "scripts/generate_release_manifest.sh",
+        GENERATE_RELEASE_MANIFEST,
+        "v3.0 release candidate",
+    );
+    assert_not_contains(
+        "scripts/generate_release_manifest.sh",
+        GENERATE_RELEASE_MANIFEST,
+        "performance gate status for v3.0",
+    );
+}
+
+#[test]
 fn release_manifest_tool_equivalence_policy_is_source_gated() {
     assert_all_contains(
         "scripts/generate_release_manifest.sh",

@@ -73,6 +73,7 @@ fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
     command
         .current_dir(current_dir)
         .env("DEXIOS_KEY", PASSWORD)
+        .arg("--env-key")
         .args(args)
         .output()
         .unwrap()
@@ -82,6 +83,7 @@ fn run_cli_with_stdin(current_dir: &Path, args: &[&str], stdin: &[u8]) -> std::p
     let mut child = Command::new(env!("CARGO_BIN_EXE_dexios"))
         .current_dir(current_dir)
         .env("DEXIOS_KEY", PASSWORD)
+        .arg("--env-key")
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

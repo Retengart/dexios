@@ -73,6 +73,7 @@ fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
     command
         .current_dir(current_dir)
         .env("DEXIOS_KEY", PASSWORD)
+        .arg("--env-key")
         .args(args)
         .output()
         .unwrap()
@@ -153,6 +154,7 @@ fn decrypt_wrong_key_failure_preserves_existing_output() {
     let decrypt_output = command
         .current_dir(test_dir.path())
         .env("DEXIOS_KEY", "wrong-password")
+        .arg("--env-key")
         .args(["decrypt", "--force", "plain.enc", "plain.out"])
         .output()
         .unwrap();

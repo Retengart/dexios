@@ -31,7 +31,7 @@ dexios encrypt --auto=5 secret.txt secret.enc
 ## Use `DEXIOS_KEY`
 
 ```bash
-DEXIOS_KEY='correct horse battery staple' dexios encrypt secret.txt secret.enc
+DEXIOS_KEY='correct horse battery staple' dexios --env-key encrypt secret.txt secret.enc
 ```
 
 ## Write the Header Separately

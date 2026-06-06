@@ -8,7 +8,6 @@ use core::header::{ParsedHeader, read_header};
 use core::kdf::Kdf;
 use core::primitives::{MasterKey, gen_keyslot_nonce, gen_salt};
 use core::protected::Protected;
-use std::fs;
 use std::io::Cursor;
 use std::path::Path;
 
@@ -38,7 +37,7 @@ impl AddIntent {
             .map_err(Error::PathIdentity)?;
         graph.validate().map_err(Error::PathIdentity)?;
 
-        let original = fs::read(target.target_path()).map_err(|_| Error::ReadIo)?;
+        let (target, original) = super::read_mutation_target(target)?;
         let header = parse_v1_header(&original)?;
         let keyslots = header.keyslots_collection();
 

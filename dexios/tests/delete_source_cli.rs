@@ -51,6 +51,14 @@ const TRUNCATED_CANONICAL_V1_PREFIX: &[u8] = b"DXIO\x00\x01CV1\x00";
 const RETIRED_CURRENT_V1_PREFIX: &[u8] = b"DXIO\x00\x01\x01\x00\x07\x07";
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 
+fn keyslot_nonce(bytes: [u8; 24]) -> KeyslotNonce {
+    KeyslotNonce::try_from_slice(&bytes).expect("valid keyslot nonce")
+}
+
+fn payload_nonce(bytes: [u8; 20]) -> PayloadNonce {
+    PayloadNonce::try_from_slice(&bytes).expect("valid payload nonce")
+}
+
 struct TestDir {
     path: PathBuf,
 }
@@ -86,6 +94,7 @@ fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
     command
         .current_dir(current_dir)
         .env("DEXIOS_KEY", PASSWORD)
+        .arg("--env-key")
         .args(args);
     command.output().unwrap()
 }
@@ -146,8 +155,8 @@ fn manifest_archive_header_and_master_key() -> (V1Header, MasterKey) {
     let kdf_salt = header_salt.to_kdf_salt();
     let wrapping_key = Kdf::Argon2id.derive(&raw_key, &kdf_salt).unwrap();
     let master_key = MasterKey::new([31u8; 32]);
-    let keyslot_nonce = KeyslotNonce::new([13u8; 24]);
-    let payload_nonce = PayloadNonce::new([7u8; 20]);
+    let keyslot_nonce = keyslot_nonce([13u8; 24]);
+    let payload_nonce = payload_nonce([7u8; 20]);
     let placeholder_keyslot = V1Keyslot::new(Kdf::Argon2id, [0u8; 48], keyslot_nonce, header_salt);
     let placeholder_header =
         V1Header::new_manifest_archive(payload_nonce, V1Keyslots::single(placeholder_keyslot))
@@ -301,6 +310,7 @@ fn decrypt_delete_input_waits_for_commit_success() {
     let decrypt_cmd = command
         .current_dir(test_dir.path())
         .env("DEXIOS_KEY", "wrong-password")
+        .arg("--env-key")
         .args([
             "decrypt",
             "-f",

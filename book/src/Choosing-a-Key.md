@@ -29,10 +29,10 @@ When multiple key sources are available, the current CLI resolves them in this o
 
 1. explicit keyfile
 2. explicit `--auto`
-3. `DEXIOS_KEY`
+3. `DEXIOS_KEY` with `--env-key`
 4. interactive password entry
 
-That means an explicit `--auto` or `--keyfile` overrides `DEXIOS_KEY`.
+That means an explicit `--auto` or `--keyfile` overrides `DEXIOS_KEY`, and an inherited `DEXIOS_KEY` is ignored unless the command also passes `--env-key`.
 
 ## Keyfiles
 

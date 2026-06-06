@@ -41,12 +41,6 @@ pub(crate) const DIRECTORY_PACKING: &str =
     include_str!("../../../book/src/technical-details/Directory-Packing.md");
 pub(crate) const SECURE_ERASE: &str =
     include_str!("../../../book/src/technical-details/Secure-Erase.md");
-pub(crate) const GENERATED_SAFETY_CONTRACT: &str =
-    include_str!("../../../docs/Safety-Contract.html");
-pub(crate) const GENERATED_DIRECTORY_PACKING: &str =
-    include_str!("../../../docs/technical-details/Directory-Packing.html");
-pub(crate) const GENERATED_SECURE_ERASE: &str =
-    include_str!("../../../docs/technical-details/Secure-Erase.html");
 pub(crate) const INSTALLING_AND_BUILDING: &str =
     include_str!("../../../book/src/Installing-and-Building.md");
 pub(crate) const AUDITING: &str = include_str!("../../../book/src/dexios-core/Auditing.md");
@@ -170,6 +164,12 @@ pub(crate) const DEXIOS_DOMAIN_HEADER_STRIP_RS: &str =
 pub(crate) const DEXIOS_DOMAIN_HEADER_RESTORE_RS: &str =
     include_str!("../../../dexios-domain/src/header/restore.rs");
 pub(crate) const DEXIOS_DOMAIN_KEY_RS: &str = include_str!("../../../dexios-domain/src/key.rs");
+pub(crate) const DEXIOS_DOMAIN_KEY_ADD_RS: &str =
+    include_str!("../../../dexios-domain/src/key/add.rs");
+pub(crate) const DEXIOS_DOMAIN_KEY_CHANGE_RS: &str =
+    include_str!("../../../dexios-domain/src/key/change.rs");
+pub(crate) const DEXIOS_DOMAIN_KEY_DELETE_RS: &str =
+    include_str!("../../../dexios-domain/src/key/delete.rs");
 pub(crate) const DEXIOS_DOMAIN_PATH_IDENTITY_TESTS: &str =
     include_str!("../../../dexios-domain/tests/path_identity.rs");
 pub(crate) const DEXIOS_DOMAIN_TRANSACTIONS_STAGED_OUTPUT_TESTS: &str =
@@ -237,9 +237,7 @@ pub(crate) const REPAIRED_GATE_COMMANDS: &[&str] = &[
     "cargo deny check",
     "cargo build --locked -p dexios --profile release-lto",
     "bash scripts/verify_cli_surface.sh",
-    "mdbook build",
-    "git diff --exit-code -- docs",
-    "git status --porcelain --untracked-files=all -- docs",
+    "mdbook build --dest-dir target/mdbook",
     "typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf",
     "git diff --exit-code -- spec/dexios-paper.pdf",
     "bash scripts/verify_repo_hygiene.sh",

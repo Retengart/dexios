@@ -10,7 +10,7 @@ use core::primitives::{MasterKey, WrappingKey};
 use core::protected::Protected;
 
 use crate::storage::identity::IdentityError;
-use crate::storage::mutation::MutationFreshnessError;
+use crate::storage::mutation::{MutationFreshnessError, MutationSnapshot};
 use crate::storage::transaction::TransactionError;
 use crate::workflow_error::WorkflowErrorClass;
 
@@ -256,6 +256,14 @@ pub(crate) fn ensure_target_unchanged(
     original: &[u8],
 ) -> Result<(), Error> {
     crate::storage::mutation::ensure_fresh(target, original).map_err(map_mutation_freshness_error)
+}
+
+pub(crate) fn read_mutation_target(
+    target: crate::storage::identity::ResolvedTarget,
+) -> Result<(crate::storage::identity::ResolvedTarget, Vec<u8>), Error> {
+    MutationSnapshot::read(target)
+        .map(MutationSnapshot::into_parts)
+        .map_err(map_mutation_freshness_error)
 }
 
 fn map_mutation_freshness_error(error: MutationFreshnessError) -> Error {

@@ -25,7 +25,6 @@ is_release_sensitive_untracked_path() {
         .gitattributes | \
         .github/workflows/* | \
         book/src/* | \
-        docs/* | \
         scripts/* | \
         spec/* | \
         release-evidence/* | \
@@ -85,11 +84,18 @@ tracked_planning="$(git ls-files local-notes)"
 
 ! git check-ignore -q local-notes || fail "local-notes/ must not be gitignored (committed project state)"
 
+tracked_generated_docs="$(git ls-files docs)"
+[[ -z "$tracked_generated_docs" ]] \
+    || fail "generated docs/ output must not be tracked; keep mdBook sources under book/src/"
+
 verify_pdf_attribute_policy
 verify_release_sensitive_untracked_paths
 
-grep -F 'build-dir = "docs"' book.toml >/dev/null \
-    || fail 'book.toml must keep build-dir = "docs"'
+grep -F 'build-dir = "target/mdbook"' book.toml >/dev/null \
+    || fail 'book.toml must keep build-dir = "target/mdbook"'
+
+grep -Fxq '/docs/' .gitignore \
+    || fail ".gitignore must ignore generated mdBook output at /docs/"
 
 [[ -f CHANGELOG.md ]] || fail "CHANGELOG.md is missing"
 

@@ -1216,7 +1216,7 @@ fn phase20_pdf_freshness_commands_are_source_gated() {
     assert_non_comment_line_occurs_before(
         "scripts/verify_phase_gate.sh",
         VERIFY_PHASE_GATE,
-        "run git diff --exit-code -- docs",
+        "run mdbook build --dest-dir target/mdbook",
         "run typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf",
     );
 

@@ -29,6 +29,7 @@ pub(crate) fn build_cli() -> Command {
         .about("Secure, fast and modern command-line encryption of files.")
         .subcommand_required(true)
         .arg_required_else_help(true)
+        .arg(args::env_key_arg())
         .subcommand(commands::stream::encrypt_command())
         .subcommand(commands::stream::decrypt_command())
         .subcommand(commands::hash::hash_command())

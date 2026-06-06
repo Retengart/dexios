@@ -69,9 +69,7 @@ cargo audit --deny warnings
 cargo deny check
 cargo build --locked -p dexios --profile release-lto
 bash scripts/verify_cli_surface.sh
-mdbook build
-git diff --exit-code -- docs
-git status --porcelain --untracked-files=all -- docs
+mdbook build --dest-dir target/mdbook
 typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf
 git diff --exit-code -- spec/dexios-paper.pdf
 bash scripts/verify_repo_hygiene.sh
@@ -79,9 +77,10 @@ git diff --check
 bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release-lto/dexios
 ```
 
-`mdbook build` writes the generated documentation site to `docs/` because
-`book.toml` sets `build-dir = "docs"`. `typst compile --creation-timestamp 0
-spec/dexios-paper.typ spec/dexios-paper.pdf` rebuilds the source-backed current
+`mdbook build --dest-dir target/mdbook` writes the generated documentation site
+under the ignored `target/` tree. The generated HTML is not committed; `book/src/`
+is the source-backed documentation authority. `typst compile --creation-timestamp
+0 spec/dexios-paper.typ spec/dexios-paper.pdf` rebuilds the source-backed current
 PDF from the tracked Typst source with deterministic PDF metadata.
 
 The gate checks for required tools before running the long workspace commands.

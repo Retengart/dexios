@@ -104,13 +104,7 @@ run cargo audit --deny warnings
 run cargo deny check
 run cargo build --locked -p dexios --profile release-lto
 run bash scripts/verify_cli_surface.sh
-run mdbook build
-run git diff --exit-code -- docs
-docs_status="$(git status --porcelain --untracked-files=all -- docs)"
-if [ -n "$docs_status" ]; then
-    printf '%s\n' "$docs_status" >&2
-    exit 1
-fi
+run mdbook build --dest-dir target/mdbook
 run typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf
 run git diff --exit-code -- spec/dexios-paper.pdf
 run bash scripts/verify_repo_hygiene.sh

@@ -40,6 +40,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 
+fn keyslot_nonce(bytes: [u8; 24]) -> KeyslotNonce {
+    KeyslotNonce::try_from_slice(&bytes).expect("valid keyslot nonce")
+}
+
+fn payload_nonce(bytes: [u8; 20]) -> PayloadNonce {
+    PayloadNonce::try_from_slice(&bytes).expect("valid payload nonce")
+}
+
 struct TestDir {
     path: PathBuf,
 }
@@ -75,10 +83,10 @@ fn v1_header_bytes() -> Vec<u8> {
     let keyslot = V1Keyslot::new(
         Kdf::Argon2id,
         [1u8; 48],
-        KeyslotNonce::new([2u8; 24]),
+        keyslot_nonce([2u8; 24]),
         Salt::new([3u8; 16]),
     );
-    let header = V1Header::new(PayloadNonce::new([4u8; 20]), V1Keyslots::single(keyslot))
+    let header = V1Header::new(payload_nonce([4u8; 20]), V1Keyslots::single(keyslot))
         .expect("create V1 header");
 
     header.serialize().expect("serialize V1 header")
@@ -90,10 +98,10 @@ fn other_v1_header_bytes() -> Vec<u8> {
     let keyslot = V1Keyslot::new(
         Kdf::Argon2id,
         [9u8; 48],
-        KeyslotNonce::new([8u8; 24]),
+        keyslot_nonce([8u8; 24]),
         Salt::new([7u8; 16]),
     );
-    let header = V1Header::new(PayloadNonce::new([6u8; 20]), V1Keyslots::single(keyslot))
+    let header = V1Header::new(payload_nonce([6u8; 20]), V1Keyslots::single(keyslot))
         .expect("create other V1 header");
 
     header.serialize().expect("serialize other V1 header")

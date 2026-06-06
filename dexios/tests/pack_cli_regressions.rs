@@ -81,6 +81,7 @@ fn run_pack(
     command
         .current_dir(current_dir)
         .env("DEXIOS_KEY", PASSWORD)
+        .arg("--env-key")
         .arg("pack")
         .arg("-f");
 

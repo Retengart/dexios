@@ -122,6 +122,7 @@ fn shared_arg_factories_are_source_gated() {
         "output_arg",
         "keyfile_arg",
         "keyfile_arg_with_help",
+        "env_key_arg",
         "force_arg",
         "hash_arg",
         "delete_input_arg",
@@ -899,6 +900,33 @@ fn shared_options_parse_across_command_families() {
     assert!(unpack.get_flag("hash"));
     assert!(unpack.get_flag("delete-input"));
     assert!(unpack.get_flag("verbose"));
+}
+
+#[test]
+fn env_key_global_flag_is_visible_to_keyed_subcommands() {
+    let matches = parse_ok([
+        "dexios",
+        "--env-key",
+        "encrypt",
+        "-f",
+        "plain.txt",
+        "plain.enc",
+    ]);
+    let (_, encrypt) = matches.subcommand().expect("encrypt subcommand");
+    assert!(encrypt.get_flag("env-key"));
+
+    let matches = parse_ok([
+        "dexios",
+        "key",
+        "--env-key",
+        "add",
+        "--keyfile-new",
+        "new.key",
+        "cipher.enc",
+    ]);
+    let (_, key) = matches.subcommand().expect("key subcommand");
+    let (_, add) = key.subcommand().expect("key add subcommand");
+    assert!(add.get_flag("env-key"));
 }
 
 #[test]

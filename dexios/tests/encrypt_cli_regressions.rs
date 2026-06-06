@@ -72,6 +72,7 @@ fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
     command
         .current_dir(current_dir)
         .env("DEXIOS_KEY", PASSWORD)
+        .arg("--env-key")
         .args(args)
         .output()
         .unwrap()
@@ -146,6 +147,7 @@ fn encrypt_auto_generated_passphrase_disclosure_uses_stderr_not_stdout() {
     let decrypt_output = decrypt_command
         .current_dir(test_dir.path())
         .env("DEXIOS_KEY", generated_passphrase)
+        .arg("--env-key")
         .args(["decrypt", "--force", "plain.enc", "plain.out"])
         .output()
         .unwrap();

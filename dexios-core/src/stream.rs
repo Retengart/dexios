@@ -211,6 +211,12 @@ impl V1PayloadEncryptor {
     }
 }
 
+/// Streaming V1 payload encryptor.
+///
+/// Dropping the writer without calling `finish` zeroizes the internal plaintext
+/// buffer but intentionally does not write the final authenticated block. The
+/// resulting ciphertext is incomplete and must not be published.
+#[must_use = "call finish() to write the final authenticated block"]
 pub struct V1PayloadEncryptingWriter<W: Write> {
     encryptor: Option<V1PayloadEncryptor>,
     writer: Option<W>,

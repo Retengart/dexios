@@ -60,9 +60,7 @@ fn ci_workflows_keep_audit_and_docs_fresh() {
     }
 
     for required in [
-        "mdbook build",
-        "git diff --exit-code -- docs",
-        "git status --porcelain --untracked-files=all -- docs",
+        "mdbook build --dest-dir target/mdbook",
         "verify_repo_hygiene.sh",
         "workflow_dispatch",
     ] {
@@ -385,6 +383,48 @@ fn phase21_permissions_and_job_ordering_are_source_gated() {
         RELEASE_WORKFLOW,
         "needs: maintainer_gate",
         "needs: build",
+    );
+}
+
+#[test]
+fn release_attestations_are_created_before_public_release_assets() {
+    assert_all_contains(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        &[
+            "artifact-metadata: write",
+            "Validate release assets",
+            "Attest build provenance",
+            "Attest Linux SBOM",
+            "Attest macOS SBOM",
+            "Attest Windows SBOM",
+            "actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26",
+            "sbom-path:",
+        ],
+    );
+
+    assert_not_contains(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "actions/attest-build-provenance@",
+    );
+    assert_non_comment_line_occurs_before(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "- name: Validate release assets",
+        "- name: Attest build provenance",
+    );
+    assert_non_comment_line_occurs_before(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "- name: Attest build provenance",
+        "- name: Create GitHub Release",
+    );
+    assert_non_comment_line_occurs_before(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "- name: Attest Windows SBOM",
+        "- name: Create GitHub Release",
     );
 }
 

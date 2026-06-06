@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result};
 use clap::ArgMatches;
+use clap::parser::MatchesError;
 use core::protected::Protected;
 
 use crate::cli::prompt::get_password;
@@ -115,14 +116,19 @@ impl Key {
         keyfile: Option<&str>,
         autogenerate: Option<&str>,
         env_available: bool,
+        env_requested: bool,
         params: &KeyParams,
     ) -> Result<Self> {
         let key = if let (Some(path), true) = (keyfile, params.keyfile) {
             Self::Keyfile(path.to_owned())
         } else if let (Some(words), true) = (autogenerate, params.autogenerate) {
             Self::Generate(parse_generated_passphrase_word_count(words)?)
-        } else if env_available && params.env {
+        } else if env_requested && params.env && env_available {
             Self::Env
+        } else if env_requested && params.env {
+            return Err(anyhow::anyhow!(
+                "DEXIOS_KEY was requested with --env-key but is not set"
+            ));
         } else if params.user {
             Self::User
         } else {
@@ -193,13 +199,25 @@ impl Key {
     ) -> Result<Self> {
         let keyfile = get_optional_param(keyfile_descriptor, sub_matches)?;
         let autogenerate = get_optional_param("autogenerate", sub_matches)?;
+        let env_requested = env_key_requested(sub_matches)?;
 
         Self::resolve_key_source(
             keyfile,
             autogenerate,
             std::env::var("DEXIOS_KEY").is_ok(),
+            env_requested,
             params,
         )
+    }
+}
+
+fn env_key_requested(sub_matches: &ArgMatches) -> Result<bool> {
+    match sub_matches.try_get_one::<bool>("env-key") {
+        Ok(Some(requested)) => Ok(*requested),
+        Ok(None) | Err(MatchesError::UnknownArgument { .. }) => Ok(false),
+        Err(_) => Err(anyhow::anyhow!(
+            "internal CLI adapter error: optional flag 'env-key' unreadable after clap validation"
+        )),
     }
 }
 
@@ -228,7 +246,7 @@ impl KeyParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::{Arg, Command, value_parser};
+    use clap::{Arg, ArgAction, Command, value_parser};
     use core::key::PassphraseWordCount;
 
     const DISCLOSURE_PREFIX: &str = "Your generated passphrase is intentionally shown here and may be captured by terminal scrollback or logs: ";
@@ -302,16 +320,43 @@ mod tests {
 
     #[test]
     fn autogenerate_key_source_accepts_positive_word_count() {
-        let key = Key::resolve_key_source(None, Some("7"), true, &KeyParams::default()).unwrap();
+        let key =
+            Key::resolve_key_source(None, Some("7"), true, false, &KeyParams::default()).unwrap();
 
         assert_eq!(key, Key::Generate(PassphraseWordCount::try_new(7).unwrap()));
     }
 
     #[test]
+    fn environment_key_requires_explicit_env_key_source() {
+        let key = Key::resolve_key_source(None, None, true, false, &KeyParams::default()).unwrap();
+
+        assert_eq!(key, Key::User);
+    }
+
+    #[test]
+    fn explicit_environment_key_source_uses_available_env_key() {
+        let key = Key::resolve_key_source(None, None, true, true, &KeyParams::default()).unwrap();
+
+        assert_eq!(key, Key::Env);
+    }
+
+    #[test]
+    fn explicit_environment_key_source_without_env_var_fails_before_prompt() {
+        let error = Key::resolve_key_source(None, None, false, true, &KeyParams::default())
+            .expect_err("explicit env-key request must not silently fall back to a prompt");
+
+        assert!(
+            error.to_string().contains("DEXIOS_KEY"),
+            "error should name the missing env key: {error}"
+        );
+    }
+
+    #[test]
     fn invalid_explicit_autogenerate_word_counts_are_rejected() {
         for words in ["0", "-1", "abc"] {
-            let error = Key::resolve_key_source(None, Some(words), true, &KeyParams::default())
-                .expect_err("invalid explicit generated-passphrase count should fail");
+            let error =
+                Key::resolve_key_source(None, Some(words), true, false, &KeyParams::default())
+                    .expect_err("invalid explicit generated-passphrase count should fail");
             let error = error.to_string();
 
             assert!(
@@ -330,6 +375,11 @@ mod tests {
         let matches = Command::new("synthetic")
             .arg(Arg::new("keyfile").long("keyfile"))
             .arg(Arg::new("autogenerate").long("auto"))
+            .arg(
+                Arg::new("env-key")
+                    .long("env-key")
+                    .action(ArgAction::SetTrue),
+            )
             .try_get_matches_from(["synthetic"])
             .expect("synthetic matches should parse");
 

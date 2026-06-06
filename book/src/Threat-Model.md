@@ -27,8 +27,9 @@ conscious decisions, not oversights.
   from the process environment: `std::env::remove_var` is `unsafe` under the 2024 edition,
   and the cryptographic crates forbid `unsafe`. The value therefore remains visible to
   other processes (e.g. `/proc/<pid>/environ`), is inherited by child processes, and may
-  persist in shell history or CI logs. Dexios emits a one-time warning whenever the
-  environment key is used. Prefer an interactive prompt or a keyfile on shared hosts.
+  persist in shell history or CI logs. Dexios ignores `DEXIOS_KEY` unless `--env-key`
+  is passed, and emits a one-time warning whenever the environment key is used.
+  Prefer an interactive prompt or a keyfile on shared hosts.
 
 ## Output file permissions
 

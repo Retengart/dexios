@@ -1,11 +1,12 @@
 use std::fmt;
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 
 use super::identity::{PathRole, ResolvedTarget};
+use super::{Entry, FileData, FileStorage};
 
 /// Snapshot of a file targeted by an in-place header/key-slot mutation.
 ///
@@ -25,9 +26,7 @@ pub struct MutationSnapshot {
 
 impl MutationSnapshot {
     pub fn read(target: ResolvedTarget) -> Result<Self, MutationFreshnessError> {
-        let original = fs::read(target.target_path()).map_err(|source| {
-            MutationFreshnessError::read(target.role(), target.target_path().to_path_buf(), source)
-        })?;
+        let original = read_target_bytes_no_follow(&target)?;
         Ok(Self { target, original })
     }
 
@@ -64,10 +63,7 @@ pub fn ensure_fresh(
     target: &ResolvedTarget,
     original: &[u8],
 ) -> Result<(), MutationFreshnessError> {
-    ensure_identity_fresh(target)?;
-    let current = fs::read(target.target_path()).map_err(|source| {
-        MutationFreshnessError::read(target.role(), target.target_path().to_path_buf(), source)
-    })?;
+    let current = read_target_bytes_no_follow(target)?;
     if current != original {
         return Err(MutationFreshnessError::ContentChanged {
             role: target.role(),
@@ -75,6 +71,52 @@ pub fn ensure_fresh(
         });
     }
     Ok(())
+}
+
+fn read_target_bytes_no_follow(target: &ResolvedTarget) -> Result<Vec<u8>, MutationFreshnessError> {
+    ensure_identity_fresh(target)?;
+
+    let storage = FileStorage;
+    match storage.read_resolved_existing_no_follow(target) {
+        Ok(Entry::File(FileData { stream, .. })) => {
+            let mut bytes = Vec::new();
+            stream
+                .borrow_mut()
+                .read_to_end(&mut bytes)
+                .map_err(|source| {
+                    MutationFreshnessError::read(
+                        target.role(),
+                        target.target_path().to_path_buf(),
+                        source,
+                    )
+                })?;
+            Ok(bytes)
+        }
+        Ok(Entry::Dir(_)) => Err(MutationFreshnessError::read(
+            target.role(),
+            target.target_path().to_path_buf(),
+            io::Error::new(
+                io::ErrorKind::IsADirectory,
+                "mutation target is a directory",
+            ),
+        )),
+        Err(super::Error::UnsafePath(_)) if target.exists() => {
+            Err(MutationFreshnessError::IdentityChanged {
+                role: target.role(),
+                path: target.target_path().to_path_buf(),
+            })
+        }
+        Err(super::Error::UnsafePath(_)) => Err(MutationFreshnessError::read(
+            target.role(),
+            target.target_path().to_path_buf(),
+            io::Error::new(io::ErrorKind::NotFound, "mutation target does not exist"),
+        )),
+        Err(error) => Err(MutationFreshnessError::read(
+            target.role(),
+            target.target_path().to_path_buf(),
+            io::Error::other(error),
+        )),
+    }
 }
 
 #[derive(Debug)]

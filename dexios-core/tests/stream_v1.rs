@@ -46,6 +46,14 @@ const STREAM_TAG_LEN: usize = 16;
 const FIXTURE_MANIFEST: &str = include_str!("testdata/fixture_manifest.toml");
 const PHASE01_HEADER_MALFORMED_ROW_ID: &str = "phase01-header-malformed-evidence";
 
+fn keyslot_nonce(bytes: [u8; 24]) -> KeyslotNonce {
+    KeyslotNonce::try_from_slice(&bytes).expect("valid keyslot nonce")
+}
+
+fn payload_nonce(bytes: [u8; 20]) -> PayloadNonce {
+    PayloadNonce::try_from_slice(&bytes).expect("valid payload nonce")
+}
+
 mod support {
     use super::*;
 
@@ -54,14 +62,14 @@ mod support {
     }
 
     pub(crate) fn sample_v1_header_with_nonce_and_keyslot_count(
-        payload_nonce: [u8; 20],
+        payload_nonce_bytes: [u8; 20],
         keyslot_count: usize,
     ) -> V1Header {
         let keyslots = (0..keyslot_count)
             .map(|index| sample_keyslot(11 + index as u8))
             .collect();
         V1Header::new(
-            PayloadNonce::new(payload_nonce),
+            payload_nonce(payload_nonce_bytes),
             V1Keyslots::try_from_vec(keyslots).expect("sample keyslot count"),
         )
         .expect("sample v1 header")
@@ -95,7 +103,7 @@ mod support {
         V1Keyslot::new(
             Kdf::Argon2id,
             [seed; 48],
-            KeyslotNonce::new([seed.wrapping_add(2); 24]),
+            keyslot_nonce([seed.wrapping_add(2); 24]),
             HeaderSalt::new([seed.wrapping_add(6); 16]),
         )
     }

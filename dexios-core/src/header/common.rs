@@ -31,10 +31,15 @@ pub struct PayloadNonce([u8; 20]);
 
 impl PayloadNonce {
     #[must_use]
-    pub const fn new(bytes: [u8; 20]) -> Self {
+    pub(crate) const fn new(bytes: [u8; 20]) -> Self {
         Self(bytes)
     }
 
+    /// Parses payload nonce bytes from an existing serialized header.
+    ///
+    /// Do not use this as a nonce-generation API for new encrypted payloads. Use
+    /// `crate::primitives::gen_payload_nonce` so each encryption gets a fresh
+    /// CSPRNG nonce.
     pub fn try_from_slice(bytes: &[u8]) -> Result<Self, HeaderReadError> {
         if bytes.len() != 20 {
             return Err(HeaderReadError::InvalidPayloadNonceLength(bytes.len()));
@@ -56,10 +61,15 @@ pub struct KeyslotNonce([u8; 24]);
 
 impl KeyslotNonce {
     #[must_use]
-    pub const fn new(bytes: [u8; 24]) -> Self {
+    pub(crate) const fn new(bytes: [u8; 24]) -> Self {
         Self(bytes)
     }
 
+    /// Parses keyslot nonce bytes from an existing serialized header.
+    ///
+    /// Do not use this as a nonce-generation API for new keyslots. Use
+    /// `crate::primitives::gen_keyslot_nonce` so each keyslot wrap gets a fresh
+    /// CSPRNG nonce.
     pub fn try_from_slice(bytes: &[u8]) -> Result<Self, HeaderReadError> {
         if bytes.len() != 24 {
             return Err(HeaderReadError::InvalidKeyslotNonceLength(bytes.len()));

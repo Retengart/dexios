@@ -59,13 +59,13 @@ The CLI can obtain key material from:
 - interactive password entry
 - `--keyfile`
 - `--auto`
-- `DEXIOS_KEY`
+- `DEXIOS_KEY` with `--env-key`
 
 Current precedence is:
 
 1. explicit keyfile
 2. explicit `--auto`
-3. `DEXIOS_KEY`
+3. `DEXIOS_KEY` with `--env-key`
 4. interactive prompt
 
 ## Compatibility Notes

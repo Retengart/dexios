@@ -388,6 +388,7 @@ mod tests {
                 .flatten()
                 .map(String::as_str),
             true,
+            true,
             &KeyParams::default(),
         )
         .expect("key selection");

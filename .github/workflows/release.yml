@@ -208,6 +208,7 @@ jobs:
       contents: write
       id-token: write
       attestations: write
+      artifact-metadata: write
 
     steps:
       # actions/download-artifact v8.0.0
@@ -215,9 +216,7 @@ jobs:
         with:
           path: release-assets
 
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Validate release assets
         shell: bash
         run: |
           expected_names=(
@@ -253,6 +252,47 @@ jobs:
             fi
           done
 
+      - name: Attest build provenance
+        # actions/attest v4.1.0
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26
+        with:
+          subject-path: |
+            release-assets/dexios-linux-amd64/dexios-${{ github.ref_name }}-linux-amd64
+            release-assets/dexios-linux-amd64/dexios-${{ github.ref_name }}-linux-amd64.sha256
+            release-assets/dexios-linux-amd64/dexios-${{ github.ref_name }}-linux-amd64.cdx.json
+            release-assets/dexios-macos-amd64/dexios-${{ github.ref_name }}-macos-amd64
+            release-assets/dexios-macos-amd64/dexios-${{ github.ref_name }}-macos-amd64.sha256
+            release-assets/dexios-macos-amd64/dexios-${{ github.ref_name }}-macos-amd64.cdx.json
+            release-assets/dexios-windows-amd64/dexios-${{ github.ref_name }}-windows-amd64.exe
+            release-assets/dexios-windows-amd64/dexios-${{ github.ref_name }}-windows-amd64.exe.sha256
+            release-assets/dexios-windows-amd64/dexios-${{ github.ref_name }}-windows-amd64.cdx.json
+
+      - name: Attest Linux SBOM
+        # actions/attest v4.1.0
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26
+        with:
+          subject-path: 'release-assets/dexios-linux-amd64/dexios-${{ github.ref_name }}-linux-amd64'
+          sbom-path: 'release-assets/dexios-linux-amd64/dexios-${{ github.ref_name }}-linux-amd64.cdx.json'
+
+      - name: Attest macOS SBOM
+        # actions/attest v4.1.0
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26
+        with:
+          subject-path: 'release-assets/dexios-macos-amd64/dexios-${{ github.ref_name }}-macos-amd64'
+          sbom-path: 'release-assets/dexios-macos-amd64/dexios-${{ github.ref_name }}-macos-amd64.cdx.json'
+
+      - name: Attest Windows SBOM
+        # actions/attest v4.1.0
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26
+        with:
+          subject-path: 'release-assets/dexios-windows-amd64/dexios-${{ github.ref_name }}-windows-amd64.exe'
+          sbom-path: 'release-assets/dexios-windows-amd64/dexios-${{ github.ref_name }}-windows-amd64.cdx.json'
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
           mapfile -t files < <(find release-assets -type f | sort)
 
           declare -A expected_files=()
@@ -310,9 +350,3 @@ jobs:
               --title "$GITHUB_REF_NAME" \
               --generate-notes
           fi
-
-      - name: Attest build provenance
-        # actions/attest-build-provenance v4.1.0
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32
-        with:
-          subject-path: 'release-assets/**/dexios-*'

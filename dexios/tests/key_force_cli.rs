@@ -82,7 +82,7 @@ fn run_cli(current_dir: &Path, args: &[&str], key: Option<&str>) -> std::process
         .args(args);
     match key {
         Some(key) => {
-            command.env("DEXIOS_KEY", key);
+            command.env("DEXIOS_KEY", key).arg("--env-key");
         }
         None => {
             command.env_remove("DEXIOS_KEY");
@@ -106,7 +106,7 @@ fn run_cli_with_stdin(
         .args(args);
     match key {
         Some(key) => {
-            command.env("DEXIOS_KEY", key);
+            command.env("DEXIOS_KEY", key).arg("--env-key");
         }
         None => {
             command.env_remove("DEXIOS_KEY");

@@ -9,6 +9,6 @@ description = "Documentation for Dexios"
 edition = "2024"
 
 [build]
-build-dir = "docs"                # the directory where the output is placed
+build-dir = "target/mdbook"       # generated output stays outside tracked docs
 create-missing = true             # whether or not to create missing pages
 use-default-preprocessors = true  # use the default preprocessors

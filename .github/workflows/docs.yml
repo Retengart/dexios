@@ -25,19 +25,10 @@ jobs:
         run: rustup default stable
 
       - name: Install mdBook
-        run: cargo install mdbook --locked
+        run: cargo install mdbook --locked --version 0.5.3
 
       - name: Build documentation
-        run: mdbook build
+        run: mdbook build --dest-dir target/mdbook
 
       - name: Verify repository hygiene
         run: bash scripts/verify_repo_hygiene.sh
-
-      - name: Verify generated docs are current
-        run: |
-          git diff --exit-code -- docs
-          docs_status="$(git status --porcelain --untracked-files=all -- docs)"
-          if [ -n "$docs_status" ]; then
-            printf '%s\n' "$docs_status" >&2
-            exit 1
-          fi

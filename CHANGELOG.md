@@ -17,6 +17,9 @@
 - Redesigned the canonical V1 archive payload as Dexios-owned manifest-first
   `DXAR` framing with ordered `DXBF` body frames. ZIP bytes and ZIP crate types
   are no longer part of the canonical archive format surface.
+- `DEXIOS_KEY` is no longer an implicit fallback key source. Commands must pass
+  `--env-key` before Dexios reads `DEXIOS_KEY`; explicit `--keyfile` and `--auto`
+  still take precedence.
 
 ### Security
 
@@ -57,6 +60,10 @@
   lock version may remain 1.8.3; only the declared constraint changed.
 - Added `deny.toml` cargo-deny policy for advisories, duplicate bans, source
   restrictions, and license allowlisting.
+- Hardened release publication so provenance and SBOM attestations are created
+  before GitHub Release assets are uploaded.
+- Hardened in-place header/key mutation reads to use the no-follow resolved
+  target path instead of a plain path read after identity capture.
 
 ### Verification
 
@@ -88,6 +95,10 @@
   commit/tag evidence, tracked dirty state, `Cargo.lock` SHA256, Cargo metadata
   evidence, tool versions, the verification command contract, and asset SHA256
   hashes.
+- Removed generated mdBook HTML from the tracked release evidence. The
+  maintainer gate now verifies documentation freshness with
+  `mdbook build --dest-dir target/mdbook` while keeping `book/src/` as the
+  committed documentation source.
 
 ### Documentation
 
