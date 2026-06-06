@@ -557,7 +557,23 @@ impl V1Header {
 
     pub fn deserialize(reader: &mut impl Read) -> Result<Self, HeaderReadError> {
         let mut bytes = [0u8; HEADER_LEN];
-        reader.read_exact(&mut bytes)?;
+        reader.read_exact(&mut bytes[..10])?;
+
+        let mut magic = [0u8; 4];
+        magic.copy_from_slice(&bytes[..4]);
+        let mut version = [0u8; 2];
+        version.copy_from_slice(&bytes[4..6]);
+        let mut discriminator = [0u8; 4];
+        discriminator.copy_from_slice(&bytes[6..10]);
+        if magic == MAGIC
+            && version == VERSION_V1
+            && discriminator != CANONICAL_V1_DISCRIMINATOR
+            && discriminator[0] != b'C'
+        {
+            return Err(HeaderReadError::RetiredV1Layout);
+        }
+
+        reader.read_exact(&mut bytes[10..])?;
 
         Self::deserialize_bytes(&bytes)
     }

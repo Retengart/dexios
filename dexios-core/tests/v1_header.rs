@@ -68,6 +68,22 @@ fn decode_hex_fixture(path: &str) -> Vec<u8> {
         .collect()
 }
 
+fn assert_retired_layout_public_entry_points(case: &str, bytes: &[u8]) {
+    let top_level_error = dexios_core::header::read_header(&mut std::io::Cursor::new(bytes))
+        .expect_err("retired V1 fixture should be rejected by top-level parser");
+    assert!(
+        matches!(top_level_error, HeaderReadError::RetiredV1Layout),
+        "{case}: read_header returned {top_level_error:?}"
+    );
+
+    let direct_v1_error = V1Header::deserialize(&mut std::io::Cursor::new(bytes))
+        .expect_err("retired V1 fixture should be rejected by direct public V1 parser");
+    assert!(
+        matches!(direct_v1_error, HeaderReadError::RetiredV1Layout),
+        "{case}: V1Header::deserialize returned {direct_v1_error:?}"
+    );
+}
+
 #[test]
 fn serializes_canonical_v1_header_to_canonical_length() {
     let header = support::sample_v1_header();
@@ -445,20 +461,18 @@ fn obsolete_current_v1_valid_single_keyslot_is_rejection_evidence() {
     let path = fixture_path("v1_valid_single_keyslot.hex");
     let original_bytes = decode_hex_fixture(&path);
 
-    let error = dexios_core::header::read_header(&mut std::io::Cursor::new(&original_bytes))
-        .expect_err("old current V1 fixture is retired from the normal parser");
-
-    assert!(matches!(error, HeaderReadError::RetiredV1Layout));
+    assert_retired_layout_public_entry_points(
+        "retired valid single-keyslot fixture",
+        &original_bytes,
+    );
 }
 
 #[test]
 fn retired_current_v1_malformed_reserved_byte_is_rejection_evidence() {
     let path = fixture_path("v1_malformed_reserved_byte.hex");
     let bytes = decode_hex_fixture(&path);
-    let error = dexios_core::header::read_header(&mut std::io::Cursor::new(&bytes))
-        .expect_err("old current V1 malformed fixture is retired from the normal parser");
 
-    assert!(matches!(error, HeaderReadError::RetiredV1Layout));
+    assert_retired_layout_public_entry_points("retired malformed reserved-byte fixture", &bytes);
 }
 
 #[test]
