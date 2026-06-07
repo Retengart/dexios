@@ -110,9 +110,10 @@ fn unpack_archive_with_key(
 #[test]
 fn pack_key_add_unpack_preserves_manifest_archive_aad() {
     let root = tempfile::tempdir().unwrap();
-    let source_dir = create_source_dir(root.path());
-    let archive_path = root.path().join("archive.enc");
-    let output_dir = root.path().join("out");
+    let root_path = fs::canonicalize(root.path()).unwrap();
+    let source_dir = create_source_dir(&root_path);
+    let archive_path = root_path.join("archive.enc");
+    let output_dir = root_path.join("out");
 
     pack::execute_transactional(pack_intent(vec![source_dir], &archive_path, None).unwrap())
         .unwrap();
@@ -132,9 +133,10 @@ fn pack_key_add_unpack_preserves_manifest_archive_aad() {
 #[test]
 fn pack_key_change_unpack_preserves_manifest_archive_aad() {
     let root = tempfile::tempdir().unwrap();
-    let source_dir = create_source_dir(root.path());
-    let archive_path = root.path().join("archive.enc");
-    let output_dir = root.path().join("out");
+    let root_path = fs::canonicalize(root.path()).unwrap();
+    let source_dir = create_source_dir(&root_path);
+    let archive_path = root_path.join("archive.enc");
+    let output_dir = root_path.join("out");
 
     pack::execute_transactional(pack_intent(vec![source_dir], &archive_path, None).unwrap())
         .unwrap();
@@ -154,9 +156,10 @@ fn pack_key_change_unpack_preserves_manifest_archive_aad() {
 #[test]
 fn pack_key_add_key_delete_unpack_preserves_manifest_archive_aad() {
     let root = tempfile::tempdir().unwrap();
-    let source_dir = create_source_dir(root.path());
-    let archive_path = root.path().join("archive.enc");
-    let output_dir = root.path().join("out");
+    let root_path = fs::canonicalize(root.path()).unwrap();
+    let source_dir = create_source_dir(&root_path);
+    let archive_path = root_path.join("archive.enc");
+    let output_dir = root_path.join("out");
 
     pack::execute_transactional(pack_intent(vec![source_dir], &archive_path, None).unwrap())
         .unwrap();
@@ -177,9 +180,10 @@ fn pack_key_add_key_delete_unpack_preserves_manifest_archive_aad() {
 #[test]
 fn encrypt_key_add_decrypt_preserves_rawfile_payload() {
     let dir = tempfile::tempdir().unwrap();
-    let input_path = dir.path().join("plain.txt");
-    let enc_path = dir.path().join("plain.enc");
-    let dec_path = dir.path().join("plain.dec");
+    let dir_path = fs::canonicalize(dir.path()).unwrap();
+    let input_path = dir_path.join("plain.txt");
+    let enc_path = dir_path.join("plain.enc");
+    let dec_path = dir_path.join("plain.dec");
     fs::write(&input_path, b"hello rawfile").unwrap();
 
     encrypt::execute(

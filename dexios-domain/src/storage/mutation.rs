@@ -1,4 +1,5 @@
 use std::fmt;
+#[cfg(unix)]
 use std::fs;
 use std::io::{self, Read};
 #[cfg(unix)]

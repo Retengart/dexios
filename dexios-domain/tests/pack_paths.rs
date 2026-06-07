@@ -234,6 +234,20 @@ fn symlink_dir_or_skip(_src: &Path, _dst: &Path) -> bool {
     false
 }
 
+fn observed_leaf_path_matches(actual: &Path, expected: &Path) -> bool {
+    if actual == expected {
+        return true;
+    }
+    let Some(parent) = expected.parent() else {
+        return false;
+    };
+    let Some(file_name) = expected.file_name() else {
+        return false;
+    };
+    fs::canonicalize(parent)
+        .is_ok_and(|canonical_parent| actual == canonical_parent.join(file_name))
+}
+
 #[test]
 fn pack_rejects_source_root_symlink() {
     let root = tempfile::tempdir().unwrap();
@@ -369,7 +383,7 @@ fn pack_rejects_symlinked_file_entry() {
         pack_intent(vec![source_dir], &output_path, None).and_then(pack::execute_transactional);
 
     assert!(
-        matches!(result, Err(pack::Error::SymlinkSource(ref path)) if path == &symlink_path),
+        matches!(result, Err(pack::Error::SymlinkSource(ref path)) if observed_leaf_path_matches(path, &symlink_path)),
         "expected symlinked file rejection for {}, got {result:?}",
         symlink_path.display()
     );
@@ -396,7 +410,7 @@ fn pack_rejects_symlinked_directory_entry() {
         pack_intent(vec![source_dir], &output_path, None).and_then(pack::execute_transactional);
 
     assert!(
-        matches!(result, Err(pack::Error::SymlinkSource(ref path)) if path == &symlink_path),
+        matches!(result, Err(pack::Error::SymlinkSource(ref path)) if observed_leaf_path_matches(path, &symlink_path)),
         "expected symlinked directory rejection for {}, got {result:?}",
         symlink_path.display()
     );
