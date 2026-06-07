@@ -26,8 +26,6 @@
 )]
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use core::header::common::{CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, HEADER_STATIC_LEN};
 use core::kdf::Kdf;
@@ -37,44 +35,15 @@ use dexios_domain::storage::identity::OverwritePolicy;
 use dexios_domain::storage::transaction::TransactionError;
 use dexios_domain::workflow_error::WorkflowErrorClass;
 use dexios_domain::{decrypt, encrypt};
+#[allow(dead_code)]
+#[path = "support/tempdir.rs"]
+mod tempdir;
+use tempdir::DomainTestDir as TestDir;
 
 const DOMAIN_DECRYPT_SOURCE: &str = include_str!("../src/decrypt.rs");
 const CORRECT_PASSWORD: &[u8] = b"correct-password";
 const WRONG_PASSWORD: &[u8] = b"wrong-password";
 const STREAM_TAG_LEN: usize = 16;
-
-static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
-
-struct TestDir {
-    path: PathBuf,
-}
-
-impl TestDir {
-    fn new(prefix: &str) -> Self {
-        let seq = NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "dexios-domain-{prefix}-{}-{seq}-{nanos}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        let path = fs::canonicalize(path).unwrap();
-        Self { path }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for TestDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
-}
 
 fn protected_key(secret: &[u8]) -> Protected<Vec<u8>> {
     Protected::new(secret.to_vec())

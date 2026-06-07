@@ -33,12 +33,12 @@ use core::header::common::{HEADER_LEN, KeyslotNonce, PayloadNonce, Salt};
 use core::header::v1::{V1Header, V1Keyslot, V1Keyslots};
 use core::kdf::Kdf;
 use dexios_domain::header::{self, strip};
+#[allow(dead_code)]
+#[path = "support/tempdir.rs"]
+mod tempdir;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use tempdir::DomainTestDir as TestDir;
 
-static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 
 fn keyslot_nonce(bytes: [u8; 24]) -> KeyslotNonce {
     KeyslotNonce::try_from_slice(&bytes).expect("valid keyslot nonce")
@@ -46,37 +46,6 @@ fn keyslot_nonce(bytes: [u8; 24]) -> KeyslotNonce {
 
 fn payload_nonce(bytes: [u8; 20]) -> PayloadNonce {
     PayloadNonce::try_from_slice(&bytes).expect("valid payload nonce")
-}
-
-struct TestDir {
-    path: PathBuf,
-}
-
-impl TestDir {
-    fn new(prefix: &str) -> Self {
-        let seq = NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "dexios-domain-{prefix}-{}-{seq}-{nanos}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        let path = fs::canonicalize(path).unwrap();
-        Self { path }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for TestDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
 }
 
 fn v1_header_bytes() -> Vec<u8> {

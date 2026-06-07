@@ -50,30 +50,14 @@ pub(super) use dexios_domain::storage::transaction::{
     CleanupAuthorizedReceipt, CommittedArtifact, DetachedPublicationFailure,
     LinkedOutputTransaction, PartialCommitReceipt, StagedOutputTransaction, TransactionError,
 };
+#[allow(dead_code)]
+#[path = "tempdir.rs"]
+mod tempdir;
+pub(super) use tempdir::DomainTestDir as TestDir;
 
 pub(super) const EXISTING_OUTPUT: &[u8] = b"existing output";
 pub(super) const CANDIDATE_OUTPUT: &[u8] = b"candidate output";
 pub(super) const STORAGE_TEMP_RS: &str = include_str!("../../src/storage/temp.rs");
-
-pub(super) struct TestDir {
-    _dir: tempfile::TempDir,
-    path: PathBuf,
-}
-
-impl TestDir {
-    pub(super) fn new(prefix: &str) -> Self {
-        let dir = tempfile::Builder::new()
-            .prefix(&format!("dexios-{prefix}-"))
-            .tempdir()
-            .unwrap();
-        let path = fs::canonicalize(dir.path()).unwrap();
-        Self { _dir: dir, path }
-    }
-
-    pub(super) fn path(&self) -> &Path {
-        &self.path
-    }
-}
 
 pub(super) fn resolved_output(path: &Path, overwrite_policy: OverwritePolicy) -> ResolvedTarget {
     resolved_artifact(path, PathRole::Output, overwrite_policy)

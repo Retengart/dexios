@@ -57,6 +57,10 @@ pub(super) use dexios_domain::storage::test_support::{FailureHooks, FailurePoint
 #[cfg(feature = "test-support")]
 pub(super) use dexios_domain::storage::transaction::TransactionError;
 pub(super) use dexios_domain::unpack;
+#[allow(dead_code)]
+#[path = "tempdir.rs"]
+mod tempdir;
+pub(super) use tempdir::DomainTestDir as TestDir;
 
 pub(super) fn keyslot_nonce(bytes: [u8; 24]) -> KeyslotNonce {
     KeyslotNonce::try_from_slice(&bytes).expect("valid keyslot nonce")
@@ -69,26 +73,6 @@ pub(super) fn payload_nonce(bytes: [u8; 20]) -> PayloadNonce {
 pub(super) const PASSWORD: &[u8; 8] = b"12345678";
 pub(super) const STREAM_TAG_LEN: usize = 16;
 pub(super) type TestOnArchiveFile = Box<dyn Fn(PathBuf) -> Result<bool, String>>;
-
-pub(super) struct TestDir {
-    _dir: tempfile::TempDir,
-    path: PathBuf,
-}
-
-impl TestDir {
-    pub(super) fn new(prefix: &str) -> Self {
-        let dir = tempfile::Builder::new()
-            .prefix(&format!("dexios-{prefix}-"))
-            .tempdir()
-            .unwrap();
-        let path = fs::canonicalize(dir.path()).unwrap();
-        Self { _dir: dir, path }
-    }
-
-    pub(super) fn path(&self) -> &Path {
-        &self.path
-    }
-}
 
 pub(super) fn write_manifest_archive_without_directory_entries(path: &Path) {
     write_manifest_archive_with_entries(path, &[("nested/inner/file.txt", b"nested hello")]);

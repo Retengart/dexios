@@ -27,8 +27,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use core::kdf::Kdf;
 use core::protected::Protected;
@@ -36,40 +34,12 @@ use dexios_domain::storage::identity::OverwritePolicy;
 use dexios_domain::storage::transaction::TransactionError;
 use dexios_domain::workflow_error::WorkflowErrorClass;
 use dexios_domain::{decrypt, encrypt};
+#[allow(dead_code)]
+#[path = "support/tempdir.rs"]
+mod tempdir;
+use tempdir::DomainTestDir as TestDir;
 
-static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 static CURRENT_DIR_LOCK: Mutex<()> = Mutex::new(());
-
-struct TestDir {
-    path: PathBuf,
-}
-
-impl TestDir {
-    fn new(prefix: &str) -> Self {
-        let seq = NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "dexios-domain-{prefix}-{}-{seq}-{nanos}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        let path = fs::canonicalize(path).unwrap();
-        Self { path }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for TestDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
-}
 
 struct CurrentDirGuard {
     original: PathBuf,

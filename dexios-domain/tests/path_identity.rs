@@ -28,50 +28,23 @@ use std::fs;
 use std::io::ErrorKind;
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[cfg(unix)]
 use dexios_domain::storage::FileStorage;
 use dexios_domain::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole,
 };
+#[allow(dead_code)]
+#[path = "support/tempdir.rs"]
+mod tempdir;
+use tempdir::DomainTestDir as TestDir;
 
 const STORAGE_FS_RS: &str = include_str!("../src/storage/fs.rs");
 const DOMAIN_PACK_RS: &str = include_str!("../src/pack.rs");
 const NON_UNIX_PLATFORM_LIMITATION_WORDING: &str =
     "non-Unix fallback is limited by platform identity APIs";
 const NON_UNIX_NO_PARITY_WORDING: &str = "does not provide Unix-equivalent identity evidence";
-
-struct TestDir {
-    _dir: tempfile::TempDir,
-    path: PathBuf,
-}
-
-impl TestDir {
-    fn new(prefix: &str) -> Self {
-        let dir = tempfile::Builder::new()
-            .prefix(&format!("dexios-{prefix}-"))
-            .tempdir()
-            .unwrap();
-        let path = fs::canonicalize(dir.path()).unwrap();
-        Self { _dir: dir, path }
-    }
-
-    fn new_under_workdir(prefix: &str) -> Self {
-        let root = Path::new("target").join("path-identity-tests");
-        fs::create_dir_all(&root).unwrap();
-        let dir = tempfile::Builder::new()
-            .prefix(&format!("dexios-{prefix}-"))
-            .tempdir_in(root)
-            .unwrap();
-        let path = fs::canonicalize(dir.path()).unwrap();
-        Self { _dir: dir, path }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
 
 #[test]
 fn path_identity_harness_creates_disposable_real_fs_dir() {
@@ -263,7 +236,7 @@ fn identity_io_failures_preserve_sources_for_missing_existing_paths() {
 
 #[test]
 fn identity_rejects_relative_alias() {
-    let test_dir = TestDir::new_under_workdir("path-identity-relative");
+    let test_dir = TestDir::new_under_workdir("target/path-identity-tests", "path-identity");
     let input = test_dir.path().join("input.txt");
     fs::write(&input, b"path identity fixture").unwrap();
 

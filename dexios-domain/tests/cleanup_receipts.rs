@@ -29,7 +29,7 @@ use std::error::Error as _;
 use std::fs;
 #[cfg(feature = "test-support")]
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[cfg(feature = "test-support")]
 use dexios_domain::storage::cleanup::{
@@ -42,28 +42,12 @@ use dexios_domain::storage::identity::{OverwritePolicy, PathIdentityGraph, PathR
 use dexios_domain::storage::test_support::{FailureError, FailureHooks, FailurePoint};
 #[cfg(feature = "test-support")]
 use dexios_domain::storage::transaction::{CommitReceipt, StagedOutputTransaction};
+#[allow(dead_code)]
+#[path = "support/tempdir.rs"]
+mod tempdir;
+use tempdir::DomainTestDir as TestDir;
 
 const TRANSACTION_SOURCE: &str = include_str!("../src/storage/transaction.rs");
-
-struct TestDir {
-    _dir: tempfile::TempDir,
-    path: PathBuf,
-}
-
-impl TestDir {
-    fn new(prefix: &str) -> Self {
-        let dir = tempfile::Builder::new()
-            .prefix(&format!("dexios-{prefix}-"))
-            .tempdir()
-            .unwrap();
-        let path = fs::canonicalize(dir.path()).unwrap();
-        Self { _dir: dir, path }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
 
 #[cfg(feature = "test-support")]
 fn committed_output(path: PathBuf) -> CommitReceipt {
