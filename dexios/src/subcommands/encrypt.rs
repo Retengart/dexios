@@ -1,87 +1,44 @@
-use crate::cli::prompt::overwrite_check;
-use crate::global::states::{DeleteInput, ForceMode, HeaderLocation, PasswordState};
+use crate::cli::overwrite::{
+    ExistingPathProbe, PlannedOverwrite, confirm_overwrites, reject_stdin_keyfile_prompt_conflict,
+};
+use crate::global::states::{DeleteInput, HeaderLocation, PasswordState};
 use crate::global::structs::CryptoParams;
 use anyhow::Result;
 
-use domain::storage::identity::OverwritePolicy;
-
 use super::errors::map_encrypt_error;
-
-fn overwrite_prompts_allow_continue<F>(output_ok: bool, header_check: F) -> Result<bool>
-where
-    F: FnOnce() -> Result<Option<bool>>,
-{
-    if !output_ok {
-        return Ok(false);
-    }
-
-    Ok(header_check()?.unwrap_or(true))
-}
-
-fn overwrite_policy(path_exists: bool) -> OverwritePolicy {
-    if path_exists {
-        OverwritePolicy::ReplaceAtCommit
-    } else {
-        OverwritePolicy::CreateNew
-    }
-}
-
-fn existing_path(path: &str) -> bool {
-    std::fs::metadata(path).is_ok()
-}
-
-fn overwrite_check_if_needed(path: &str, path_exists: bool, force: ForceMode) -> Result<bool> {
-    if path_exists {
-        overwrite_check(path, force)
-    } else {
-        Ok(true)
-    }
-}
-
-fn reject_stdin_keyfile_prompt_conflict(params: &CryptoParams, prompt_needed: bool) -> Result<()> {
-    if prompt_needed && params.force == ForceMode::Prompt && params.key.reads_stdin() {
-        return Err(anyhow::anyhow!(
-            "--keyfile - cannot be combined with interactive overwrite prompts; pass --force to avoid reading confirmation from stdin"
-        ));
-    }
-    Ok(())
-}
 
 // Handles user-facing prompts and delegates path validation/opening to the domain layer.
 pub(crate) fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> Result<()> {
-    let output_exists = existing_path(output);
-    let header_exists = match &params.header_location {
+    let output_plan = PlannedOverwrite::new(output, ExistingPathProbe::Metadata);
+    let header_plan = match &params.header_location {
         HeaderLocation::Embedded => None,
-        HeaderLocation::Detached(path) => Some(existing_path(path)),
-    };
-    reject_stdin_keyfile_prompt_conflict(params, output_exists || header_exists.unwrap_or(false))?;
-
-    let output_ok = overwrite_check_if_needed(output, output_exists, params.force)?;
-
-    if !overwrite_prompts_allow_continue(output_ok, || match &params.header_location {
-        HeaderLocation::Embedded => Ok(None),
         HeaderLocation::Detached(path) => {
-            overwrite_check_if_needed(path, header_exists.unwrap_or(false), params.force).map(Some)
+            Some(PlannedOverwrite::new(path, ExistingPathProbe::Metadata))
         }
-    })? {
+    };
+    reject_stdin_keyfile_prompt_conflict(
+        params,
+        output_plan.exists() || header_plan.as_ref().is_some_and(PlannedOverwrite::exists),
+    )?;
+    let mut prompt_targets = vec![&output_plan];
+    if let Some(header_plan) = &header_plan {
+        prompt_targets.push(header_plan);
+    }
+    if !confirm_overwrites(prompt_targets, params.force)? {
         return Ok(());
     }
 
     let raw_key = params.key.get_secret(&PasswordState::Validate)?;
 
-    let header = match &params.header_location {
-        HeaderLocation::Embedded => None,
-        HeaderLocation::Detached(path) => Some(domain::encrypt::DetachedHeaderTarget::new(
-            path,
-            overwrite_policy(header_exists.unwrap_or(false)),
-        )),
-    };
+    let header = header_plan
+        .as_ref()
+        .map(|plan| domain::encrypt::DetachedHeaderTarget::new(plan.path(), plan.policy()));
 
     // 2. encrypt file
     let intent = domain::encrypt::EncryptIntent::new(
         input,
         output,
-        overwrite_policy(output_exists),
+        output_plan.policy(),
         header,
         raw_key,
         params.kdf,
@@ -101,32 +58,4 @@ pub(crate) fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> R
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn detached_header_decline_returns_false_before_work_starts() {
-        assert!(!super::overwrite_prompts_allow_continue(true, || Ok(Some(false))).unwrap());
-    }
-
-    #[test]
-    fn approve_all_overwrite_checks_returns_true() {
-        assert!(super::overwrite_prompts_allow_continue(true, || Ok(Some(true))).unwrap());
-        assert!(super::overwrite_prompts_allow_continue(true, || Ok(None)).unwrap());
-    }
-
-    #[test]
-    fn main_output_decline_short_circuits_header_check() {
-        let mut called = false;
-
-        let result = super::overwrite_prompts_allow_continue(false, || {
-            called = true;
-            Ok(Some(true))
-        })
-        .unwrap();
-
-        assert!(!result);
-        assert!(!called);
-    }
 }

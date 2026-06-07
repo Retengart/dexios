@@ -1,47 +1,18 @@
-use crate::cli::prompt::overwrite_check;
-use crate::global::states::{DeleteInput, ForceMode, HeaderLocation, PasswordState};
+use crate::cli::overwrite::{
+    ExistingPathProbe, PlannedOverwrite, confirm_overwrites, reject_stdin_keyfile_prompt_conflict,
+};
+use crate::global::states::{DeleteInput, HeaderLocation, PasswordState};
 use crate::global::structs::CryptoParams;
 
 use anyhow::Result;
 
-use domain::storage::identity::OverwritePolicy;
-
 use super::errors::map_decrypt_error;
-
-fn overwrite_policy(path_exists: bool) -> OverwritePolicy {
-    if path_exists {
-        OverwritePolicy::ReplaceAtCommit
-    } else {
-        OverwritePolicy::CreateNew
-    }
-}
-
-fn existing_path(path: &str) -> bool {
-    std::fs::metadata(path).is_ok()
-}
-
-fn overwrite_check_if_needed(path: &str, path_exists: bool, force: ForceMode) -> Result<bool> {
-    if path_exists {
-        overwrite_check(path, force)
-    } else {
-        Ok(true)
-    }
-}
-
-fn reject_stdin_keyfile_prompt_conflict(params: &CryptoParams, prompt_needed: bool) -> Result<()> {
-    if prompt_needed && params.force == ForceMode::Prompt && params.key.reads_stdin() {
-        return Err(anyhow::anyhow!(
-            "--keyfile - cannot be combined with interactive overwrite prompts; pass --force to avoid reading confirmation from stdin"
-        ));
-    }
-    Ok(())
-}
 
 // Handles user-facing prompts and delegates path validation/opening to the domain layer.
 pub(crate) fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> Result<()> {
-    let output_exists = existing_path(output);
-    reject_stdin_keyfile_prompt_conflict(params, output_exists)?;
-    if !overwrite_check_if_needed(output, output_exists, params.force)? {
+    let output_plan = PlannedOverwrite::new(output, ExistingPathProbe::Metadata);
+    reject_stdin_keyfile_prompt_conflict(params, output_plan.exists())?;
+    if !confirm_overwrites([&output_plan], params.force)? {
         return Ok(());
     }
 
@@ -54,7 +25,7 @@ pub(crate) fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> R
     let intent = domain::decrypt::DecryptIntent::new(
         input,
         output,
-        overwrite_policy(output_exists),
+        output_plan.policy(),
         detached_header_path,
         raw_key,
         None,

@@ -28,6 +28,12 @@ mod verification_gate_support;
 
 use verification_gate_support::*;
 
+const ENCRYPT_SUBCOMMAND_SOURCE: &str = DEXIOS_ENCRYPT_RS;
+const DECRYPT_SUBCOMMAND_SOURCE: &str = DEXIOS_DECRYPT_RS;
+const PACK_SUBCOMMAND_SOURCE: &str = DEXIOS_PACK_RS;
+const HEADER_SUBCOMMAND_SOURCE: &str = include_str!("../src/subcommands/header.rs");
+const UNPACK_SUBCOMMAND_SOURCE: &str = DEXIOS_UNPACK_RS;
+
 #[test]
 fn rust_production_source_gate_catches_multiline_dangerous_calls() {
     let source = r"
@@ -1067,6 +1073,52 @@ fn crate_roots_keep_the_no_unsafe_compiler_baseline() {
     ] {
         assert_contains(source_name, source, "#![forbid(unsafe_code)]");
     }
+}
+
+#[test]
+fn cli_subcommands_use_shared_overwrite_planning_source_gate() {
+    for (path, source) in [
+        (
+            "dexios/src/subcommands/encrypt.rs",
+            ENCRYPT_SUBCOMMAND_SOURCE,
+        ),
+        (
+            "dexios/src/subcommands/decrypt.rs",
+            DECRYPT_SUBCOMMAND_SOURCE,
+        ),
+        ("dexios/src/subcommands/pack.rs", PACK_SUBCOMMAND_SOURCE),
+        ("dexios/src/subcommands/header.rs", HEADER_SUBCOMMAND_SOURCE),
+    ] {
+        assert!(
+            !source.contains("fn overwrite_policy("),
+            "{path} must use cli::overwrite::PlannedOverwrite"
+        );
+        assert!(
+            !source.contains("fn overwrite_policy_for("),
+            "{path} must use cli::overwrite::PlannedOverwrite"
+        );
+        assert!(
+            !source.contains("fn existing_path("),
+            "{path} must use cli::overwrite::PlannedOverwrite"
+        );
+        assert!(
+            !source.contains("fn overwrite_check_if_needed("),
+            "{path} must use cli::overwrite::confirm_overwrites"
+        );
+        assert!(
+            !source.contains("fn overwrite_prompts_allow_continue"),
+            "{path} must use cli::overwrite::confirm_overwrites"
+        );
+        assert!(
+            !source.contains("fn reject_stdin_keyfile_prompt_conflict("),
+            "{path} must use cli::overwrite::reject_stdin_keyfile_prompt_conflict"
+        );
+    }
+
+    assert!(
+        !UNPACK_SUBCOMMAND_SOURCE.contains("fn reject_stdin_keyfile_prompt_conflict("),
+        "dexios/src/subcommands/unpack.rs must use cli::overwrite::reject_stdin_keyfile_dynamic_prompt_conflict"
+    );
 }
 #[test]
 fn phase9_kdf_passphrase_and_secret_contract_is_source_gated() {

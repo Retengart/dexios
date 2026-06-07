@@ -1,32 +1,12 @@
+use crate::cli::overwrite::{ExistingPathProbe, PlannedOverwrite, confirm_overwrites};
 use crate::cli::prompt::overwrite_check;
 use crate::global::states::ForceMode;
 use anyhow::Result;
 use core::header::ParsedHeader;
 use core::header::v1::KeyslotKdf;
-use domain::storage::identity::OverwritePolicy;
 use domain::utils::hex_encode;
 
 use super::errors::{map_header_details_error, map_header_error};
-
-fn overwrite_policy(path_exists: bool) -> OverwritePolicy {
-    if path_exists {
-        OverwritePolicy::ReplaceAtCommit
-    } else {
-        OverwritePolicy::CreateNew
-    }
-}
-
-fn existing_path(path: &str) -> bool {
-    std::fs::metadata(path).is_ok()
-}
-
-fn overwrite_check_if_needed(path: &str, path_exists: bool, force: ForceMode) -> Result<bool> {
-    if path_exists {
-        overwrite_check(path, force)
-    } else {
-        Ok(true)
-    }
-}
 
 // Per-keyslot encrypted master keys are sensitive material; they stay hidden behind
 // `--raw` so they are not dumped to terminals, scrollback, or logs by default.
@@ -73,14 +53,13 @@ pub(crate) fn details(input: &str, raw: bool) -> Result<()> {
 }
 
 pub(crate) fn dump(input: &str, output: &str, force: ForceMode) -> Result<()> {
-    let output_exists = existing_path(output);
-    if !overwrite_check_if_needed(output, output_exists, force)? {
+    let output_plan = PlannedOverwrite::new(output, ExistingPathProbe::Metadata);
+    if !confirm_overwrites([&output_plan], force)? {
         return Ok(());
     }
 
-    let intent =
-        domain::header::dump::DumpIntent::new(input, output, overwrite_policy(output_exists))
-            .map_err(map_header_error)?;
+    let intent = domain::header::dump::DumpIntent::new(input, output, output_plan.policy())
+        .map_err(map_header_error)?;
 
     let _receipt = domain::header::dump::execute_transactional(intent).map_err(map_header_error)?;
 

@@ -1,8 +1,10 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
+use crate::cli::overwrite::{
+    ExistingPathProbe, PlannedOverwrite, confirm_overwrites, reject_stdin_keyfile_prompt_conflict,
+};
 use crate::global::states::{
     DeleteSource, DirectoryMode, HeaderLocation, PasswordState, PrintMode,
 };
@@ -11,46 +13,12 @@ use crate::info;
 use crate::subcommands::errors::map_pack_error;
 use domain::archive::ArchivePolicy;
 use domain::pack::{DetachedHeaderTarget, PackIntent};
-use domain::storage::identity::OverwritePolicy;
-
-use crate::cli::prompt::overwrite_check;
-
-fn reject_stdin_keyfile_prompt_conflict(params: &CryptoParams, prompt_needed: bool) -> Result<()> {
-    if prompt_needed
-        && params.force == crate::global::states::ForceMode::Prompt
-        && params.key.reads_stdin()
-    {
-        return Err(anyhow::anyhow!(
-            "--keyfile - cannot be combined with interactive overwrite prompts; pass --force to avoid reading confirmation from stdin"
-        ));
-    }
-    Ok(())
-}
-
-fn overwrite_prompts_allow_continue<F>(output_ok: bool, header_check: F) -> Result<bool>
-where
-    F: FnOnce() -> Result<Option<bool>>,
-{
-    if !output_ok {
-        return Ok(false);
-    }
-
-    Ok(header_check()?.unwrap_or(true))
-}
 
 pub(crate) struct Request<'a> {
     pub input_file: &'a Vec<String>,
     pub output_file: &'a str,
     pub pack_params: PackParams,
     pub crypto_params: CryptoParams,
-}
-
-fn overwrite_policy_for(path: &Path) -> OverwritePolicy {
-    if fs::symlink_metadata(path).is_ok() {
-        OverwritePolicy::ReplaceAtCommit
-    } else {
-        OverwritePolicy::CreateNew
-    }
 }
 
 // Packing is delegated to the domain layer, which writes a canonical
@@ -68,28 +36,26 @@ pub(crate) fn execute(req: &Request<'_>) -> Result<()> {
     }
 
     let output_path = PathBuf::from(req.output_file);
-    let output_overwrite_policy = overwrite_policy_for(&output_path);
+    let output_plan = PlannedOverwrite::new(&output_path, ExistingPathProbe::SymlinkMetadata);
     let detached_header_path = match &req.crypto_params.header_location {
         HeaderLocation::Embedded => None,
         HeaderLocation::Detached(path) => Some(PathBuf::from(path)),
     };
-    let detached_header_overwrite_policy = detached_header_path
+    let detached_header_plan = detached_header_path
         .as_ref()
-        .map_or(OverwritePolicy::CreateNew, |path| {
-            overwrite_policy_for(path)
-        });
+        .map(|path| PlannedOverwrite::new(path, ExistingPathProbe::SymlinkMetadata));
     reject_stdin_keyfile_prompt_conflict(
         &req.crypto_params,
-        output_overwrite_policy == OverwritePolicy::ReplaceAtCommit
-            || detached_header_overwrite_policy == OverwritePolicy::ReplaceAtCommit,
+        output_plan.exists()
+            || detached_header_plan
+                .as_ref()
+                .is_some_and(PlannedOverwrite::exists),
     )?;
-
-    let output_ok = overwrite_check(req.output_file, req.crypto_params.force)?;
-
-    if !overwrite_prompts_allow_continue(output_ok, || match &req.crypto_params.header_location {
-        HeaderLocation::Embedded => Ok(None),
-        HeaderLocation::Detached(path) => overwrite_check(path, req.crypto_params.force).map(Some),
-    })? {
+    let mut prompt_targets = vec![&output_plan];
+    if let Some(detached_header_plan) = &detached_header_plan {
+        prompt_targets.push(detached_header_plan);
+    }
+    if !confirm_overwrites(prompt_targets, req.crypto_params.force)? {
         return Ok(());
     }
 
@@ -102,13 +68,16 @@ pub(crate) fn execute(req: &Request<'_>) -> Result<()> {
         }) as domain::pack::OnArchiveEntryFn
     });
 
+    let detached_header_target = detached_header_plan
+        .as_ref()
+        .map(|plan| DetachedHeaderTarget::new(plan.path(), plan.policy()));
+
     // 2. compress and encrypt files
     let intent = PackIntent::new(
         input_files,
         output_path,
-        output_overwrite_policy,
-        detached_header_path
-            .map(|path| DetachedHeaderTarget::new(path, detached_header_overwrite_policy)),
+        output_plan.policy(),
+        detached_header_target,
         raw_key,
         req.crypto_params.kdf,
         ArchivePolicy::default(),
@@ -133,32 +102,4 @@ pub(crate) fn execute(req: &Request<'_>) -> Result<()> {
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn detached_header_decline_returns_false_before_work_starts() {
-        assert!(!super::overwrite_prompts_allow_continue(true, || Ok(Some(false))).unwrap());
-    }
-
-    #[test]
-    fn approve_all_overwrite_checks_returns_true() {
-        assert!(super::overwrite_prompts_allow_continue(true, || Ok(Some(true))).unwrap());
-        assert!(super::overwrite_prompts_allow_continue(true, || Ok(None)).unwrap());
-    }
-
-    #[test]
-    fn main_output_decline_short_circuits_header_check() {
-        let mut called = false;
-
-        let result = super::overwrite_prompts_allow_continue(false, || {
-            called = true;
-            Ok(Some(true))
-        })
-        .unwrap();
-
-        assert!(!result);
-        assert!(!called);
-    }
 }

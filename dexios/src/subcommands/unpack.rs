@@ -1,4 +1,7 @@
-use crate::{cli::prompt::get_answer, global::states::DeleteInput};
+use crate::{
+    cli::{overwrite::reject_stdin_keyfile_dynamic_prompt_conflict, prompt::get_answer},
+    global::states::DeleteInput,
+};
 
 use anyhow::Result;
 
@@ -44,15 +47,6 @@ where
     Ok(true)
 }
 
-fn reject_stdin_keyfile_prompt_conflict(params: &CryptoParams) -> Result<()> {
-    if params.force == ForceMode::Prompt && params.key.reads_stdin() {
-        return Err(anyhow::anyhow!(
-            "--keyfile - cannot be combined with interactive overwrite prompts; pass --force to avoid reading confirmation from stdin"
-        ));
-    }
-    Ok(())
-}
-
 // Unpacking is delegated to the domain layer, which validates the manifest,
 // stages selected file bodies, and commits only after final authentication.
 pub(crate) fn unpack(
@@ -66,7 +60,7 @@ pub(crate) fn unpack(
         HeaderLocation::Detached(path) => Some(Path::new(path)),
     };
 
-    reject_stdin_keyfile_prompt_conflict(&params)?;
+    reject_stdin_keyfile_dynamic_prompt_conflict(&params)?;
     let raw_key = params.key.get_secret(&PasswordState::Direct)?;
     let verbose = print_mode == PrintMode::Verbose;
 
