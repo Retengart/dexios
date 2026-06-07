@@ -129,14 +129,15 @@ fn assert_identity_source_kind(error: &IdentityError, expected: ErrorKind) {
     assert_eq!(source.kind(), expected);
 }
 
-fn source_section<'a>(source_name: &str, source: &'a str, start: &str, end: &str) -> &'a str {
+fn source_section(source_name: &str, source: &str, start: &str, end: &str) -> String {
+    let source = source.replace("\r\n", "\n");
     let (_, rest) = source
         .split_once(start)
         .unwrap_or_else(|| panic!("{source_name} missing source anchor {start:?}"));
     let (section, _) = rest
         .split_once(end)
         .unwrap_or_else(|| panic!("{source_name} missing source anchor {end:?} after {start:?}"));
-    section
+    section.to_owned()
 }
 
 fn assert_unix_strong_identity_wording(source_name: &str, section: &str) {
@@ -184,7 +185,7 @@ fn platform_identity_contract_distinguishes_unix_revalidation_from_non_unix_fall
     );
     assert_unix_strong_identity_wording(
         "dexios-domain/src/storage/fs.rs::verify_entry_matches_resolved_target",
-        unix_read_reopen,
+        &unix_read_reopen,
     );
     assert!(
         unix_read_reopen.contains("actual.dev() != expected_identity.dev")
@@ -204,7 +205,7 @@ fn platform_identity_contract_distinguishes_unix_revalidation_from_non_unix_fall
     );
     assert_non_unix_limited_identity_wording(
         "dexios-domain/src/storage/fs.rs::open_no_follow non-Unix fallback",
-        non_unix_open,
+        &non_unix_open,
     );
     assert!(
         !non_unix_open.contains(".dev()") && !non_unix_open.contains(".ino()"),
@@ -224,7 +225,7 @@ fn platform_identity_contract_distinguishes_unix_revalidation_from_non_unix_fall
     );
     assert_unix_strong_identity_wording(
         "dexios-domain/src/pack.rs::verify_walked_entry_matches_opened Unix",
-        unix_walk_entry,
+        &unix_walk_entry,
     );
 
     let non_unix_walk_entry = source_section(
@@ -239,7 +240,7 @@ fn platform_identity_contract_distinguishes_unix_revalidation_from_non_unix_fall
     );
     assert_non_unix_limited_identity_wording(
         "dexios-domain/src/pack.rs::verify_walked_entry_matches_opened non-Unix fallback",
-        non_unix_walk_entry,
+        &non_unix_walk_entry,
     );
     assert!(
         !non_unix_walk_entry.contains(".dev()") && !non_unix_walk_entry.contains(".ino()"),
@@ -370,6 +371,7 @@ fn identity_rejects_existing_roles_with_symlinked_parent_prefixes() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn identity_rejects_existing_roles_with_symlinked_parent_hidden_by_parent_component() {
     let test_dir = TestDir::new("path-identity-existing-parent-dotdot");
@@ -412,6 +414,7 @@ fn identity_rejects_existing_output_roles_with_symlinked_parent_prefixes() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn identity_rejects_output_roles_with_symlinked_parent_hidden_by_parent_component() {
     let test_dir = TestDir::new("path-identity-output-parent-dotdot");
@@ -436,6 +439,7 @@ fn identity_rejects_output_roles_with_symlinked_parent_hidden_by_parent_componen
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn identity_rejects_missing_output_with_symlinked_parent_hidden_by_parent_component() {
     let test_dir = TestDir::new("path-identity-missing-output-dotdot");

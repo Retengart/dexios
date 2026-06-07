@@ -91,7 +91,8 @@ fn key_verify_regular_file_happy_path_unlocks_keyslot() {
 #[test]
 fn key_verify_missing_target_still_reports_read_io() {
     let dir = tempfile::tempdir().expect("temp dir");
-    let missing = dir.path().join("verify-identity-missing.enc");
+    let dir_path = fs::canonicalize(dir.path()).expect("canonical temp dir");
+    let missing = dir_path.join("verify-identity-missing.enc");
 
     match key::verify::VerifyIntent::new(&missing) {
         Err(key::Error::ReadIo) => {}

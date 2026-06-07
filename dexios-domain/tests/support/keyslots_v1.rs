@@ -59,8 +59,9 @@ pub(super) const HISTORICAL_ARGON2ID_KEY_TAG: [u8; 2] = [0xDF, 0x02];
 
 pub(super) fn encrypted_v1_fixture() -> RefCell<Cursor<Vec<u8>>> {
     let dir = tempfile::tempdir().unwrap();
-    let input_path = dir.path().join("plain.txt");
-    let output_path = dir.path().join("plain.enc");
+    let dir_path = fs::canonicalize(dir.path()).unwrap();
+    let input_path = dir_path.join("plain.txt");
+    let output_path = dir_path.join("plain.enc");
     fs::write(&input_path, b"Hello world").unwrap();
 
     let intent = encrypt::EncryptIntent::new(
@@ -79,8 +80,9 @@ pub(super) fn encrypted_v1_fixture() -> RefCell<Cursor<Vec<u8>>> {
 
 pub(super) fn encrypted_v1_file(name: &str) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
-    let input_path = dir.path().join(format!("{name}.txt"));
-    let output_path = dir.path().join(format!("{name}.enc"));
+    let dir_path = fs::canonicalize(dir.path()).unwrap();
+    let input_path = dir_path.join(format!("{name}.txt"));
+    let output_path = dir_path.join(format!("{name}.enc"));
     fs::write(&input_path, b"Hello world").unwrap();
 
     let intent = encrypt::EncryptIntent::new(
