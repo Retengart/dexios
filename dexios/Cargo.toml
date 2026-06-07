@@ -36,6 +36,7 @@ subtle.workspace = true
 
 [dev-dependencies]
 toml = "1.1.2"
+tempfile = "3.27.0"
 
 [lints]
 workspace = true

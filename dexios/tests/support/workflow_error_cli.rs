@@ -34,10 +34,8 @@
 
 use std::fs;
 use std::io::{Cursor, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use core::cipher::wrap_v1_master_key;
 use core::header::common::{
@@ -53,9 +51,13 @@ use core::stream::V1PayloadStream;
 use domain::storage::identity::{OverwritePolicy, PathIdentityGraph, PathRole};
 use domain::storage::transaction::{LinkedOutputTransaction, TransactionError};
 
+#[path = "tempdir.rs"]
+mod tempdir;
+
+pub(crate) use tempdir::TestDir;
+
 pub(crate) const CORRECT_PASSWORD: &str = "correct-password";
 pub(crate) const WRONG_PASSWORD: &str = "wrong-password";
-static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 
 fn keyslot_nonce(bytes: [u8; 24]) -> KeyslotNonce {
     KeyslotNonce::try_from_slice(&bytes).expect("valid keyslot nonce")
@@ -63,37 +65,6 @@ fn keyslot_nonce(bytes: [u8; 24]) -> KeyslotNonce {
 
 fn payload_nonce(bytes: [u8; 20]) -> PayloadNonce {
     PayloadNonce::try_from_slice(&bytes).expect("valid payload nonce")
-}
-
-pub(crate) struct TestDir {
-    path: PathBuf,
-}
-
-impl TestDir {
-    pub(crate) fn new(prefix: &str) -> Self {
-        let seq = NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "dexios-{prefix}-{}-{seq}-{nanos}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        let path = fs::canonicalize(path).unwrap();
-        Self { path }
-    }
-
-    pub(crate) fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for TestDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
 }
 
 pub(crate) fn run_cli(current_dir: &Path, key: &str, args: &[&str]) -> std::process::Output {
