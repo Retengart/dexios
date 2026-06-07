@@ -36,6 +36,10 @@ use workflow_error_cli_support::{
 
 const ERRORS_SOURCE: &str = include_str!("../src/subcommands/errors.rs");
 
+fn normalized_line_endings(source: &str) -> String {
+    source.replace("\r\n", "\n")
+}
+
 #[test]
 fn unsafe_path_and_transaction_errors_use_typed_cli_mapping() {
     let test_dir = TestDir::new("workflow-error-path-transaction");
@@ -58,7 +62,7 @@ fn unsafe_path_and_transaction_errors_use_typed_cli_mapping() {
     );
 
     assert!(
-        ERRORS_SOURCE.contains(
+        normalized_line_endings(ERRORS_SOURCE).contains(
             "WorkflowErrorClass::TransactionCommitFailure => {\n            anyhow!(\"Unable to commit encrypted output\")"
         ),
         "encrypt transaction commit failures must keep their explicit CLI mapping"

@@ -43,9 +43,10 @@ fn key() -> Protected<Vec<u8>> {
 #[test]
 fn encrypt_detached_partial_publication_reports_committed_payload_and_failed_header() {
     let root = tempfile::tempdir().unwrap();
-    let input_path = root.path().join("plain.txt");
-    let output_path = root.path().join("plain.enc");
-    let header_path = root.path().join("plain.hdr");
+    let root_path = fs::canonicalize(root.path()).unwrap();
+    let input_path = root_path.join("plain.txt");
+    let output_path = root_path.join("plain.enc");
+    let header_path = root_path.join("plain.hdr");
     fs::write(&input_path, b"top secret").unwrap();
     fs::write(&header_path, b"existing header").unwrap();
 
@@ -92,9 +93,10 @@ fn encrypt_detached_partial_publication_reports_committed_payload_and_failed_hea
 #[test]
 fn pack_detached_partial_publication_reports_committed_payload_and_failed_header() {
     let root = tempfile::tempdir().unwrap();
-    let source_dir = root.path().join("source");
-    let output_path = root.path().join("archive.enc");
-    let header_path = root.path().join("archive.hdr");
+    let root_path = fs::canonicalize(root.path()).unwrap();
+    let source_dir = root_path.join("source");
+    let output_path = root_path.join("archive.enc");
+    let header_path = root_path.join("archive.hdr");
     fs::create_dir_all(&source_dir).unwrap();
     fs::write(source_dir.join("plain.txt"), b"top secret").unwrap();
     fs::write(&header_path, b"existing header").unwrap();
