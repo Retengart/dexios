@@ -534,8 +534,9 @@ mod tests {
     #[test]
     fn decrypt_transactional_target_preserves_payload_read_error_class() {
         let test_dir = tempfile::tempdir().expect("temp dir");
-        let input_path = test_dir.path().join("fixture.dx");
-        let output_path = test_dir.path().join("fixture.out");
+        let test_dir_path = std::fs::canonicalize(test_dir.path()).expect("canonical temp dir");
+        let input_path = test_dir_path.join("fixture.dx");
+        let output_path = test_dir_path.join("fixture.out");
         let encrypted_bytes = encrypted_embedded_fixture_bytes();
         std::fs::write(&input_path, &encrypted_bytes).expect("input path for identity validation");
 

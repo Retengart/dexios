@@ -167,6 +167,24 @@ fn source_occurs_before(source: &str, earlier: &str, later: &str) -> bool {
     earlier_index < later_index
 }
 
+fn cli_surface_display_path(path: &Path) -> String {
+    let path = path.display().to_string();
+    #[cfg(windows)]
+    {
+        let normalized = path.replace('\\', "/");
+        let bytes = normalized.as_bytes();
+        if bytes.len() >= 2 && bytes[1] == b':' {
+            let drive = normalized[..1].to_ascii_lowercase();
+            return format!("/{drive}{}", &normalized[2..]);
+        }
+        return normalized;
+    }
+    #[cfg(not(windows))]
+    {
+        path
+    }
+}
+
 #[test]
 fn repaired_cli_surface_is_rejection_only_for_removed_behavior() {
     let violations = removed_token_positive_path_violations(VERIFY_CLI_SURFACE);
@@ -358,7 +376,7 @@ fn cli_surface_harness_preflight_names_normalized_missing_binary_before_smoke_ca
         .parent()
         .expect("dexios crate has repository root parent");
     let selected_binary = "./Cargo.toml.missing-dexios";
-    let expected_binary = repo_root.join("Cargo.toml.missing-dexios");
+    let expected_binary = cli_surface_display_path(&repo_root.join("Cargo.toml.missing-dexios"));
 
     let output = bash_command()
         .arg("scripts/verify_cli_surface.sh")
@@ -381,8 +399,7 @@ fn cli_surface_harness_preflight_names_normalized_missing_binary_before_smoke_ca
     );
     assert!(
         stderr.contains(&format!(
-            "Binary not found or not executable: {}",
-            expected_binary.display()
+            "Binary not found or not executable: {expected_binary}"
         )),
         "preflight diagnostic must name the normalized selected binary: stdout={stdout}\nstderr={stderr}"
     );

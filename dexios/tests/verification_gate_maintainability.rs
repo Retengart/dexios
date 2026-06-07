@@ -146,8 +146,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios/tests/verification_gate_cli.rs",
         category: "CLI surface gate evidence",
         rationale: "CLI surface harness source-gate and smoke contract evidence remains explicit per D-11.",
-        current_lines: 792,
-        cap: 792,
+        current_lines: 809,
+        cap: 809,
     },
     FileSizeException {
         path: "dexios/tests/verification_gate_scripts.rs",
@@ -167,8 +167,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios-domain/src/decrypt.rs",
         category: "D-05 production authority cap",
         rationale: "Decrypt workflow authority file is deferred from production splitting per D-05.",
-        current_lines: 722,
-        cap: 722,
+        current_lines: 723,
+        cap: 723,
     },
     FileSizeException {
         path: "dexios-domain/src/storage/temp.rs",
