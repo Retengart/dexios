@@ -3,6 +3,7 @@ use core::key::PassphraseWordCount;
 
 mod args;
 mod commands;
+pub(crate) mod overwrite;
 pub(crate) mod prompt;
 
 const MAX_AUTOGENERATE_WORDS: u16 = 64;
