@@ -139,8 +139,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios/tests/key_cli_regressions.rs",
         category: "key CLI security regression matrix",
         rationale: "Key-source prompting and stderr regression matrix remains explicit per D-03.",
-        current_lines: 837,
-        cap: 837,
+        current_lines: 808,
+        cap: 808,
     },
     FileSizeException {
         path: "dexios/tests/verification_gate_cli.rs",

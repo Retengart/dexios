@@ -24,12 +24,14 @@
         reason = "integration tests assert exact behavior and may panic on failure"
     )
 )]
+#[allow(dead_code)]
+#[path = "support/tempdir.rs"]
+mod tempdir;
+
 use std::fs;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use core::header::common::{
     CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN,
@@ -38,42 +40,11 @@ use core::header::common::{
 use core::kdf::Kdf;
 use core::protected::Protected;
 use domain::encrypt;
+use tempdir::{KeyTestDir as TestDir, unique_file_name};
 
 const PASSWORD: &str = "old-pass";
 const KEY_SUBCOMMAND_SOURCE: &str = include_str!("../src/subcommands/key.rs");
 const ERROR_MAPPING_SOURCE: &str = include_str!("../src/subcommands/errors.rs");
-static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
-
-struct TestDir {
-    path: PathBuf,
-}
-
-impl TestDir {
-    fn new(prefix: &str) -> Self {
-        let seq = NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "dexios-key-{prefix}-{}-{seq}-{nanos}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        let path = fs::canonicalize(path).unwrap();
-        Self { path }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for TestDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
-}
 
 fn run_cli(current_dir: &Path, args: &[&str], key: Option<&str>) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
@@ -152,8 +123,8 @@ fn assert_sanitized_key_stderr(stderr: &str) {
 }
 
 fn encrypt_fixture(dir: &Path, name: &str) -> PathBuf {
-    let input_path = dir.join(format!("{name}.txt"));
-    let output_path = dir.join(format!("{name}.enc"));
+    let input_path = dir.join(unique_file_name(name, "txt"));
+    let output_path = dir.join(unique_file_name(name, "enc"));
     fs::write(&input_path, b"Hello world").unwrap();
 
     let intent = encrypt::EncryptIntent::new(

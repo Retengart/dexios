@@ -24,48 +24,20 @@
         reason = "integration tests assert exact behavior and may panic on failure"
     )
 )]
+#[allow(dead_code)]
+#[path = "support/tempdir.rs"]
+mod tempdir;
+
 use std::fs;
 use std::io::{ErrorKind, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+
+use tempdir::TestDir;
 
 const PASSWORD: &str = "correct-password";
 const DOMAIN_ENCRYPT_SOURCE: &str = include_str!("../../dexios-domain/src/encrypt.rs");
 const CLI_ERROR_MAPPER_SOURCE: &str = include_str!("../src/subcommands/errors.rs");
-static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
-
-struct TestDir {
-    path: PathBuf,
-}
-
-impl TestDir {
-    fn new(prefix: &str) -> Self {
-        let seq = NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "dexios-{prefix}-{}-{seq}-{nanos}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        let path = fs::canonicalize(path).unwrap();
-        Self { path }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for TestDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
-}
 
 fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));

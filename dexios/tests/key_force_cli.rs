@@ -24,16 +24,19 @@
         reason = "integration tests assert exact behavior and may panic on failure"
     )
 )]
+#[allow(dead_code)]
+#[path = "support/tempdir.rs"]
+mod tempdir;
+
 use std::fs;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use core::kdf::Kdf;
 use core::protected::Protected;
 use domain::encrypt;
+use tempdir::KeyForceTestDir as TestDir;
 
 // Regression coverage for cli-3: `key del` and `key change` mutate keyslots
 // destructively. Each must prompt for confirmation (default No) before the
@@ -41,38 +44,6 @@ use domain::encrypt;
 
 const PASSWORD: &str = "old-pass";
 const SECOND_PASSWORD: &str = "second-pass";
-static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
-
-struct TestDir {
-    path: PathBuf,
-}
-
-impl TestDir {
-    fn new(prefix: &str) -> Self {
-        let seq = NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "dexios-key-force-{prefix}-{}-{seq}-{nanos}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        let path = fs::canonicalize(path).unwrap();
-        Self { path }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for TestDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
-}
 
 fn run_cli(current_dir: &Path, args: &[&str], key: Option<&str>) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));

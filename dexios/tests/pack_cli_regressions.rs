@@ -24,53 +24,24 @@
         reason = "integration tests assert exact behavior and may panic on failure"
     )
 )]
+#[allow(dead_code)]
+#[path = "support/tempdir.rs"]
+mod tempdir;
+
 use std::fs;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use core::payload::{ManifestEntryKind, ManifestFirstPayload};
 use core::protected::Protected;
 use domain::decrypt;
 use domain::storage::identity::OverwritePolicy;
+use tempdir::{TestDir, unique_file_name};
 
 const PASSWORD: &str = "12345678";
 const DOMAIN_PACK_SOURCE: &str = include_str!("../../dexios-domain/src/pack.rs");
 const CLI_ERROR_MAPPER_SOURCE: &str = include_str!("../src/subcommands/errors.rs");
-static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
-
-struct TestDir {
-    path: PathBuf,
-}
-
-impl TestDir {
-    fn new(prefix: &str) -> Self {
-        let seq = NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "dexios-{prefix}-{}-{seq}-{nanos}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        let path = fs::canonicalize(path).unwrap();
-        Self { path }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for TestDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
-}
 
 fn run_pack(
     current_dir: &Path,
@@ -119,11 +90,10 @@ fn run_cli_with_stdin(current_dir: &Path, args: &[&str], stdin: &[u8]) -> std::p
 }
 
 fn decrypt_manifest_entry_names(archive_path: &Path, header_path: Option<&Path>) -> Vec<String> {
-    let seq = NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);
     let decrypted_path = archive_path
         .parent()
         .unwrap()
-        .join(format!("decrypted-{seq}.dxar"));
+        .join(unique_file_name("decrypted", "dxar"));
     let intent = decrypt::DecryptIntent::new(
         archive_path,
         &decrypted_path,
