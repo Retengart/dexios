@@ -7,6 +7,8 @@
 //! manifest metadata is validated before selected body staging, and final
 //! outputs commit only after stream final authentication.
 
+mod callback;
+
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -38,6 +40,8 @@ use core::payload::{
 use core::protected::Protected;
 use core::stream::{StreamError, V1PayloadDecryptingReader};
 
+pub use callback::ArchiveFileCallbackError;
+
 #[derive(Debug)]
 pub enum Error {
     WriteData,
@@ -53,7 +57,7 @@ pub enum Error {
     PathIdentity(IdentityError),
     Transaction(TransactionError),
     Decrypt(decrypt::Error),
-    ArchiveFileCallback(String),
+    ArchiveFileCallback(ArchiveFileCallbackError),
 }
 
 impl std::fmt::Display for Error {
@@ -97,6 +101,7 @@ impl std::error::Error for Error {
             Self::PathIdentity(error) => Some(error),
             Self::Transaction(error) => Some(error),
             Self::Decrypt(error) => Some(error),
+            Self::ArchiveFileCallback(error) => Some(error),
             _ => None,
         }
     }
@@ -120,7 +125,7 @@ impl Error {
             | Self::WriteDataWithSource(_)
             | Self::ResetCursorPosition
             | Self::ResetCursorPositionWithSource(_) => WorkflowErrorClass::IoFailure,
-            Self::ArchiveFileCallback(_) => WorkflowErrorClass::Other,
+            Self::ArchiveFileCallback(error) => error.workflow_class(),
         }
     }
 
@@ -141,7 +146,7 @@ fn classify_payload_error(error: &PayloadError) -> WorkflowErrorClass {
 }
 
 type OnArchiveInfo = Box<dyn FnOnce(usize)>;
-type OnArchiveFileFn = Box<dyn Fn(PathBuf) -> Result<bool, String>>;
+type OnArchiveFileFn = Box<dyn Fn(PathBuf) -> Result<bool, ArchiveFileCallbackError>>;
 type OnAfterFinalAuthFn = Box<dyn FnOnce()>;
 
 pub struct UnpackIntent {

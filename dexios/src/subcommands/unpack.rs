@@ -72,8 +72,14 @@ pub(crate) fn unpack(
         None,
         None,
         Some(Box::new(move |file_path| {
-            prompt_allows_unpack_entry(&file_path, params.force, verbose, get_answer)
-                .map_err(|_| String::from("prompt failed"))
+            prompt_allows_unpack_entry(&file_path, params.force, verbose, get_answer).map_err(
+                |source| {
+                    domain::unpack::ArchiveFileCallbackError::other_with_boxed_source(
+                        "prompt failed",
+                        source.into_boxed_dyn_error(),
+                    )
+                },
+            )
         })),
     )
     .map_err(map_unpack_error)?;

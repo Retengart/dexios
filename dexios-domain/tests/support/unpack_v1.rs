@@ -72,7 +72,8 @@ pub(super) fn payload_nonce(bytes: [u8; 20]) -> PayloadNonce {
 
 pub(super) const PASSWORD: &[u8; 8] = b"12345678";
 pub(super) const STREAM_TAG_LEN: usize = 16;
-pub(super) type TestOnArchiveFile = Box<dyn Fn(PathBuf) -> Result<bool, String>>;
+pub(super) type TestOnArchiveFile =
+    Box<dyn Fn(PathBuf) -> Result<bool, unpack::ArchiveFileCallbackError>>;
 
 pub(super) fn write_manifest_archive_without_directory_entries(path: &Path) {
     write_manifest_archive_with_entries(path, &[("nested/inner/file.txt", b"nested hello")]);

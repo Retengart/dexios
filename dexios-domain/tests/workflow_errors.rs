@@ -312,6 +312,31 @@ fn unpack_errors_preserve_source_chains_for_workflow_wrappers() {
 }
 
 #[test]
+fn unpack_archive_file_callback_errors_preserve_sources_and_classes() {
+    let source = io::Error::new(io::ErrorKind::Interrupted, "prompt interrupted");
+    let error = unpack::Error::ArchiveFileCallback(
+        unpack::ArchiveFileCallbackError::with_class_and_source(
+            WorkflowErrorClass::IoFailure,
+            "prompt failed",
+            source,
+        ),
+    );
+
+    assert_eq!(error.workflow_class(), WorkflowErrorClass::IoFailure);
+    let source = std::error::Error::source(&error).expect("callback source");
+    assert_eq!(source.to_string(), "prompt failed");
+    assert!(
+        std::error::Error::source(source).is_some(),
+        "callback error must preserve its underlying source"
+    );
+
+    let default_error = unpack::Error::ArchiveFileCallback(
+        unpack::ArchiveFileCallbackError::other("prompt failed"),
+    );
+    assert_eq!(default_error.workflow_class(), WorkflowErrorClass::Other);
+}
+
+#[test]
 fn storage_errors_preserve_io_sources() {
     let storage_error =
         storage::Error::CreateDirWithSource(io::Error::from(io::ErrorKind::PermissionDenied));
