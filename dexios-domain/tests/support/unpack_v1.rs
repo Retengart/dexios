@@ -264,20 +264,19 @@ pub(super) fn manifest_archive_header_and_master_key() -> (V1Header, MasterKey) 
 }
 
 pub(super) fn archive_path_with_depth(depth: usize) -> String {
-    let mut path = PathBuf::new();
-    for index in 0..depth {
-        path.push(format!("dir{index}"));
-    }
-    path.push("file.txt");
-    path.to_string_lossy().into_owned()
+    archive_path_components_with_file((0..depth).map(|index| format!("dir{index}")))
 }
 
 pub(super) fn archive_path_with_wide_components(depth: usize, component_len: usize) -> String {
-    let mut path = PathBuf::new();
-    for index in 0..depth {
-        path.push(format!("{index:02}-{}", "a".repeat(component_len)));
-    }
-    path.to_string_lossy().into_owned()
+    archive_path_components_with_file(
+        (0..depth).map(|index| format!("{index:02}-{}", "a".repeat(component_len))),
+    )
+}
+
+fn archive_path_components_with_file(components: impl IntoIterator<Item = String>) -> String {
+    let mut path_components = components.into_iter().collect::<Vec<_>>();
+    path_components.push(String::from("file.txt"));
+    path_components.join("/")
 }
 
 pub(super) fn tamper_final_stream_chunk(path: &Path) {
