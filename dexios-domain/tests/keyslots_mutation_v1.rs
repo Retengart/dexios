@@ -52,8 +52,8 @@ fn key_del_rejects_final_keyslot_before_writing_header() {
 #[test]
 fn key_add_commits_second_keyslot_without_breaking_existing_decrypt() {
     let encrypted = encrypted_v1_fixture();
-    let temp_dir = tempfile::tempdir().expect("temp dir");
-    let encrypted_path = temp_dir.path().join("plain.enc");
+    let (_temp_dir, temp_dir_path) = canonical_tempdir();
+    let encrypted_path = temp_dir_path.join("plain.enc");
     fs::write(&encrypted_path, encrypted.borrow().get_ref()).expect("write encrypted fixture");
     let original = fs::read(&encrypted_path).expect("read original fixture");
 
@@ -79,8 +79,8 @@ fn key_add_commits_second_keyslot_without_breaking_existing_decrypt() {
 #[test]
 fn key_change_failure_preserves_original_header() {
     let encrypted = encrypted_v1_fixture();
-    let temp_dir = tempfile::tempdir().expect("temp dir");
-    let encrypted_path = temp_dir.path().join("plain.enc");
+    let (_temp_dir, temp_dir_path) = canonical_tempdir();
+    let encrypted_path = temp_dir_path.join("plain.enc");
     fs::write(&encrypted_path, encrypted.borrow().get_ref()).expect("write encrypted fixture");
     let original = fs::read(&encrypted_path).expect("read original fixture");
 
