@@ -24,6 +24,9 @@
         reason = "integration tests assert exact behavior and may panic on failure"
     )
 )]
+#[path = "support/tempdir.rs"]
+mod tempdir;
+
 #[cfg(unix)]
 use std::error::Error as _;
 use std::fs;
@@ -40,6 +43,7 @@ use dexios_domain::pack::{self, DetachedHeaderTarget, PackIntent};
 use dexios_domain::storage::identity::OverwritePolicy;
 #[cfg(unix)]
 use dexios_domain::workflow_error::WorkflowErrorClass;
+use tempdir::canonical_tempdir;
 
 const PASSWORD: &[u8; 8] = b"12345678";
 const DOMAIN_PACK_RS: &str = include_str!("../src/pack.rs");
@@ -250,10 +254,10 @@ fn observed_leaf_path_matches(actual: &Path, expected: &Path) -> bool {
 
 #[test]
 fn pack_rejects_source_root_symlink() {
-    let root = tempfile::tempdir().unwrap();
-    let target_dir = root.path().join("target");
-    let source_link = root.path().join("source_link");
-    let output_path = root.path().join("archive.enc");
+    let (_root_dir, root) = canonical_tempdir();
+    let target_dir = root.join("target");
+    let source_link = root.join("source_link");
+    let output_path = root.join("archive.enc");
     fs::create_dir_all(&target_dir).unwrap();
     fs::write(target_dir.join("hello.txt"), b"hello").unwrap();
 
@@ -275,11 +279,11 @@ fn pack_rejects_source_root_symlink() {
 #[cfg(unix)]
 #[test]
 fn pack_rejects_source_root_replaced_after_intent_capture() {
-    let root = tempfile::tempdir().unwrap();
-    let source_dir = root.path().join("source");
-    let original_dir = root.path().join("original-source");
-    let output_path = root.path().join("archive.enc");
-    let header_path = root.path().join("archive.header");
+    let (_root_dir, root) = canonical_tempdir();
+    let source_dir = root.join("source");
+    let original_dir = root.join("original-source");
+    let output_path = root.join("archive.enc");
+    let header_path = root.join("archive.header");
     fs::create_dir_all(&source_dir).unwrap();
     fs::write(source_dir.join("original-only.txt"), b"original").unwrap();
 
@@ -314,12 +318,12 @@ fn pack_rejects_source_root_replaced_after_intent_capture() {
 #[cfg(all(unix, feature = "test-support"))]
 #[test]
 fn pack_rejects_walked_file_replaced_between_metadata_and_open() {
-    let root = tempfile::tempdir().unwrap();
-    let source_dir = root.path().join("source");
+    let (_root_dir, root) = canonical_tempdir();
+    let source_dir = root.join("source");
     let target_file = source_dir.join("target.txt");
-    let original_file = root.path().join("target-original.txt");
-    let output_path = root.path().join("archive.enc");
-    let header_path = root.path().join("archive.header");
+    let original_file = root.join("target-original.txt");
+    let output_path = root.join("archive.enc");
+    let header_path = root.join("archive.header");
     fs::create_dir_all(&source_dir).unwrap();
     fs::write(&target_file, b"original").unwrap();
 
@@ -366,11 +370,11 @@ fn pack_rejects_walked_file_replaced_between_metadata_and_open() {
 
 #[test]
 fn pack_rejects_symlinked_file_entry() {
-    let root = tempfile::tempdir().unwrap();
-    let source_dir = root.path().join("source");
-    let outside_file = root.path().join("outside.txt");
+    let (_root_dir, root) = canonical_tempdir();
+    let source_dir = root.join("source");
+    let outside_file = root.join("outside.txt");
     let symlink_path = source_dir.join("link.txt");
-    let output_path = root.path().join("archive.enc");
+    let output_path = root.join("archive.enc");
     fs::create_dir_all(&source_dir).unwrap();
     fs::write(source_dir.join("real.txt"), b"real").unwrap();
     fs::write(&outside_file, b"outside").unwrap();
@@ -392,11 +396,11 @@ fn pack_rejects_symlinked_file_entry() {
 
 #[test]
 fn pack_rejects_symlinked_directory_entry() {
-    let root = tempfile::tempdir().unwrap();
-    let source_dir = root.path().join("source");
-    let outside_dir = root.path().join("outside");
+    let (_root_dir, root) = canonical_tempdir();
+    let source_dir = root.join("source");
+    let outside_dir = root.join("outside");
     let symlink_path = source_dir.join("linkdir");
-    let output_path = root.path().join("archive.enc");
+    let output_path = root.join("archive.enc");
     fs::create_dir_all(&source_dir).unwrap();
     fs::create_dir_all(&outside_dir).unwrap();
     fs::write(source_dir.join("real.txt"), b"real").unwrap();
@@ -419,9 +423,9 @@ fn pack_rejects_symlinked_directory_entry() {
 
 #[test]
 fn pack_recursive_real_tree_still_succeeds() {
-    let root = tempfile::tempdir().unwrap();
-    let source_dir = create_source_dir(root.path());
-    let output_path = root.path().join("archive.enc");
+    let (_root_dir, root) = canonical_tempdir();
+    let source_dir = create_source_dir(&root);
+    let output_path = root.join("archive.enc");
 
     let intent = pack_intent(vec![source_dir], &output_path, None).unwrap();
     pack::execute_transactional(intent).unwrap();
@@ -441,10 +445,10 @@ fn pack_recursive_real_tree_still_succeeds() {
 
 #[test]
 fn pack_recursive_detached_header_preserves_v1_manifest_first_payload() {
-    let root = tempfile::tempdir().unwrap();
-    let source_dir = create_source_dir(root.path());
-    let output_path = root.path().join("archive.enc");
-    let header_path = root.path().join("archive.header");
+    let (_root_dir, root) = canonical_tempdir();
+    let source_dir = create_source_dir(&root);
+    let output_path = root.join("archive.enc");
+    let header_path = root.join("archive.header");
 
     let intent = pack_intent(vec![source_dir.clone()], &output_path, Some(&header_path)).unwrap();
     pack::execute_transactional(intent).unwrap();
@@ -507,8 +511,8 @@ fn pack_recursive_detached_header_preserves_v1_manifest_first_payload() {
 
 #[test]
 fn pack_intent_rejects_generated_output_inside_source_before_creating_output() {
-    let root = tempfile::tempdir().unwrap();
-    let source_dir = create_source_dir(root.path());
+    let (_root_dir, root) = canonical_tempdir();
+    let source_dir = create_source_dir(&root);
     let output_path = source_dir.join("archive.dexios");
 
     let result = pack_intent(vec![source_dir.clone()], &output_path, None);
@@ -523,9 +527,9 @@ fn pack_intent_rejects_generated_output_inside_source_before_creating_output() {
 
 #[test]
 fn pack_intent_rejects_generated_detached_header_inside_source_before_creating_outputs() {
-    let root = tempfile::tempdir().unwrap();
-    let source_dir = create_source_dir(root.path());
-    let output_path = root.path().join("archive.dexios");
+    let (_root_dir, root) = canonical_tempdir();
+    let source_dir = create_source_dir(&root);
+    let output_path = root.join("archive.dexios");
     let header_path = source_dir.join("archive.header");
 
     let result = pack_intent(vec![source_dir.clone()], &output_path, Some(&header_path));
@@ -541,12 +545,12 @@ fn pack_intent_rejects_generated_detached_header_inside_source_before_creating_o
 
 #[test]
 fn pack_intent_preserves_existing_dexios_looking_files_as_user_data() {
-    let root = tempfile::tempdir().unwrap();
-    let source_dir = create_source_dir(root.path());
+    let (_root_dir, root) = canonical_tempdir();
+    let source_dir = create_source_dir(&root);
     fs::write(source_dir.join("old.dexios"), b"old encrypted archive").unwrap();
     fs::write(source_dir.join("archive.header"), b"old detached header").unwrap();
     fs::write(source_dir.join("archive.sig"), b"old signature").unwrap();
-    let output_path = root.path().join("archive.dexios");
+    let output_path = root.join("archive.dexios");
 
     let intent = pack_intent(vec![source_dir], &output_path, None).unwrap();
     pack::execute_transactional(intent).unwrap();
@@ -568,9 +572,9 @@ fn pack_intent_preserves_existing_dexios_looking_files_as_user_data() {
 
 #[test]
 fn pack_writes_relative_archive_paths() {
-    let root = tempfile::tempdir().unwrap();
-    let source_dir = create_source_dir(root.path());
-    let output_path = root.path().join("archive.enc");
+    let (_root_dir, root) = canonical_tempdir();
+    let source_dir = create_source_dir(&root);
+    let output_path = root.join("archive.enc");
 
     let intent = pack_intent(vec![source_dir], &output_path, None).unwrap();
     pack::execute_transactional(intent).unwrap();
@@ -603,9 +607,9 @@ fn pack_writes_relative_archive_paths() {
 
 #[test]
 fn pack_does_not_delete_source_directory_or_files() {
-    let root = tempfile::tempdir().unwrap();
-    let source_dir = create_source_dir(root.path());
-    let output_path = root.path().join("archive.enc");
+    let (_root_dir, root) = canonical_tempdir();
+    let source_dir = create_source_dir(&root);
+    let output_path = root.join("archive.enc");
 
     let intent = pack_intent(vec![source_dir.clone()], &output_path, None).unwrap();
     pack::execute_transactional(intent).unwrap();
@@ -617,9 +621,9 @@ fn pack_does_not_delete_source_directory_or_files() {
 
 #[test]
 fn pack_rejects_path_deeper_than_archive_limit_and_preserves_source() {
-    let root = tempfile::tempdir().unwrap();
-    let (source_dir, deep_file) = create_deep_source_file(root.path(), 65);
-    let output_path = root.path().join("archive.enc");
+    let (_root_dir, root) = canonical_tempdir();
+    let (source_dir, deep_file) = create_deep_source_file(&root, 65);
+    let output_path = root.join("archive.enc");
 
     let result =
         pack_intent(vec![source_dir], &output_path, None).and_then(pack::execute_transactional);
@@ -638,9 +642,9 @@ fn pack_rejects_path_deeper_than_archive_limit_and_preserves_source() {
 
 #[test]
 fn pack_limit_failure_keeps_source_and_removes_output() {
-    let root = tempfile::tempdir().unwrap();
-    let (source_dir, deep_file) = create_deep_source_file(root.path(), 65);
-    let output_path = root.path().join("archive.enc");
+    let (_root_dir, root) = canonical_tempdir();
+    let (source_dir, deep_file) = create_deep_source_file(&root, 65);
+    let output_path = root.join("archive.enc");
 
     let result =
         pack_intent(vec![source_dir], &output_path, None).and_then(pack::execute_transactional);
@@ -652,8 +656,8 @@ fn pack_limit_failure_keeps_source_and_removes_output() {
 
 #[test]
 fn pack_representative_large_tree_materializes_expected_entries() {
-    let root = tempfile::tempdir().unwrap();
-    let source_dir = root.path().join("source");
+    let (_root_dir, root) = canonical_tempdir();
+    let source_dir = root.join("source");
     for dir_index in 0..6 {
         let nested = source_dir.join(format!("dir{dir_index}"));
         fs::create_dir_all(&nested).unwrap();
@@ -666,7 +670,7 @@ fn pack_representative_large_tree_materializes_expected_entries() {
         }
     }
     fs::write(source_dir.join("root.txt"), b"root").unwrap();
-    let output_path = root.path().join("archive.enc");
+    let output_path = root.join("archive.enc");
 
     let intent = pack_intent(vec![source_dir], &output_path, None).unwrap();
     pack::execute_transactional(intent).unwrap();

@@ -32,6 +32,9 @@
     reason = "shared keyslot helpers are imported selectively across test crates"
 )]
 
+#[path = "tempdir.rs"]
+mod tempdir;
+
 pub(super) use core::header::common::{
     CANONICAL_V1_DISCRIMINATOR, HEADER_LEN, HEADER_STATIC_LEN, KEYSLOT_LEN,
     RETIRED_CURRENT_V1_HEADER_LEN, Salt,
@@ -48,6 +51,7 @@ pub(super) use std::cell::RefCell;
 pub(super) use std::fs::{self, File};
 pub(super) use std::io::{Cursor, Seek};
 pub(super) use std::path::{Path, PathBuf};
+pub(super) use tempdir::canonical_tempdir;
 
 pub(super) const DOMAIN_KEY_SOURCE: &str = include_str!("../../src/key.rs");
 pub(super) const DOMAIN_ENCRYPT_SOURCE: &str = include_str!("../../src/encrypt.rs");
@@ -56,12 +60,6 @@ pub(super) const DOMAIN_KEY_CHANGE_SOURCE: &str = include_str!("../../src/key/ch
 pub(super) const DOMAIN_KEY_DELETE_SOURCE: &str = include_str!("../../src/key/delete.rs");
 pub(super) const CANONICAL_KEYSLOT_KDF_TAG_OFFSET: usize = 2;
 pub(super) const HISTORICAL_ARGON2ID_KEY_TAG: [u8; 2] = [0xDF, 0x02];
-
-pub(super) fn canonical_tempdir() -> (tempfile::TempDir, PathBuf) {
-    let dir = tempfile::tempdir().expect("temp dir");
-    let path = fs::canonicalize(dir.path()).expect("canonical temp dir");
-    (dir, path)
-}
 
 pub(super) fn encrypted_v1_fixture() -> RefCell<Cursor<Vec<u8>>> {
     let (_dir, dir_path) = canonical_tempdir();
