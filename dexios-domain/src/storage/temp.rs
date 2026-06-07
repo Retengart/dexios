@@ -638,7 +638,7 @@ mod unix_fd_persist {
         };
         let name = component_to_cstring(name)?;
         let stat = statat(parent, &name, AtFlags::SYMLINK_NOFOLLOW).map_err(io::Error::from)?;
-        let actual = unix_file_identity(stat.st_dev, stat.st_ino)?;
+        let actual = unix_file_identity(stat.st_dev, stat.st_ino);
         if actual != expected {
             return Err(io::Error::other(
                 "target file identity changed before persist",
@@ -670,21 +670,53 @@ mod unix_fd_persist {
 
     fn file_identity(fd: impl AsFd) -> io::Result<UnixFileIdentity> {
         let stat = fstat(fd).map_err(io::Error::from)?;
-        unix_file_identity(stat.st_dev, stat.st_ino)
+        Ok(unix_file_identity(stat.st_dev, stat.st_ino))
     }
 
     fn unix_file_identity(
-        dev: impl TryInto<u64>,
-        ino: impl TryInto<u64>,
-    ) -> io::Result<UnixFileIdentity> {
-        Ok(UnixFileIdentity {
-            dev: dev
-                .try_into()
-                .map_err(|_| invalid_path("file identity device id is out of range"))?,
-            ino: ino
-                .try_into()
-                .map_err(|_| invalid_path("file identity inode is out of range"))?,
-        })
+        dev: impl UnixIdentityComponent,
+        ino: impl UnixIdentityComponent,
+    ) -> UnixFileIdentity {
+        UnixFileIdentity {
+            dev: dev.to_metadata_ext_u64(),
+            ino: ino.to_metadata_ext_u64(),
+        }
+    }
+
+    trait UnixIdentityComponent {
+        fn to_metadata_ext_u64(self) -> u64;
+    }
+
+    impl UnixIdentityComponent for u64 {
+        fn to_metadata_ext_u64(self) -> u64 {
+            self
+        }
+    }
+
+    impl UnixIdentityComponent for u32 {
+        fn to_metadata_ext_u64(self) -> u64 {
+            u64::from(self)
+        }
+    }
+
+    impl UnixIdentityComponent for i64 {
+        #[expect(
+            clippy::cast_sign_loss,
+            reason = "matches MetadataExt dev/ino casting for signed libc identity fields"
+        )]
+        fn to_metadata_ext_u64(self) -> u64 {
+            self as u64
+        }
+    }
+
+    impl UnixIdentityComponent for i32 {
+        #[expect(
+            clippy::cast_sign_loss,
+            reason = "matches MetadataExt dev/ino casting for signed libc identity fields"
+        )]
+        fn to_metadata_ext_u64(self) -> u64 {
+            self as u64
+        }
     }
 
     fn mkdir_child(parent: &OwnedFd, name: &OsStr) -> io::Result<()> {
@@ -735,5 +767,16 @@ mod unix_fd_persist {
 
     fn invalid_path(message: &'static str) -> io::Error {
         io::Error::new(io::ErrorKind::InvalidInput, message)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::UnixIdentityComponent;
+
+        #[test]
+        fn signed_identity_components_match_metadata_ext_casting() {
+            assert_eq!((-1_i32).to_metadata_ext_u64(), u64::MAX);
+            assert_eq!(1_i32.to_metadata_ext_u64(), 1);
+        }
     }
 }

@@ -174,8 +174,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios-domain/src/storage/temp.rs",
         category: "fd-relative storage security evidence",
         rationale: "fd-relative persist + TOCTOU-safe directory creation (fs-1/fs-2) kept centralized.",
-        current_lines: 739,
-        cap: 739,
+        current_lines: 782,
+        cap: 782,
     },
     FileSizeException {
         path: "dexios-domain/src/storage/cleanup.rs",

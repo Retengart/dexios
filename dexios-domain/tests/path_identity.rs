@@ -26,6 +26,8 @@
 )]
 use std::fs;
 use std::io::ErrorKind;
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
@@ -460,12 +462,20 @@ fn identity_rejects_missing_output_with_symlinked_parent_hidden_by_parent_compon
 fn resolved_existing_no_follow_rejects_file_replaced_after_identity_capture() {
     let test_dir = TestDir::new("path-identity-open-replaced");
     let input = test_dir.path().join("archive.dexios");
+    let replacement = test_dir.path().join("replacement.dexios");
     fs::write(&input, b"original archive").unwrap();
+    fs::write(&replacement, b"replacement archive").unwrap();
+    let original_metadata = fs::metadata(&input).unwrap();
+    let replacement_metadata = fs::metadata(&replacement).unwrap();
+    assert!(
+        original_metadata.dev() != replacement_metadata.dev()
+            || original_metadata.ino() != replacement_metadata.ino(),
+        "replacement fixture must have a distinct identity"
+    );
 
     let mut graph = PathIdentityGraph::new();
     let target = graph.add_existing(&input, PathRole::Input).unwrap();
-    fs::remove_file(&input).unwrap();
-    fs::write(&input, b"replacement archive").unwrap();
+    fs::rename(&replacement, &input).unwrap();
 
     let stor = FileStorage;
     let result = stor.read_resolved_existing_no_follow(&target);

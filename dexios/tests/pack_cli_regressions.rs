@@ -616,9 +616,15 @@ fn pack_verbose_reports_archived_entries() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("[i] Packing source/hello.txt"));
-    assert!(stdout.contains("[i] Packing source/nested/world.txt"));
+    let stdout = String::from_utf8_lossy(&output.stdout).replace('\\', "/");
+    assert!(
+        stdout.contains("[i] Packing source/hello.txt"),
+        "stdout={stdout}"
+    );
+    assert!(
+        stdout.contains("[i] Packing source/nested/world.txt"),
+        "stdout={stdout}"
+    );
 }
 
 #[test]
