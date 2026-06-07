@@ -83,8 +83,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios/tests/verification_gate_docs.rs",
         category: "Phase 25 docs-gate evidence",
         rationale: "Public docs/spec artifact evidence remains explicit per D-11.",
-        current_lines: 1284,
-        cap: 1284,
+        current_lines: 1290,
+        cap: 1290,
     },
     FileSizeException {
         path: "dexios-domain/src/pack.rs",

@@ -1199,6 +1199,12 @@ fn phase20_pdf_authority_policy_is_source_gated() {
 
 #[test]
 fn phase20_pdf_freshness_commands_are_source_gated() {
+    assert_contains(
+        "spec/dexios-paper.typ",
+        SPEC_FORMAT_REFERENCE,
+        r#"#set text(font: "New Computer Modern")"#,
+    );
+
     assert_non_comment_line_count(
         "scripts/verify_phase_gate.sh",
         VERIFY_PHASE_GATE,

@@ -1,4 +1,5 @@
 #set page(paper: "a4", margin: 25mm)
+#set text(font: "New Computer Modern")
 #set par(justify: true)
 #set heading(numbering: "1.1")
 
