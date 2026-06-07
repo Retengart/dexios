@@ -24,30 +24,30 @@
         reason = "integration tests assert exact behavior and may panic on failure"
     )
 )]
+#[cfg(unix)]
+#[path = "support/tempdir.rs"]
+mod tempdir;
+
 #[expect(
     unused_imports,
     reason = "Error trait import documents the error-source surface under test"
 )]
-use std::error::Error as _;
-use std::io;
-use std::path::PathBuf;
+use std::{error::Error as _, io, path::PathBuf};
 
 use core::header::common::HeaderReadError;
-#[cfg(unix)]
-use dexios_domain::archive::ArchivePolicy;
 use dexios_domain::archive::{ArchiveLimitError, ArchiveLimitKind};
 use dexios_domain::storage;
 #[cfg(feature = "test-support")]
 use dexios_domain::storage::cleanup::{CleanupFailure, CleanupResult, CleanupTarget};
 use dexios_domain::storage::identity::IdentityError;
-#[cfg(unix)]
-use dexios_domain::storage::identity::OverwritePolicy;
 #[cfg(feature = "test-support")]
 use dexios_domain::storage::identity::PathRole;
 use dexios_domain::storage::transaction::TransactionError;
 #[cfg(feature = "test-support")]
 use dexios_domain::storage::transaction::{CommittedArtifact, PartialCommitReceipt};
 use dexios_domain::workflow_error::WorkflowErrorClass;
+#[cfg(unix)]
+use dexios_domain::{archive::ArchivePolicy, storage::identity::OverwritePolicy};
 use dexios_domain::{decrypt, encrypt, header, key, pack, unpack};
 
 const DOMAIN_WORKFLOW_ERROR_SOURCE: &str = include_str!("../src/workflow_error.rs");
@@ -375,11 +375,11 @@ fn replacement_path_failures_keep_unsafe_or_io_classes_and_sources() {
 #[cfg(unix)]
 #[test]
 fn pack_source_root_revalidation_failure_keeps_unsafe_path_classification() {
-    let root = tempfile::tempdir().unwrap();
-    let source_dir = root.path().join("source");
-    let original_dir = root.path().join("original-source");
-    let output_path = root.path().join("archive.enc");
-    let header_path = root.path().join("archive.header");
+    let (_root_dir, root) = tempdir::canonical_tempdir();
+    let source_dir = root.join("source");
+    let original_dir = root.join("original-source");
+    let output_path = root.join("archive.enc");
+    let header_path = root.join("archive.header");
     std::fs::create_dir_all(&source_dir).unwrap();
     std::fs::write(source_dir.join("original-only.txt"), b"original").unwrap();
 
@@ -424,12 +424,12 @@ fn pack_source_root_revalidation_failure_keeps_unsafe_path_classification() {
 #[cfg(all(unix, feature = "test-support"))]
 #[test]
 fn pack_walked_entry_revalidation_failure_keeps_unsafe_path_classification() {
-    let root = tempfile::tempdir().unwrap();
-    let source_dir = root.path().join("source");
+    let (_root_dir, root) = tempdir::canonical_tempdir();
+    let source_dir = root.join("source");
     let target_file = source_dir.join("target.txt");
-    let original_file = root.path().join("target-original.txt");
-    let output_path = root.path().join("archive.enc");
-    let header_path = root.path().join("archive.header");
+    let original_file = root.join("target-original.txt");
+    let output_path = root.join("archive.enc");
+    let header_path = root.join("archive.header");
     std::fs::create_dir_all(&source_dir).unwrap();
     std::fs::write(&target_file, b"original").unwrap();
 
