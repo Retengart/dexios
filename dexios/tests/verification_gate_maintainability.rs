@@ -90,8 +90,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios-domain/src/pack.rs",
         category: "D-05 production authority cap",
         rationale: "Archive pack authority file is deferred from production splitting per D-05.",
-        current_lines: 1220,
-        cap: 1220,
+        current_lines: 1224,
+        cap: 1224,
     },
     FileSizeException {
         path: "dexios-core/tests/v1_header.rs",

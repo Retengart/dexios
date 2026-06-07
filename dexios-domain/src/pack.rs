@@ -1087,9 +1087,13 @@ pub(crate) mod tests {
         compress_files.sort_by(|a, b| a.path().cmp(b.path()));
         let entries = compress_files
             .into_iter()
-            .map(|source| ArchiveSourceEntry {
-                archive_path: NormalizedArchivePath::from_path(source.path()).unwrap(),
-                source,
+            .map(|source| {
+                let archive_path =
+                    PathBuf::from(source.path().to_string_lossy().trim_end_matches('/'));
+                ArchiveSourceEntry {
+                    archive_path: NormalizedArchivePath::from_path(&archive_path).unwrap(),
+                    source,
+                }
             })
             .collect::<Vec<_>>();
 
