@@ -197,8 +197,8 @@ fn key_intents_classify_retired_416_byte_v1_as_unsupported_format() {
         );
     }
 
-    let dir = tempfile::tempdir().unwrap();
-    let retired = dir.path().join("retired-current-v1.enc");
+    let (_dir, dir_path) = canonical_tempdir();
+    let retired = dir_path.join("retired-current-v1.enc");
     write_retired_v1_fixture(&retired);
 
     assert_retired_layout(intent_error(

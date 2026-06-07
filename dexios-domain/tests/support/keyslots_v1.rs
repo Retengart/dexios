@@ -57,7 +57,7 @@ pub(super) const DOMAIN_KEY_DELETE_SOURCE: &str = include_str!("../../src/key/de
 pub(super) const CANONICAL_KEYSLOT_KDF_TAG_OFFSET: usize = 2;
 pub(super) const HISTORICAL_ARGON2ID_KEY_TAG: [u8; 2] = [0xDF, 0x02];
 
-fn canonical_tempdir() -> (tempfile::TempDir, PathBuf) {
+pub(super) fn canonical_tempdir() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("temp dir");
     let path = fs::canonicalize(dir.path()).expect("canonical temp dir");
     (dir, path)
