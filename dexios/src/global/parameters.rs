@@ -1,6 +1,3 @@
-// this file handles getting parameters from clap's ArgMatches
-// it returns information (e.g. CryptoParams) to functions that require it
-
 use crate::global::states::{DeleteInput, DeleteSource, ForceMode, HashMode, HeaderLocation};
 use crate::global::structs::CryptoParams;
 use crate::global::structs::PackParams;
@@ -66,15 +63,12 @@ pub(crate) fn get_optional_param<'a>(
     }
 }
 
-// the main parameter handler for encrypt/decrypt
 pub(crate) fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
     let key = Key::init(sub_matches, &KeyParams::default(), "keyfile")?;
 
     let hash_mode = if sub_matches.get_flag("hash") {
-        //specify to emit hash after operation
         HashMode::CalculateHash
     } else {
-        // default
         HashMode::NoHash
     };
 
@@ -111,10 +105,8 @@ pub(crate) fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, Pac
     let key = Key::init(sub_matches, &KeyParams::default(), "keyfile")?;
 
     let hash_mode = if sub_matches.get_flag("hash") {
-        //specify to emit hash after operation
         HashMode::CalculateHash
     } else {
-        // default
         HashMode::NoHash
     };
 
@@ -137,18 +129,14 @@ pub(crate) fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, Pac
     };
 
     let print_mode = if sub_matches.get_flag("verbose") {
-        //specify to emit hash after operation
         PrintMode::Verbose
     } else {
-        // default
         PrintMode::Quiet
     };
 
     let dir_mode = if sub_matches.get_flag("recursive") {
-        //specify to emit hash after operation
         DirectoryMode::Recursive
     } else {
-        // default
         DirectoryMode::Singular
     };
 

@@ -37,10 +37,8 @@ fn reject_stdin_keyfile_prompt_conflict(params: &CryptoParams, prompt_needed: bo
     Ok(())
 }
 
-// this function is for decrypting a file in stream mode
-// it handles user-facing prompts and delegates path validation/opening to domain
+// Handles user-facing prompts and delegates path validation/opening to the domain layer.
 pub(crate) fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> Result<()> {
-    // 1. validate and prepare options
     let output_exists = existing_path(output);
     reject_stdin_keyfile_prompt_conflict(params, output_exists)?;
     if !overwrite_check_if_needed(output, output_exists, params.force)? {
@@ -49,7 +47,6 @@ pub(crate) fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> R
 
     let raw_key = params.key.get_secret(&PasswordState::Direct)?;
 
-    // 2. decrypt file
     let detached_header_path = match &params.header_location {
         HeaderLocation::Embedded => None,
         HeaderLocation::Detached(path) => Some(path.as_str()),

@@ -59,7 +59,7 @@ fn tracked_docs_define_the_minimum_maintainer_gate() {
         "scripts/measure_performance_gate.sh",
         "not part of the default",
         "CHANGELOG.md",
-        "local-notes/",
+        "Local-only working notes",
     ] {
         assert_contains("book/src/Safety-Contract.md", SAFETY_CONTRACT, required);
     }
@@ -1062,6 +1062,10 @@ fn phase20_release_metadata_boundaries_are_source_gated() {
         "README.md",
         README,
         &[
+            "gh attestation verify dexios-vX.Y.Z-linux-amd64",
+            "--repo brxken128/dexios",
+            "--signer-workflow brxken128/dexios/.github/workflows/release.yml",
+            "--source-ref refs/tags/vX.Y.Z",
             "release manifest wording lives in `scripts/generate_release_manifest.sh`",
             "source-backed docs/spec locations",
             "does not claim a complete platform asset set",

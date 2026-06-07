@@ -623,7 +623,7 @@ fn pack_rejects_path_deeper_than_archive_limit_and_preserves_source() {
 }
 
 #[test]
-fn pack_arch_04_d16_temp_cleanup_on_limit_failure_keeps_source_and_output_absent() {
+fn pack_limit_failure_keeps_source_and_removes_output() {
     let root = tempfile::tempdir().unwrap();
     let (source_dir, deep_file) = create_deep_source_file(root.path(), 65);
     let output_path = root.path().join("archive.enc");
@@ -637,7 +637,7 @@ fn pack_arch_04_d16_temp_cleanup_on_limit_failure_keeps_source_and_output_absent
 }
 
 #[test]
-fn pack_d21_representative_large_tree_materializes_expected_entries() {
+fn pack_representative_large_tree_materializes_expected_entries() {
     let root = tempfile::tempdir().unwrap();
     let source_dir = root.path().join("source");
     for dir_index in 0..6 {

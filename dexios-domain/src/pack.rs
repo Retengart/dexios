@@ -1081,7 +1081,7 @@ pub(crate) mod tests {
     ];
 
     #[test]
-    fn should_pack_bar_directory() {
+    fn packs_bar_directory() {
         let stor = Arc::new(InMemoryStorage::default());
         stor.add_hello_txt();
         stor.add_bar_foo_folder_with_hidden();

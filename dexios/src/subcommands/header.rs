@@ -72,9 +72,6 @@ pub(crate) fn details(input: &str, raw: bool) -> Result<()> {
     Ok(())
 }
 
-// this function reads the header fromthe input file and writes it to the output file
-// it's used for extracting an encrypted file's header for backups and such
-// it implements a check to ensure the header is valid
 pub(crate) fn dump(input: &str, output: &str, force: ForceMode) -> Result<()> {
     let output_exists = existing_path(output);
     if !overwrite_check_if_needed(output, output_exists, force)? {
@@ -90,11 +87,6 @@ pub(crate) fn dump(input: &str, output: &str, force: ForceMode) -> Result<()> {
     Ok(())
 }
 
-// this function reads the header from the input file
-// it then writes the header to the start of the ouput file
-// this can be used for restoring a dumped header to a file that had it's header stripped
-// this does not work for files encrypted *with* a detached header
-// it implements a check to ensure the header is valid before restoring to a file
 pub(crate) fn restore(input: &str, output: &str, force: ForceMode) -> Result<()> {
     if !overwrite_check(output, force)? {
         return Ok(());
@@ -114,12 +106,8 @@ pub(crate) fn restore(input: &str, output: &str, force: ForceMode) -> Result<()>
     Ok(())
 }
 
-// this wipes the length of the header from the provided file
-// the header must be intact for this to work, as the length varies between the versions
-// it can be useful for storing the header separate from the file, to make an attacker's life that little bit harder
-// it implements a check to ensure the header is valid before stripping
-// the supplied detached header must byte-match the embedded header before the embedded
-// header is destroyed, so an operator cannot wipe a file while holding a wrong backup
+// The supplied detached header must byte-match the embedded header before the
+// embedded header is destroyed.
 pub(crate) fn strip(input: &str, header: &str, force: ForceMode) -> Result<()> {
     if !overwrite_check(input, force)? {
         return Ok(());

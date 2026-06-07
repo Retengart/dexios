@@ -97,13 +97,11 @@ impl PassphraseWordCount {
     }
 }
 
-/// This function is used for autogenerating a passphrase from the bundled
-/// wordlist.
+/// Generates a passphrase from the bundled wordlist.
 ///
 /// It consists of `n` words joined with `-`. The current CLI default is `7`
 /// words.
 ///
-/// This provides adequate protection, while also remaining somewhat memorable.
 #[must_use]
 pub fn generate_passphrase(total_words: PassphraseWordCount) -> Protected<String> {
     let collection = include_str!("wordlist.lst");

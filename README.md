@@ -61,7 +61,10 @@ build-provenance attestation to every published asset.
 Verify a downloaded asset's provenance against this repository:
 
 ```bash
-gh attestation verify dexios-vX.Y.Z-linux-amd64 --repo brxken128/dexios
+gh attestation verify dexios-vX.Y.Z-linux-amd64 \
+  --repo brxken128/dexios \
+  --signer-workflow brxken128/dexios/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z
 ```
 
 This confirms the file was produced by the project's release workflow before it

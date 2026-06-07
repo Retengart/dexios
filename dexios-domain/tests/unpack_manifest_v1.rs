@@ -38,7 +38,7 @@ fn test_dir_uses_system_temp_root() {
     assert!(!dir.path().starts_with(Path::new("target/test-artifacts")));
 }
 #[test]
-fn should_unpack_archive_without_explicit_directory_entries() {
+fn unpacks_archive_without_explicit_directory_entries() {
     let test_dir = TestDir::new("unpack-no-dirs");
     let encrypted_archive = test_dir.path().join("archive.enc");
     let output_dir = test_dir.path().join("out");
@@ -68,7 +68,7 @@ fn unpack_directory_only_archive_returns_directory_commit_receipt() {
     );
 }
 #[test]
-fn should_unpack_exact_block_manifest_payload() {
+fn unpacks_exact_block_manifest_payload() {
     let test_dir = TestDir::new("unpack-exact-block");
     let encrypted_archive = test_dir.path().join("archive.enc");
     let output_dir = test_dir.path().join("out");

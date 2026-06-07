@@ -55,10 +55,10 @@ fn phase06_release_evidence_script_and_claims_are_source_gated() {
             required,
         );
     }
-    assert_not_contains(
+    assert_contains(
         "scripts/generate_release_manifest.sh",
         GENERATE_RELEASE_MANIFEST,
-        "local-notes",
+        "local-notes/*",
     );
 
     for required in [
@@ -119,13 +119,20 @@ fn phase06_release_evidence_script_and_claims_are_source_gated() {
 }
 
 #[test]
-fn planning_artifacts_are_committed_project_state() {
-    // Reversed 2026-05-29: local-notes/ is committed project state, not local-only.
-    assert_not_contains(".gitignore", GITIGNORE, "local-notes/");
+fn local_working_notes_are_ignored() {
+    for required in ["/local-notes/", "/local-plans/", "/.local-tools/"] {
+        assert_contains(".gitignore", GITIGNORE, required);
+    }
+
     assert_contains(
         "scripts/verify_repo_hygiene.sh",
         VERIFY_REPO_HYGIENE,
-        "local-notes/ is not tracked by git",
+        "local scratch path is tracked by git",
+    );
+    assert_contains(
+        "scripts/verify_repo_hygiene.sh",
+        VERIFY_REPO_HYGIENE,
+        "local scratch path must be ignored",
     );
 }
 
@@ -198,7 +205,7 @@ fn local_scripts_expose_the_full_maintainer_gate() {
         }
     }
 
-    for required in ["git ls-files local-notes", "git check-ignore"] {
+    for required in ["git ls-files", "git check-ignore -q"] {
         assert_contains(
             "scripts/verify_repo_hygiene.sh",
             VERIFY_REPO_HYGIENE,

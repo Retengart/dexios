@@ -494,7 +494,7 @@ mod tests {
     }
 
     #[test]
-    fn should_decrypt_embedded_v1_content() {
+    fn decrypts_embedded_v1_content() {
         let input_cur = RefCell::new(Cursor::new(b"Hello world".to_vec()));
         let encrypted_cur = RefCell::new(Cursor::new(Vec::new()));
 
@@ -574,7 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn should_decrypt_detached_v1_content() {
+    fn decrypts_detached_v1_content() {
         let input_cur = RefCell::new(Cursor::new(b"Hello world".to_vec()));
         let encrypted_cur = RefCell::new(Cursor::new(Vec::new()));
         let header_cur = RefCell::new(Cursor::new(Vec::new()));
@@ -614,7 +614,7 @@ mod tests {
     }
 
     #[test]
-    fn should_decrypt_detached_v1_content_after_zero_header_placeholder() {
+    fn decrypts_detached_v1_content_after_zero_header_placeholder() {
         let input_cur = RefCell::new(Cursor::new(b"Hello world".to_vec()));
         let encrypted_cur = RefCell::new(Cursor::new(Vec::new()));
         let header_cur = RefCell::new(Cursor::new(Vec::new()));

@@ -27,7 +27,7 @@ fn reject_stdin_keyfile_prompt_conflict(params: &CryptoParams, prompt_needed: bo
     Ok(())
 }
 
-fn should_continue_after_overwrite_checks<F>(output_ok: bool, header_check: F) -> Result<bool>
+fn overwrite_prompts_allow_continue<F>(output_ok: bool, header_check: F) -> Result<bool>
 where
     F: FnOnce() -> Result<Option<bool>>,
 {
@@ -86,13 +86,9 @@ pub(crate) fn execute(req: &Request<'_>) -> Result<()> {
 
     let output_ok = overwrite_check(req.output_file, req.crypto_params.force)?;
 
-    if !should_continue_after_overwrite_checks(output_ok, || {
-        match &req.crypto_params.header_location {
-            HeaderLocation::Embedded => Ok(None),
-            HeaderLocation::Detached(path) => {
-                overwrite_check(path, req.crypto_params.force).map(Some)
-            }
-        }
+    if !overwrite_prompts_allow_continue(output_ok, || match &req.crypto_params.header_location {
+        HeaderLocation::Embedded => Ok(None),
+        HeaderLocation::Detached(path) => overwrite_check(path, req.crypto_params.force).map(Some),
     })? {
         return Ok(());
     }
@@ -143,20 +139,20 @@ pub(crate) fn execute(req: &Request<'_>) -> Result<()> {
 mod tests {
     #[test]
     fn detached_header_decline_returns_false_before_work_starts() {
-        assert!(!super::should_continue_after_overwrite_checks(true, || Ok(Some(false))).unwrap());
+        assert!(!super::overwrite_prompts_allow_continue(true, || Ok(Some(false))).unwrap());
     }
 
     #[test]
     fn approve_all_overwrite_checks_returns_true() {
-        assert!(super::should_continue_after_overwrite_checks(true, || Ok(Some(true))).unwrap());
-        assert!(super::should_continue_after_overwrite_checks(true, || Ok(None)).unwrap());
+        assert!(super::overwrite_prompts_allow_continue(true, || Ok(Some(true))).unwrap());
+        assert!(super::overwrite_prompts_allow_continue(true, || Ok(None)).unwrap());
     }
 
     #[test]
     fn main_output_decline_short_circuits_header_check() {
         let mut called = false;
 
-        let result = super::should_continue_after_overwrite_checks(false, || {
+        let result = super::overwrite_prompts_allow_continue(false, || {
             called = true;
             Ok(Some(true))
         })

@@ -16,7 +16,10 @@ is_release_sensitive_untracked_path() {
     local path=$1
 
     case "$path" in
-        target/* | .local-tools/* | .local-tools/*)
+        target/* | \
+        local-notes/* | \
+        local-plans/* | \
+        .local-tools/*)
             return 1
             ;;
     esac
@@ -79,16 +82,26 @@ verify_release_sensitive_untracked_paths() {
     done < <(git status --porcelain --untracked-files=all)
 }
 
-tracked_planning="$(git ls-files local-notes)"
-[[ -n "$tracked_planning" ]] || fail "local-notes/ is not tracked by git"
+verify_local_scratch_policy() {
+    local tracked_local_scratch
+    local ignored_path
 
-! git check-ignore -q local-notes || fail "local-notes/ must not be gitignored (committed project state)"
+    tracked_local_scratch="$(git ls-files local-notes local-plans .local-tools)"
+    [[ -z "$tracked_local_scratch" ]] \
+        || fail "local scratch path is tracked by git: $tracked_local_scratch"
+
+    for ignored_path in local-notes local-plans .local-tools; do
+        git check-ignore -q "$ignored_path" || git check-ignore -q "$ignored_path/" \
+            || fail "local scratch path must be ignored: $ignored_path"
+    done
+}
 
 tracked_generated_docs="$(git ls-files docs)"
 [[ -z "$tracked_generated_docs" ]] \
     || fail "generated docs/ output must not be tracked; keep mdBook sources under book/src/"
 
 verify_pdf_attribute_policy
+verify_local_scratch_policy
 verify_release_sensitive_untracked_paths
 
 grep -F 'build-dir = "target/mdbook"' book.toml >/dev/null \
@@ -99,9 +112,9 @@ grep -Fxq '/docs/' .gitignore \
 
 [[ -f CHANGELOG.md ]] || fail "CHANGELOG.md is missing"
 
-if rg -n -i '(^|[^a-z])(see|read|requires?|depends on) +`?\local-notes/' \
+if rg -n -i '(^|[^a-z])(see|read|requires?|depends on) +`?(local-notes|local-plans)/' \
     README.md CONTRIBUTING.md CHANGELOG.md book/src >/dev/null; then
-    fail "tracked public docs must not require local-notes/ as public documentation"
+    fail "tracked public docs must not require local-only working notes as public documentation"
 fi
 
 printf 'Repository hygiene checks passed.\n'

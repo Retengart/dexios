@@ -93,11 +93,9 @@ pub fn gen_keyslot_nonce() -> KeyslotNonce {
     KeyslotNonce::new(nonce)
 }
 
-/// Generates a new protected master key of the specified `MASTER_KEY_LEN`.
+/// Generates a protected master key of `MASTER_KEY_LEN` random bytes.
 ///
-/// This can be used to generate a master key for encryption.
-/// It uses `ThreadRng` to securely generate completely random bytes, with extra protection
-/// from some side-channel attacks
+/// The temporary stack buffer is zeroized after being moved into `Protected`.
 ///
 /// # Examples
 ///
@@ -115,7 +113,7 @@ pub fn gen_master_key() -> MasterKey {
     protected
 }
 
-/// Generates a salt, of the specified `SALT_LEN`
+/// Generates a salt of `SALT_LEN` random bytes.
 ///
 /// This salt can be used at the current Argon2id KDF boundary.
 ///

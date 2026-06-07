@@ -1,7 +1,3 @@
-// this file contains enums found all around the codebase
-// they act as toggles for certain features, so they can be
-// enabled if selected by the user
-
 use anyhow::{Context, Result};
 use clap::ArgMatches;
 use clap::parser::MatchesError;
@@ -64,7 +60,7 @@ pub(crate) enum Key {
 #[derive(PartialEq, Eq)]
 pub(crate) enum PasswordState {
     Validate,
-    Direct, // maybe not the best name
+    Direct,
 }
 
 fn get_bytes<R: std::io::Read>(reader: &mut R) -> Result<Protected<Vec<u8>>> {
@@ -140,10 +136,6 @@ impl Key {
         Ok(key)
     }
 
-    // this handles getting the secret, and returning it
-    // it relies on `parameters.rs`' handling and logic to determine which route to get the key
-    // it can handle keyfiles, env variables, automatically generating and letting the user enter a key
-    // it has a check for if the keyfile is empty or not
     pub(crate) fn get_secret(&self, pass_state: &PasswordState) -> Result<Protected<Vec<u8>>> {
         let secret = match self {
             Self::Keyfile(path) if path == "-" => {

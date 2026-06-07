@@ -8,6 +8,11 @@
 /docs/
 /target
 
+# Local scratch - never project source
+/local-notes/
+/local-plans/
+/.local-tools/
+
 # Local editor/tool scratch - not project work
 .antigravitycli/
 .fresh/

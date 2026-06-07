@@ -1842,21 +1842,20 @@ fn phase7_decision_groups_are_source_gated() {
         "--env-key",
     );
 
-    // D-21 through D-23 (reversed 2026-05-29): local-notes/ is committed project state.
-    assert_not_contains(".gitignore", GITIGNORE, "local-notes/");
+    assert_contains(".gitignore", GITIGNORE, "/local-notes/");
     assert_contains(
         "scripts/verify_repo_hygiene.sh",
         VERIFY_REPO_HYGIENE,
-        "local-notes/",
+        "local scratch path is tracked by git",
     );
     assert_contains(
         "book/src/Safety-Contract.md",
         SAFETY_CONTRACT,
-        "`local-notes/` is committed maintainer project state",
+        "Local-only working notes",
     );
     assert_not_contains(
         "book/src/Safety-Contract.md",
         SAFETY_CONTRACT,
-        "local-notes/ is local-only working context",
+        "committed maintainer project state",
     );
 }

@@ -7,7 +7,7 @@ use domain::storage::identity::OverwritePolicy;
 
 use super::errors::map_encrypt_error;
 
-fn should_continue_after_overwrite_checks<F>(output_ok: bool, header_check: F) -> Result<bool>
+fn overwrite_prompts_allow_continue<F>(output_ok: bool, header_check: F) -> Result<bool>
 where
     F: FnOnce() -> Result<Option<bool>>,
 {
@@ -47,10 +47,8 @@ fn reject_stdin_keyfile_prompt_conflict(params: &CryptoParams, prompt_needed: bo
     Ok(())
 }
 
-// this function is for encrypting a file in stream mode
-// it handles user-facing prompts and delegates path validation/opening to domain
+// Handles user-facing prompts and delegates path validation/opening to the domain layer.
 pub(crate) fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> Result<()> {
-    // 1. validate and prepare options
     let output_exists = existing_path(output);
     let header_exists = match &params.header_location {
         HeaderLocation::Embedded => None,
@@ -60,7 +58,7 @@ pub(crate) fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> R
 
     let output_ok = overwrite_check_if_needed(output, output_exists, params.force)?;
 
-    if !should_continue_after_overwrite_checks(output_ok, || match &params.header_location {
+    if !overwrite_prompts_allow_continue(output_ok, || match &params.header_location {
         HeaderLocation::Embedded => Ok(None),
         HeaderLocation::Detached(path) => {
             overwrite_check_if_needed(path, header_exists.unwrap_or(false), params.force).map(Some)
@@ -109,20 +107,20 @@ pub(crate) fn stream_mode(input: &str, output: &str, params: &CryptoParams) -> R
 mod tests {
     #[test]
     fn detached_header_decline_returns_false_before_work_starts() {
-        assert!(!super::should_continue_after_overwrite_checks(true, || Ok(Some(false))).unwrap());
+        assert!(!super::overwrite_prompts_allow_continue(true, || Ok(Some(false))).unwrap());
     }
 
     #[test]
     fn approve_all_overwrite_checks_returns_true() {
-        assert!(super::should_continue_after_overwrite_checks(true, || Ok(Some(true))).unwrap());
-        assert!(super::should_continue_after_overwrite_checks(true, || Ok(None)).unwrap());
+        assert!(super::overwrite_prompts_allow_continue(true, || Ok(Some(true))).unwrap());
+        assert!(super::overwrite_prompts_allow_continue(true, || Ok(None)).unwrap());
     }
 
     #[test]
     fn main_output_decline_short_circuits_header_check() {
         let mut called = false;
 
-        let result = super::should_continue_after_overwrite_checks(false, || {
+        let result = super::overwrite_prompts_allow_continue(false, || {
             called = true;
             Ok(Some(true))
         })

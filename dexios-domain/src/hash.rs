@@ -65,7 +65,7 @@ mod tests {
     use std::io::Cursor;
 
     #[test]
-    fn should_hash_string() {
+    fn hashes_short_reader() {
         let text = "Hello world";
         let mut bytes = text.as_bytes();
         let reader = Cursor::new(&mut bytes);
@@ -83,7 +83,7 @@ mod tests {
     }
 
     #[test]
-    fn should_hash_big_string() {
+    fn hashes_reader_larger_than_block() {
         #[expect(
             clippy::cast_sign_loss,
             clippy::cast_possible_truncation,
@@ -110,7 +110,7 @@ mod tests {
     }
 
     #[test]
-    fn should_reset_position_and_make_hash() {
+    fn rewinds_reader_before_hashing() {
         let text = "Hello world";
         let mut bytes = text.as_bytes();
         let mut reader = Cursor::new(&mut bytes);

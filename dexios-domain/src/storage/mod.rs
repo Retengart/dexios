@@ -201,7 +201,7 @@ mod tests {
     }
 
     #[test]
-    fn should_create_a_new_file() {
+    fn create_file_creates_missing_file() {
         let stor = InMemoryStorage::default();
 
         match stor.create_file("hello.txt") {
@@ -214,7 +214,7 @@ mod tests {
     }
 
     #[test]
-    fn should_throw_an_error_if_file_already_exist() {
+    fn create_file_rejects_existing_file() {
         let stor = InMemoryStorage::default();
         stor.add_hello_txt();
 
@@ -225,7 +225,7 @@ mod tests {
     }
 
     #[test]
-    fn should_not_open_file_to_read() {
+    fn read_file_returns_not_found_for_missing_file() {
         let stor = InMemoryStorage::default();
 
         match stor.read_file("hello.txt") {
@@ -235,7 +235,7 @@ mod tests {
     }
 
     #[test]
-    fn should_not_open_file_to_write() {
+    fn write_file_returns_not_found_for_missing_file() {
         let stor = InMemoryStorage::default();
 
         match stor.write_file("hello.txt") {
@@ -245,7 +245,7 @@ mod tests {
     }
 
     #[test]
-    fn should_open_exist_file_in_read_mode() {
+    fn read_file_opens_existing_file() {
         let stor = InMemoryStorage::default();
         stor.add_hello_txt();
 
@@ -265,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    fn should_open_exist_file_in_write_mode() {
+    fn write_file_opens_existing_file() {
         let stor = InMemoryStorage::default();
         stor.add_hello_txt();
 
@@ -285,7 +285,7 @@ mod tests {
     }
 
     #[test]
-    fn should_write_content_to_file() {
+    fn flush_file_persists_written_content() {
         let stor = InMemoryStorage::default();
         let content = "hello world";
 
@@ -312,7 +312,7 @@ mod tests {
     }
 
     #[test]
-    fn should_remove_a_file_in_read_mode() {
+    fn remove_file_removes_read_entry() {
         let stor = InMemoryStorage::default();
         stor.add_hello_txt();
 
@@ -329,7 +329,7 @@ mod tests {
     }
 
     #[test]
-    fn should_remove_a_file_in_write_mode() {
+    fn remove_file_removes_write_entry() {
         let stor = InMemoryStorage::default();
         stor.add_hello_txt();
 
@@ -346,7 +346,7 @@ mod tests {
     }
 
     #[test]
-    fn should_get_file_length() {
+    fn file_len_returns_content_length() {
         let stor = InMemoryStorage::default();
         stor.add_hello_txt();
 
@@ -362,7 +362,7 @@ mod tests {
     }
 
     #[test]
-    fn should_open_dir() {
+    fn read_file_returns_directory_entry() {
         let stor = InMemoryStorage::default();
         stor.add_bar_foo_folder();
 
@@ -373,7 +373,7 @@ mod tests {
     }
 
     #[test]
-    fn should_remove_dir_with_subfiles() {
+    fn remove_dir_all_removes_child_directory_contents() {
         let stor = InMemoryStorage::default();
         stor.add_hello_txt();
         stor.add_bar_foo_folder();
@@ -396,7 +396,7 @@ mod tests {
     }
 
     #[test]
-    fn should_remove_dir_recursively_with_subfiles() {
+    fn remove_dir_all_removes_nested_directory_tree() {
         let stor = InMemoryStorage::default();
         stor.add_hello_txt();
         stor.add_bar_foo_folder();
@@ -416,7 +416,7 @@ mod tests {
     }
 
     #[test]
-    fn should_return_file_names_of_dir_subfiles() {
+    fn read_dir_returns_nested_file_names() {
         let stor = InMemoryStorage::default();
         stor.add_hello_txt();
         stor.add_bar_foo_folder();
@@ -446,7 +446,7 @@ mod tests {
     }
 
     #[test]
-    fn should_include_hidden_files_names() {
+    fn read_dir_includes_hidden_file_names() {
         let stor = InMemoryStorage::default();
         stor.add_hello_txt();
         stor.add_bar_foo_folder_with_hidden();

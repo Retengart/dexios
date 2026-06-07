@@ -564,7 +564,7 @@ pub mod tests {
     }
 
     #[test]
-    fn should_encrypt_content_with_v1_header() {
+    fn encrypts_content_with_v1_header() {
         let input_cur = RefCell::new(Cursor::new(b"Hello world".to_vec()));
         let output_cur = RefCell::new(Cursor::new(Vec::new()));
 
@@ -590,7 +590,7 @@ pub mod tests {
     }
 
     #[test]
-    fn should_save_v1_header_separately() {
+    fn saves_v1_header_separately() {
         let input_cur = RefCell::new(Cursor::new(b"Hello world".to_vec()));
         let output_cur = RefCell::new(Cursor::new(Vec::new()));
         let output_header_cur = RefCell::new(Cursor::new(Vec::new()));

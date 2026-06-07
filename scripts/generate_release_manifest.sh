@@ -157,7 +157,10 @@ is_release_sensitive_untracked_path() {
     local path=$1
 
     case "$path" in
-        target/* | .local-tools/* | .local-tools/*)
+        target/* | \
+        local-notes/* | \
+        local-plans/* | \
+        .local-tools/*)
             return 1
             ;;
     esac

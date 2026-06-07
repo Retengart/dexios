@@ -4,7 +4,7 @@ use crate::cli::args;
 
 pub(in crate::cli) fn header_command() -> Command {
     Command::new("header")
-        .about("Manipulate encrypted headers (for advanced users)")
+        .about("Manage embedded and detached headers")
         .subcommand_required(true)
         .subcommand(dump_command())
         .subcommand(restore_command())

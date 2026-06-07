@@ -4,7 +4,7 @@ use crate::cli::args;
 
 pub(in crate::cli) fn key_command() -> Command {
     Command::new("key")
-        .about("Manipulate keys within the header (for advanced users")
+        .about("Manage encrypted file keyslots")
         .subcommand_required(true)
         .subcommand(change_command())
         .subcommand(add_command())
@@ -39,7 +39,7 @@ fn add_command() -> Command {
 
 fn del_command() -> Command {
     Command::new("del")
-        .about("Delete a key from an encrypted file (for advanced users)")
+        .about("Delete a keyslot from an encrypted file")
         .arg_required_else_help(true)
         .arg(args::input_arg("The encrypted file/header file"))
         .arg(args::keyfile_arg_with_help(

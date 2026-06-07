@@ -46,7 +46,7 @@ fn assert_io_source_kind(error: &Error, expected: ErrorKind) {
 }
 
 #[test]
-fn should_create_a_new_file() {
+fn create_file_creates_missing_file() {
     let stor = TestFileStorage::new(1);
     let create_result = stor.create_file("hello_1.txt");
 
@@ -60,7 +60,7 @@ fn should_create_a_new_file() {
 }
 
 #[test]
-fn should_throw_an_error_if_file_already_exist() {
+fn create_file_rejects_existing_file() {
     let stor = TestFileStorage::new(2);
     add_hello_txt(&stor).unwrap();
     let create_result = stor.create_file("hello_2.txt");
@@ -72,7 +72,7 @@ fn should_throw_an_error_if_file_already_exist() {
 }
 
 #[test]
-fn should_not_open_file_to_read() {
+fn read_file_returns_not_found_for_missing_file() {
     let stor = TestFileStorage::new(3);
     let read_result = stor.read_file("hello_3.txt");
 
@@ -83,7 +83,7 @@ fn should_not_open_file_to_read() {
 }
 
 #[test]
-fn should_not_open_file_to_write() {
+fn write_file_returns_not_found_for_missing_file() {
     let stor = TestFileStorage::new(4);
     let write_result = stor.write_file("hello_4.txt");
 
@@ -94,7 +94,7 @@ fn should_not_open_file_to_write() {
 }
 
 #[test]
-fn should_open_exist_file_in_read_mode() {
+fn read_file_opens_existing_file() {
     let stor = TestFileStorage::new(5);
     add_hello_txt(&stor).unwrap();
     let read_result = stor.read_file("hello_5.txt");
@@ -116,7 +116,7 @@ fn should_open_exist_file_in_read_mode() {
 }
 
 #[test]
-fn should_open_exist_file_in_write_mode() {
+fn write_file_opens_existing_file() {
     let stor = TestFileStorage::new(6);
     add_hello_txt(&stor).unwrap();
     let write_result = stor.write_file("hello_6.txt");
@@ -143,7 +143,7 @@ fn should_open_exist_file_in_write_mode() {
 }
 
 #[test]
-fn should_write_content_to_file() {
+fn flush_file_persists_written_content() {
     let stor = TestFileStorage::new(7);
     let content = "hello world";
 
@@ -196,7 +196,7 @@ fn storage_backed_encrypt_writes_a_v1_header() {
 }
 
 #[test]
-fn should_remove_a_file_in_read_mode() {
+fn remove_file_removes_read_entry() {
     let stor = TestFileStorage::new(8);
     add_hello_txt(&stor).unwrap();
 
@@ -212,7 +212,7 @@ fn should_remove_a_file_in_read_mode() {
 }
 
 #[test]
-fn should_remove_a_file_in_write_mode() {
+fn remove_file_removes_write_entry() {
     let stor = TestFileStorage::new(9);
     add_hello_txt(&stor).unwrap();
 
@@ -228,7 +228,7 @@ fn should_remove_a_file_in_write_mode() {
 }
 
 #[test]
-fn should_get_file_length() {
+fn file_len_returns_content_length() {
     let stor = TestFileStorage::new(10);
     add_hello_txt(&stor).unwrap();
 
@@ -244,7 +244,7 @@ fn should_get_file_length() {
 }
 
 #[test]
-fn should_open_dir() {
+fn read_file_returns_directory_entry() {
     let stor = TestFileStorage::new(11);
     add_bar_foo_folder(&stor).unwrap();
     let read_result = stor.read_file("bar_11/foo/");
@@ -256,7 +256,7 @@ fn should_open_dir() {
 }
 
 #[test]
-fn should_remove_dir_with_subfiles() {
+fn remove_dir_all_removes_child_directory_contents() {
     let stor = TestFileStorage::new(12);
     add_hello_txt(&stor).unwrap();
     add_bar_foo_folder(&stor).unwrap();
@@ -273,7 +273,7 @@ fn should_remove_dir_with_subfiles() {
 }
 
 #[test]
-fn should_remove_dir_recursively_with_subfiles() {
+fn remove_dir_all_removes_nested_directory_tree() {
     let stor = TestFileStorage::new(13);
     add_hello_txt(&stor).unwrap();
     add_bar_foo_folder(&stor).unwrap();
@@ -290,7 +290,7 @@ fn should_remove_dir_recursively_with_subfiles() {
 }
 
 #[test]
-fn should_return_file_names_of_dir_subfiles() {
+fn read_dir_returns_nested_file_names() {
     let stor = TestFileStorage::new(14);
     add_hello_txt(&stor).unwrap();
     add_bar_foo_folder(&stor).unwrap();
@@ -321,7 +321,7 @@ fn should_return_file_names_of_dir_subfiles() {
 }
 
 #[test]
-fn should_include_hidden_files_names() {
+fn read_dir_includes_hidden_file_names() {
     let stor = TestFileStorage::new(15);
     add_hello_txt(&stor).unwrap();
     add_bar_foo_folder_with_hidden(&stor).unwrap();

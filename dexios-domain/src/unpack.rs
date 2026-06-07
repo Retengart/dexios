@@ -610,9 +610,9 @@ fn prepare_manifest_extraction_entities(
     let mut entities = Vec::new();
     for entry in scanned_entries {
         if let Some(on_archive_file) = on_archive_file {
-            let should_unpack =
+            let unpack_allowed =
                 on_archive_file(entry.full_path.clone()).map_err(Error::ArchiveFileCallback)?;
-            if !should_unpack {
+            if !unpack_allowed {
                 continue;
             }
         }
