@@ -3,7 +3,7 @@ use std::fs as std_fs;
 use std::io::{self, Write};
 use std::path::Path;
 #[cfg(not(unix))]
-use std::path::PathBuf;
+use std::path::{Component, PathBuf};
 
 use super::Error;
 #[cfg(not(unix))]
@@ -337,14 +337,27 @@ fn create_target_parent_portably(path: &Path) -> io::Result<()> {
     };
     let mut current = PathBuf::new();
     for component in parent.components() {
-        current.push(component.as_os_str());
-        match std_fs::create_dir(&current) {
-            Ok(()) => {}
-            Err(source) if source.kind() == io::ErrorKind::AlreadyExists => {}
-            Err(source) => return Err(source),
+        match component {
+            Component::Prefix(prefix) => current.push(prefix.as_os_str()),
+            Component::RootDir => current.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => return Err(invalid_component_error()),
+            Component::Normal(part) => {
+                current.push(part);
+                match std_fs::create_dir(&current) {
+                    Ok(()) => {}
+                    Err(source) if source.kind() == io::ErrorKind::AlreadyExists => {}
+                    Err(source) => return Err(source),
+                }
+            }
         }
     }
     Ok(())
+}
+
+#[cfg(not(unix))]
+fn invalid_component_error() -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidInput, "unsafe directory component")
 }
 
 #[cfg(not(unix))]
@@ -379,15 +392,24 @@ fn ensure_parent_chain_safe(target_path: &Path, parent: &Path) -> Result<(), Tra
     let mut current = PathBuf::new();
 
     for component in parent.components() {
-        current.push(component.as_os_str());
-
-        match std_fs::symlink_metadata(&current) {
-            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
-                return Err(persist_unsafe_path_error(target_path, None));
+        match component {
+            Component::Prefix(prefix) => current.push(prefix.as_os_str()),
+            Component::RootDir => current.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => return Err(persist_unsafe_path_error(target_path, None)),
+            Component::Normal(part) => {
+                current.push(part);
+                match std_fs::symlink_metadata(&current) {
+                    Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+                        return Err(persist_unsafe_path_error(target_path, None));
+                    }
+                    Ok(_) => {}
+                    Err(source) if source.kind() == io::ErrorKind::NotFound => {}
+                    Err(source) => {
+                        return Err(persist_unsafe_path_error(target_path, Some(source)));
+                    }
+                }
             }
-            Ok(_) => {}
-            Err(source) if source.kind() == io::ErrorKind::NotFound => {}
-            Err(source) => return Err(persist_unsafe_path_error(target_path, Some(source))),
         }
     }
 
@@ -616,10 +638,7 @@ mod unix_fd_persist {
         };
         let name = component_to_cstring(name)?;
         let stat = statat(parent, &name, AtFlags::SYMLINK_NOFOLLOW).map_err(io::Error::from)?;
-        let actual = UnixFileIdentity {
-            dev: stat.st_dev,
-            ino: stat.st_ino,
-        };
+        let actual = unix_file_identity(stat.st_dev, stat.st_ino)?;
         if actual != expected {
             return Err(io::Error::other(
                 "target file identity changed before persist",
@@ -651,9 +670,20 @@ mod unix_fd_persist {
 
     fn file_identity(fd: impl AsFd) -> io::Result<UnixFileIdentity> {
         let stat = fstat(fd).map_err(io::Error::from)?;
+        unix_file_identity(stat.st_dev, stat.st_ino)
+    }
+
+    fn unix_file_identity(
+        dev: impl TryInto<u64>,
+        ino: impl TryInto<u64>,
+    ) -> io::Result<UnixFileIdentity> {
         Ok(UnixFileIdentity {
-            dev: stat.st_dev,
-            ino: stat.st_ino,
+            dev: dev
+                .try_into()
+                .map_err(|_| invalid_path("file identity device id is out of range"))?,
+            ino: ino
+                .try_into()
+                .map_err(|_| invalid_path("file identity inode is out of range"))?,
         })
     }
 

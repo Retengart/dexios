@@ -69,8 +69,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios/tests/verification_gate_source.rs",
         category: "Phase 25 source-gate evidence",
         rationale: "Phase 25 fail-closed source/API safety evidence per D-11.",
-        current_lines: 1862,
-        cap: 1862,
+        current_lines: 1861,
+        cap: 1861,
     },
     FileSizeException {
         path: "dexios-core/tests/stream_v1.rs",
@@ -83,8 +83,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios/tests/verification_gate_docs.rs",
         category: "Phase 25 docs-gate evidence",
         rationale: "Public docs/spec artifact evidence remains explicit per D-11.",
-        current_lines: 1280,
-        cap: 1280,
+        current_lines: 1284,
+        cap: 1284,
     },
     FileSizeException {
         path: "dexios-domain/src/pack.rs",
@@ -153,8 +153,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios/tests/verification_gate_scripts.rs",
         category: "release script gate evidence",
         rationale: "Release and verification script contract evidence remains explicit per D-11.",
-        current_lines: 794,
-        cap: 794,
+        current_lines: 801,
+        cap: 801,
     },
     FileSizeException {
         path: "dexios-core/src/payload.rs",
@@ -174,8 +174,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios-domain/src/storage/temp.rs",
         category: "fd-relative storage security evidence",
         rationale: "fd-relative persist + TOCTOU-safe directory creation (fs-1/fs-2) kept centralized.",
-        current_lines: 709,
-        cap: 709,
+        current_lines: 739,
+        cap: 739,
     },
     FileSizeException {
         path: "dexios-domain/src/storage/cleanup.rs",
