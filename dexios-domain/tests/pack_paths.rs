@@ -33,7 +33,7 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use core::header::{read_header, ParsedHeader};
+use core::header::{ParsedHeader, read_header};
 use core::kdf::Kdf;
 use core::payload::{ManifestEntryKind, ManifestFirstPayload, PayloadFramingProfile, PayloadKind};
 use core::protected::Protected;
@@ -295,12 +295,14 @@ fn pack_rejects_filename_containing_windows_separator_byte() {
         ArchivePolicy::default(),
         true,
         None,
-    );
+    )
+    .and_then(pack::execute_transactional);
 
     assert!(
-        result.is_err(),
-        "pack must reject archive names containing a Windows separator byte"
+        matches!(result, Err(pack::Error::ArchivePath(_))),
+        "pack must reject archive names containing a Windows separator byte as an unsafe archive path, got {result:?}"
     );
+    assert!(!output_path.exists());
 }
 
 #[cfg(unix)]

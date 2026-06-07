@@ -37,6 +37,8 @@
     )
 )]
 
+mod archive_path;
+
 pub mod archive;
 pub mod decrypt;
 pub mod encrypt;

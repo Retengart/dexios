@@ -261,7 +261,7 @@ fn domain_path_identity_hardening_boundaries_are_source_gated() {
         &unpack_staging,
         &[
             ".revalidate_resolved_directory_root(output_root)",
-            "stor.revalidate_unpack_target(&output_dir, &entity.relative_path, target)",
+            "stor.revalidate_unpack_target(&output_dir, entity.relative_path.as_path(), target)",
             ".stage_in(target.clone(), &output_dir)",
             ".staged_output_mut(transaction_index)",
             "copy_manifest_body(plaintext_reader, writer, body_len)",
@@ -298,8 +298,8 @@ fn domain_path_identity_hardening_boundaries_are_source_gated() {
         &unpack_directory_creation,
         &[
             ".revalidate_resolved_directory_root(output_root)",
-            "stor.revalidate_unpack_directory_target(&output_dir, &entity.relative_path, target)",
-            "stor.create_unpack_dir_all(&output_dir, &entity.relative_path)",
+            "entity.relative_path.as_path()",
+            "stor.create_unpack_dir_all(&output_dir, entity.relative_path.as_path())",
             "artifacts.push(CommittedArtifact::new",
         ],
     );

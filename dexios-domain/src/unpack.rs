@@ -40,6 +40,8 @@ use core::payload::{
 use core::protected::Protected;
 use core::stream::{StreamError, V1PayloadDecryptingReader};
 
+use crate::archive_path::{ArchivePathError, NormalizedArchivePath};
+
 pub use callback::ArchiveFileCallbackError;
 
 #[derive(Debug)]
@@ -53,6 +55,7 @@ pub enum Error {
     UnsafeOutputPath(PathBuf),
     DuplicateOutputPath(PathBuf),
     ArchiveLimit(ArchiveLimitError),
+    ArchivePath(PathBuf),
     Storage(storage::Error),
     PathIdentity(IdentityError),
     Transaction(TransactionError),
@@ -80,6 +83,13 @@ impl std::fmt::Display for Error {
                 )
             }
             Self::ArchiveLimit(inner) => write!(f, "Archive limit error: {inner}"),
+            Self::ArchivePath(path) => {
+                write!(
+                    f,
+                    "Archive path error: Unsafe archive path: {}",
+                    path.display()
+                )
+            }
             Self::Storage(inner) => write!(f, "Storage error: {inner}"),
             Self::PathIdentity(inner) => write!(f, "Path identity error: {inner}"),
             Self::Transaction(inner) => write!(f, "Transaction error: {inner}"),
@@ -113,9 +123,10 @@ impl Error {
         match self {
             Self::Transaction(error) => classify_transaction_error(error),
             _ if self.is_resource_pressure() => WorkflowErrorClass::ResourcePressure,
-            Self::UnsafeOutputPath(_) | Self::DuplicateOutputPath(_) | Self::ArchiveLimit(_) => {
-                WorkflowErrorClass::UnsafePath
-            }
+            Self::UnsafeOutputPath(_)
+            | Self::DuplicateOutputPath(_)
+            | Self::ArchiveLimit(_)
+            | Self::ArchivePath(_) => WorkflowErrorClass::UnsafePath,
             Self::ArchivePayload(error) => classify_payload_error(error),
             Self::OpenArchive => WorkflowErrorClass::MalformedFormat,
             Self::Decrypt(error) => error.workflow_class(),
@@ -142,6 +153,12 @@ fn classify_payload_error(error: &PayloadError) -> WorkflowErrorClass {
         PayloadError::BodyFrameLimitExceeded { .. } => WorkflowErrorClass::ResourcePressure,
         PayloadError::Io(_) => WorkflowErrorClass::IoFailure,
         _ => WorkflowErrorClass::MalformedFormat,
+    }
+}
+
+fn map_archive_path_error(error: ArchivePathError) -> Error {
+    match error {
+        ArchivePathError::Unsafe(path) => Error::ArchivePath(path),
     }
 }
 
@@ -237,7 +254,7 @@ where
 
 struct ExtractionEntity {
     full_path: PathBuf,
-    relative_path: PathBuf,
+    relative_path: NormalizedArchivePath,
     archive_index: usize,
     kind: ExtractionKind,
 }
@@ -254,7 +271,7 @@ struct PreparedExtraction {
 
 struct ScannedEntry {
     full_path: PathBuf,
-    relative_path: PathBuf,
+    relative_path: NormalizedArchivePath,
     archive_index: usize,
     kind: ExtractionKind,
 }
@@ -575,18 +592,17 @@ fn prepare_manifest_extraction_entities(
     let mut scanned_entries = Vec::new();
     let mut archive_paths = ArchivePathTree::default();
     for (index, entry) in manifest.entries().iter().enumerate() {
-        let path = manifest_entry_path(entry.normalized_path())?;
-        limits
-            .check_normalized_path(&path)
-            .map_err(Error::ArchiveLimit)?;
+        let path = NormalizedArchivePath::from_manifest_bytes(entry.normalized_path())
+            .map_err(map_archive_path_error)?;
+        path.check_limits(&limits).map_err(Error::ArchiveLimit)?;
         let archive_entry_kind = match entry.kind() {
             ManifestEntryKind::Directory => ArchiveEntryKind::Directory,
             ManifestEntryKind::File => ArchiveEntryKind::File,
         };
-        archive_paths.insert(&path, archive_entry_kind)?;
+        archive_paths.insert(path.as_path(), archive_entry_kind)?;
 
         let full_path = stor
-            .resolve_unpack_path(&output_dir, &path)
+            .resolve_unpack_path(&output_dir, path.as_path())
             .map_err(map_storage_path_error)?;
 
         let kind = if archive_entry_kind == ArchiveEntryKind::Directory {
@@ -655,7 +671,7 @@ fn stage_manifest_file_body<R: Read>(
     let output_dir = stor
         .revalidate_resolved_directory_root(output_root)
         .map_err(map_storage_path_error)?;
-    stor.revalidate_unpack_target(&output_dir, &entity.relative_path, target)
+    stor.revalidate_unpack_target(&output_dir, entity.relative_path.as_path(), target)
         .map_err(map_storage_path_error)?;
 
     let transaction_index = transaction
@@ -728,14 +744,16 @@ fn create_selected_directories_after_final_auth(
         let ExtractionKind::Directory(target) = &entity.kind else {
             unreachable!();
         };
-        if let Err(error) =
-            stor.revalidate_unpack_directory_target(&output_dir, &entity.relative_path, target)
-        {
+        if let Err(error) = stor.revalidate_unpack_directory_target(
+            &output_dir,
+            entity.relative_path.as_path(),
+            target,
+        ) {
             let _rollback =
                 storage::cleanup::rollback_empty_directories_best_effort(&rollback_dirs);
             return Err(map_storage_path_error(error));
         }
-        match stor.create_unpack_dir_all(&output_dir, &entity.relative_path) {
+        match stor.create_unpack_dir_all(&output_dir, entity.relative_path.as_path()) {
             Ok(created_dirs) => rollback_dirs.extend(created_dirs),
             Err(error) => {
                 let _rollback =
@@ -765,27 +783,18 @@ fn revalidate_extraction_targets(
     for entity in entities {
         match &entity.kind {
             ExtractionKind::Directory(target) => stor
-                .revalidate_unpack_directory_target(&output_dir, &entity.relative_path, target)
+                .revalidate_unpack_directory_target(
+                    &output_dir,
+                    entity.relative_path.as_path(),
+                    target,
+                )
                 .map_err(map_storage_path_error)?,
             ExtractionKind::File(target) => stor
-                .revalidate_unpack_target(&output_dir, &entity.relative_path, target)
+                .revalidate_unpack_target(&output_dir, entity.relative_path.as_path(), target)
                 .map_err(map_storage_path_error)?,
         }
     }
     Ok(())
-}
-
-fn manifest_entry_path(normalized_path: &[u8]) -> Result<PathBuf, Error> {
-    let normalized = std::str::from_utf8(normalized_path)
-        .map_err(|_| Error::UnsafeOutputPath(PathBuf::from("<non-utf8>")))?;
-    let mut path = PathBuf::new();
-    for part in normalized.split('/') {
-        if part.is_empty() || part == "." || part == ".." {
-            return Err(Error::UnsafeOutputPath(PathBuf::from(normalized)));
-        }
-        path.push(part);
-    }
-    normalize_archive_path(&path)
 }
 
 fn map_payload_error(error: PayloadError) -> Error {
@@ -875,31 +884,6 @@ fn overwrite_policy_for_extracted_directory(path: &Path) -> Result<OverwritePoli
         Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(OverwritePolicy::CreateNew),
         Err(_) => Err(Error::Storage(storage::Error::FileAccess)),
     }
-}
-
-fn normalize_archive_path(path: &Path) -> Result<PathBuf, Error> {
-    let mut normalized = PathBuf::new();
-
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::Normal(part) => normalized.push(part),
-            Component::ParentDir => {
-                if !normalized.pop() {
-                    return Err(Error::UnsafeOutputPath(path.to_path_buf()));
-                }
-            }
-            Component::RootDir | Component::Prefix(_) => {
-                return Err(Error::UnsafeOutputPath(path.to_path_buf()));
-            }
-        }
-    }
-
-    if normalized.as_os_str().is_empty() {
-        return Err(Error::UnsafeOutputPath(path.to_path_buf()));
-    }
-
-    Ok(normalized)
 }
 
 fn map_storage_path_error(err: storage::Error) -> Error {

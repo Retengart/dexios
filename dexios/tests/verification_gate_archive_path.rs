@@ -27,15 +27,21 @@ fn pack_and_unpack_use_normalized_archive_path_helper() {
     assert!(DOMAIN_PACK_RS.contains("NormalizedArchivePath::from_path"));
     assert!(DOMAIN_PACK_RS.contains(".as_manifest_bytes()"));
     assert!(!DOMAIN_PACK_RS.contains("fn normalized_archive_path_bytes"));
+    assert!(!DOMAIN_PACK_RS.contains("ArchivePath(ArchivePathError)"));
     assert!(DOMAIN_UNPACK_RS.contains("NormalizedArchivePath::from_manifest_bytes"));
     assert!(!DOMAIN_UNPACK_RS.contains("fn manifest_entry_path"));
     assert!(!DOMAIN_UNPACK_RS.contains("fn normalize_archive_path"));
+    assert!(!DOMAIN_UNPACK_RS.contains("ArchivePath(ArchivePathError)"));
+    assert!(!DOMAIN_PACK_RS.contains("private_interfaces"));
+    assert!(!DOMAIN_UNPACK_RS.contains("private_interfaces"));
 }
 
 #[test]
 fn archive_path_regressions_cover_cross_platform_separators() {
     assert!(PACK_PATHS_TESTS.contains("pack_rejects_filename_containing_windows_separator_byte"));
-    assert!(UNPACK_MANIFEST_TESTS.contains("unpack_rejects_manifest_path_with_backslash_separator"));
+    assert!(
+        UNPACK_MANIFEST_TESTS.contains("unpack_rejects_manifest_path_with_backslash_separator")
+    );
     assert!(UNPACK_MANIFEST_TESTS.contains("unpack_rejects_non_utf8_manifest_path"));
     assert!(UNPACK_MANIFEST_TESTS.contains("unpack_rejects_manifest_path_with_nul_byte"));
 }

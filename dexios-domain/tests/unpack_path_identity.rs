@@ -27,11 +27,22 @@
 #[path = "support/unpack_v1.rs"]
 mod unpack_support;
 
-#[cfg(unix)]
 use dexios_domain::workflow_error::WorkflowErrorClass;
 #[cfg(unix)]
 use std::error::Error as _;
 use unpack_support::*;
+
+fn assert_manifest_archive_path_error(error: &unpack::Error, label: &str) {
+    assert_eq!(
+        error.workflow_class(),
+        WorkflowErrorClass::UnsafePath,
+        "{label} must be classified as unsafe path; got {error:?}"
+    );
+    assert!(
+        error.to_string().contains("Archive path error"),
+        "{label} must report an archive path error; got {error:?}"
+    );
+}
 
 #[test]
 fn unpack_rejects_entry_that_aliases_encrypted_input_archive() {
@@ -105,10 +116,8 @@ fn unpack_rejects_unsafe_entry_without_extracting_safe_sibling() {
 
     let result = unpack_archive(&encrypted_archive, &output_dir, None);
 
-    assert!(
-        matches!(result, Err(unpack::Error::UnsafeOutputPath(_))),
-        "expected unsafe output path error, got {result:?}"
-    );
+    let error = result.unwrap_err();
+    assert_manifest_archive_path_error(&error, "unsafe sibling archive path");
     assert!(!output_dir.join("safe.txt").exists());
     assert!(!test_dir.path().join("escape.txt").exists());
 }
@@ -125,7 +134,8 @@ fn unpack_arch_04_d16_temp_cleanup_on_validation_failure_commits_no_outputs() {
 
     let result = unpack_archive(&encrypted_archive, &output_dir, None);
 
-    assert!(matches!(result, Err(unpack::Error::UnsafeOutputPath(_))));
+    let error = result.unwrap_err();
+    assert_manifest_archive_path_error(&error, "validation cleanup archive path");
     assert!(!output_dir.join("safe.txt").exists());
     assert!(!test_dir.path().join("escape.txt").exists());
 }
@@ -151,10 +161,8 @@ fn unpack_rejects_unsafe_archive_before_overwrite_callback() {
         })),
     );
 
-    assert!(
-        matches!(result, Err(unpack::Error::UnsafeOutputPath(_))),
-        "expected unsafe output path error, got {result:?}"
-    );
+    let error = result.unwrap_err();
+    assert_manifest_archive_path_error(&error, "pre-callback archive path");
     assert_eq!(callback_count.load(Ordering::SeqCst), 0);
     assert!(!output_dir.join("safe.txt").exists());
 }

@@ -22,6 +22,7 @@ use core::primitives::BLOCK_SIZE;
 use core::protected::Protected;
 
 use crate::archive::{ArchiveLimitError, ArchiveLimits, ArchivePolicy};
+use crate::archive_path::{ArchivePathError, NormalizedArchivePath};
 use crate::storage::cleanup::{CleanupReceipt, ProcessedSourceCleanupResult};
 use crate::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole, ResolvedTarget,
@@ -53,6 +54,7 @@ pub enum Error {
     DetachedPublication(TransactionError),
     TransactionWriter,
     ArchiveLimit(ArchiveLimitError),
+    ArchivePath(PathBuf),
     ArchivePayload(PayloadError),
     ArchiveRootName,
     SymlinkSource(PathBuf),
@@ -83,6 +85,13 @@ impl std::fmt::Display for Error {
             }
             Self::TransactionWriter => f.write_str("Unable to release staged pack writers"),
             Self::ArchiveLimit(inner) => write!(f, "Archive limit error: {inner}"),
+            Self::ArchivePath(path) => {
+                write!(
+                    f,
+                    "Archive path error: Unsafe archive path: {}",
+                    path.display()
+                )
+            }
             Self::ArchivePayload(inner) => write!(f, "Archive payload error: {inner}"),
             Self::ArchiveRootName => f.write_str("Unable to derive archive root names"),
             Self::SymlinkSource(path) => {
@@ -128,9 +137,10 @@ impl Error {
             Self::CreateArchiveWithSource(error)
             | Self::ReadDataStorageWithSource(error)
             | Self::ReadSourceWithSource(error) => classify_storage_error(error),
-            Self::ArchiveLimit(_) | Self::ArchiveRootName | Self::SymlinkSource(_) => {
-                WorkflowErrorClass::UnsafePath
-            }
+            Self::ArchiveLimit(_)
+            | Self::ArchivePath(_)
+            | Self::ArchiveRootName
+            | Self::SymlinkSource(_) => WorkflowErrorClass::UnsafePath,
             Self::ArchivePayload(error) => classify_payload_error(error),
             Self::CreateArchive
             | Self::CreateArchiveIoWithSource(_)
@@ -168,6 +178,12 @@ fn classify_payload_error(error: &PayloadError) -> WorkflowErrorClass {
         PayloadError::BodyFrameLimitExceeded { .. } => WorkflowErrorClass::ResourcePressure,
         PayloadError::Io(_) => WorkflowErrorClass::IoFailure,
         _ => WorkflowErrorClass::MalformedFormat,
+    }
+}
+
+fn map_archive_path_error(error: ArchivePathError) -> Error {
+    match error {
+        ArchivePathError::Unsafe(path) => Error::ArchivePath(path),
     }
 }
 
@@ -321,7 +337,7 @@ where
     RW: Read + Write + Seek,
 {
     source: crate::storage::Entry<RW>,
-    archive_path: PathBuf,
+    archive_path: NormalizedArchivePath,
 }
 
 pub fn execute(intent: PackIntent) -> Result<CommitReceipt, Error> {
@@ -480,7 +496,7 @@ fn manifest_entry_for<RW>(entry: &ArchiveSourceEntry<RW>) -> Result<ManifestEntr
 where
     RW: Read + Write + Seek,
 {
-    let normalized_path = normalized_archive_path_bytes(&entry.archive_path)?;
+    let normalized_path = entry.archive_path.as_manifest_bytes().to_vec();
     if entry.source.is_dir() {
         ManifestEntry::directory(normalized_path).map_err(Error::ArchivePayload)
     } else {
@@ -550,28 +566,6 @@ where
     }
 
     Ok(())
-}
-
-fn normalized_archive_path_bytes(path: &Path) -> Result<Vec<u8>, Error> {
-    let mut parts = Vec::new();
-    for component in path.components() {
-        match component {
-            Component::Normal(part) => {
-                let part = part.to_str().ok_or(Error::ArchiveRootName)?;
-                parts.push(part);
-            }
-            Component::CurDir => {}
-            Component::Prefix(_) | Component::RootDir | Component::ParentDir => {
-                return Err(Error::ArchiveRootName);
-            }
-        }
-    }
-
-    if parts.is_empty() {
-        return Err(Error::ArchiveRootName);
-    }
-
-    Ok(parts.join("/").into_bytes())
 }
 
 fn reject_symlink_source(path: &Path) -> Result<(), Error> {
@@ -727,12 +721,14 @@ where
     limits
         .check_entry_count(entries.len().saturating_add(1))
         .map_err(Error::ArchiveLimit)?;
-    limits
-        .check_normalized_path(&archive_path)
+    let archive_path =
+        NormalizedArchivePath::from_path(&archive_path).map_err(map_archive_path_error)?;
+    archive_path
+        .check_limits(&limits)
         .map_err(Error::ArchiveLimit)?;
 
     if let Some(on_archive_entry) = on_archive_entry {
-        on_archive_entry(&archive_path);
+        on_archive_entry(archive_path.as_path());
     }
 
     entries.push(ArchiveSourceEntry {
@@ -1092,7 +1088,7 @@ pub(crate) mod tests {
         let entries = compress_files
             .into_iter()
             .map(|source| ArchiveSourceEntry {
-                archive_path: source.path().to_path_buf(),
+                archive_path: NormalizedArchivePath::from_path(source.path()).unwrap(),
                 source,
             })
             .collect::<Vec<_>>();
