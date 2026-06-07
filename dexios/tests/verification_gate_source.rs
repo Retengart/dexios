@@ -949,7 +949,7 @@ fn phase18_header_and_key_mutation_guards_are_source_gated() {
             DEXIOS_DOMAIN_KEY_DELETE_RS,
         ),
     ] {
-        assert_contains(source_name, source, "super::read_mutation_target(target)?");
+        assert_not_contains(source_name, source, "read_mutation_target");
         assert_not_contains(source_name, source, "fs::read(target.target_path())");
     }
     assert!(

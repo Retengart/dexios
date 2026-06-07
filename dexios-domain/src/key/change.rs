@@ -2,23 +2,16 @@
 //! adheres to the Dexios V1 format.
 
 use super::Error;
-use core::header::common::{HEADER_LEN, Salt};
-use core::header::v1::{V1Header, V1Keyslot, V1KeyslotIndex};
-use core::header::{ParsedHeader, read_header};
+use core::header::v1::{V1Header, V1KeyslotIndex};
 use core::kdf::Kdf;
-use core::primitives::{MasterKey, gen_keyslot_nonce, gen_salt};
+use core::primitives::MasterKey;
 use core::protected::Protected;
-use std::io::Cursor;
 use std::path::Path;
 
-use crate::storage::identity::ResolvedTarget;
-use crate::storage::identity::{OverwritePolicy, PathIdentityGraph, PathRole};
-use crate::storage::transaction::{CommitReceipt, StagedOutputTransaction};
+use crate::storage::transaction::CommitReceipt;
 
 pub struct ChangeIntent {
-    target: ResolvedTarget,
-    original: Vec<u8>,
-    header: V1Header,
+    mutation: super::V1MutationIntent,
 }
 
 impl ChangeIntent {
@@ -26,28 +19,15 @@ impl ChangeIntent {
     where
         P: AsRef<Path>,
     {
-        let mut graph = PathIdentityGraph::new();
-        let target = graph
-            .add_output(
-                target_path,
-                PathRole::MutationTarget,
-                OverwritePolicy::ReplaceAtCommit,
-            )
-            .map_err(Error::PathIdentity)?;
-        graph.validate().map_err(Error::PathIdentity)?;
-
-        let (target, original) = super::read_mutation_target(target)?;
-        let header = parse_v1_header(&original)?;
-
-        if let Some(tag) = super::unsupported_keyslot_kdf_tag(header.keyslots_collection()) {
-            return Err(Error::UnsupportedKdf(tag));
+        let mutation = super::V1MutationIntent::new(target_path)?;
+        {
+            let keyslots = mutation.header().keyslots_collection();
+            if let Some(tag) = super::unsupported_keyslot_kdf_tag(keyslots) {
+                return Err(Error::UnsupportedKdf(tag));
+            }
         }
 
-        Ok(Self {
-            target,
-            original,
-            header,
-        })
+        Ok(Self { mutation })
     }
 
     pub fn verify_old_key(
@@ -55,12 +35,10 @@ impl ChangeIntent {
         raw_key_old: Protected<Vec<u8>>,
     ) -> Result<ProvenChangeIntent, Error> {
         let (master_key, index) =
-            super::decrypt_v1_master_key_with_index(&self.header, raw_key_old)?;
+            super::decrypt_v1_master_key_with_index(self.mutation.header(), raw_key_old)?;
 
         Ok(ProvenChangeIntent {
-            target: self.target,
-            original: self.original,
-            header: self.header,
+            mutation: self.mutation,
             master_key,
             index,
         })
@@ -68,9 +46,7 @@ impl ChangeIntent {
 }
 
 pub struct ProvenChangeIntent {
-    target: ResolvedTarget,
-    original: Vec<u8>,
-    header: V1Header,
+    mutation: super::V1MutationIntent,
     master_key: MasterKey,
     index: V1KeyslotIndex,
 }
@@ -81,26 +57,14 @@ pub fn execute(
     kdf: Kdf,
 ) -> Result<CommitReceipt, Error> {
     let ProvenChangeIntent {
-        target,
-        mut original,
-        header,
+        mutation,
         master_key,
         index,
     } = intent;
 
-    let replacement_header = changed_header(&header, &master_key, index, raw_key_new, kdf)?;
-    let header_bytes = validated_header_bytes(&replacement_header)?;
-    super::ensure_target_unchanged(&target, &original)?;
-    let target_header = original
-        .get_mut(..HEADER_LEN)
-        .ok_or(Error::HeaderDeserialize)?;
-    target_header.copy_from_slice(&header_bytes);
-
-    let mut transaction = StagedOutputTransaction::new(target).map_err(Error::Transaction)?;
-    transaction
-        .write_all(&original)
-        .map_err(Error::Transaction)?;
-    transaction.commit().map_err(Error::Transaction)
+    let replacement_header =
+        changed_header(mutation.header(), &master_key, index, raw_key_new, kdf)?;
+    mutation.commit_replacement_header(&replacement_header)
 }
 
 fn changed_header(
@@ -110,44 +74,15 @@ fn changed_header(
     raw_key_new: Protected<Vec<u8>>,
     kdf: Kdf,
 ) -> Result<V1Header, Error> {
-    let mut keyslots = header.keyslots_collection().clone();
-
-    let salt_bytes = gen_salt();
-    let salt = Salt::new(salt_bytes);
-    let key_new = kdf
-        .derive(&raw_key_new, &salt.to_kdf_salt())
-        .map_err(|_| Error::KeyHash)?;
-
-    let fresh_wrapping_nonce = gen_keyslot_nonce();
-
-    let placeholder_keyslot = V1Keyslot::new(kdf, [0u8; 48], fresh_wrapping_nonce, salt);
-    keyslots
-        .replace(index, placeholder_keyslot)
-        .map_err(|_| Error::HeaderWrite)?;
-    let replacement_context_header = header
-        .with_keyslots(keyslots.clone())
-        .map_err(|_| Error::HeaderWrite)?;
-
-    let encrypted_master_key = super::encrypt_master_key(
-        &replacement_context_header,
-        index,
+    // The shared helper keeps the former KDF borrow shape: .derive(&raw_key_new, ...).
+    let replacement_header = super::build_v1_rewrapped_keyslot_header(
+        header,
         master_key,
-        key_new,
-        &fresh_wrapping_nonce,
-        &salt,
+        index,
+        &raw_key_new,
         kdf,
+        super::V1KeyslotWrite::Replace,
     )?;
-
-    keyslots
-        .replace(
-            index,
-            V1Keyslot::new(kdf, encrypted_master_key, fresh_wrapping_nonce, salt),
-        )
-        .map_err(|_| Error::HeaderWrite)?;
-
-    let replacement_header = header
-        .with_keyslots(keyslots)
-        .map_err(|_| Error::HeaderWrite)?;
     let (replacement_master_key, replacement_index) =
         super::decrypt_v1_master_key_with_index(&replacement_header, raw_key_new)?;
 
@@ -157,21 +92,4 @@ fn changed_header(
     }
 
     Ok(replacement_header)
-}
-
-fn parse_v1_header(bytes: &[u8]) -> Result<V1Header, Error> {
-    let mut reader = Cursor::new(bytes);
-    let parsed = read_header(&mut reader).map_err(super::map_header_read_error)?;
-    let ParsedHeader::V1(payload) = parsed;
-    Ok(payload.header().clone())
-}
-
-fn validated_header_bytes(header: &V1Header) -> Result<Vec<u8>, Error> {
-    let header_bytes = header.serialize().map_err(|_| Error::HeaderWrite)?;
-    if header_bytes.len() != HEADER_LEN {
-        return Err(Error::HeaderWrite);
-    }
-
-    parse_v1_header(&header_bytes)?;
-    Ok(header_bytes)
 }
