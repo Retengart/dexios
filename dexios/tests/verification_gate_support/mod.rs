@@ -31,6 +31,9 @@
     reason = "shared gate helpers are used selectively across gate modules"
 )]
 
+use std::borrow::Cow;
+use std::process::Command;
+
 pub(crate) const SAFETY_CONTRACT: &str = include_str!("../../../book/src/Safety-Contract.md");
 pub(crate) const CONTRIBUTING: &str = include_str!("../../../CONTRIBUTING.md");
 pub(crate) const README: &str = include_str!("../../../README.md");
@@ -273,6 +276,7 @@ pub(crate) const EXPLORATORY_TOOL_TOKENS: &[&str] =
     &["cargo fuzz", "miri", "kani", "tarpaulin", "grcov", "stress"];
 
 pub(crate) fn assert_contains(source_name: &str, source: &str, needle: &str) {
+    let source = normalized_line_endings(source);
     assert!(
         source.contains(needle),
         "{source_name} must contain {needle:?}"
@@ -280,10 +284,31 @@ pub(crate) fn assert_contains(source_name: &str, source: &str, needle: &str) {
 }
 
 pub(crate) fn assert_not_contains(source_name: &str, source: &str, needle: &str) {
+    let source = normalized_line_endings(source);
     assert!(
         !source.contains(needle),
         "{source_name} must not contain {needle:?}"
     );
+}
+
+pub(crate) fn normalized_line_endings(source: &str) -> Cow<'_, str> {
+    if source.contains('\r') {
+        Cow::Owned(source.replace("\r\n", "\n").replace('\r', "\n"))
+    } else {
+        Cow::Borrowed(source)
+    }
+}
+
+pub(crate) fn bash_command() -> Command {
+    #[cfg(windows)]
+    {
+        let git_bash = r"C:\Program Files\Git\bin\bash.exe";
+        if std::path::Path::new(git_bash).exists() {
+            return Command::new(git_bash);
+        }
+    }
+
+    Command::new("bash")
 }
 
 pub(crate) fn assert_action_pin(source_name: &str, source: &str, action: &str, sha: &str) {
@@ -803,6 +828,7 @@ pub(crate) fn assert_corpus_markdown_text_contains(
 }
 
 pub(crate) fn assert_occurs_before(source_name: &str, source: &str, earlier: &str, later: &str) {
+    let source = normalized_line_endings(source);
     let earlier_index = source
         .find(earlier)
         .unwrap_or_else(|| panic!("{source_name} must contain {earlier:?}"));

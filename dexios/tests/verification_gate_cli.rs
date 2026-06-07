@@ -26,7 +26,7 @@
 )]
 mod verification_gate_support;
 
-use std::{path::Path, process::Command};
+use std::path::Path;
 
 use verification_gate_support::*;
 
@@ -99,7 +99,8 @@ fn removed_surface_helper_contract_violations(source: &str) -> Vec<String> {
     violations
 }
 
-fn removed_surface_helper_body(source: &str) -> &str {
+fn removed_surface_helper_body(source: &str) -> String {
+    let source = normalized_line_endings(source);
     source
         .split_once("expect_rejected() {")
         .expect("removed-surface rejection helper is present")
@@ -107,6 +108,7 @@ fn removed_surface_helper_body(source: &str) -> &str {
         .split_once("\n}\n")
         .expect("removed-surface rejection helper has a closing brace")
         .0
+        .to_owned()
 }
 
 fn binary_selection_contract_violations(source: &str) -> Vec<String> {
@@ -154,6 +156,7 @@ fn binary_selection_contract_violations(source: &str) -> Vec<String> {
 }
 
 fn source_occurs_before(source: &str, earlier: &str, later: &str) -> bool {
+    let source = normalized_line_endings(source);
     let Some(earlier_index) = source.find(earlier) else {
         return false;
     };
@@ -184,10 +187,10 @@ fn removed_surface_probe_rejects_generic_runtime_error_fallbacks() {
         "removed-surface helper contract must stay hardened: {violations:?}"
     );
 
-    assert_not_contains("scripts/verify_cli_surface.sh", helper_body, "error:");
+    assert_not_contains("scripts/verify_cli_surface.sh", &helper_body, "error:");
     assert_not_contains(
         "scripts/verify_cli_surface.sh",
-        helper_body,
+        &helper_body,
         "unexpected argument|unrecognized subcommand|error:",
     );
     assert_all_contains(
@@ -208,7 +211,7 @@ fn removed_surface_probe_keeps_black_box_failure_diagnostics() {
 
     assert_all_contains(
         "scripts/verify_cli_surface.sh::expect_rejected",
-        helper_body,
+        &helper_body,
         &[
             "stdout=\"$ROOT/rejected-$safe_name.stdout\"",
             "stderr=\"$ROOT/rejected-$safe_name.stderr\"",
@@ -220,7 +223,7 @@ fn removed_surface_probe_keeps_black_box_failure_diagnostics() {
     );
     assert_occurs_before(
         "scripts/verify_cli_surface.sh::expect_rejected",
-        helper_body,
+        &helper_body,
         "echo \"Captured stderr: $stderr\" >&2",
         "cat \"$stderr\" >&2",
     );
@@ -233,7 +236,7 @@ fn removed_surface_probe_keeps_black_box_failure_diagnostics() {
     ] {
         assert_not_contains(
             "scripts/verify_cli_surface.sh::expect_rejected",
-            helper_body,
+            &helper_body,
             parser_fixture_detail,
         );
     }
@@ -357,7 +360,7 @@ fn cli_surface_harness_preflight_names_normalized_missing_binary_before_smoke_ca
     let selected_binary = "./Cargo.toml.missing-dexios";
     let expected_binary = repo_root.join("Cargo.toml.missing-dexios");
 
-    let output = Command::new("bash")
+    let output = bash_command()
         .arg("scripts/verify_cli_surface.sh")
         .arg(selected_binary)
         .current_dir(repo_root)

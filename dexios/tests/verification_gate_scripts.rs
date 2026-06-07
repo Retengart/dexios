@@ -26,8 +26,6 @@
 )]
 mod verification_gate_support;
 
-use std::process::Command;
-
 use verification_gate_support::*;
 
 #[test]
@@ -263,6 +261,7 @@ fn phase_gate_tool_version_equivalence_is_source_gated() {
 }
 
 fn shell_function(source_name: &str, source: &str, function_name: &str) -> String {
+    let source = normalized_line_endings(source);
     let start = source
         .find(&format!("{function_name}() {{"))
         .unwrap_or_else(|| panic!("{source_name} must define shell function {function_name}"));
@@ -279,7 +278,7 @@ fn observed_tool_version_token_from_source(
 ) -> String {
     let function = shell_function(source_name, source, "observed_tool_version_token");
     let script = format!("{function}\nobserved_tool_version_token \"$1\"\n");
-    let output = Command::new("bash")
+    let output = bash_command()
         .arg("-c")
         .arg(script)
         .arg("observed_tool_version_token")
