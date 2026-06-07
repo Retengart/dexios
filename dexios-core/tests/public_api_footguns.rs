@@ -39,6 +39,10 @@ const HEADER_COMMON_RS: &str = include_str!("../src/header/common.rs");
 const V1_RS: &str = include_str!("../src/header/v1.rs");
 const CARGO_TOML: &str = include_str!("../Cargo.toml");
 
+fn normalized_line_endings(source: &str) -> String {
+    source.replace("\r\n", "\n")
+}
+
 fn keyslot_nonce(bytes: [u8; 24]) -> KeyslotNonce {
     KeyslotNonce::try_from_slice(&bytes).expect("valid keyslot nonce")
 }
@@ -47,16 +51,17 @@ fn payload_nonce(bytes: [u8; 20]) -> PayloadNonce {
     PayloadNonce::try_from_slice(&bytes).expect("valid payload nonce")
 }
 
-fn master_key_same_secret_as_source() -> &'static str {
-    let start = PRIMITIVES_RS
+fn master_key_same_secret_as_source() -> String {
+    let primitives_rs = normalized_line_endings(PRIMITIVES_RS);
+    let start = primitives_rs
         .find("pub fn same_secret_as")
         .expect("MasterKey::same_secret_as source must remain inspectable");
-    let tail = &PRIMITIVES_RS[start..];
+    let tail = &primitives_rs[start..];
     let end = tail
         .find("\n}\n\nimpl From<Protected")
         .expect("MasterKey impl boundary must remain inspectable");
 
-    &tail[..end]
+    tail[..end].to_owned()
 }
 
 fn sample_keyslot(seed: u8) -> V1Keyslot {

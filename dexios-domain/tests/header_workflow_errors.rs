@@ -324,8 +324,9 @@ fn header_and_key_unsupported_or_auth_failures_stay_source_free() {
 #[test]
 fn header_details_rejects_input_replaced_by_symlink_after_identity_capture() {
     let test_dir = tempfile::tempdir().unwrap();
-    let original = encrypted_fixture(test_dir.path(), "original", b"original plaintext");
-    let replacement = encrypted_fixture(test_dir.path(), "replacement", b"replacement plaintext");
+    let test_dir_path = fs::canonicalize(test_dir.path()).unwrap();
+    let original = encrypted_fixture(&test_dir_path, "original", b"original plaintext");
+    let replacement = encrypted_fixture(&test_dir_path, "replacement", b"replacement plaintext");
 
     let intent = header::details::DetailsIntent::new(&original)
         .expect("build details intent before replacing input");
