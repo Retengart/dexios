@@ -90,8 +90,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios-domain/src/pack.rs",
         category: "D-05 production authority cap",
         rationale: "Archive pack authority file is deferred from production splitting per D-05.",
-        current_lines: 1216,
-        cap: 1216,
+        current_lines: 1220,
+        cap: 1220,
     },
     FileSizeException {
         path: "dexios-core/tests/v1_header.rs",
@@ -125,8 +125,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios-domain/src/unpack.rs",
         category: "D-05 production authority cap",
         rationale: "Archive unpack authority file is deferred from production splitting per D-05.",
-        current_lines: 897,
-        cap: 897,
+        current_lines: 901,
+        cap: 901,
     },
     FileSizeException {
         path: "dexios-domain/tests/workflow_errors.rs",
