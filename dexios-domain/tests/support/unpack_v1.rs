@@ -36,18 +36,18 @@ pub(super) use std::fs;
 pub(super) use std::io::Cursor;
 pub(super) use std::path::{Path, PathBuf};
 pub(super) use std::sync::{
-    atomic::{AtomicUsize, Ordering},
     Arc,
+    atomic::{AtomicUsize, Ordering},
 };
 
 pub(super) use core::cipher::wrap_v1_master_key;
-pub(super) use core::header::common::{KeyslotNonce, PayloadNonce, Salt as HeaderSalt, HEADER_LEN};
+pub(super) use core::header::common::{HEADER_LEN, KeyslotNonce, PayloadNonce, Salt as HeaderSalt};
 pub(super) use core::header::v1::{V1Header, V1Keyslot, V1Keyslots};
 pub(super) use core::kdf::Kdf;
 pub(super) use core::payload::{
     ArchiveBodyFrame, ArchiveManifest, ManifestEntry, ManifestFirstPayload, PayloadError,
 };
-pub(super) use core::primitives::{MasterKey, WrappingKey, BLOCK_SIZE};
+pub(super) use core::primitives::{BLOCK_SIZE, MasterKey, WrappingKey};
 pub(super) use core::protected::Protected;
 pub(super) use core::stream::V1PayloadStream;
 pub(super) use dexios_domain::decrypt;

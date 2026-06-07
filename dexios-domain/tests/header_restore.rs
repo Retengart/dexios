@@ -37,7 +37,6 @@ use std::fs;
 use std::path::Path;
 use tempdir::DomainTestDir as TestDir;
 
-
 fn keyslot_nonce(bytes: [u8; 24]) -> KeyslotNonce {
     KeyslotNonce::try_from_slice(&bytes).expect("valid keyslot nonce")
 }
