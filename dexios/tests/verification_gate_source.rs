@@ -925,6 +925,18 @@ fn phase18_header_and_key_mutation_guards_are_source_gated() {
     ] {
         assert_contains("dexios-domain/src/key.rs", DEXIOS_DOMAIN_KEY_RS, required);
     }
+    assert!(
+        DEXIOS_DOMAIN_KEY_RS.contains("pub(in crate::key) struct V1MutationIntent"),
+        "key mutation workflows must share V1MutationIntent"
+    );
+    assert!(
+        DEXIOS_DOMAIN_KEY_RS.contains("pub(in crate::key) fn validated_v1_header_bytes"),
+        "key mutation workflows must share V1 header serialization validation"
+    );
+    assert!(
+        DEXIOS_DOMAIN_KEY_RS.contains("pub(in crate::key) fn build_v1_rewrapped_keyslot_header"),
+        "add/change must share the keyslot rewrap helper"
+    );
 
     for (source_name, source) in [
         ("dexios-domain/src/key/add.rs", DEXIOS_DOMAIN_KEY_ADD_RS),
@@ -940,6 +952,30 @@ fn phase18_header_and_key_mutation_guards_are_source_gated() {
         assert_contains(source_name, source, "super::read_mutation_target(target)?");
         assert_not_contains(source_name, source, "fs::read(target.target_path())");
     }
+    assert!(
+        DEXIOS_DOMAIN_KEY_ADD_RS.contains("super::V1MutationIntent::new(target_path)?"),
+        "key add must build the shared mutation intent"
+    );
+    assert!(
+        DEXIOS_DOMAIN_KEY_CHANGE_RS.contains("super::V1MutationIntent::new(target_path)?"),
+        "key change must build the shared mutation intent"
+    );
+    assert!(
+        DEXIOS_DOMAIN_KEY_DELETE_RS.contains("super::V1MutationIntent::new(target_path)?"),
+        "key delete must build the shared mutation intent"
+    );
+    assert!(
+        !DEXIOS_DOMAIN_KEY_ADD_RS.contains("fn parse_v1_header"),
+        "key add must not keep a local V1 header parser"
+    );
+    assert!(
+        !DEXIOS_DOMAIN_KEY_CHANGE_RS.contains("fn parse_v1_header"),
+        "key change must not keep a local V1 header parser"
+    );
+    assert!(
+        !DEXIOS_DOMAIN_KEY_DELETE_RS.contains("fn parse_v1_header"),
+        "key delete must not keep a local V1 header parser"
+    );
 
     for required in [
         "mutation_snapshot_rejects_same_inode_content_rewrite",

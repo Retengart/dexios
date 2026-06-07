@@ -138,6 +138,14 @@ fn domain_encrypt_add_change_sources_keep_borrowed_secret_contract() {
         "`key.rs` should borrow raw_key_old while trying keyslots"
     );
     assert!(
+        DOMAIN_KEY_SOURCE.contains("raw_key_new: &Protected<Vec<u8>>"),
+        "shared keyslot rewrap helper must borrow the new secret"
+    );
+    assert!(
+        !DOMAIN_KEY_SOURCE.contains("raw_key_new.clone()"),
+        "shared keyslot rewrap helper must not clone raw key material"
+    );
+    assert!(
         DOMAIN_KEY_ADD_SOURCE.contains(".derive(&new_key_secret,"),
         "`key/add.rs` should borrow the new key secret for replacement keyslot derivation"
     );
