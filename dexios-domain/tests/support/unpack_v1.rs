@@ -36,18 +36,18 @@ pub(super) use std::fs;
 pub(super) use std::io::Cursor;
 pub(super) use std::path::{Path, PathBuf};
 pub(super) use std::sync::{
-    Arc,
     atomic::{AtomicUsize, Ordering},
+    Arc,
 };
 
 pub(super) use core::cipher::wrap_v1_master_key;
-pub(super) use core::header::common::{HEADER_LEN, KeyslotNonce, PayloadNonce, Salt as HeaderSalt};
+pub(super) use core::header::common::{KeyslotNonce, PayloadNonce, Salt as HeaderSalt, HEADER_LEN};
 pub(super) use core::header::v1::{V1Header, V1Keyslot, V1Keyslots};
 pub(super) use core::kdf::Kdf;
 pub(super) use core::payload::{
     ArchiveBodyFrame, ArchiveManifest, ManifestEntry, ManifestFirstPayload, PayloadError,
 };
-pub(super) use core::primitives::{BLOCK_SIZE, MasterKey, WrappingKey};
+pub(super) use core::primitives::{MasterKey, WrappingKey, BLOCK_SIZE};
 pub(super) use core::protected::Protected;
 pub(super) use core::stream::V1PayloadStream;
 pub(super) use dexios_domain::decrypt;
@@ -113,32 +113,70 @@ pub(super) fn write_malformed_manifest_archive_payload(path: &Path, payload: Vec
     fs::write(path, bytes).unwrap();
 }
 
+pub(super) fn unpack_manifest_archive_with_raw_path(
+    path: &[u8],
+) -> Result<dexios_domain::storage::transaction::CommitReceipt, unpack::Error> {
+    let test_dir = TestDir::new("unpack-raw-manifest-path");
+    let encrypted_archive = test_dir.path().join("archive.enc");
+    let output_dir = test_dir.path().join("out");
+
+    write_malformed_manifest_archive_payload(
+        &encrypted_archive,
+        raw_manifest_payload_with_raw_path(path, b"raw path"),
+    );
+
+    unpack_archive(&encrypted_archive, &output_dir, None)
+}
+
 pub(super) fn raw_manifest_payload_with_file(path: &str, body: &[u8]) -> Vec<u8> {
     let mut payload = raw_manifest_payload(&[(path, body.len() as u64)]);
     append_raw_body_frame(&mut payload, 0, body.len() as u64, body);
     payload
 }
 
+pub(super) fn raw_manifest_payload_with_raw_path(path: &[u8], body: &[u8]) -> Vec<u8> {
+    let mut payload = raw_manifest_payload_with_raw_entries(&[(path, body.len() as u64)]);
+    append_raw_body_frame(&mut payload, 0, body.len() as u64, body);
+    payload
+}
+
 pub(super) fn raw_manifest_payload(entries: &[(&str, u64)]) -> Vec<u8> {
+    let mut payload = raw_manifest_payload_prefix(entries.len());
+    for (path, body_len) in entries {
+        append_raw_manifest_entry(&mut payload, path.as_bytes(), *body_len);
+    }
+    payload
+}
+
+fn raw_manifest_payload_with_raw_entries(entries: &[(&[u8], u64)]) -> Vec<u8> {
+    let mut payload = raw_manifest_payload_prefix(entries.len());
+    for (path, body_len) in entries {
+        append_raw_manifest_entry(&mut payload, path, *body_len);
+    }
+    payload
+}
+
+fn raw_manifest_payload_prefix(entry_count: usize) -> Vec<u8> {
     let mut payload = Vec::new();
     payload.extend_from_slice(b"DXAR");
     payload.extend_from_slice(&1u16.to_le_bytes());
     payload.extend_from_slice(
-        &u32::try_from(entries.len())
+        &u32::try_from(entry_count)
             .expect("test entry count fits in u32")
             .to_le_bytes(),
     );
-    for (path, body_len) in entries {
-        payload.push(0x01);
-        payload.extend_from_slice(
-            &u16::try_from(path.len())
-                .expect("test path length fits in u16")
-                .to_le_bytes(),
-        );
-        payload.extend_from_slice(&body_len.to_le_bytes());
-        payload.extend_from_slice(path.as_bytes());
-    }
     payload
+}
+
+fn append_raw_manifest_entry(payload: &mut Vec<u8>, path: &[u8], body_len: u64) {
+    payload.push(0x01);
+    payload.extend_from_slice(
+        &u16::try_from(path.len())
+            .expect("test path length fits in u16")
+            .to_le_bytes(),
+    );
+    payload.extend_from_slice(&body_len.to_le_bytes());
+    payload.extend_from_slice(path);
 }
 
 pub(super) fn append_raw_body_frame(

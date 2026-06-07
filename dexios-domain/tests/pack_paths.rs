@@ -33,7 +33,7 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use core::header::{ParsedHeader, read_header};
+use core::header::{read_header, ParsedHeader};
 use core::kdf::Kdf;
 use core::payload::{ManifestEntryKind, ManifestFirstPayload, PayloadFramingProfile, PayloadKind};
 use core::protected::Protected;
@@ -274,6 +274,33 @@ fn pack_rejects_source_root_symlink() {
         source_link.display()
     );
     assert!(!output_path.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn pack_rejects_filename_containing_windows_separator_byte() {
+    let (_root_dir, root) = canonical_tempdir();
+    let source_dir = root.join("source");
+    fs::create_dir_all(&source_dir).unwrap();
+    fs::write(source_dir.join("dir\\file.txt"), b"ambiguous").unwrap();
+    let output_path = root.join("archive.enc");
+
+    let result = PackIntent::new(
+        vec![&source_dir],
+        &output_path,
+        OverwritePolicy::CreateNew,
+        None,
+        Protected::new(PASSWORD.to_vec()),
+        Kdf::Argon2id,
+        ArchivePolicy::default(),
+        true,
+        None,
+    );
+
+    assert!(
+        result.is_err(),
+        "pack must reject archive names containing a Windows separator byte"
+    );
 }
 
 #[cfg(unix)]

@@ -125,6 +125,25 @@ fn unpack_rejects_archive_path_longer_than_structural_limit() {
     );
     assert!(!output_dir.exists());
 }
+
+#[test]
+fn unpack_rejects_manifest_path_with_backslash_separator() {
+    let result = unpack_manifest_archive_with_raw_path(b"dir\\file.txt");
+    assert!(result.is_err());
+}
+
+#[test]
+fn unpack_rejects_non_utf8_manifest_path() {
+    let result = unpack_manifest_archive_with_raw_path(b"dir/\xFF.txt");
+    assert!(result.is_err());
+}
+
+#[test]
+fn unpack_rejects_manifest_path_with_nul_byte() {
+    let result = unpack_manifest_archive_with_raw_path(b"dir/\0file.txt");
+    assert!(result.is_err());
+}
+
 #[test]
 fn unpack_rejects_manifest_payload_with_trailing_bytes() {
     let test_dir = TestDir::new("unpack-trailing-payload");
