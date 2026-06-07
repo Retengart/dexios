@@ -57,9 +57,14 @@ pub(super) const DOMAIN_KEY_DELETE_SOURCE: &str = include_str!("../../src/key/de
 pub(super) const CANONICAL_KEYSLOT_KDF_TAG_OFFSET: usize = 2;
 pub(super) const HISTORICAL_ARGON2ID_KEY_TAG: [u8; 2] = [0xDF, 0x02];
 
+fn canonical_tempdir() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = fs::canonicalize(dir.path()).expect("canonical temp dir");
+    (dir, path)
+}
+
 pub(super) fn encrypted_v1_fixture() -> RefCell<Cursor<Vec<u8>>> {
-    let dir = tempfile::tempdir().unwrap();
-    let dir_path = fs::canonicalize(dir.path()).unwrap();
+    let (_dir, dir_path) = canonical_tempdir();
     let input_path = dir_path.join("plain.txt");
     let output_path = dir_path.join("plain.enc");
     fs::write(&input_path, b"Hello world").unwrap();
@@ -79,8 +84,7 @@ pub(super) fn encrypted_v1_fixture() -> RefCell<Cursor<Vec<u8>>> {
 }
 
 pub(super) fn encrypted_v1_file(name: &str) -> (tempfile::TempDir, PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
-    let dir_path = fs::canonicalize(dir.path()).unwrap();
+    let (dir, dir_path) = canonical_tempdir();
     let input_path = dir_path.join(format!("{name}.txt"));
     let output_path = dir_path.join(format!("{name}.enc"));
     fs::write(&input_path, b"Hello world").unwrap();
@@ -331,9 +335,9 @@ pub(super) fn decrypt_fixture(
     raw_key: &[u8],
 ) -> Result<Vec<u8>, decrypt::Error> {
     encrypted.borrow_mut().rewind().expect("rewind encrypted");
-    let temp_dir = tempfile::tempdir().expect("temp dir");
-    let encrypted_path = temp_dir.path().join("plain.enc");
-    let output_path = temp_dir.path().join("plain.out");
+    let (_temp_dir, temp_dir_path) = canonical_tempdir();
+    let encrypted_path = temp_dir_path.join("plain.enc");
+    let output_path = temp_dir_path.join("plain.out");
     fs::write(&encrypted_path, encrypted.borrow().get_ref()).expect("write encrypted fixture");
 
     let intent = decrypt::DecryptIntent::new(
@@ -350,8 +354,8 @@ pub(super) fn decrypt_fixture(
 }
 
 pub(super) fn decrypt_file(path: &Path, raw_key: &[u8]) -> Result<Vec<u8>, decrypt::Error> {
-    let temp_dir = tempfile::tempdir().expect("temp dir");
-    let output_path = temp_dir.path().join("plain.out");
+    let (_temp_dir, temp_dir_path) = canonical_tempdir();
+    let output_path = temp_dir_path.join("plain.out");
 
     let intent = decrypt::DecryptIntent::new(
         path,
@@ -371,8 +375,8 @@ pub(super) fn verify_fixture(
     raw_key: &[u8],
 ) -> Result<(), key::Error> {
     encrypted.borrow_mut().rewind().expect("rewind encrypted");
-    let temp_dir = tempfile::tempdir().expect("temp dir");
-    let encrypted_path = temp_dir.path().join("plain.enc");
+    let (_temp_dir, temp_dir_path) = canonical_tempdir();
+    let encrypted_path = temp_dir_path.join("plain.enc");
     fs::write(&encrypted_path, encrypted.borrow().get_ref()).expect("write encrypted fixture");
 
     let intent = key::verify::VerifyIntent::new(&encrypted_path)?;

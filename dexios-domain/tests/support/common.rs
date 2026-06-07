@@ -106,7 +106,7 @@ pub(super) fn add_bar_foo_folder_with_hidden(stor: &TestFileStorage) -> Result<(
 pub(super) fn sorted_file_names(file_names: &[PathBuf]) -> Vec<String> {
     let mut keys = file_names
         .iter()
-        .map(|k| k.to_string_lossy().into_owned())
+        .map(|k| k.to_string_lossy().replace(std::path::MAIN_SEPARATOR, "/"))
         .collect::<Vec<_>>();
     keys.sort_unstable();
     keys
