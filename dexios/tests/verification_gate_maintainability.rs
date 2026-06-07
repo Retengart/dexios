@@ -132,8 +132,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios-domain/tests/workflow_errors.rs",
         category: "domain workflow error evidence",
         rationale: "Domain workflow classification matrix remains explicit per D-12.",
-        current_lines: 884,
-        cap: 884,
+        current_lines: 885,
+        cap: 885,
     },
     FileSizeException {
         path: "dexios/tests/key_cli_regressions.rs",

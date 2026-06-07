@@ -33,6 +33,7 @@
 )]
 
 #[path = "tempdir.rs"]
+#[expect(dead_code, reason = "shared tempdir test helper")]
 mod tempdir;
 
 pub(super) use core::header::common::{

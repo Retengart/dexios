@@ -30,7 +30,7 @@ use core::kdf::Kdf;
 use dexios_domain::header::{self, restore, strip};
 use dexios_domain::storage::identity::{OverwritePolicy, PathIdentityGraph, PathRole};
 use dexios_domain::storage::mutation::{MutationFreshnessError, MutationSnapshot};
-#[allow(dead_code)]
+#[expect(dead_code, reason = "shared tempdir test helper")]
 #[path = "support/tempdir.rs"]
 mod tempdir;
 use std::fs;

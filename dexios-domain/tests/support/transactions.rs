@@ -50,7 +50,7 @@ pub(super) use dexios_domain::storage::transaction::{
     CleanupAuthorizedReceipt, CommittedArtifact, DetachedPublicationFailure,
     LinkedOutputTransaction, PartialCommitReceipt, StagedOutputTransaction, TransactionError,
 };
-#[allow(dead_code)]
+#[expect(dead_code, reason = "shared tempdir test helper")]
 #[path = "tempdir.rs"]
 mod tempdir;
 pub(super) use tempdir::DomainTestDir as TestDir;

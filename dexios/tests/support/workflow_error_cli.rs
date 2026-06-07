@@ -52,6 +52,7 @@ use domain::storage::identity::{OverwritePolicy, PathIdentityGraph, PathRole};
 use domain::storage::transaction::{LinkedOutputTransaction, TransactionError};
 
 #[path = "tempdir.rs"]
+#[expect(dead_code, reason = "shared tempdir test helper")]
 mod tempdir;
 
 pub(crate) use tempdir::TestDir;

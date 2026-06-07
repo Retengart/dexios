@@ -42,7 +42,7 @@ use dexios_domain::storage::identity::{OverwritePolicy, PathIdentityGraph, PathR
 use dexios_domain::storage::test_support::{FailureError, FailureHooks, FailurePoint};
 #[cfg(feature = "test-support")]
 use dexios_domain::storage::transaction::{CommitReceipt, StagedOutputTransaction};
-#[allow(dead_code)]
+#[expect(dead_code, reason = "shared tempdir test helper")]
 #[path = "support/tempdir.rs"]
 mod tempdir;
 use tempdir::DomainTestDir as TestDir;

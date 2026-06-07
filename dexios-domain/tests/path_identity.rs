@@ -35,7 +35,7 @@ use dexios_domain::storage::FileStorage;
 use dexios_domain::storage::identity::{
     IdentityError, OverwritePolicy, PathIdentityGraph, PathRole,
 };
-#[allow(dead_code)]
+#[expect(dead_code, reason = "shared tempdir test helper")]
 #[path = "support/tempdir.rs"]
 mod tempdir;
 use tempdir::DomainTestDir as TestDir;

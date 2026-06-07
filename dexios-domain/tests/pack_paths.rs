@@ -25,6 +25,7 @@
     )
 )]
 #[path = "support/tempdir.rs"]
+#[expect(dead_code, reason = "shared tempdir test helper")]
 mod tempdir;
 
 #[cfg(unix)]

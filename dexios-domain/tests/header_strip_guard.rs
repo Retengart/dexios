@@ -33,7 +33,7 @@ use core::header::common::{HEADER_LEN, KeyslotNonce, PayloadNonce, Salt};
 use core::header::v1::{V1Header, V1Keyslot, V1Keyslots};
 use core::kdf::Kdf;
 use dexios_domain::header::{self, strip};
-#[allow(dead_code)]
+#[expect(dead_code, reason = "shared tempdir test helper")]
 #[path = "support/tempdir.rs"]
 mod tempdir;
 use std::fs;

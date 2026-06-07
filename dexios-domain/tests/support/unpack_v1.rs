@@ -57,7 +57,7 @@ pub(super) use dexios_domain::storage::test_support::{FailureHooks, FailurePoint
 #[cfg(feature = "test-support")]
 pub(super) use dexios_domain::storage::transaction::TransactionError;
 pub(super) use dexios_domain::unpack;
-#[allow(dead_code)]
+#[expect(dead_code, reason = "shared tempdir test helper")]
 #[path = "tempdir.rs"]
 mod tempdir;
 pub(super) use tempdir::DomainTestDir as TestDir;

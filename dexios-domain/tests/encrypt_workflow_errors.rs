@@ -34,7 +34,7 @@ use dexios_domain::storage::identity::OverwritePolicy;
 use dexios_domain::storage::transaction::TransactionError;
 use dexios_domain::workflow_error::WorkflowErrorClass;
 use dexios_domain::{decrypt, encrypt};
-#[allow(dead_code)]
+#[expect(dead_code, reason = "shared tempdir test helper")]
 #[path = "support/tempdir.rs"]
 mod tempdir;
 use tempdir::DomainTestDir as TestDir;

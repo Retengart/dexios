@@ -24,7 +24,7 @@
         reason = "integration tests assert exact behavior and may panic on failure"
     )
 )]
-#[allow(dead_code)]
+#[expect(dead_code, reason = "shared tempdir test helper")]
 #[path = "support/tempdir.rs"]
 mod tempdir;
 

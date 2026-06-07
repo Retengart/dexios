@@ -52,7 +52,7 @@ pub(crate) fn confirm_overwrites<'a>(
     targets: impl IntoIterator<Item = &'a PlannedOverwrite>,
     force: ForceMode,
 ) -> Result<bool> {
-    confirm_overwrites_with(targets, force, |path, force| overwrite_check(path, force))
+    confirm_overwrites_with(targets, force, overwrite_check)
 }
 
 pub(crate) fn confirm_overwrites_with<'a, F>(
