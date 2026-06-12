@@ -41,7 +41,7 @@ impl VerifyIntent {
         let reader = entry.try_reader().map_err(map_storage_error)?;
         let parsed = {
             let mut stream = reader.borrow_mut();
-            read_header(&mut *stream).map_err(super::map_header_read_error)?
+            read_header(&mut *stream)?
         };
         let ParsedHeader::V1(payload) = parsed;
         let header = payload.header().clone();

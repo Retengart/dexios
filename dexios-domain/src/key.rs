@@ -245,14 +245,16 @@ impl std::error::Error for Error {
     }
 }
 
-pub(crate) fn map_header_read_error(error: HeaderReadError) -> Error {
-    match error {
-        HeaderReadError::Io(error) => Error::ReadIoWithSource(error),
-        HeaderReadError::InvalidMagic(magic) => Error::InvalidMagic(magic),
-        HeaderReadError::UnsupportedFormat(prefix) => Error::UnsupportedFormat(prefix),
-        HeaderReadError::UnsupportedVersion(version) => Error::UnsupportedVersion(version),
-        HeaderReadError::RetiredV1Layout => Error::RetiredV1Layout,
-        error => Error::MalformedV1Header(error),
+impl From<HeaderReadError> for Error {
+    fn from(error: HeaderReadError) -> Self {
+        match error {
+            HeaderReadError::Io(error) => Self::ReadIoWithSource(error),
+            HeaderReadError::InvalidMagic(magic) => Self::InvalidMagic(magic),
+            HeaderReadError::UnsupportedFormat(prefix) => Self::UnsupportedFormat(prefix),
+            HeaderReadError::UnsupportedVersion(version) => Self::UnsupportedVersion(version),
+            HeaderReadError::RetiredV1Layout => Self::RetiredV1Layout,
+            error => Self::MalformedV1Header(error),
+        }
     }
 }
 
@@ -319,7 +321,7 @@ impl V1MutationIntent {
 pub(in crate::key) fn read_v1_header_from_reader(
     reader: &mut impl std::io::Read,
 ) -> Result<V1Header, Error> {
-    let parsed = read_header(reader).map_err(map_header_read_error)?;
+    let parsed = read_header(reader)?;
     let ParsedHeader::V1(payload) = parsed;
     Ok(payload.header().clone())
 }
