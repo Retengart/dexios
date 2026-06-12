@@ -63,7 +63,10 @@ pub(crate) fn get_optional_param<'a>(
     }
 }
 
-pub(crate) fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
+// `delete_input` is taken as a parameter instead of being read from the matches:
+// not every subcommand routed through here defines the `delete-input` flag
+// (pack governs source removal via `delete-source` on `PackParams` instead).
+fn crypto_params(sub_matches: &ArgMatches, delete_input: DeleteInput) -> Result<CryptoParams> {
     let key = Key::init(sub_matches, &KeyParams::default(), "keyfile")?;
 
     let hash_mode = if sub_matches.get_flag("hash") {
@@ -73,12 +76,6 @@ pub(crate) fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams
     };
 
     let force = forcemode(sub_matches);
-
-    let delete_input = if sub_matches.get_flag("delete-input") {
-        DeleteInput::Delete
-    } else {
-        DeleteInput::Retain
-    };
 
     let header_location = match get_optional_param("header", sub_matches)? {
         Some(header) => HeaderLocation::Detached(header.to_owned()),
@@ -97,36 +94,22 @@ pub(crate) fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams
     })
 }
 
+pub(crate) fn parameter_handler(sub_matches: &ArgMatches) -> Result<CryptoParams> {
+    let delete_input = if sub_matches.get_flag("delete-input") {
+        DeleteInput::Delete
+    } else {
+        DeleteInput::Retain
+    };
+
+    crypto_params(sub_matches, delete_input)
+}
+
 pub(crate) fn kdf(_sub_matches: &ArgMatches) -> Kdf {
     Kdf::Argon2id
 }
 
 pub(crate) fn pack_params(sub_matches: &ArgMatches) -> Result<(CryptoParams, PackParams)> {
-    let key = Key::init(sub_matches, &KeyParams::default(), "keyfile")?;
-
-    let hash_mode = if sub_matches.get_flag("hash") {
-        HashMode::CalculateHash
-    } else {
-        HashMode::NoHash
-    };
-
-    let force = forcemode(sub_matches);
-
-    let header_location = match get_optional_param("header", sub_matches)? {
-        Some(header) => HeaderLocation::Detached(header.to_owned()),
-        None => HeaderLocation::Embedded,
-    };
-
-    let kdf = kdf(sub_matches);
-
-    let crypto_params = CryptoParams {
-        hash_mode,
-        force,
-        delete_input: DeleteInput::Retain,
-        key,
-        header_location,
-        kdf,
-    };
+    let crypto_params = crypto_params(sub_matches, DeleteInput::Retain)?;
 
     let print_mode = if sub_matches.get_flag("verbose") {
         PrintMode::Verbose
@@ -355,6 +338,29 @@ mod tests {
         let params = parameter_handler(sub_matches).expect("params");
 
         assert_eq!(params.kdf, Kdf::Argon2id);
+    }
+
+    #[test]
+    fn pack_params_always_retain_the_encrypted_input() {
+        // pack does not define the `delete-input` flag: removal of the packed
+        // source tree is governed exclusively by `PackParams::delete_source`,
+        // so the shared crypto-params path must pin `DeleteInput::Retain`.
+        let matches = build_cli()
+            .try_get_matches_from(["dexios", "pack", "-k", "keyfile", "dir", "out.enc"])
+            .expect("CLI should parse");
+        let (_, sub_matches) = matches.subcommand().expect("subcommand");
+
+        let (crypto_params, pack_params) = pack_params(sub_matches).expect("params");
+
+        assert!(
+            matches!(crypto_params.delete_input, DeleteInput::Retain),
+            "pack must never delete its input through CryptoParams"
+        );
+        assert!(
+            matches!(pack_params.delete_source, DeleteSource::Retain),
+            "source deletion must stay opt-in via --delete-source"
+        );
+        assert_eq!(crypto_params.kdf, Kdf::Argon2id);
     }
 
     #[test]
