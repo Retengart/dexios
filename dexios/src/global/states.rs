@@ -224,8 +224,8 @@ pub(crate) struct KeyParams {
     pub keyfile: bool,
 }
 
-impl KeyParams {
-    pub(crate) fn default() -> Self {
+impl Default for KeyParams {
+    fn default() -> Self {
         Self {
             user: true,
             env: true,
