@@ -77,7 +77,6 @@ verify_no_unsafe_crate_roots() {
 
 require_tool_version cargo-audit cargo-audit 0.22.1 "cargo install cargo-audit --locked --version 0.22.1" cargo audit --version
 require_tool_version cargo-deny cargo-deny 0.19.6 "cargo install cargo-deny --locked --version 0.19.6" cargo deny --version
-require_tool_version mdbook mdbook 0.5.3 "cargo install mdbook --locked --version 0.5.3" mdbook --version
 
 run bash scripts/verify_repo_hygiene.sh
 run cargo metadata --format-version=1 --locked --no-deps > /dev/null
@@ -108,7 +107,6 @@ run cargo audit --deny warnings
 run cargo deny check
 run cargo build --locked -p dexios --profile release
 run bash scripts/verify_cli_surface.sh
-run mdbook build --dest-dir target/mdbook
 run bash scripts/verify_repo_hygiene.sh
 run git diff --check
 run bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release/dexios

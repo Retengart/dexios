@@ -7,8 +7,6 @@ cd "$REPO_ROOT"
 
 EXPECTED_CARGO_AUDIT_VERSION=0.22.1
 EXPECTED_CARGO_DENY_VERSION=0.19.6
-EXPECTED_MDBOOK_VERSION=0.5.3
-EXPECTED_TYPST_VERSION=0.14.2
 
 usage() {
     cat <<'USAGE'
@@ -290,8 +288,6 @@ rustc_version="$(tool_version rustc rustc --version)"
 cargo_version="$(tool_version cargo cargo --version)"
 cargo_audit_version="$(tool_version cargo-audit cargo audit --version)"
 cargo_deny_version="$(tool_version cargo-deny cargo deny --version)"
-mdbook_version="$(tool_version mdbook mdbook --version)"
-typst_version="$(tool_version typst typst --version)"
 
 release_tool_equivalence_state=clean
 tool_mismatch_messages=()
@@ -300,12 +296,6 @@ if ! tool_version_matches "$cargo_audit_version" "$EXPECTED_CARGO_AUDIT_VERSION"
 fi
 if ! tool_version_matches "$cargo_deny_version" "$EXPECTED_CARGO_DENY_VERSION"; then
     tool_mismatch_messages+=("cargo-deny expected $EXPECTED_CARGO_DENY_VERSION, observed $cargo_deny_version")
-fi
-if ! tool_version_matches "$mdbook_version" "$EXPECTED_MDBOOK_VERSION"; then
-    tool_mismatch_messages+=("mdbook expected $EXPECTED_MDBOOK_VERSION, observed $mdbook_version")
-fi
-if ! tool_version_matches "$typst_version" "$EXPECTED_TYPST_VERSION"; then
-    tool_mismatch_messages+=("typst expected $EXPECTED_TYPST_VERSION, observed $typst_version")
 fi
 
 if [[ "${#tool_mismatch_messages[@]}" -gt 0 ]]; then
@@ -365,10 +355,6 @@ mkdir -p "$(dirname "$output")"
     printf -- '- observed `cargo audit --version`: `%s`\n' "$cargo_audit_version"
     printf -- '- expected `cargo-deny`: `%s`\n' "$EXPECTED_CARGO_DENY_VERSION"
     printf -- '- observed `cargo deny --version`: `%s`\n' "$cargo_deny_version"
-    printf -- '- expected `mdbook`: `%s`\n' "$EXPECTED_MDBOOK_VERSION"
-    printf -- '- observed `mdbook --version`: `%s`\n' "$mdbook_version"
-    printf -- '- expected `typst`: `%s`\n' "$EXPECTED_TYPST_VERSION"
-    printf -- '- observed `typst --version`: `%s`\n' "$typst_version"
     printf -- '- `rustc --version`: `%s`\n' "$rustc_version"
     printf -- '- `cargo --version`: `%s`\n\n' "$cargo_version"
 
@@ -389,9 +375,6 @@ mkdir -p "$(dirname "$output")"
     [[ -z "$tag" ]] || printf ' --tag %q' "$tag"
     [[ "$allow_dirty" -eq 0 ]] || printf ' --allow-dirty'
     printf '`\n'
-    printf -- '- `mdbook build --dest-dir target/mdbook`\n'
-    printf -- '- `typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf`\n'
-    printf -- '- `git diff --exit-code -- spec/dexios-paper.pdf`\n'
     printf -- '- `bash scripts/verify_repo_hygiene.sh`\n'
     printf -- '- `git diff --check`\n'
     printf -- '- `bash scripts/verify_phase_gate.sh`\n\n'

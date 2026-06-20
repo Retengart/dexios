@@ -73,9 +73,6 @@ jobs:
       - name: Install cargo-deny
         run: cargo install cargo-deny --locked --version 0.19.6
 
-      - name: Install mdBook
-        run: cargo install mdbook --locked --version 0.5.3
-
       - name: Run maintainer verification gate
         run: bash scripts/verify_phase_gate.sh
 
