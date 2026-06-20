@@ -1,0 +1,88 @@
+name: 'Sign and attest release artifacts'
+description: >-
+  Keyless Sigstore signing for release artifacts: a cosign sign-blob bundle
+  (.sigstore.json) per file plus a build-provenance attestation, with fail-loud
+  verification. No secrets -- uses GitHub Actions OIDC. Requires the calling job
+  to set `permissions: { id-token: write, attestations: write }`.
+
+inputs:
+  paths:
+    description: >-
+      Newline-delimited list of files (globs allowed) to sign and attest,
+      relative to the working directory.
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install cosign
+      # sigstore/cosign-installer v4.1.2
+      uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+      with:
+        cosign-release: 'v3.1.1'
+
+    - name: Generate build-provenance attestation
+      # actions/attest-build-provenance v4.1.0
+      uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32
+      with:
+        subject-path: ${{ inputs.paths }}
+
+    - name: Sign artifacts (cosign sign-blob, keyless)
+      shell: bash
+      env:
+        PATHS: ${{ inputs.paths }}
+      run: |
+        set -euo pipefail
+        files=()
+        while IFS= read -r pat; do
+          [ -z "$pat" ] && continue
+          for f in $pat; do
+            [ -f "$f" ] || continue
+            case "$f" in *.sigstore.json) continue;; esac
+            files+=("$f")
+          done
+        done <<< "$PATHS"
+        [ "${#files[@]}" -gt 0 ] || { echo "::error::sign-and-attest: no files matched paths"; exit 1; }
+        for f in "${files[@]}"; do
+          echo "::group::sign $f"
+          cosign sign-blob "$f" --bundle "$f.sigstore.json" --yes
+          test -s "$f.sigstore.json" || { echo "::error::empty bundle for $f"; exit 1; }
+          echo "::endgroup::"
+        done
+
+    - name: Fail-loud verify (cosign + provenance)
+      shell: bash
+      env:
+        PATHS: ${{ inputs.paths }}
+        IDENTITY: https://github.com/${{ github.workflow_ref }}
+        ISSUER: https://token.actions.githubusercontent.com
+        REPO: ${{ github.repository }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        files=()
+        while IFS= read -r pat; do
+          [ -z "$pat" ] && continue
+          for f in $pat; do
+            [ -f "$f" ] || continue
+            case "$f" in *.sigstore.json) continue;; esac
+            files+=("$f")
+          done
+        done <<< "$PATHS"
+        verify_provenance() {
+          local f="$1" i
+          for i in 1 2 3 4 5; do
+            if gh attestation verify "$f" --repo "$REPO"; then return 0; fi
+            echo "provenance verify retry $i for $f"; sleep 5
+          done
+          return 1
+        }
+        for f in "${files[@]}"; do
+          echo "::group::verify $f"
+          cosign verify-blob "$f" \
+            --bundle "$f.sigstore.json" \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer "$ISSUER"
+          verify_provenance "$f" || { echo "::error::provenance verify failed for $f"; exit 1; }
+          echo "::endgroup::"
+        done
