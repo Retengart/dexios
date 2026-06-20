@@ -127,7 +127,7 @@ jobs:
       - name: Generate CycloneDX SBOM
         shell: bash
         run: |
-          sbom_name="dexios-${GITHUB_REF_NAME}-${{ matrix.asset_suffix }}.cdx.json"
+          sbom_name="dexios-${GITHUB_REF_NAME}-${{ matrix.asset_suffix }}${{ matrix.asset_ext }}.cdx.json"
           mkdir -p release-assets
           cargo cyclonedx --format json --spec-version 1.5 --manifest-path dexios/Cargo.toml
           # cargo-cyclonedx writes the SBOM next to the package manifest; the
@@ -163,7 +163,7 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: |
             release-assets/dexios-${{ github.ref_name }}-${{ matrix.asset_suffix }}${{ matrix.asset_ext }}
-            release-assets/dexios-${{ github.ref_name }}-${{ matrix.asset_suffix }}.cdx.json
+            release-assets/dexios-${{ github.ref_name }}-${{ matrix.asset_suffix }}${{ matrix.asset_ext }}.cdx.json
           if-no-files-found: error
 
   publish:
