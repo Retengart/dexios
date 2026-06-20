@@ -16,7 +16,7 @@ VERSION="${1:?usage: gen-release-body.sh <version> [changelog] [output]}"
 CHANGELOG="${2:-CHANGELOG.md}"
 OUTPUT="${3:--}"
 
-REPO="brxken128/dexios"
+REPO="${GITHUB_REPOSITORY:-brxken128/dexios}"
 BASE="https://github.com/$REPO/releases/download/v$VERSION"
 
 # --- "What's new": extract the section for this version -----------------------
