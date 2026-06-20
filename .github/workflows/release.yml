@@ -223,12 +223,21 @@ jobs:
             "dexios-${GITHUB_REF_NAME}-linux-amd64"
             "dexios-${GITHUB_REF_NAME}-linux-amd64.sha256"
             "dexios-${GITHUB_REF_NAME}-linux-amd64.cdx.json"
+            "dexios-${GITHUB_REF_NAME}-linux-amd64.sigstore.json"
+            "dexios-${GITHUB_REF_NAME}-linux-amd64.sha256.sigstore.json"
+            "dexios-${GITHUB_REF_NAME}-linux-amd64.cdx.json.sigstore.json"
             "dexios-${GITHUB_REF_NAME}-macos-amd64"
             "dexios-${GITHUB_REF_NAME}-macos-amd64.sha256"
             "dexios-${GITHUB_REF_NAME}-macos-amd64.cdx.json"
+            "dexios-${GITHUB_REF_NAME}-macos-amd64.sigstore.json"
+            "dexios-${GITHUB_REF_NAME}-macos-amd64.sha256.sigstore.json"
+            "dexios-${GITHUB_REF_NAME}-macos-amd64.cdx.json.sigstore.json"
             "dexios-${GITHUB_REF_NAME}-windows-amd64.exe"
             "dexios-${GITHUB_REF_NAME}-windows-amd64.exe.sha256"
-            "dexios-${GITHUB_REF_NAME}-windows-amd64.cdx.json"
+            "dexios-${GITHUB_REF_NAME}-windows-amd64.exe.cdx.json"
+            "dexios-${GITHUB_REF_NAME}-windows-amd64.exe.sigstore.json"
+            "dexios-${GITHUB_REF_NAME}-windows-amd64.exe.sha256.sigstore.json"
+            "dexios-${GITHUB_REF_NAME}-windows-amd64.exe.cdx.json.sigstore.json"
           )
 
           for name in "${expected_names[@]}"; do
@@ -242,6 +251,7 @@ jobs:
           for name in "${expected_names[@]}"; do
             [[ "$name" == *.sha256 ]] && continue
             [[ "$name" == *.cdx.json ]] && continue
+            [[ "$name" == *.sigstore.json ]] && continue
             bin_path="$(find release-assets -name "$name" | head -1)"
             sha_path="$(find release-assets -name "${name}.sha256" | head -1)"
             recorded_hash="$(awk '{print $1}' "$sha_path")"
@@ -287,6 +297,20 @@ jobs:
         with:
           subject-path: 'release-assets/dexios-windows-amd64/dexios-${{ github.ref_name }}-windows-amd64.exe'
           sbom-path: 'release-assets/dexios-windows-amd64/dexios-${{ github.ref_name }}-windows-amd64.cdx.json'
+
+      - name: Sign and attest artifacts
+        uses: ./.github/actions/sign-and-attest
+        with:
+          paths: |
+            release-assets/dexios-linux-amd64/dexios-${{ github.ref_name }}-linux-amd64
+            release-assets/dexios-linux-amd64/dexios-${{ github.ref_name }}-linux-amd64.sha256
+            release-assets/dexios-linux-amd64/dexios-${{ github.ref_name }}-linux-amd64.cdx.json
+            release-assets/dexios-macos-amd64/dexios-${{ github.ref_name }}-macos-amd64
+            release-assets/dexios-macos-amd64/dexios-${{ github.ref_name }}-macos-amd64.sha256
+            release-assets/dexios-macos-amd64/dexios-${{ github.ref_name }}-macos-amd64.cdx.json
+            release-assets/dexios-windows-amd64/dexios-${{ github.ref_name }}-windows-amd64.exe
+            release-assets/dexios-windows-amd64/dexios-${{ github.ref_name }}-windows-amd64.exe.sha256
+            release-assets/dexios-windows-amd64/dexios-${{ github.ref_name }}-windows-amd64.exe.cdx.json
 
       - name: Create GitHub Release
         env:
