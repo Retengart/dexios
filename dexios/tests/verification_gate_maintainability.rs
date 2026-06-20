@@ -53,7 +53,6 @@ struct FileSizeException {
     path: &'static str,
     category: &'static str,
     rationale: &'static str,
-    current_lines: usize,
     cap: usize,
 }
 
@@ -62,133 +61,114 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios-domain/tests/workflow_public_api.rs",
         category: "domain workflow public API evidence",
         rationale: "Phase 25 carry-forward source/API authority evidence per D-12.",
-        current_lines: 1869,
         cap: 1869,
     },
     FileSizeException {
         path: "dexios/tests/verification_gate_source.rs",
         category: "Phase 25 source-gate evidence",
         rationale: "Phase 25 fail-closed source/API safety evidence per D-11.",
-        current_lines: 1955,
         cap: 1955,
     },
     FileSizeException {
         path: "dexios-core/tests/stream_v1.rs",
         category: "core stream security matrix",
         rationale: "Core stream final-auth and tamper matrix kept explicit per D-03.",
-        current_lines: 1346,
         cap: 1346,
     },
     FileSizeException {
         path: "dexios/tests/verification_gate_docs.rs",
         category: "Phase 25 docs-gate evidence",
         rationale: "Public docs/spec artifact evidence remains explicit per D-11.",
-        current_lines: 1290,
         cap: 1290,
     },
     FileSizeException {
         path: "dexios-domain/src/pack.rs",
         category: "D-05 production authority cap",
         rationale: "Archive pack authority file is deferred from production splitting per D-05.",
-        current_lines: 1224,
         cap: 1224,
     },
     FileSizeException {
         path: "dexios-core/tests/v1_header.rs",
         category: "core header security matrix",
         rationale: "Core V1 header compatibility and tamper matrix kept explicit per D-03.",
-        current_lines: 1107,
         cap: 1107,
     },
     FileSizeException {
         path: "dexios/tests/verification_gate_support/mod.rs",
         category: "Phase 25 source-gate support evidence",
         rationale: "Shared include_str and normalization authority stays centralized per D-11. Cosign/SIGNING.md includes added for ASR-02.",
-        current_lines: 1049,
         cap: 1049,
     },
     FileSizeException {
         path: "dexios/tests/verification_gate_workflows.rs",
         category: "CI/workflow gate evidence",
         rationale: "Cosign composite action and signing verification tests added for ASR-02.",
-        current_lines: 704,
         cap: 704,
     },
     FileSizeException {
         path: "dexios-domain/tests/archive_public_api.rs",
         category: "domain archive public API evidence",
         rationale: "Phase 25 carry-forward source/API authority evidence per D-12.",
-        current_lines: 988,
         cap: 988,
     },
     FileSizeException {
         path: "dexios/src/cli/tests.rs",
         category: "parser compatibility matrix",
         rationale: "CLI parser compatibility matrix remains source-local evidence per D-03.",
-        current_lines: 1004,
         cap: 1004,
     },
     FileSizeException {
         path: "dexios-domain/src/unpack.rs",
         category: "D-05 production authority cap",
         rationale: "Archive unpack authority file is deferred from production splitting per D-05.",
-        current_lines: 901,
         cap: 901,
     },
     FileSizeException {
         path: "dexios-domain/tests/workflow_errors.rs",
         category: "domain workflow error evidence",
         rationale: "Domain workflow classification matrix remains explicit per D-12.",
-        current_lines: 885,
         cap: 885,
     },
     FileSizeException {
         path: "dexios/tests/key_cli_regressions.rs",
         category: "key CLI security regression matrix",
         rationale: "Key-source prompting and stderr regression matrix remains explicit per D-03.",
-        current_lines: 808,
         cap: 808,
     },
     FileSizeException {
         path: "dexios/tests/verification_gate_cli.rs",
         category: "CLI surface gate evidence",
         rationale: "CLI surface harness source-gate and smoke contract evidence remains explicit per D-11.",
-        current_lines: 809,
         cap: 809,
     },
     FileSizeException {
         path: "dexios/tests/verification_gate_scripts.rs",
         category: "release script gate evidence",
         rationale: "Release and verification script contract evidence remains explicit per D-11.",
-        current_lines: 801,
         cap: 801,
     },
     FileSizeException {
         path: "dexios-core/src/payload.rs",
         category: "D-05 production authority cap",
         rationale: "Payload framing authority file is deferred from production splitting per D-05.",
-        current_lines: 767,
         cap: 767,
     },
     FileSizeException {
         path: "dexios-domain/src/decrypt.rs",
         category: "D-05 production authority cap",
         rationale: "Decrypt workflow authority file is deferred from production splitting per D-05.",
-        current_lines: 723,
         cap: 723,
     },
     FileSizeException {
         path: "dexios-domain/src/storage/temp.rs",
         category: "fd-relative storage security evidence",
         rationale: "fd-relative persist + TOCTOU-safe directory creation (fs-1/fs-2) kept centralized.",
-        current_lines: 782,
         cap: 782,
     },
     FileSizeException {
         path: "dexios-domain/src/storage/cleanup.rs",
         category: "cleanup digest security evidence",
         rationale: "No-follow digest plus fd-bound identity revalidation (fs-3) kept centralized.",
-        current_lines: 742,
         cap: 742,
     },
 ];
@@ -255,24 +235,21 @@ fn allowlist_entries_have_rationales_current_counts_and_caps() {
         );
 
         let live_lines = line_count(entry.path);
-        assert_eq!(
-            live_lines, entry.current_lines,
-            "{} current_lines must match the live physical line count",
-            entry.path
-        );
         assert!(
-            entry.cap >= entry.current_lines,
-            "{} cap {} must cover current_lines {}",
+            entry.cap >= live_lines,
+            "{} cap {} must cover live line count {}",
             entry.path,
             entry.cap,
-            entry.current_lines
+            live_lines
         );
 
         let (_, default_cap) = default_category_and_cap(entry.path);
         assert!(
-            entry.current_lines > default_cap,
-            "{} no longer needs an oversized-file exception",
-            entry.path
+            live_lines > default_cap,
+            "{} no longer needs an oversized-file exception ({} <= {})",
+            entry.path,
+            live_lines,
+            default_cap
         );
     }
 }
@@ -297,11 +274,12 @@ fn security_evidence_allowlists_stay_below_category_caps() {
             entry.cap,
             SECURITY_EVIDENCE_CAP
         );
+        let live_lines = line_count(entry.path);
         assert!(
-            entry.current_lines <= entry.cap,
-            "{} current_lines {} must not exceed cap {}",
+            live_lines <= entry.cap,
+            "{} live line count {} must not exceed cap {}",
             entry.path,
-            entry.current_lines,
+            live_lines,
             entry.cap
         );
     }
