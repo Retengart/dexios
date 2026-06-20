@@ -67,14 +67,14 @@ cargo clippy --workspace --all-targets --all-features --no-deps --locked
 cargo test --locked --workspace --all-features --release --verbose
 cargo audit --deny warnings
 cargo deny check
-cargo build --locked -p dexios --profile release-lto
+cargo build --locked -p dexios --profile release
 bash scripts/verify_cli_surface.sh
 mdbook build --dest-dir target/mdbook
 typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf
 git diff --exit-code -- spec/dexios-paper.pdf
 bash scripts/verify_repo_hygiene.sh
 git diff --check
-bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release-lto/dexios
+bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release/dexios
 ```
 
 `mdbook build --dest-dir target/mdbook` writes the generated documentation site
@@ -108,10 +108,10 @@ maintainer gate.
 Release candidates can record the local evidence used for a build:
 
 ```bash
-cargo build -p dexios --profile release-lto
+cargo build -p dexios --profile release
 bash scripts/generate_release_manifest.sh \
   --output target/release-evidence/release-manifest.md \
-  --asset target/release-lto/dexios
+  --asset target/release/dexios
 ```
 
 For release use, run the manifest command from a clean release-equivalent working tree.
@@ -124,7 +124,7 @@ the manifest must explicitly record non-release-equivalent dirty state:
 bash scripts/generate_release_manifest.sh \
   --output target/release-evidence/release-manifest.md \
   --allow-dirty \
-  --asset target/release-lto/dexios
+  --asset target/release/dexios
 ```
 
 The manifest records commit and tag status, tracked dirty state,
@@ -157,7 +157,7 @@ target/release/dexios
 nix-build . -A defaultPackage.x86_64-linux --dry-run
 ```
 
-- Release workflows also use a dedicated `release-lto` profile for shipping artifacts.
+- Release workflows also use the `release` profile with LTO for shipping artifacts.
 
 ## Precompiled Binaries
 

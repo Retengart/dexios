@@ -69,8 +69,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios/tests/verification_gate_source.rs",
         category: "Phase 25 source-gate evidence",
         rationale: "Phase 25 fail-closed source/API safety evidence per D-11.",
-        current_lines: 1949,
-        cap: 1949,
+        current_lines: 1951,
+        cap: 1951,
     },
     FileSizeException {
         path: "dexios-core/tests/stream_v1.rs",
@@ -153,8 +153,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios/tests/verification_gate_scripts.rs",
         category: "release script gate evidence",
         rationale: "Release and verification script contract evidence remains explicit per D-11.",
-        current_lines: 800,
-        cap: 800,
+        current_lines: 801,
+        cap: 801,
     },
     FileSizeException {
         path: "dexios-core/src/payload.rs",

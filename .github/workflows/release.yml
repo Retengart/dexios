@@ -90,19 +90,19 @@ jobs:
         include:
           - os: ubuntu-latest
             rust: stable
-            binary_path: target/release-lto/dexios
+            binary_path: target/release/dexios
             asset_suffix: linux-amd64
             asset_ext: ""
             artifact_name: dexios-linux-amd64
           - os: macos-15-intel
             rust: stable
-            binary_path: target/release-lto/dexios
+            binary_path: target/release/dexios
             asset_suffix: macos-amd64
             asset_ext: ""
             artifact_name: dexios-macos-amd64
           - os: windows-latest
             rust: stable
-            binary_path: target/release-lto/dexios.exe
+            binary_path: target/release/dexios.exe
             asset_suffix: windows-amd64
             asset_ext: ".exe"
             artifact_name: dexios-windows-amd64
@@ -128,7 +128,7 @@ jobs:
         run: cargo install cargo-cyclonedx --locked --version 0.5.7
 
       - name: Build dexios release binary
-        run: cargo auditable build --locked --profile release-lto -p dexios
+        run: cargo auditable build --locked --profile release -p dexios
 
       - name: Generate CycloneDX SBOM
         shell: bash

@@ -181,7 +181,7 @@ fn workspace_manifest_source_gates_kdf_dependency_policy() {
         .expect("argon2 uses explicit workspace dependency table");
     assert_eq!(
         argon2.get("version").and_then(toml::Value::as_str),
-        Some("0.5.3")
+        Some("=0.5.3")
     );
     assert_eq!(
         argon2

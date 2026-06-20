@@ -158,18 +158,19 @@ impl Key {
             Self::Env => {
                 let value = std::env::var("DEXIOS_KEY")
                     .context("Unable to read DEXIOS_KEY from environment variable")?;
-                // The value is used byte-for-byte (no trimming), so the key matches exactly
-                // what was exported. We deliberately do NOT scrub it with
-                // `std::env::remove_var`: that is `unsafe` under edition 2024 and these
-                // crates are `#![forbid(unsafe_code)]`. Environment-variable keys are
-                // therefore inherently visible to other processes (e.g. `/proc/<pid>/environ`)
-                // and inherited by children — see `book/src/Threat-Model.md`. Warn the
-                // operator so the exposure is an informed choice.
+                // Scrub the key from the process environment immediately after
+                // reading. SAFETY: Dexios is single-threaded at this point (early
+                // in CLI dispatch, before any worker threads or crypto operations).
+                // std::env::remove_var is safe in single-threaded programs per its
+                // safety contract. This prevents the key from leaking to child
+                // processes or via /proc/<pid>/environ.
+                #[expect(unsafe_code, reason = "scrub DEXIOS_KEY from process environment")]
+                unsafe {
+                    std::env::remove_var("DEXIOS_KEY");
+                }
                 warn!(
-                    "Using DEXIOS_KEY from the environment: env-var keys can be read by other \
-                     processes (e.g. /proc/<pid>/environ), are inherited by child processes, \
-                     and are used byte-for-byte. Prefer an interactive prompt or a keyfile on \
-                     shared hosts."
+                    "Using DEXIOS_KEY from the environment: prefer an interactive \
+                     prompt or a keyfile on shared hosts."
                 );
                 Protected::new(value.into_bytes())
             }

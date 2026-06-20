@@ -170,7 +170,7 @@ fn local_scripts_expose_the_full_maintainer_gate() {
         "scripts/verify_phase_gate.sh",
         VERIFY_PHASE_GATE,
         "run git diff --check",
-        "run bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release-lto/dexios",
+        "run bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release/dexios",
     );
     assert_non_comment_lines_exclude(
         "scripts/verify_phase_gate.sh",
@@ -185,9 +185,10 @@ fn local_scripts_expose_the_full_maintainer_gate() {
         "require_tool_version typst typst 0.14.2 \"install Typst from https://typst.app/docs/install/ or your OS package manager\" typst --version",
         "verify_no_unsafe_crate_roots",
         "grep -Fxq '#![forbid(unsafe_code)]'",
-        "dexios/src/main.rs",
         "dexios-core/src/lib.rs",
         "dexios-domain/src/lib.rs",
+        "grep -Fxq '#![deny(unsafe_code)]'",
+        "dexios/src/main.rs",
         "run verify_no_unsafe_crate_roots",
     ] {
         assert_contains("scripts/verify_phase_gate.sh", VERIFY_PHASE_GATE, required);
@@ -325,7 +326,7 @@ fn release_tool_version_parser_rejects_suffix_and_extra_component_canaries() {
 #[test]
 fn release_manifest_dirty_policy_is_split_between_local_dry_run_and_release_gate() {
     for required in [
-        "bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release-lto/dexios",
+        "bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release/dexios",
         "tracked working tree changes fail closed",
         "--allow-dirty` is only for local dry runs",
     ] {
@@ -339,7 +340,7 @@ fn release_manifest_dirty_policy_is_split_between_local_dry_run_and_release_gate
     assert_contains(
         "book/src/Safety-Contract.md",
         SAFETY_CONTRACT,
-        "bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release-lto/dexios",
+        "bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release/dexios",
     );
     assert_not_contains(
         "book/src/Safety-Contract.md",

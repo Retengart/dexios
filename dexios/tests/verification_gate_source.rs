@@ -1067,12 +1067,14 @@ fn phase18_header_and_key_mutation_guards_are_source_gated() {
 #[test]
 fn crate_roots_keep_the_no_unsafe_compiler_baseline() {
     for (source_name, source) in [
-        ("dexios/src/main.rs", DEXIOS_MAIN_RS),
         ("dexios-core/src/lib.rs", DEXIOS_CORE_LIB_RS),
         ("dexios-domain/src/lib.rs", DEXIOS_DOMAIN_LIB_RS),
     ] {
         assert_contains(source_name, source, "#![forbid(unsafe_code)]");
     }
+    // The binary crate uses deny (not forbid) so that the DEXIOS_KEY scrub
+    // can use a targeted #[allow(unsafe_code)] for std::env::remove_var.
+    assert_contains("dexios/src/main.rs", DEXIOS_MAIN_RS, "#![deny(unsafe_code)]");
 }
 
 #[test]
@@ -1123,7 +1125,7 @@ fn cli_subcommands_use_shared_overwrite_planning_source_gate() {
 #[test]
 fn phase9_kdf_passphrase_and_secret_contract_is_source_gated() {
     for required in [
-        "argon2 = { version = \"0.5.3\", default-features = false, features = [\"alloc\", \"zeroize\"] }",
+        "argon2 = { version = \"=0.5.3\", default-features = false, features = [\"alloc\", \"zeroize\"] }",
         "blake3 = \"1.8\"",
     ] {
         assert_contains("Cargo.toml", CARGO_TOML, required);

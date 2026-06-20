@@ -380,7 +380,7 @@ mkdir -p "$(dirname "$output")"
     printf -- '- `bash scripts/verify_assurance_replay.sh`\n'
     printf -- '- `cargo audit --deny warnings`\n'
     printf -- '- `cargo deny check`\n'
-    printf -- '- `cargo build -p dexios --profile release-lto`\n'
+    printf -- '- `cargo build -p dexios --profile release`\n'
     printf -- '- `bash scripts/verify_cli_surface.sh`\n'
     printf -- '- `bash scripts/generate_release_manifest.sh --output %q' "$output"
     for asset in "${assets[@]}"; do

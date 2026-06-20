@@ -205,8 +205,8 @@ fn ci_workflow_determinism_contract_is_source_gated() {
         CLI_SURFACE_WORKFLOW,
         &[
             "name: CLI Surface",
-            "DEXIOS_BIN: ${{ github.workspace }}/target/release-lto/dexios",
-            "run: cargo build --locked -p dexios --profile release-lto",
+            "DEXIOS_BIN: ${{ github.workspace }}/target/release/dexios",
+            "run: cargo build --locked -p dexios --profile release",
             "bash scripts/verify_cli_surface.sh 2>&1 | tee target/cli-surface-artifacts/cli-surface.log",
         ],
     );
@@ -245,8 +245,8 @@ fn phase21_release_workflow_tool_pins_and_locked_build_are_source_gated() {
         RELEASE_WORKFLOW,
         &[
             // rel-1: built with cargo-auditable to embed the dependency list; still
-            // --locked --profile release-lto -p dexios.
-            "cargo auditable build --locked --profile release-lto -p dexios",
+            // --locked --profile release -p dexios.
+            "cargo auditable build --locked --profile release -p dexios",
             "cargo install mdbook --locked --version 0.5.3",
             "cargo install typst-cli --locked --version 0.14.2",
         ],
@@ -277,7 +277,7 @@ fn phase21_locked_flag_and_lockfile_gate_are_source_gated() {
     assert_non_comment_line_count(
         "scripts/verify_phase_gate.sh",
         VERIFY_PHASE_GATE,
-        "run cargo build --locked -p dexios --profile release-lto",
+        "run cargo build --locked -p dexios --profile release",
         1,
     );
 

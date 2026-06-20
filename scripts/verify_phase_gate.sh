@@ -54,18 +54,25 @@ run() {
 
 verify_no_unsafe_crate_roots() {
     local crate_root
-    local crate_roots=(
-        "dexios/src/main.rs"
+    # Library crates must use #![forbid(unsafe_code)] — no override allowed.
+    local forbid_crate_roots=(
         "dexios-core/src/lib.rs"
         "dexios-domain/src/lib.rs"
     )
 
-    for crate_root in "${crate_roots[@]}"; do
+    for crate_root in "${forbid_crate_roots[@]}"; do
         if ! grep -Fxq '#![forbid(unsafe_code)]' "$crate_root"; then
             echo "Missing required crate-root guard in $crate_root: #![forbid(unsafe_code)]" >&2
             exit 1
         fi
     done
+
+    # The binary crate uses #![deny(unsafe_code)] (overridable with
+    # #[allow(unsafe_code)]) for the DEXIOS_KEY scrub unsafe block.
+    if ! grep -Fxq '#![deny(unsafe_code)]' "dexios/src/main.rs"; then
+        echo "Missing required crate-root guard in dexios/src/main.rs: #![deny(unsafe_code)]" >&2
+        exit 1
+    fi
 }
 
 require_tool_version cargo-audit cargo-audit 0.22.1 "cargo install cargo-audit --locked --version 0.22.1" cargo audit --version
@@ -102,11 +109,11 @@ run cargo test --locked --workspace --all-features --release --verbose
 run bash scripts/verify_assurance_replay.sh
 run cargo audit --deny warnings
 run cargo deny check
-run cargo build --locked -p dexios --profile release-lto
+run cargo build --locked -p dexios --profile release
 run bash scripts/verify_cli_surface.sh
 run mdbook build --dest-dir target/mdbook
 run typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf
 run git diff --exit-code -- spec/dexios-paper.pdf
 run bash scripts/verify_repo_hygiene.sh
 run git diff --check
-run bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release-lto/dexios
+run bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release/dexios

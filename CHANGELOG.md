@@ -78,7 +78,7 @@
   claims.
 - Made `scripts/verify_phase_gate.sh` the authoritative maintainer gate:
   formatting, clippy, workspace release tests, `cargo audit --deny warnings`,
-  `cargo deny check`, release-lto CLI smoke, mdBook rebuild, generated-docs
+  `cargo deny check`, release CLI smoke, mdBook rebuild, generated-docs
   freshness, repo hygiene, and whitespace diff checks.
 - Repaired CLI smoke and black-box CI coverage so removed `--aes`, `--argon`,
   `--zstd`, `--erase`, top-level `erase`, and `key add -n` behavior is rejected

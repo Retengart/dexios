@@ -23,13 +23,14 @@ conscious decisions, not oversights.
   own; it cannot clear copies made by the allocator, the kernel, the terminal scrollback,
   or third-party AEAD internals.
 - **Environment-variable key residue (`DEXIOS_KEY`).** When a key is supplied via the
-  `DEXIOS_KEY` environment variable, Dexios reads it byte-for-byte and **cannot scrub it**
-  from the process environment: `std::env::remove_var` is `unsafe` under the 2024 edition,
-  and the cryptographic crates forbid `unsafe`. The value therefore remains visible to
-  other processes (e.g. `/proc/<pid>/environ`), is inherited by child processes, and may
-  persist in shell history or CI logs. Dexios ignores `DEXIOS_KEY` unless `--env-key`
-  is passed, and emits a one-time warning whenever the environment key is used.
-  Prefer an interactive prompt or a keyfile on shared hosts.
+  `DEXIOS_KEY` environment variable, Dexios scrubs it from the process environment
+  immediately after reading (via `std::env::remove_var`). This prevents inheritance by
+  child processes and removal from `/proc/<pid>/environ` for the current process.
+  However, the value may still persist in shell history, CI logs, or process-launch
+  tooling that captures the environment before Dexios starts. Dexios ignores
+  `DEXIOS_KEY` unless `--env-key` is passed, and emits a one-time warning whenever
+  the environment key is used. Prefer an interactive prompt or a keyfile on shared
+  hosts.
 
 ## Output file permissions
 

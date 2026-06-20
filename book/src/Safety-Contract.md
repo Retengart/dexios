@@ -141,14 +141,14 @@ VERI-04 broad-gate rule: the minimum maintainer gate includes:
 - `cargo test --locked --workspace --all-features --release --verbose`
 - `cargo audit --deny warnings`
 - `cargo deny check`
-- `cargo build --locked -p dexios --profile release-lto`
+- `cargo build --locked -p dexios --profile release`
 - `bash scripts/verify_cli_surface.sh`
 - `mdbook build --dest-dir target/mdbook`
 - `typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf`
 - `git diff --exit-code -- spec/dexios-paper.pdf`
 - `bash scripts/verify_repo_hygiene.sh`
 - `git diff --check`
-- `bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release-lto/dexios`
+- `bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release/dexios`
 
 The gate fails before long-running checks if required tools are missing or
 version-mismatched. Local setup remains explicit: install `cargo-audit` with

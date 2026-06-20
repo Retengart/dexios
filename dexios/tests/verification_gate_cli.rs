@@ -115,7 +115,7 @@ fn binary_selection_contract_violations(source: &str) -> Vec<String> {
     let mut violations = Vec::new();
 
     for required in [
-        "SELECTED_BIN=\"${1:-$REPO_ROOT/target/release-lto/dexios}\"",
+        "SELECTED_BIN=\"${1:-$REPO_ROOT/target/release/dexios}\"",
         "resolve_selected_binary()",
         "if [[ \"$selected\" = /* ]]; then",
         "printf '%s\\n' \"$selected\"",
@@ -335,11 +335,11 @@ fn cli_surface_harness_resolves_selected_binary_before_directory_changes() {
         "scripts/verify_cli_surface.sh",
         VERIFY_CLI_SURFACE,
         &[
-            "SELECTED_BIN=\"${1:-$REPO_ROOT/target/release-lto/dexios}\"",
+            "SELECTED_BIN=\"${1:-$REPO_ROOT/target/release/dexios}\"",
             "resolve_selected_binary()",
             "BIN=\"$(resolve_selected_binary \"$SELECTED_BIN\")\"",
             "echo \"Binary not found or not executable: $BIN\" >&2",
-            "echo \"Build it first, for example: cargo build -p dexios --profile release-lto\" >&2",
+            "echo \"Build it first, for example: cargo build -p dexios --profile release\" >&2",
             "echo \"Using binary: $BIN\"",
         ],
     );
@@ -404,7 +404,7 @@ fn cli_surface_harness_preflight_names_normalized_missing_binary_before_smoke_ca
         "preflight diagnostic must name the normalized selected binary: stdout={stdout}\nstderr={stderr}"
     );
     assert!(
-        stderr.contains("Build it first, for example: cargo build -p dexios --profile release-lto"),
+        stderr.contains("Build it first, for example: cargo build -p dexios --profile release"),
         "preflight diagnostic must retain the build hint: stdout={stdout}\nstderr={stderr}"
     );
 
@@ -552,7 +552,7 @@ fn phase22_cli_parser_baseline_and_surface_gate_are_source_gated() {
     assert_occurs_before(
         ".github/workflows/cli-surface.yml",
         CLI_SURFACE_WORKFLOW,
-        "run: cargo build --locked -p dexios --profile release-lto",
+        "run: cargo build --locked -p dexios --profile release",
         "bash scripts/verify_cli_surface.sh",
     );
     assert_non_comment_line_count(

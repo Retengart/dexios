@@ -721,7 +721,7 @@ mod unix_fd_persist {
 
     fn mkdir_child(parent: &OwnedFd, name: &OsStr) -> io::Result<()> {
         let name = component_to_cstring(name)?;
-        match rustix::fs::mkdirat(parent.as_fd(), &name, Mode::from_raw_mode(0o777)) {
+        match rustix::fs::mkdirat(parent.as_fd(), &name, Mode::from_raw_mode(0o700)) {
             Ok(()) => Ok(()),
             Err(source) if source.kind() == io::ErrorKind::AlreadyExists => Ok(()),
             Err(source) => Err(io::Error::from(source)),

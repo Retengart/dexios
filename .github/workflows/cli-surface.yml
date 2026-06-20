@@ -9,7 +9,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  DEXIOS_BIN: ${{ github.workspace }}/target/release-lto/dexios
+  DEXIOS_BIN: ${{ github.workspace }}/target/release/dexios
 
 permissions:
   contents: read
@@ -39,8 +39,8 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-cli-surface-stable-${{ hashFiles('Cargo.lock') }}
 
-      - name: Build release-lto dexios
-        run: cargo build --locked -p dexios --profile release-lto
+      - name: Build release dexios
+        run: cargo build --locked -p dexios --profile release
 
       - name: Run CLI surface harness
         run: |

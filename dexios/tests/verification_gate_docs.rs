@@ -91,7 +91,7 @@ fn release_notes_track_breaking_security_verification_and_docs_changes() {
         "deny.toml",
         "cargo audit --deny warnings",
         "cargo deny check",
-        "release-lto CLI smoke",
+        "release CLI smoke",
         "removed `--aes`, `--argon`",
         "top-level `erase`",
     ] {

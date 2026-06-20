@@ -23,25 +23,29 @@ anyhow = "1.0.102"
 # KDF path (dep-1 re-evaluation), an exact pin is no longer warranted: a caret
 # range is acceptable for a content-hashing-only dependency.
 blake3 = "1.8"
-rand = "0.10.1"
-clap = { version = "4.6.1", features = ["cargo"] }
-rpassword = "7.5.2"
-chacha20poly1305 = "0.10.1"
-aead = { version = "0.5.2", features = ["stream"] }
-zeroize = "1.8.2"
-subtle = "2.6.1"
+# Crypto-critical dependencies are exact-pinned (=x.y.z) so that a compromised
+# semver-compatible patch cannot be pulled in by `cargo update`. CI builds use
+# `--locked` (Cargo.lock), but the exact pin provides defense-in-depth at the
+# manifest level. Non-crypto dependencies use caret ranges.
+rand = "=0.10.1"
+chacha20poly1305 = "=0.10.1"
+aead = { version = "=0.5.2", features = ["stream"] }
+zeroize = "=1.8.2"
+subtle = "=2.6.1"
 # Argon2id (OWASP-recommended, RFC 9106) is the normal KDF for new V1 keyslots.
 # Minimal features: `alloc` for the memory block + `zeroize` to wipe it; no PHC parser.
-argon2 = { version = "0.5.3", default-features = false, features = ["alloc", "zeroize"] }
+argon2 = { version = "=0.5.3", default-features = false, features = ["alloc", "zeroize"] }
+clap = { version = "4.6.1", features = ["cargo"] }
+rpassword = "7.5.2"
 indicatif = "0.18.4"
 walkdir = "2.5.0"
 rustix = { version = "1.1.4", features = ["fs"] }
 
-[profile.release-lto]
-inherits = "release"
+[profile.release]
 lto = "thin"
 strip = "debuginfo"
 codegen-units = 1
+panic = "abort"
 
 # Strictest-practical workspace lints (quality-3). Crates opt in with
 # `[lints]\nworkspace = true`. The `priority = -1` groups are evaluated first so
@@ -54,7 +58,7 @@ unused = { level = "warn", priority = -1 }
 nonstandard_style = { level = "warn", priority = -1 }
 unreachable_pub = "warn"
 unused_qualifications = "warn"
-unsafe_code = "forbid"
+unsafe_code = "deny"
 non_ascii_idents = "deny"
 
 [workspace.lints.clippy]
