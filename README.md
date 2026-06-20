@@ -55,21 +55,27 @@ Prebuilt binaries are also published on the releases page.
 ### Verifying a release download
 
 Release binaries are built with `cargo auditable`, so the dependency tree is
-embedded in each binary, and the release pipeline attaches a Sigstore keyless
-build-provenance attestation to every published asset.
+embedded in each binary. The release pipeline signs every artifact with
+keyless Sigstore cosign and attaches a build-provenance attestation.
 
-Verify a downloaded asset's provenance against this repository:
+**Cosign verification** (authenticity — strict, pins the producing workflow):
+
+```bash
+cosign verify-blob dexios-vX.Y.Z-linux-amd64 \
+  --bundle dexios-vX.Y.Z-linux-amd64.sigstore.json \
+  --certificate-identity 'https://github.com/brxken128/dexios/.github/workflows/release.yml@refs/heads/main' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
+```
+
+**GitHub provenance** (strict):
 
 ```bash
 gh attestation verify dexios-vX.Y.Z-linux-amd64 \
   --repo brxken128/dexios \
-  --signer-workflow brxken128/dexios/.github/workflows/release.yml \
-  --source-ref refs/tags/vX.Y.Z
+  --signer-workflow brxken128/dexios/.github/workflows/release.yml
 ```
 
-This confirms the file was produced by the project's release workflow before it
-was published. A successful run prints the verified workflow and source
-repository; a tampered or unrelated file fails verification.
+See [SIGNING.md](SIGNING.md) for full verification details.
 
 Read the dependency list embedded in a binary with `rust-audit-info` (from the
 `rust-audit-info` crate, installable via `cargo install rust-audit-info`):
@@ -80,7 +86,7 @@ rust-audit-info dexios-vX.Y.Z-linux-amd64
 
 Each release also ships a CycloneDX SBOM per platform, named
 `dexios-vX.Y.Z-<platform>.cdx.json`, alongside the binaries and their
-`.sha256` checksums.
+`.sha256` checksums. Each artifact has a `.sigstore.json` cosign bundle.
 
 ## Development
 
