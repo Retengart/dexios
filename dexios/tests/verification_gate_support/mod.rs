@@ -230,6 +230,9 @@ pub(crate) const UNIT_TESTS_WORKFLOW: &str =
 pub(crate) const PERFORMANCE_NOTES: &str =
     include_str!("../../../book/src/technical-details/Performance-Notes.md");
 pub(crate) const RC_CLOSEOUT: &str = include_str!("../../../release-evidence/RC-CLOSEOUT.md");
+pub(crate) const SIGN_AND_ATTEST_ACTION: &str =
+    include_str!("../../../.github/actions/sign-and-attest/action.yml");
+pub(crate) const SIGNING_MD: &str = include_str!("../../../SIGNING.md");
 
 pub(crate) const REPAIRED_GATE_COMMANDS: &[&str] = &[
     "cargo metadata --format-version=1 --locked --no-deps",

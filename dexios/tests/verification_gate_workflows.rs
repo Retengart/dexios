@@ -588,3 +588,104 @@ fn assert_cli_surface_harness_invocation_has_no_positional_args() {
 }
 
 // --- Phase 22 gate tests ---
+
+#[test]
+fn cosign_composite_action_exists_and_is_sha_pinned() {
+    assert_contains(
+        ".github/actions/sign-and-attest/action.yml",
+        SIGN_AND_ATTEST_ACTION,
+        "using: 'composite'",
+    );
+
+    assert_action_pin(
+        ".github/actions/sign-and-attest/action.yml",
+        SIGN_AND_ATTEST_ACTION,
+        "sigstore/cosign-installer",
+        "6f9f17788090df1f26f669e9d70d6ae9567deba6",
+    );
+
+    assert_action_pin(
+        ".github/actions/sign-and-attest/action.yml",
+        SIGN_AND_ATTEST_ACTION,
+        "actions/attest-build-provenance",
+        "a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32",
+    );
+
+    assert_external_actions_are_full_sha_pinned(
+        ".github/actions/sign-and-attest/action.yml",
+        SIGN_AND_ATTEST_ACTION,
+    );
+}
+
+#[test]
+fn release_workflow_invokes_sign_and_attest_action() {
+    assert_contains(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "uses: ./.github/actions/sign-and-attest",
+    );
+
+    assert_non_comment_line_occurs_before(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "- name: Attest Windows SBOM",
+        "- name: Sign and attest artifacts",
+    );
+    assert_non_comment_line_occurs_before(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "- name: Sign and attest artifacts",
+        "- name: Create GitHub Release",
+    );
+}
+
+#[test]
+fn release_workflow_expects_sigstore_bundles_for_all_platforms() {
+    for suffix in [
+        "linux-amd64.sigstore.json",
+        "linux-amd64.sha256.sigstore.json",
+        "linux-amd64.cdx.json.sigstore.json",
+        "macos-amd64.sigstore.json",
+        "macos-amd64.sha256.sigstore.json",
+        "macos-amd64.cdx.json.sigstore.json",
+        "windows-amd64.exe.sigstore.json",
+        "windows-amd64.exe.sha256.sigstore.json",
+        "windows-amd64.exe.cdx.json.sigstore.json",
+    ] {
+        assert_contains(
+            ".github/workflows/release.yml",
+            RELEASE_WORKFLOW,
+            suffix,
+        );
+    }
+}
+
+#[test]
+fn signing_documentation_exists_and_covers_cosign() {
+    assert_contains("SIGNING.md", SIGNING_MD, "# Verifying Dexios Releases");
+    assert_contains(
+        "SIGNING.md",
+        SIGNING_MD,
+        "cosign verify-blob",
+    );
+    assert_contains(
+        "SIGNING.md",
+        SIGNING_MD,
+        "certificate-identity",
+    );
+    assert_contains(
+        "SIGNING.md",
+        SIGNING_MD,
+        "certificate-oidc-issuer",
+    );
+    assert_contains(
+        "SIGNING.md",
+        SIGNING_MD,
+        "gh attestation verify",
+    );
+    assert_contains(
+        "SIGNING.md",
+        SIGNING_MD,
+        ".sigstore.json",
+    );
+}
