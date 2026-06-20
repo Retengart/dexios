@@ -86,8 +86,8 @@ rust-audit-info dexios-vX.Y.Z-linux-amd64
 ```
 
 Each release also ships a CycloneDX SBOM per platform, named
-`dexios-vX.Y.Z-<platform>.cdx.json`, alongside the binaries and their
-`.sha256` checksums. Each artifact has a `.sigstore.json` cosign bundle.
+`dexios-vX.Y.Z-<platform>.cdx.json`, alongside the binaries. Each artifact has
+a `.sigstore.json` cosign bundle.
 
 ## Development
 

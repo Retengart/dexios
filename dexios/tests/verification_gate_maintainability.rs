@@ -111,8 +111,8 @@ const FILE_SIZE_EXCEPTIONS: &[FileSizeException] = &[
         path: "dexios/tests/verification_gate_workflows.rs",
         category: "CI/workflow gate evidence",
         rationale: "Cosign composite action and signing verification tests added for ASR-02.",
-        current_lines: 691,
-        cap: 691,
+        current_lines: 688,
+        cap: 688,
     },
     FileSizeException {
         path: "dexios-domain/tests/archive_public_api.rs",

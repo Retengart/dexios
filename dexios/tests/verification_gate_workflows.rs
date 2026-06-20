@@ -505,11 +505,11 @@ fn phase21_release_workflow_asset_set_contract_is_source_gated() {
         RELEASE_WORKFLOW,
         &[
             "dexios-${GITHUB_REF_NAME}-linux-amd64",
-            "dexios-${GITHUB_REF_NAME}-linux-amd64.sha256",
+            "dexios-${GITHUB_REF_NAME}-linux-amd64.cdx.json",
             "dexios-${GITHUB_REF_NAME}-macos-amd64",
-            "dexios-${GITHUB_REF_NAME}-macos-amd64.sha256",
+            "dexios-${GITHUB_REF_NAME}-macos-amd64.cdx.json",
             "dexios-${GITHUB_REF_NAME}-windows-amd64.exe",
-            "dexios-${GITHUB_REF_NAME}-windows-amd64.exe.sha256",
+            "dexios-${GITHUB_REF_NAME}-windows-amd64.exe.cdx.json",
         ],
     );
 
@@ -643,13 +643,10 @@ fn release_workflow_invokes_sign_and_attest_action() {
 fn release_workflow_expects_sigstore_bundles_for_all_platforms() {
     for suffix in [
         "linux-amd64.sigstore.json",
-        "linux-amd64.sha256.sigstore.json",
         "linux-amd64.cdx.json.sigstore.json",
         "macos-amd64.sigstore.json",
-        "macos-amd64.sha256.sigstore.json",
         "macos-amd64.cdx.json.sigstore.json",
         "windows-amd64.exe.sigstore.json",
-        "windows-amd64.exe.sha256.sigstore.json",
         "windows-amd64.exe.cdx.json.sigstore.json",
     ] {
         assert_contains(
