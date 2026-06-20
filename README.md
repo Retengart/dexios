@@ -72,7 +72,8 @@ cosign verify-blob dexios-vX.Y.Z-linux-amd64 \
 ```bash
 gh attestation verify dexios-vX.Y.Z-linux-amd64 \
   --repo brxken128/dexios \
-  --signer-workflow brxken128/dexios/.github/workflows/release.yml
+  --signer-workflow brxken128/dexios/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z
 ```
 
 See [SIGNING.md](SIGNING.md) for full verification details.
