@@ -686,3 +686,43 @@ fn signing_documentation_exists_and_covers_cosign() {
         ".sigstore.json",
     );
 }
+
+#[test]
+fn release_body_generator_has_correct_structure() {
+    assert_contains(
+        "scripts/gen-release-body.sh",
+        GEN_RELEASE_BODY,
+        "## Downloads",
+    );
+    assert_contains(
+        "scripts/gen-release-body.sh",
+        GEN_RELEASE_BODY,
+        "## Verifying your download",
+    );
+    assert_contains(
+        "scripts/gen-release-body.sh",
+        GEN_RELEASE_BODY,
+        "cosign verify-blob",
+    );
+    assert_contains(
+        "scripts/gen-release-body.sh",
+        GEN_RELEASE_BODY,
+        "gh attestation verify",
+    );
+    assert_contains(
+        "scripts/gen-release-body.sh",
+        GEN_RELEASE_BODY,
+        ".sigstore.json",
+    );
+
+    assert_not_contains(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "--generate-notes",
+    );
+    assert_contains(
+        ".github/workflows/release.yml",
+        RELEASE_WORKFLOW,
+        "gen-release-body.sh",
+    );
+}

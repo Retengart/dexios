@@ -318,5 +318,5 @@ jobs:
             gh release create "$GITHUB_REF_NAME" "${files[@]}" \
               --repo "$GITHUB_REPOSITORY" \
               --title "$GITHUB_REF_NAME" \
-              --generate-notes
+              --notes-file <(bash scripts/gen-release-body.sh "${GITHUB_REF_NAME#v}")
           fi
