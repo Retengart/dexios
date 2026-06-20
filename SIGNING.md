@@ -32,7 +32,6 @@ All release artifacts follow the pattern `dexios-vX.Y.Z-<platform>`. Each has:
 | Suffix | Description |
 |---|---|
 | (none) | Binary |
-| `.sha256` | SHA-256 checksum |
 | `.cdx.json` | CycloneDX 1.5 SBOM |
 | `.sigstore.json` | Sigstore cosign bundle (keyless signature + Rekor proof) |
 
