@@ -129,7 +129,7 @@ jobs:
         run: |
           sbom_name="dexios-${GITHUB_REF_NAME}-${{ matrix.asset_suffix }}.cdx.json"
           mkdir -p release-assets
-          cargo cyclonedx --locked --format json --spec-version 1.5 -p dexios
+          cargo cyclonedx --format json --spec-version 1.5 --manifest-path dexios/Cargo.toml
           # cargo-cyclonedx writes the SBOM next to the package manifest; the
           # filename is derived from the crate name (dexios.cdx.json) or, on
           # older releases, bom.json. Accept whichever it produced.
@@ -182,32 +182,6 @@ jobs:
         with:
           path: release-assets
 
-      - name: Validate release assets
-        shell: bash
-        run: |
-          expected_names=(
-            "dexios-${GITHUB_REF_NAME}-linux-amd64"
-            "dexios-${GITHUB_REF_NAME}-linux-amd64.cdx.json"
-            "dexios-${GITHUB_REF_NAME}-linux-amd64.sigstore.json"
-            "dexios-${GITHUB_REF_NAME}-linux-amd64.cdx.json.sigstore.json"
-            "dexios-${GITHUB_REF_NAME}-macos-amd64"
-            "dexios-${GITHUB_REF_NAME}-macos-amd64.cdx.json"
-            "dexios-${GITHUB_REF_NAME}-macos-amd64.sigstore.json"
-            "dexios-${GITHUB_REF_NAME}-macos-amd64.cdx.json.sigstore.json"
-            "dexios-${GITHUB_REF_NAME}-windows-amd64.exe"
-            "dexios-${GITHUB_REF_NAME}-windows-amd64.exe.cdx.json"
-            "dexios-${GITHUB_REF_NAME}-windows-amd64.exe.sigstore.json"
-            "dexios-${GITHUB_REF_NAME}-windows-amd64.exe.cdx.json.sigstore.json"
-          )
-
-          for name in "${expected_names[@]}"; do
-            found="$(find release-assets -name "$name" | head -1)"
-            if [[ -z "$found" ]]; then
-              echo "Missing expected release asset: $name" >&2
-              exit 1
-            fi
-          done
-
       - name: Attest build provenance
         # actions/attest v4.1.0
         uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26
@@ -251,6 +225,32 @@ jobs:
             release-assets/dexios-macos-amd64/dexios-${{ github.ref_name }}-macos-amd64.cdx.json
             release-assets/dexios-windows-amd64/dexios-${{ github.ref_name }}-windows-amd64.exe
             release-assets/dexios-windows-amd64/dexios-${{ github.ref_name }}-windows-amd64.exe.cdx.json
+
+      - name: Validate release assets
+        shell: bash
+        run: |
+          expected_names=(
+            "dexios-${GITHUB_REF_NAME}-linux-amd64"
+            "dexios-${GITHUB_REF_NAME}-linux-amd64.cdx.json"
+            "dexios-${GITHUB_REF_NAME}-linux-amd64.sigstore.json"
+            "dexios-${GITHUB_REF_NAME}-linux-amd64.cdx.json.sigstore.json"
+            "dexios-${GITHUB_REF_NAME}-macos-amd64"
+            "dexios-${GITHUB_REF_NAME}-macos-amd64.cdx.json"
+            "dexios-${GITHUB_REF_NAME}-macos-amd64.sigstore.json"
+            "dexios-${GITHUB_REF_NAME}-macos-amd64.cdx.json.sigstore.json"
+            "dexios-${GITHUB_REF_NAME}-windows-amd64.exe"
+            "dexios-${GITHUB_REF_NAME}-windows-amd64.exe.cdx.json"
+            "dexios-${GITHUB_REF_NAME}-windows-amd64.exe.sigstore.json"
+            "dexios-${GITHUB_REF_NAME}-windows-amd64.exe.cdx.json.sigstore.json"
+          )
+
+          for name in "${expected_names[@]}"; do
+            found="$(find release-assets -name "$name" | head -1)"
+            if [[ -z "$found" ]]; then
+              echo "Missing expected release asset: $name" >&2
+              exit 1
+            fi
+          done
 
       - name: Create GitHub Release
         env:
