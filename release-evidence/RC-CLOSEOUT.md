@@ -121,10 +121,12 @@ The matrix records docs/spec freshness as a gate, not as part of the published a
   to ASR-01. Phase 21 assessed targeted proptest for archive path normalization and concluded
   existing example tests cover the known traversal sequences; no proptest was added.
 
-- **Independent artifact signing and stronger release-trust model (deferred to ASR-02):**
-  The release workflow attaches GitHub build-provenance attestations to published assets.
-  Independent binary signing, project-managed signing keys, stronger SLSA guarantees, and a
-  broader release-trust model are deferred to ASR-02 and are out of scope for v3.0.
+- **Independent artifact signing and stronger release-trust model (ASR-02 — implemented):**
+  The release workflow now signs every published artifact with keyless Sigstore cosign
+  (GitHub Actions OIDC + Fulcio + Rekor). Each artifact ships with a `.sigstore.json`
+  bundle, and a build-provenance attestation is published to GitHub via
+  `actions/attest-build-provenance`. See `SIGNING.md` for verification instructions.
+  The existing `actions/attest` SBOM attestation is retained alongside cosign.
 
 ## Property and Fuzz Coverage Decision (RCEV-03)
 
