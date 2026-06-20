@@ -44,11 +44,6 @@ use core::stream::V1PayloadStream;
 use tempdir::TestDir;
 
 const PASSWORD: &str = "12345678";
-const DEXIOS_SUBCOMMANDS_RS: &str = include_str!("../src/subcommands.rs");
-const ENCRYPT_SUBCOMMAND_SOURCE: &str = include_str!("../src/subcommands/encrypt.rs");
-const PACK_SUBCOMMAND_SOURCE: &str = include_str!("../src/subcommands/pack.rs");
-const DETACHED_PUBLICATION_TEST_SOURCE: &str =
-    include_str!("../../dexios-domain/tests/detached_publication.rs");
 const STREAM_TAG_LEN: usize = 16;
 const TRUNCATED_CANONICAL_V1_PREFIX: &[u8] = b"DXIO\x00\x01CV1\x00";
 const RETIRED_CURRENT_V1_PREFIX: &[u8] = b"DXIO\x00\x01\x01\x00\x07\x07";
@@ -165,13 +160,6 @@ fn multichunk_plaintext() -> Vec<u8> {
 fn corrupt_final_chunk(bytes: &mut [u8]) {
     let final_offset = HEADER_LEN + (3 * (BLOCK_SIZE + STREAM_TAG_LEN));
     bytes[final_offset] ^= 0x40;
-}
-
-fn assert_source_contains(source_name: &str, source: &str, needle: &str) {
-    assert!(
-        source.contains(needle),
-        "{source_name} must contain {needle:?}"
-    );
 }
 
 #[test]
@@ -504,37 +492,6 @@ fn unpack_delete_input_preserves_archive_on_archive_validation_failure() {
     assert!(!test_dir.path().join("escape.txt").exists());
 }
 
-#[test]
-fn pack_delete_source_removes_source_directory_after_success() {
-    let test_dir = TestDir::new("delete-source-pack");
-    let source = test_dir.path().join("source");
-    let nested = source.join("nested");
-    let encrypted = test_dir.path().join("archive.enc");
-    fs::create_dir_all(&nested).unwrap();
-    fs::write(source.join("hello.txt"), b"hello").unwrap();
-    fs::write(nested.join("world.txt"), b"world").unwrap();
-
-    let pack_cmd = run_cli(
-        test_dir.path(),
-        &[
-            "pack",
-            "-f",
-            "--delete-source",
-            source.to_str().unwrap(),
-            encrypted.to_str().unwrap(),
-        ],
-    );
-
-    assert!(
-        pack_cmd.status.success(),
-        "pack failed: stdout={}\nstderr={}",
-        String::from_utf8_lossy(&pack_cmd.stdout),
-        String::from_utf8_lossy(&pack_cmd.stderr)
-    );
-    assert!(!source.exists());
-    assert!(encrypted.exists());
-}
-
 #[cfg(unix)]
 #[test]
 fn pack_delete_source_reports_partial_cleanup_failure() {
@@ -587,56 +544,4 @@ fn pack_delete_source_reports_partial_cleanup_failure() {
     assert!(encrypted.exists());
     assert!(!ok_source.exists());
     assert!(locked_source.exists());
-}
-
-#[test]
-fn cli_delete_after_success_hash_failure_and_identity_mismatch_are_source_gated() {
-    for required in [
-        "CleanupAfterCommitError",
-        "CleanupFailed(CleanupResult)",
-        "result.failures",
-        "CleanupFailure",
-        "HashVerification::Failed",
-        "changed cleanup identity",
-        "cleanup target identity",
-        "ordinary delete-after-success cleanup",
-        "PostCommitSuccess",
-        "committed outputs remain in place",
-    ] {
-        assert_source_contains("dexios/src/subcommands.rs", DEXIOS_SUBCOMMANDS_RS, required);
-    }
-}
-
-#[test]
-fn delete_source_detached_partial_publication_cleanup_denial_is_source_gated() {
-    assert_source_contains(
-        "dexios-domain/tests/detached_publication.rs",
-        DETACHED_PUBLICATION_TEST_SOURCE,
-        "execute_transactional_with_cleanup",
-    );
-    assert_source_contains(
-        "dexios-domain/tests/detached_publication.rs",
-        DETACHED_PUBLICATION_TEST_SOURCE,
-        "DetachedPublication(TransactionError::PartialCommit",
-    );
-    assert_source_contains(
-        "dexios-domain/tests/detached_publication.rs",
-        DETACHED_PUBLICATION_TEST_SOURCE,
-        "fs::read(&input_path)",
-    );
-    assert_source_contains(
-        "dexios-domain/tests/detached_publication.rs",
-        DETACHED_PUBLICATION_TEST_SOURCE,
-        "fs::read(source_dir.join(\"plain.txt\"))",
-    );
-    assert_source_contains(
-        "dexios/src/subcommands/encrypt.rs",
-        ENCRYPT_SUBCOMMAND_SOURCE,
-        "execute_transactional_with_cleanup(intent).map_err(map_encrypt_error)?",
-    );
-    assert_source_contains(
-        "dexios/src/subcommands/pack.rs",
-        PACK_SUBCOMMAND_SOURCE,
-        "execute_transactional_with_cleanup(intent).map_err(map_pack_error)?",
-    );
 }

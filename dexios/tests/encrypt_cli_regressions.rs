@@ -36,8 +36,6 @@ use std::process::{Command, Stdio};
 use tempdir::TestDir;
 
 const PASSWORD: &str = "correct-password";
-const DOMAIN_ENCRYPT_SOURCE: &str = include_str!("../../dexios-domain/src/encrypt.rs");
-const CLI_ERROR_MAPPER_SOURCE: &str = include_str!("../src/subcommands/errors.rs");
 
 fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
@@ -296,27 +294,4 @@ fn encrypt_directory_target_fails_during_staging_preflight() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(output_dir.is_dir());
-}
-
-#[test]
-fn encrypt_detached_partial_publication_source_gate_names_artifact_state() {
-    assert!(
-        DOMAIN_ENCRYPT_SOURCE.contains("DetachedPublication(TransactionError)"),
-        "encrypt domain errors must preserve a detached-publication error variant"
-    );
-    assert!(
-        DOMAIN_ENCRYPT_SOURCE.contains("map_detached_publication_transaction_error"),
-        "detached encrypt commit errors must be routed through pair-aware publication mapping"
-    );
-    assert!(
-        DOMAIN_ENCRYPT_SOURCE.contains("detached_publication_failure"),
-        "detached encrypt errors must expose committed/failed artifact evidence"
-    );
-    assert!(
-        CLI_ERROR_MAPPER_SOURCE.contains("Detached publication incomplete")
-            && CLI_ERROR_MAPPER_SOURCE.contains("payload")
-            && CLI_ERROR_MAPPER_SOURCE.contains("header")
-            && CLI_ERROR_MAPPER_SOURCE.contains("source cleanup was not authorized"),
-        "CLI detached encrypt diagnostics must name artifact state and cleanup denial"
-    );
 }

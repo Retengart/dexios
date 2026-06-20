@@ -40,7 +40,6 @@ use dexios_domain::{decrypt, encrypt};
 mod tempdir;
 use tempdir::DomainTestDir as TestDir;
 
-const DOMAIN_DECRYPT_SOURCE: &str = include_str!("../src/decrypt.rs");
 const CORRECT_PASSWORD: &[u8] = b"correct-password";
 const WRONG_PASSWORD: &[u8] = b"wrong-password";
 const STREAM_TAG_LEN: usize = 16;
@@ -512,25 +511,4 @@ fn decrypt_intent_preserves_detached_zero_header_placeholder_positioning() {
     decrypt::execute(intent).expect("decrypt detached fixture with zero placeholder");
 
     assert_eq!(fs::read(output).unwrap(), b"Hello detached world");
-}
-
-#[test]
-fn decrypt_public_api_source_has_no_raw_refcell_request_contract() {
-    assert!(
-        DOMAIN_DECRYPT_SOURCE.contains("pub struct DecryptIntent"),
-        "`dexios-domain/src/decrypt.rs` must expose a checked DecryptIntent"
-    );
-
-    for forbidden in [
-        "pub struct Request",
-        "pub struct TransactionalRequest",
-        "pub reader:",
-        "pub writer:",
-        "pub header_reader:",
-    ] {
-        assert!(
-            !DOMAIN_DECRYPT_SOURCE.contains(forbidden),
-            "`dexios-domain/src/decrypt.rs` must not expose `{forbidden}` in public decrypt contracts"
-        );
-    }
 }

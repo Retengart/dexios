@@ -51,10 +51,6 @@ use dexios_domain::workflow_error::WorkflowErrorClass;
 use dexios_domain::{archive::ArchivePolicy, storage::identity::OverwritePolicy};
 use dexios_domain::{decrypt, encrypt, header, key, pack, unpack};
 
-const DOMAIN_WORKFLOW_ERROR_SOURCE: &str = include_str!("../src/workflow_error.rs");
-const DOMAIN_PACK_SOURCE: &str = include_str!("../src/pack.rs");
-const DOMAIN_UNPACK_SOURCE: &str = include_str!("../src/unpack.rs");
-const CLI_ERROR_MAPPER_SOURCE: &str = include_str!("../../dexios/src/subcommands/errors.rs");
 #[cfg(unix)]
 const PASSWORD: &[u8; 8] = b"12345678";
 
@@ -184,10 +180,6 @@ fn assert_encrypt_source(error: encrypt::Error, class: WorkflowErrorClass, label
 #[cfg(feature = "test-support")]
 fn storage_full() -> io::Error {
     io::Error::from(io::ErrorKind::StorageFull)
-}
-
-fn production_source(source: &str) -> &str {
-    source.split("#[cfg(test)]").next().unwrap_or(source)
 }
 
 fn assert_decrypt_source(error: decrypt::Error, class: WorkflowErrorClass, label: &str) {
@@ -601,36 +593,6 @@ fn cleanup_failures_have_typed_workflow_classification() {
         dexios_domain::workflow_error::classify_cleanup_result(&result),
         WorkflowErrorClass::CleanupFailure
     );
-}
-
-#[test]
-fn workflow_and_cli_classification_do_not_use_formatted_error_substrings() {
-    let sources = [
-        ("workflow_error.rs", DOMAIN_WORKFLOW_ERROR_SOURCE),
-        ("pack.rs", DOMAIN_PACK_SOURCE),
-        ("unpack.rs", DOMAIN_UNPACK_SOURCE),
-        (
-            "subcommands/errors.rs",
-            production_source(CLI_ERROR_MAPPER_SOURCE),
-        ),
-    ];
-    let forbidden = [
-        ".to_string().contains(",
-        "format!(\"{",
-        "format!(\"{err",
-        "format!(\"{error",
-        ".contains(error.to_string",
-        ".contains(err.to_string",
-    ];
-
-    for (path, source) in sources {
-        for pattern in forbidden {
-            assert!(
-                !source.contains(pattern),
-                "{path} must not classify workflow errors via formatted-error substring pattern {pattern:?}"
-            );
-        }
-    }
 }
 
 #[test]

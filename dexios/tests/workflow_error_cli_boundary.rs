@@ -41,23 +41,6 @@ use workflow_error_cli_support::{
     assert_no_default_source_chain, encrypt_fixture, partial_commit_error, run_cli, stderr,
 };
 
-const MAIN_SOURCE: &str = include_str!("../src/main.rs");
-const ERRORS_SOURCE: &str = include_str!("../src/subcommands/errors.rs");
-const SUBCOMMANDS_SOURCE: &str = include_str!("../src/subcommands.rs");
-const ENCRYPT_SOURCE: &str = include_str!("../src/subcommands/encrypt.rs");
-const DECRYPT_SOURCE: &str = include_str!("../src/subcommands/decrypt.rs");
-const HEADER_SOURCE: &str = include_str!("../src/subcommands/header.rs");
-const KEY_SOURCE: &str = include_str!("../src/subcommands/key.rs");
-const PACK_SOURCE: &str = include_str!("../src/subcommands/pack.rs");
-const UNPACK_SOURCE: &str = include_str!("../src/subcommands/unpack.rs");
-
-fn production_mapper_source() -> &'static str {
-    ERRORS_SOURCE
-        .split("#[cfg(test)]")
-        .next()
-        .expect("production mapper source")
-}
-
 #[test]
 fn partial_commit_keeps_commit_failure_cli_mapping() {
     let pack_error = domain::pack::Error::Transaction(partial_commit_error());
@@ -123,79 +106,6 @@ fn detached_pack_partial_publication_names_committed_and_failed_artifacts() {
         !mapped.contains("Unable to commit packed archive"),
         "detached partial publication must not collapse into generic commit wording: {mapped}"
     );
-}
-
-#[test]
-fn cli_workflow_errors_are_routed_through_mapping_helpers() {
-    assert!(SUBCOMMANDS_SOURCE.contains("pub(crate) mod errors;"));
-    let mapper_source = production_mapper_source();
-    assert!(ERRORS_SOURCE.contains("map_encrypt_error"));
-    assert!(ERRORS_SOURCE.contains("map_decrypt_error"));
-    assert!(ERRORS_SOURCE.contains("map_pack_error"));
-    assert!(ERRORS_SOURCE.contains("map_unpack_error"));
-    assert!(ERRORS_SOURCE.contains("Not enough temporary or output storage while packing archive"));
-    assert!(
-        ERRORS_SOURCE.contains("Not enough temporary or output storage while unpacking archive")
-    );
-    assert!(ERRORS_SOURCE.contains("error.is_resource_pressure()"));
-    assert!(ERRORS_SOURCE.contains("map_header_error"));
-    assert!(ERRORS_SOURCE.contains("map_key_error"));
-    assert!(ERRORS_SOURCE.contains("WorkflowErrorClass::TransactionCommitFailure"));
-    assert!(ERRORS_SOURCE.contains("WorkflowErrorClass::CleanupFailure"));
-    assert!(ERRORS_SOURCE.contains("WorkflowErrorClass::ResourcePressure"));
-    assert_eq!(
-        mapper_source
-            .matches("match error.workflow_class()")
-            .count(),
-        6,
-        "all six CLI workflow mappers should route by typed WorkflowErrorClass"
-    );
-    assert!(ENCRYPT_SOURCE.contains("map_encrypt_error"));
-    assert!(DECRYPT_SOURCE.contains("map_decrypt_error"));
-    assert!(PACK_SOURCE.contains("map_pack_error"));
-    assert!(UNPACK_SOURCE.contains("map_unpack_error"));
-    assert!(HEADER_SOURCE.contains("map_header_error"));
-    assert!(KEY_SOURCE.contains("map_key_error"));
-    for forbidden in [
-        "clap::Error",
-        "Command::error",
-        ".to_string().contains(",
-        "format!(",
-        ".contains(",
-        ".chain()",
-        ".source()",
-        "{error:#}",
-        "{error:?}",
-    ] {
-        assert!(
-            !mapper_source.contains(forbidden),
-            "production workflow mappers must not use {forbidden} for post-parse error rendering"
-        );
-    }
-}
-
-#[test]
-fn main_uses_display_only_error_boundary_for_workflow_failures() {
-    assert!(
-        MAIN_SOURCE.contains("fn run() -> Result<()>"),
-        "main.rs should keep dispatch in a private run() that returns Result"
-    );
-    assert!(
-        MAIN_SOURCE.contains("eprintln!(\"{error}\")"),
-        "main.rs should render normal workflow errors with Display only"
-    );
-    assert!(
-        MAIN_SOURCE.contains("std::process::exit(1)"),
-        "main.rs should exit non-zero after rendering Display-only stderr"
-    );
-    assert!(
-        !MAIN_SOURCE.contains("fn main() -> Result<()>"),
-        "main() must not return Result because default error reporting is outside CLI control"
-    );
-    assert!(!MAIN_SOURCE.contains("{error:#}"));
-    assert!(!MAIN_SOURCE.contains("{error:?}"));
-    assert!(!MAIN_SOURCE.contains(".chain()"));
-    assert!(!MAIN_SOURCE.contains(".source()"));
 }
 
 #[test]

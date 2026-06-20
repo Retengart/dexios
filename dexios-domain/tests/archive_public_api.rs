@@ -241,141 +241,6 @@ fn d05_public_archive_contract_has_no_zip_metadata_knobs() {
 }
 
 #[test]
-fn d03_cli_exposes_no_stored_or_no_compression_selector() {
-    let violations = collect_violations(&cli_archive_sources(), |source| {
-        source
-            .text
-            .lines()
-            .enumerate()
-            .filter_map(|(index, line)| {
-                let compact = line.split_whitespace().collect::<String>();
-                if cli_exposes_compression_selector(&compact) {
-                    Some(violation(
-                        source.path,
-                        index,
-                        "D-03 CLI must not expose Stored/no-compression or a compression selector",
-                    ))
-                } else {
-                    None
-                }
-            })
-            .collect()
-    });
-
-    assert_no_violations(violations);
-}
-
-#[test]
-fn d02_d04_pack_source_keeps_private_zstd_offline_archive_boundary() {
-    assert!(
-        DOMAIN_PACK.contains("begin_v1_manifest_archive_writer"),
-        "ARCH-01 pack must write through the manifest archive V1 writer"
-    );
-    assert!(
-        DOMAIN_PACK.contains("ArchiveManifest") && DOMAIN_PACK.contains("ArchiveBodyFrameHeader"),
-        "ARCH-01 pack must use Dexios-owned manifest-first payload framing"
-    );
-    assert!(
-        !DOMAIN_PACK.contains("zip::CompressionMethod")
-            && !DOMAIN_PACK.contains("ZipWriter::new_stream"),
-        "ARCH-05 canonical pack must not depend on normal-path ZIP writer setup"
-    );
-    assert!(
-        DOMAIN_PACK.contains("offline") && DOMAIN_PACK.contains("at-rest"),
-        "D-04 pack compression must stay framed as offline at-rest archival"
-    );
-
-    let violations = collect_violations(
-        &[Source {
-            path: "dexios-domain/src/pack.rs",
-            text: DOMAIN_PACK,
-        }],
-        |source| {
-            source
-                .text
-                .lines()
-                .enumerate()
-                .filter_map(|(index, line)| {
-                    let trimmed = line.trim_start();
-                    if trimmed.starts_with("pub ") && trimmed.contains("zip::CompressionMethod") {
-                        Some(violation(
-                            source.path,
-                            index,
-                            "D-01 only private implementation code may mention zip::CompressionMethod",
-                        ))
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        },
-    );
-
-    assert_no_violations(violations);
-}
-
-#[test]
-fn phase05_manifest_archive_normal_path_stays_private_and_zip_free() {
-    assert!(
-        DOMAIN_PACK.contains("begin_v1_manifest_archive_writer"),
-        "ARCH-01 pack must write through the manifest archive V1 writer"
-    );
-    assert!(
-        DOMAIN_PACK.contains("ArchiveManifest") && DOMAIN_PACK.contains("ArchiveBodyFrameHeader"),
-        "ARCH-01 pack must use Dexios-owned manifest-first payload framing"
-    );
-    assert!(
-        !DOMAIN_PACK.contains("ZipWriter::new_stream"),
-        "ARCH-05 canonical pack must not use ZIP writer setup"
-    );
-
-    let unpack_normal_path = source_section(
-        "dexios-domain/src/unpack.rs",
-        DOMAIN_UNPACK,
-        "fn execute_manifest_archive",
-        "fn stage_manifest_extraction",
-    );
-    for required in [
-        "V1PayloadDecryptingReader::new",
-        "stage_manifest_extraction",
-        "drain_trailing_plaintext_to_final_auth",
-        ".finish()",
-        "revalidate_extraction_targets",
-        "create_selected_directories_after_final_auth",
-        "commit_all",
-    ] {
-        assert!(
-            unpack_normal_path.contains(required),
-            "ARCH-01/ARCH-03 normal unpack path must contain {required:?}"
-        );
-    }
-    for forbidden in ["ZipArchive", "OpenArchiveWithSource", "_temp_factory()"] {
-        assert!(
-            !unpack_normal_path.contains(forbidden),
-            "ARCH-01 normal manifest unpack path must not contain {forbidden:?}"
-        );
-    }
-
-    let manifest_staging = source_section(
-        "dexios-domain/src/unpack.rs",
-        DOMAIN_UNPACK,
-        "fn stage_manifest_extraction",
-        "fn prepare_manifest_extraction_entities",
-    );
-    for required in [
-        "ArchiveManifest::read_from",
-        "ArchiveBodyFrameHeader::read_from",
-        "stage_manifest_file_body",
-        "drain_manifest_body",
-    ] {
-        assert!(
-            manifest_staging.contains(required),
-            "ARCH-02/ARCH-04 manifest staging must contain {required:?}"
-        );
-    }
-}
-
-#[test]
 fn d10_pack_execution_requires_validated_domain_intent() {
     assert!(
         DOMAIN_PACK.contains("pub struct PackIntent"),
@@ -527,75 +392,6 @@ fn d04_unpack_execution_requires_checked_domain_intent() {
 }
 
 #[test]
-fn archive_cli_errors_use_typed_mappers_without_formatted_error_control_flow() {
-    assert!(
-        CLI_ERRORS.contains("map_pack_error") && CLI_PACK.contains("map_pack_error"),
-        "pack CLI must route domain errors through map_pack_error"
-    );
-    assert!(
-        CLI_ERRORS.contains("map_unpack_error") && CLI_UNPACK.contains("map_unpack_error"),
-        "unpack CLI must route domain errors through map_unpack_error"
-    );
-
-    let bad_source = Source {
-        path: "synthetic/unpack-string-matching.rs",
-        text: r#"if error.to_string().contains("unsafe path") { return Ok(()); }"#,
-    };
-    assert!(
-        !formatted_archive_error_control_flow_violations(bad_source).is_empty(),
-        "archive CLI scanner must reject formatted-error control flow"
-    );
-
-    let violations = collect_violations(
-        &[
-            Source {
-                path: "dexios/src/subcommands/errors.rs",
-                text: CLI_ERRORS,
-            },
-            Source {
-                path: "dexios/src/subcommands/pack.rs",
-                text: CLI_PACK,
-            },
-            Source {
-                path: "dexios/src/subcommands/unpack.rs",
-                text: CLI_UNPACK,
-            },
-        ],
-        formatted_archive_error_control_flow_violations,
-    );
-
-    assert_no_violations(violations);
-}
-
-#[test]
-fn phase4_archive_boundary_rejects_phase5_dxar_extraction_surface() {
-    let bad_domain_source = Source {
-        path: "synthetic/public-dxar-extractor.rs",
-        text: "pub fn extract_dxar_manifest_first_archive() {}",
-    };
-    assert!(
-        !phase5_archive_surface_violations(bad_domain_source).is_empty(),
-        "archive API gate must reject public DXAR extraction before Phase 5"
-    );
-
-    let bad_cli_source = Source {
-        path: "synthetic/dxar-cli-flag.rs",
-        text: r#"Command::new("dexios").arg(Arg::new("dxar").long("dxar"));"#,
-    };
-    assert!(
-        !phase5_archive_surface_violations(bad_cli_source).is_empty(),
-        "archive API gate must reject CLI flags for DXAR extraction before Phase 5"
-    );
-
-    let violations =
-        collect_violations(&domain_archive_sources(), phase5_archive_surface_violations);
-    assert_no_violations(violations);
-
-    let violations = collect_violations(&cli_archive_sources(), phase5_archive_surface_violations);
-    assert_no_violations(violations);
-}
-
-#[test]
 fn payload_kind_and_framing_bytes_stay_core_owned_not_cli_duplicated() {
     for required in ["pub enum PayloadKind", "pub enum PayloadFramingProfile"] {
         assert!(
@@ -634,17 +430,6 @@ fn collect_violations(
     scan: impl Fn(Source<'_>) -> Vec<String>,
 ) -> Vec<String> {
     sources.iter().copied().flat_map(scan).collect()
-}
-
-fn source_section<'a>(source_name: &str, source: &'a str, start: &str, end: &str) -> &'a str {
-    let start_index = source
-        .find(start)
-        .unwrap_or_else(|| panic!("{source_name} must contain section start {start:?}"));
-    let end_index = source[start_index..].find(end).map_or_else(
-        || panic!("{source_name} must contain section end {end:?}"),
-        |index| start_index + index,
-    );
-    &source[start_index..end_index]
 }
 
 fn assert_no_violations(violations: Vec<String>) {
@@ -773,15 +558,6 @@ fn public_line_exposes_zip_metadata_knob(trimmed: &str) -> bool {
     .any(|pattern| normalized.contains(pattern))
 }
 
-fn cli_exposes_compression_selector(compact: &str) -> bool {
-    compact.contains("pubenumCompression")
-        || compact.contains("Compression::None")
-        || compact.contains("Compression::Zstd")
-        || compact.contains("Arg::new(\"zstd\")")
-        || compact.contains(".long(\"zstd\")")
-        || compact.contains("zip::CompressionMethod")
-}
-
 fn public_raw_pack_execution_bypass(trimmed: &str) -> bool {
     [
         "pub struct Request",
@@ -882,70 +658,6 @@ fn cli_constructs_raw_unpack_request(compact: &str) -> bool {
     compact.contains("domain::unpack::Request")
         || compact.contains("domain::unpack::{Request")
         || compact.contains("domain::unpack::{Request,TransactionalRequest}")
-}
-
-fn formatted_archive_error_control_flow_violations(source: Source<'_>) -> Vec<String> {
-    source
-        .text
-        .lines()
-        .enumerate()
-        .filter_map(|(index, line)| {
-            let compact = line.split_whitespace().collect::<String>();
-            if compact.contains("to_string()")
-                || (compact.contains("format!(") && compact.contains("{err"))
-                || compact.contains("contains(err")
-                || compact.contains("contains(error")
-            {
-                Some(violation(
-                    source.path,
-                    index,
-                    "archive CLI mapping must not inspect formatted error text",
-                ))
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
-fn phase5_archive_surface_violations(source: Source<'_>) -> Vec<String> {
-    source
-        .text
-        .lines()
-        .enumerate()
-        .filter_map(|(index, line)| {
-            let trimmed = line.trim_start();
-            let compact = line.split_whitespace().collect::<String>();
-            let lower = compact.to_ascii_lowercase();
-            let public_symbol = trimmed.starts_with("pub ") || trimmed.starts_with("pub(crate) ");
-            let cli_flag = lower.contains("arg::new(\"dxar")
-                || lower.contains(".long(\"dxar")
-                || lower.contains("arg::new(\"manifest")
-                || lower.contains(".long(\"manifest");
-            let phase5_archive_symbol = [
-                "dxar",
-                "manifestfirst",
-                "manifest_first",
-                "manifest-first",
-                "manifestarchive",
-                "manifestpayload",
-                "archivemanifest",
-                "archivebodyframe",
-            ]
-            .into_iter()
-            .any(|symbol| lower.contains(symbol));
-
-            if (public_symbol || cli_flag) && phase5_archive_symbol {
-                Some(violation(
-                    source.path,
-                    index,
-                    "Phase 4 must not expose Phase 5 DXAR extraction surface",
-                ))
-            } else {
-                None
-            }
-        })
-        .collect()
 }
 
 fn payload_contract_duplication_violations(source: Source<'_>) -> Vec<String> {

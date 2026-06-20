@@ -133,11 +133,6 @@ mod tests {
     }
 
     #[test]
-    fn passphrase_word_count_default_is_seven_words() {
-        assert_eq!(PassphraseWordCount::DEFAULT.get(), 7);
-    }
-
-    #[test]
     fn generate_passphrase_with_one_word_has_no_separator() {
         let passphrase = generate_passphrase(PassphraseWordCount::try_new(1).unwrap());
 

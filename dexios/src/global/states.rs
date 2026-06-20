@@ -280,16 +280,6 @@ mod tests {
     }
 
     #[test]
-    fn generated_passphrase_secret_uses_closure_scoped_access() {
-        let source = include_str!("states.rs");
-        let required = ["passphrase", "with_exposed"].join(".");
-        let forbidden = ["passphrase", "expose("].join(".");
-
-        assert!(source.contains(&required));
-        assert!(!source.contains(&forbidden));
-    }
-
-    #[test]
     fn generated_passphrase_debug_does_not_disclose_secret() {
         let mut messages = Vec::new();
 

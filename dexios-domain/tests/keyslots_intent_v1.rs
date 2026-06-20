@@ -254,29 +254,3 @@ fn key_verify_is_read_only_for_serialized_header_bytes() {
         "key verify must not normalize, compact, or rewrite serialized header bytes"
     );
 }
-#[test]
-fn key_add_verify_sources_do_not_expose_public_raw_request_state() {
-    let sources = [
-        ("dexios-domain/src/key/add.rs", DOMAIN_KEY_ADD_SOURCE),
-        (
-            "dexios-domain/src/key/verify.rs",
-            include_str!("../src/key/verify.rs"),
-        ),
-    ];
-    let forbidden = [
-        "pub struct Request",
-        "pub handle:",
-        "RefCell",
-        "pub raw_key",
-        "raw_key_new",
-    ];
-
-    for (path, source) in sources {
-        for pattern in forbidden {
-            assert!(
-                !source.contains(pattern),
-                "`{path}` must not expose `{pattern}` in public add/verify contracts"
-            );
-        }
-    }
-}

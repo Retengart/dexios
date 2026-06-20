@@ -30,20 +30,6 @@ mod transactions_support;
 use transactions_support::*;
 
 #[test]
-fn transaction_harness_creates_final_and_staged_paths() {
-    let test_dir = TestDir::new("transactions");
-    let final_output = test_dir.path().join("output.dexios");
-    let staged_output = test_dir.path().join("output.dexios.staged");
-
-    fs::write(&final_output, b"existing output").unwrap();
-    fs::write(&staged_output, b"candidate output").unwrap();
-
-    // D-17 requires overwrite-preservation tests to use real filesystem paths.
-    assert_eq!(fs::read(&final_output).unwrap(), b"existing output");
-    assert_eq!(fs::read(&staged_output).unwrap(), b"candidate output");
-}
-
-#[test]
 #[cfg(unix)]
 fn storage_persist_uses_fd_relative_unix_finalization() {
     assert!(

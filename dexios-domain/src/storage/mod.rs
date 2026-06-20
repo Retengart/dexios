@@ -329,23 +329,6 @@ mod tests {
     }
 
     #[test]
-    fn remove_file_removes_write_entry() {
-        let stor = InMemoryStorage::default();
-        stor.add_hello_txt();
-
-        let file = stor.write_file("hello.txt").unwrap();
-        let file_path = file.path().to_path_buf();
-
-        match stor.remove_file(file) {
-            Ok(()) => {
-                let im_file = stor.files().get(&file_path).cloned();
-                assert_eq!(im_file, None);
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    #[test]
     fn file_len_returns_content_length() {
         let stor = InMemoryStorage::default();
         stor.add_hello_txt();

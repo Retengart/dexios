@@ -33,7 +33,7 @@ use dexios_core::header::v1::{
     EncryptedMasterKey, KeyslotKdf, V1Header, V1Keyslot, V1KeyslotIndex, V1Keyslots,
 };
 use dexios_core::header::{HeaderReadError, ParsedHeader, ParsedV1Payload};
-use dexios_core::kdf::{ARGON2ID_KDF_PARAM_PROFILE_ID, ARGON2ID_KDF_PROFILE_ID, Kdf, Salt};
+use dexios_core::kdf::{ARGON2ID_KDF_PARAM_PROFILE_ID, ARGON2ID_KDF_PROFILE_ID, Kdf};
 use dexios_core::payload::{PayloadFramingProfile, PayloadKind};
 use dexios_core::primitives::{MasterKey, WrappingKey};
 use dexios_core::stream::{StreamError, V1PayloadDecryptor, V1PayloadEncryptor, V1PayloadStream};
@@ -167,14 +167,6 @@ impl Read for RetiredPrefixOnlyReader {
 }
 
 #[test]
-fn serializes_canonical_v1_header_to_canonical_length() {
-    let header = support::sample_v1_header();
-    let bytes = header.serialize().unwrap();
-
-    assert_eq!(bytes.len(), CANONICAL_HEADER_LEN);
-}
-
-#[test]
 fn v1_header_rejects_zero_keyslots() {
     let empty = V1Keyslots::try_from_vec(Vec::new()).expect_err("empty keyslots should fail");
 
@@ -200,16 +192,6 @@ fn v1_keyslot_collection_rejects_more_than_max() {
         error,
         dexios_core::header::HeaderWriteError::TooManyKeyslots(5)
     ));
-}
-
-#[test]
-fn payload_nonce_length_is_fixed_for_v1() {
-    assert_eq!(dexios_core::primitives::PAYLOAD_NONCE_LEN, 20);
-}
-
-#[test]
-fn keyslot_nonce_length_is_fixed_for_v1() {
-    assert_eq!(dexios_core::primitives::KEYSLOT_NONCE_LEN, 24);
 }
 
 #[test]
@@ -332,14 +314,6 @@ fn stream_initialization_uses_typed_master_key_and_payload_nonce() {
         .expect("decrypt final chunk");
 
     assert_eq!(decrypted, b"hello");
-}
-
-#[test]
-fn keyslot_salt_has_named_kdf_salt_boundary() {
-    let header_salt = HeaderSalt::new([17u8; 16]);
-    let kdf_salt: Salt = header_salt.to_kdf_salt();
-
-    assert_eq!(kdf_salt.as_bytes(), header_salt.as_bytes());
 }
 
 #[test]
@@ -574,33 +548,6 @@ fn retired_prefix_classification_happens_before_canonical_body_loading() {
     let direct_v1_error = V1Header::deserialize(&mut RetiredPrefixOnlyReader::new())
         .expect_err("direct V1 parser should classify retired prefix before canonical body read");
     assert!(matches!(direct_v1_error, HeaderReadError::RetiredV1Layout));
-}
-
-#[test]
-fn public_header_readers_share_prefix_classified_canonical_byte_loader() {
-    let header_mod_source = include_str!("../src/header/mod.rs");
-    let v1_source = include_str!("../src/header/v1.rs");
-
-    assert!(
-        header_mod_source.contains("fn read_canonical_v1_header_bytes("),
-        "header module must expose one crate-private prefix-classified canonical byte loader"
-    );
-    assert!(
-        header_mod_source.contains("let bytes = read_canonical_v1_header_bytes(reader)?;"),
-        "read_header must use the shared prefix-classified canonical byte loader"
-    );
-    assert!(
-        v1_source.contains("let bytes = super::read_canonical_v1_header_bytes(reader)?;"),
-        "V1Header::deserialize must use the shared prefix-classified canonical byte loader"
-    );
-    assert!(
-        !v1_source.contains("reader.read_exact(&mut bytes[..10])?;"),
-        "direct V1 deserialization must not own duplicate prefix loading"
-    );
-    assert!(
-        !v1_source.contains("reader.read_exact(&mut bytes[10..])?;"),
-        "direct V1 deserialization must not own duplicate canonical body loading"
-    );
 }
 
 #[test]

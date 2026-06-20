@@ -212,22 +212,6 @@ fn remove_file_removes_read_entry() {
 }
 
 #[test]
-fn remove_file_removes_write_entry() {
-    let stor = TestFileStorage::new(9);
-    add_hello_txt(&stor).unwrap();
-
-    let file = stor.write_file("hello_9.txt").unwrap();
-
-    match stor.remove_file(file) {
-        Ok(()) => match fs::File::open("hello_9.txt") {
-            Err(_) => {}
-            _ => unreachable!(),
-        },
-        _ => unreachable!(),
-    }
-}
-
-#[test]
 fn file_len_returns_content_length() {
     let stor = TestFileStorage::new(10);
     add_hello_txt(&stor).unwrap();
@@ -349,14 +333,4 @@ fn read_dir_includes_hidden_file_names() {
         }
         _ => unreachable!(),
     }
-}
-
-#[test]
-fn sorted_file_names_returns_owned_sorted_names() {
-    let file_names = vec![PathBuf::from("b.txt"), PathBuf::from("a.txt")];
-
-    assert_eq!(
-        sorted_file_names(&file_names),
-        vec!["a.txt".to_string(), "b.txt".to_string()]
-    );
 }

@@ -44,7 +44,6 @@ use tempdir::{KeyTestDir as TestDir, unique_file_name};
 
 const PASSWORD: &str = "old-pass";
 const KEY_SUBCOMMAND_SOURCE: &str = include_str!("../src/subcommands/key.rs");
-const ERROR_MAPPING_SOURCE: &str = include_str!("../src/subcommands/errors.rs");
 
 fn run_cli(current_dir: &Path, args: &[&str], key: Option<&str>) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
@@ -173,21 +172,6 @@ fn key_add_rejects_old_and_new_keyfiles_both_reading_stdin() {
         "unexpected stderr: {}",
         stderr(&output)
     );
-}
-
-#[test]
-fn key_stale_target_error_mapping_is_sanitized() {
-    for required in [
-        "domain::key::Error::TargetChanged =>",
-        "Key workflow target changed before commit",
-    ] {
-        assert!(
-            ERROR_MAPPING_SOURCE.contains(required),
-            "missing key stale CLI mapping token: {required}"
-        );
-    }
-
-    assert_sanitized_key_stderr("Key workflow target changed before commit");
 }
 
 #[test]

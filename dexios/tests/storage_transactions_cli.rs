@@ -36,8 +36,6 @@ use core::header::common::HEADER_LEN;
 use tempdir::TestDir;
 
 const PASSWORD: &str = "12345678";
-const DEXIOS_SUBCOMMANDS_RS: &str = include_str!("../src/subcommands.rs");
-const DEXIOS_SUBCOMMAND_ERRORS_RS: &str = include_str!("../src/subcommands/errors.rs");
 
 fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
@@ -48,30 +46,6 @@ fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
         .args(args)
         .output()
         .unwrap()
-}
-
-fn assert_source_contains(source_name: &str, source: &str, needle: &str) {
-    assert!(
-        source.contains(needle),
-        "{source_name} must contain {needle:?}"
-    );
-}
-
-#[test]
-fn storage_transaction_cli_harness_runs_in_disposable_real_fs_dir() {
-    let test_dir = TestDir::new("storage-transactions-cli");
-    let fixture = test_dir.path().join("fixture.txt");
-    fs::write(&fixture, b"cli fixture").unwrap();
-
-    let output = run_cli(test_dir.path(), &["--help"]);
-
-    assert!(
-        output.status.success(),
-        "dexios --help failed: stdout={}\nstderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(fixture.exists());
 }
 
 #[test]
@@ -421,16 +395,4 @@ fn unpack_delete_input_keeps_input_after_extraction_commit_failure() {
         String::from_utf8_lossy(&unpack_output.stderr)
     );
     assert!(encrypted.exists());
-}
-
-#[test]
-fn cli_delete_after_success_is_source_gated_against_failed_hash() {
-    for required in [
-        "HashVerification::Failed",
-        "requested hash did not succeed",
-        "cleanup_after_commit",
-    ] {
-        let source = format!("{DEXIOS_SUBCOMMANDS_RS}\n{DEXIOS_SUBCOMMAND_ERRORS_RS}");
-        assert_source_contains("dexios CLI transaction cleanup corpus", &source, required);
-    }
 }

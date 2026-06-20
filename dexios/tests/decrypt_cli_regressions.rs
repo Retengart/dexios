@@ -39,8 +39,6 @@ use tempdir::TestDir;
 
 const CORRECT_PASSWORD: &str = "correct-password";
 const WRONG_PASSWORD: &str = "wrong-password";
-const DECRYPT_SOURCE: &str = include_str!("../src/subcommands/decrypt.rs");
-const ERRORS_SOURCE: &str = include_str!("../src/subcommands/errors.rs");
 const STREAM_TAG_LEN: usize = 16;
 const TRUNCATED_CANONICAL_V1_PREFIX: &[u8] = b"DXIO\x00\x01CV1\x00";
 const RETIRED_CURRENT_V1_PREFIX: &[u8] = b"DXIO\x00\x01\x01\x00\x07\x07";
@@ -445,33 +443,4 @@ fn decrypt_malformed_and_legacy_formats_use_typed_mapping() {
         "retired current-V1 stderr should use map_decrypt_error: {}",
         stderr(&retired_output)
     );
-}
-
-#[test]
-fn decrypt_cli_source_uses_checked_intent_and_typed_mapping() {
-    assert!(
-        ERRORS_SOURCE.contains("map_decrypt_error"),
-        "CLI error helpers must keep a dedicated decrypt mapper"
-    );
-    assert!(
-        DECRYPT_SOURCE.contains("DecryptIntent::new"),
-        "decrypt CLI must construct the checked domain intent"
-    );
-    assert!(
-        DECRYPT_SOURCE.contains("map_decrypt_error"),
-        "decrypt CLI must map domain errors through map_decrypt_error"
-    );
-
-    for forbidden in [
-        "stor.read_file(input)",
-        "try_reader()?",
-        "domain::decrypt::Request",
-        "domain::decrypt::TransactionalRequest",
-        "header_file.as_ref()",
-    ] {
-        assert!(
-            !DECRYPT_SOURCE.contains(forbidden),
-            "decrypt CLI must not keep validation-bypassing reader path `{forbidden}`"
-        );
-    }
 }

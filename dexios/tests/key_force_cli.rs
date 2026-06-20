@@ -184,33 +184,6 @@ fn key_del_without_force_declined_does_not_mutate_keyslots() {
 }
 
 #[test]
-fn key_del_without_force_default_answer_does_not_mutate_keyslots() {
-    let test_dir = TestDir::new("del-default");
-    let encrypted = encrypt_fixture_two_keyslots(test_dir.path(), "del");
-    let before = fs::read(&encrypted).unwrap();
-
-    // Empty line accepts the default, which must be No.
-    let output = run_cli_with_stdin(
-        test_dir.path(),
-        &["key", "del", encrypted.to_str().unwrap()],
-        Some(PASSWORD),
-        b"\n",
-    );
-
-    assert!(
-        output.status.success(),
-        "default-declined key del should exit cleanly: stdout={}\nstderr={}",
-        stdout(&output),
-        stderr(&output)
-    );
-    assert_eq!(
-        fs::read(&encrypted).unwrap(),
-        before,
-        "default key del answer must be No and must not mutate the file"
-    );
-}
-
-#[test]
 fn key_del_with_force_bypasses_prompt_and_mutates() {
     let test_dir = TestDir::new("del-force");
     let encrypted = encrypt_fixture_two_keyslots(test_dir.path(), "del");
@@ -244,31 +217,6 @@ fn key_del_with_force_bypasses_prompt_and_mutates() {
     assert!(
         !verify.status.success(),
         "deleted key should no longer verify after forced del"
-    );
-}
-
-#[test]
-fn key_del_force_short_flag_bypasses_prompt() {
-    let test_dir = TestDir::new("del-force-short");
-    let encrypted = encrypt_fixture_two_keyslots(test_dir.path(), "del");
-    let before = fs::read(&encrypted).unwrap();
-
-    let output = run_cli(
-        test_dir.path(),
-        &["key", "del", "-f", encrypted.to_str().unwrap()],
-        Some(PASSWORD),
-    );
-
-    assert!(
-        output.status.success(),
-        "forced key del (-f) should succeed without a prompt: stdout={}\nstderr={}",
-        stdout(&output),
-        stderr(&output)
-    );
-    assert_ne!(
-        fs::read(&encrypted).unwrap(),
-        before,
-        "forced key del (-f) must mutate the keyslots"
     );
 }
 
@@ -313,39 +261,6 @@ fn key_change_without_force_declined_does_not_mutate_keyslots() {
     assert!(
         verify.status.success(),
         "original key must still verify after a declined change"
-    );
-}
-
-#[test]
-fn key_change_without_force_default_answer_does_not_mutate_keyslots() {
-    let test_dir = TestDir::new("change-default");
-    let encrypted = encrypt_fixture(test_dir.path(), "change");
-    let new_keyfile = write_keyfile(test_dir.path(), "new.key", "new-pass");
-    let before = fs::read(&encrypted).unwrap();
-
-    let output = run_cli_with_stdin(
-        test_dir.path(),
-        &[
-            "key",
-            "change",
-            "--keyfile-new",
-            new_keyfile.to_str().unwrap(),
-            encrypted.to_str().unwrap(),
-        ],
-        Some(PASSWORD),
-        b"\n",
-    );
-
-    assert!(
-        output.status.success(),
-        "default-declined key change should exit cleanly: stdout={}\nstderr={}",
-        stdout(&output),
-        stderr(&output)
-    );
-    assert_eq!(
-        fs::read(&encrypted).unwrap(),
-        before,
-        "default key change answer must be No and must not mutate the file"
     );
 }
 

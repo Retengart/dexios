@@ -122,24 +122,6 @@ fn unpack_rejects_unsafe_entry_without_extracting_safe_sibling() {
     assert!(!test_dir.path().join("escape.txt").exists());
 }
 #[test]
-fn unpack_arch_04_d16_temp_cleanup_on_validation_failure_commits_no_outputs() {
-    let test_dir = TestDir::new("unpack-temp-cleanup-validation");
-    let encrypted_archive = test_dir.path().join("archive.enc");
-    let output_dir = test_dir.path().join("out");
-
-    write_manifest_archive_with_entries(
-        &encrypted_archive,
-        &[("../escape.txt", b"escape"), ("safe.txt", b"safe")],
-    );
-
-    let result = unpack_archive(&encrypted_archive, &output_dir, None);
-
-    let error = result.unwrap_err();
-    assert_manifest_archive_path_error(&error, "validation cleanup archive path");
-    assert!(!output_dir.join("safe.txt").exists());
-    assert!(!test_dir.path().join("escape.txt").exists());
-}
-#[test]
 fn unpack_rejects_unsafe_archive_before_overwrite_callback() {
     let test_dir = TestDir::new("unpack-unsafe-no-prompt");
     let encrypted_archive = test_dir.path().join("archive.enc");

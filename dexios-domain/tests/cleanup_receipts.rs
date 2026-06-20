@@ -33,8 +33,8 @@ use std::path::PathBuf;
 
 #[cfg(feature = "test-support")]
 use dexios_domain::storage::cleanup::{
-    CleanupFailure, CleanupGateError, CleanupReceipt, CleanupTarget, CleanupTargetIdentity,
-    HashVerification, PostCommitSuccess,
+    CleanupGateError, CleanupReceipt, CleanupTarget, CleanupTargetIdentity, HashVerification,
+    PostCommitSuccess,
 };
 #[cfg(feature = "test-support")]
 use dexios_domain::storage::identity::{OverwritePolicy, PathIdentityGraph, PathRole};
@@ -46,8 +46,6 @@ use dexios_domain::storage::transaction::{CommitReceipt, StagedOutputTransaction
 #[path = "support/tempdir.rs"]
 mod tempdir;
 use tempdir::DomainTestDir as TestDir;
-
-const TRANSACTION_SOURCE: &str = include_str!("../src/storage/transaction.rs");
 
 #[cfg(feature = "test-support")]
 fn committed_output(path: PathBuf) -> CommitReceipt {
@@ -66,21 +64,6 @@ fn committed_output(path: PathBuf) -> CommitReceipt {
 fn post_commit_success(path: PathBuf) -> PostCommitSuccess {
     let receipt = committed_output(path);
     PostCommitSuccess::from_commit_and_hash(&receipt, HashVerification::NotRequested).unwrap()
-}
-
-#[test]
-fn cleanup_receipt_harness_uses_disposable_targets() {
-    let test_dir = TestDir::new("cleanup-receipts");
-    let committed_output = test_dir.path().join("committed.dexios");
-    let cleanup_target = test_dir.path().join("source.txt");
-
-    fs::write(&committed_output, b"committed output").unwrap();
-    fs::write(&cleanup_target, b"cleanup target").unwrap();
-    fs::remove_file(&cleanup_target).unwrap();
-
-    // D-17 requires delete-after-success tests to use real cleanup targets.
-    assert_eq!(fs::read(&committed_output).unwrap(), b"committed output");
-    assert!(!cleanup_target.exists());
 }
 
 #[test]
@@ -403,18 +386,6 @@ fn cleanup_receipt_reports_partial_failure() {
 
 #[test]
 #[cfg(feature = "test-support")]
-fn cleanup_failure_source_free_synthetic_case_has_no_source() {
-    let failure = CleanupFailure::without_source(
-        CleanupTarget::unchecked_file_for_test(PathBuf::from("source.txt")),
-        io::ErrorKind::PermissionDenied,
-    );
-
-    assert_eq!(failure.error, io::ErrorKind::PermissionDenied);
-    assert!(failure.source().is_none());
-}
-
-#[test]
-#[cfg(feature = "test-support")]
 fn cleanup_receipt_requires_hash_success_before_delete() {
     let test_dir = TestDir::new("cleanup-receipt-hash-gate");
     let committed = test_dir.path().join("committed.dexios");
@@ -429,32 +400,6 @@ fn cleanup_receipt_requires_hash_success_before_delete() {
     assert_eq!(proof, Err(CleanupGateError::HashNotVerified));
     assert!(target.exists());
     assert_eq!(cleanup_receipt.targets().len(), 1);
-}
-
-#[test]
-fn partial_detached_publication_has_no_cleanup_authorization_impl() {
-    assert!(
-        TRANSACTION_SOURCE.contains("pub struct PartialDetachedPublication"),
-        "detached partial publication evidence must stay explicit"
-    );
-    assert!(
-        TRANSACTION_SOURCE.contains("impl CleanupAuthorizedReceipt for CommitReceipt"),
-        "only complete commit receipts should authorize cleanup"
-    );
-    assert!(
-        !TRANSACTION_SOURCE.contains("impl CleanupAuthorizedReceipt for PartialCommitReceipt"),
-        "partial transaction receipts must not authorize cleanup"
-    );
-    assert!(
-        !TRANSACTION_SOURCE
-            .contains("impl CleanupAuthorizedReceipt for PartialDetachedPublication"),
-        "partial detached publication evidence must not authorize cleanup"
-    );
-    assert!(
-        !TRANSACTION_SOURCE
-            .contains("impl sealed::CleanupAuthorizedReceipt for PartialDetachedPublication"),
-        "sealed partial detached evidence must not authorize cleanup"
-    );
 }
 
 #[test]

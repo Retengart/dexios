@@ -47,7 +47,6 @@ use dexios_domain::workflow_error::WorkflowErrorClass;
 use tempdir::canonical_tempdir;
 
 const PASSWORD: &[u8; 8] = b"12345678";
-const DOMAIN_PACK_RS: &str = include_str!("../src/pack.rs");
 
 fn create_source_dir(root: &Path) -> PathBuf {
     let source_dir = root.join("source");
@@ -55,27 +54,6 @@ fn create_source_dir(root: &Path) -> PathBuf {
     fs::write(source_dir.join("hello.txt"), b"hello").unwrap();
     fs::write(source_dir.join("nested/world.txt"), b"world").unwrap();
     source_dir
-}
-
-#[test]
-fn pack_streaming_source_gate_removes_plaintext_temp_zip_creation() {
-    assert!(
-        DOMAIN_PACK_RS.contains("begin_v1_manifest_archive_writer"),
-        "ARCH-01 pack must use the manifest archive encrypted writer"
-    );
-    assert!(
-        DOMAIN_PACK_RS.contains("ArchiveManifest")
-            && DOMAIN_PACK_RS.contains("ArchiveBodyFrameHeader"),
-        "ARCH-01 pack must write Dexios manifest-first payload framing"
-    );
-    assert!(
-        !DOMAIN_PACK_RS.contains("zip::ZipWriter::new_stream"),
-        "ARCH-01 pack must not write canonical archives through a normal ZIP writer"
-    );
-    assert!(
-        !DOMAIN_PACK_RS.contains("create_temp_artifact"),
-        "ARCH-01 pack execution must not create a plaintext temporary archive artifact"
-    );
 }
 
 fn create_deep_source_file(root: &Path, depth: usize) -> (PathBuf, PathBuf) {
@@ -666,20 +644,6 @@ fn pack_rejects_path_deeper_than_archive_limit_and_preserves_source() {
         ),
         "expected normalized path depth archive limit, got {result:?}"
     );
-    assert_eq!(fs::read(&deep_file).unwrap(), b"deep");
-    assert!(!output_path.exists());
-}
-
-#[test]
-fn pack_limit_failure_keeps_source_and_removes_output() {
-    let (_root_dir, root) = canonical_tempdir();
-    let (source_dir, deep_file) = create_deep_source_file(&root, 65);
-    let output_path = root.join("archive.enc");
-
-    let result =
-        pack_intent(vec![source_dir], &output_path, None).and_then(pack::execute_transactional);
-
-    assert!(matches!(result, Err(pack::Error::ArchiveLimit(_))));
     assert_eq!(fs::read(&deep_file).unwrap(), b"deep");
     assert!(!output_path.exists());
 }

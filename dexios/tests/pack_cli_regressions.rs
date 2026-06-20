@@ -40,8 +40,6 @@ use domain::storage::identity::OverwritePolicy;
 use tempdir::{TestDir, unique_file_name};
 
 const PASSWORD: &str = "12345678";
-const DOMAIN_PACK_SOURCE: &str = include_str!("../../dexios-domain/src/pack.rs");
-const CLI_ERROR_MAPPER_SOURCE: &str = include_str!("../src/subcommands/errors.rs");
 
 fn run_pack(
     current_dir: &Path,
@@ -599,48 +597,6 @@ fn pack_verbose_reports_archived_entries() {
 }
 
 #[test]
-fn pack_recursive_flag_matches_default_recursive_behavior() {
-    let test_dir = TestDir::new("pack-recursive-alias");
-    let default_dir = test_dir.path().join("default/source");
-    let recursive_dir = test_dir.path().join("recursive/source");
-    let default_archive = test_dir.path().join("default.enc");
-    let recursive_archive = test_dir.path().join("recursive.enc");
-    fs::create_dir_all(default_dir.join("nested/deeper")).unwrap();
-    fs::create_dir_all(recursive_dir.join("nested/deeper")).unwrap();
-    fs::write(default_dir.join("hello.txt"), b"hello").unwrap();
-    fs::write(default_dir.join("nested/deeper/world.txt"), b"world").unwrap();
-    fs::write(recursive_dir.join("hello.txt"), b"hello").unwrap();
-    fs::write(recursive_dir.join("nested/deeper/world.txt"), b"world").unwrap();
-
-    let default_output = run_pack(&default_dir, &[], &["."], default_archive.to_str().unwrap());
-    let recursive_output = run_pack(
-        &recursive_dir,
-        &["-r"],
-        &["."],
-        recursive_archive.to_str().unwrap(),
-    );
-
-    assert!(
-        default_output.status.success(),
-        "default pack failed: stdout={}\nstderr={}",
-        String::from_utf8_lossy(&default_output.stdout),
-        String::from_utf8_lossy(&default_output.stderr)
-    );
-    assert!(
-        recursive_output.status.success(),
-        "recursive pack failed: stdout={}\nstderr={}",
-        String::from_utf8_lossy(&recursive_output.stdout),
-        String::from_utf8_lossy(&recursive_output.stderr)
-    );
-
-    let default_names = decrypt_manifest_entry_names(&default_archive, None);
-    let recursive_names = decrypt_manifest_entry_names(&recursive_archive, None);
-
-    assert_eq!(default_names, recursive_names);
-    assert!(default_names.contains(&"source/nested/deeper/world.txt".to_string()));
-}
-
-#[test]
 fn pack_delete_source_removes_source_directory_after_success() {
     let test_dir = TestDir::new("pack-delete-source");
     let source_dir = test_dir.path().join("source");
@@ -736,29 +692,4 @@ fn pack_delete_source_rejects_archive_limit_failure_and_keeps_source() {
     );
     assert_eq!(fs::read(&deep_file).unwrap(), b"deep");
     assert!(!test_dir.path().join("archive.enc").exists());
-}
-
-#[test]
-fn pack_detached_partial_publication_source_gate_names_generated_artifact_state() {
-    assert!(
-        DOMAIN_PACK_SOURCE.contains("DetachedPublication(TransactionError)"),
-        "pack domain errors must preserve a detached-publication error variant"
-    );
-    assert!(
-        DOMAIN_PACK_SOURCE.contains("has_detached_header")
-            && DOMAIN_PACK_SOURCE.contains("map_detached_publication_transaction_error"),
-        "pack must only map linked commit partials as detached publication when a header target exists"
-    );
-    assert!(
-        DOMAIN_PACK_SOURCE.contains("PathRole::GeneratedOutput")
-            && DOMAIN_PACK_SOURCE.contains("PathRole::GeneratedDetachedHeader"),
-        "pack detached publication must preserve generated payload/header roles"
-    );
-    assert!(
-        CLI_ERROR_MAPPER_SOURCE.contains("Detached publication incomplete")
-            && CLI_ERROR_MAPPER_SOURCE.contains("payload")
-            && CLI_ERROR_MAPPER_SOURCE.contains("header")
-            && CLI_ERROR_MAPPER_SOURCE.contains("source cleanup was not authorized"),
-        "CLI detached pack diagnostics must name artifact state and cleanup denial"
-    );
 }

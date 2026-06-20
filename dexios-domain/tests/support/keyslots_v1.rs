@@ -54,11 +54,6 @@ pub(super) use std::io::{Cursor, Seek};
 pub(super) use std::path::{Path, PathBuf};
 pub(super) use tempdir::canonical_tempdir;
 
-pub(super) const DOMAIN_KEY_SOURCE: &str = include_str!("../../src/key.rs");
-pub(super) const DOMAIN_ENCRYPT_SOURCE: &str = include_str!("../../src/encrypt.rs");
-pub(super) const DOMAIN_KEY_ADD_SOURCE: &str = include_str!("../../src/key/add.rs");
-pub(super) const DOMAIN_KEY_CHANGE_SOURCE: &str = include_str!("../../src/key/change.rs");
-pub(super) const DOMAIN_KEY_DELETE_SOURCE: &str = include_str!("../../src/key/delete.rs");
 pub(super) const CANONICAL_KEYSLOT_KDF_TAG_OFFSET: usize = 2;
 pub(super) const HISTORICAL_ARGON2ID_KEY_TAG: [u8; 2] = [0xDF, 0x02];
 

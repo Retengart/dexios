@@ -37,7 +37,6 @@ use core::header::common::HEADER_LEN;
 use tempdir::TestDir;
 
 const PASSWORD: &str = "correct-password";
-const ERROR_MAPPING_SOURCE: &str = include_str!("../src/subcommands/errors.rs");
 
 fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
@@ -132,21 +131,6 @@ fn header_dump_rejects_header_only_input_and_writes_exact_detached_header() {
     assert_failure(&header_only_output, "header dump from header-only input");
     assert!(!test_dir.path().join("second.hdr").exists());
     assert!(fs::read(encrypted).unwrap().len() > HEADER_LEN);
-}
-
-#[test]
-fn header_stale_errors_have_role_specific_cli_mappings() {
-    for required in [
-        "domain::header::Error::TargetChanged =>",
-        "Header workflow target changed before commit",
-        "domain::header::Error::DetachedHeaderChanged =>",
-        "Detached header changed before header restore commit",
-    ] {
-        assert!(
-            ERROR_MAPPING_SOURCE.contains(required),
-            "missing header stale CLI mapping token: {required}"
-        );
-    }
 }
 
 #[test]

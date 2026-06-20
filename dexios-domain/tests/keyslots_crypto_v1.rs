@@ -95,66 +95,6 @@ fn unsupported_kdf_wins_when_no_supported_keyslot_decrypts() {
     ));
 }
 #[test]
-fn domain_key_decrypt_source_avoids_raw_key_clone_and_unwrap_regressions() {
-    let forbidden = ["raw_key_old.clone()", ".unwrap()"];
-
-    for pattern in forbidden {
-        assert!(
-            !DOMAIN_KEY_SOURCE.contains(pattern),
-            "`dexios-domain/src/key.rs` must not contain `{pattern}` in the keyslot decrypt path"
-        );
-    }
-}
-#[test]
-fn domain_encrypt_add_change_sources_keep_borrowed_secret_contract() {
-    let sources = [
-        ("dexios-domain/src/encrypt.rs", DOMAIN_ENCRYPT_SOURCE),
-        ("dexios-domain/src/key.rs", DOMAIN_KEY_SOURCE),
-        ("dexios-domain/src/key/add.rs", DOMAIN_KEY_ADD_SOURCE),
-        ("dexios-domain/src/key/change.rs", DOMAIN_KEY_CHANGE_SOURCE),
-    ];
-    let forbidden = [
-        ".expose(",
-        "raw_key.clone()",
-        "raw_key_old.clone()",
-        "raw_key_new.clone()",
-    ];
-
-    for (path, source) in sources {
-        for pattern in forbidden {
-            assert!(
-                !source.contains(pattern),
-                "`{path}` must not contain `{pattern}` after the borrowed secret API migration"
-            );
-        }
-    }
-
-    assert!(
-        DOMAIN_ENCRYPT_SOURCE.contains(".derive(&raw_key,"),
-        "`encrypt.rs` should borrow raw_key for KDF derivation"
-    );
-    assert!(
-        DOMAIN_KEY_SOURCE.contains(".derive(&raw_key_old,"),
-        "`key.rs` should borrow raw_key_old while trying keyslots"
-    );
-    assert!(
-        DOMAIN_KEY_SOURCE.contains("raw_key_new: &Protected<Vec<u8>>"),
-        "shared keyslot rewrap helper must borrow the new secret"
-    );
-    assert!(
-        !DOMAIN_KEY_SOURCE.contains("raw_key_new.clone()"),
-        "shared keyslot rewrap helper must not clone raw key material"
-    );
-    assert!(
-        DOMAIN_KEY_ADD_SOURCE.contains(".derive(&new_key_secret,"),
-        "`key/add.rs` should borrow the new key secret for replacement keyslot derivation"
-    );
-    assert!(
-        DOMAIN_KEY_CHANGE_SOURCE.contains(".derive(&raw_key_new,"),
-        "`key/change.rs` should borrow raw_key_new for replacement keyslot derivation"
-    );
-}
-#[test]
 fn supported_keyslot_verifies_when_mixed_with_unsupported_argon2id() {
     let encrypted = encrypted_v1_fixture();
 

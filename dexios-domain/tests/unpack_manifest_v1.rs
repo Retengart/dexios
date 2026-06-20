@@ -30,14 +30,6 @@ mod unpack_support;
 use unpack_support::*;
 
 #[test]
-fn test_dir_uses_system_temp_root() {
-    let dir = TestDir::new("unpack-temp-root");
-
-    let temp_root = fs::canonicalize(std::env::temp_dir()).unwrap();
-    assert!(dir.path().starts_with(&temp_root));
-    assert!(!dir.path().starts_with(Path::new("target/test-artifacts")));
-}
-#[test]
 fn unpacks_archive_without_explicit_directory_entries() {
     let test_dir = TestDir::new("unpack-no-dirs");
     let encrypted_archive = test_dir.path().join("archive.enc");

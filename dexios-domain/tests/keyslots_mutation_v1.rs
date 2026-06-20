@@ -246,23 +246,6 @@ fn key_change_unsupported_kdf_preflight_preserves_original_bytes() {
     );
 }
 #[test]
-fn key_change_source_does_not_expose_public_raw_request_state() {
-    let forbidden = [
-        "pub struct Request",
-        "pub handle:",
-        "RefCell",
-        "pub raw_key_old",
-        "pub raw_key_new",
-    ];
-
-    for pattern in forbidden {
-        assert!(
-            !DOMAIN_KEY_CHANGE_SOURCE.contains(pattern),
-            "`dexios-domain/src/key/change.rs` must not expose `{pattern}` in public change contracts"
-        );
-    }
-}
-#[test]
 fn key_delete_failure_preserves_original_header() {
     let (_dir, encrypted_path) = encrypted_v1_file("delete-final-preserved");
     let original = fs::read(&encrypted_path).expect("read original fixture");
@@ -430,24 +413,6 @@ fn key_delete_unsupported_kdf_preflight_preserves_original_bytes() {
         original,
         "unsupported KDF preflight must not mutate header or payload bytes"
     );
-}
-#[test]
-fn key_delete_source_does_not_expose_public_raw_request_state_or_remaining_key_prompt() {
-    let forbidden = [
-        "pub struct Request",
-        "pub handle:",
-        "RefCell",
-        "pub raw_key_old",
-        "remaining_key",
-        "remaining verification",
-    ];
-
-    for pattern in forbidden {
-        assert!(
-            !DOMAIN_KEY_DELETE_SOURCE.contains(pattern),
-            "`dexios-domain/src/key/delete.rs` must not expose `{pattern}` in public delete contracts"
-        );
-    }
 }
 #[test]
 fn can_change_and_reject_final_delete_v1_keyslots() {

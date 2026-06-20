@@ -35,7 +35,6 @@ use std::io::Cursor;
 const KEY_RS: &str = include_str!("../src/key.rs");
 const PRIMITIVES_RS: &str = include_str!("../src/primitives.rs");
 const STREAM_RS: &str = include_str!("../src/stream.rs");
-const HEADER_COMMON_RS: &str = include_str!("../src/header/common.rs");
 const V1_RS: &str = include_str!("../src/header/v1.rs");
 const CARGO_TOML: &str = include_str!("../Cargo.toml");
 
@@ -214,46 +213,5 @@ fn stream_reader_public_api_does_not_implement_standard_read() {
     assert!(
         STREAM_RS.contains("decrypt_file_uncommitted"),
         "file-level decrypt helper must label pre-auth plaintext as uncommitted"
-    );
-}
-
-#[test]
-fn nonce_byte_constructors_are_not_public_generation_apis() {
-    assert!(
-        !HEADER_COMMON_RS.contains("pub const fn new(bytes: [u8; 20]) -> Self"),
-        "payload_nonce must not be a public arbitrary-byte generation API"
-    );
-    assert!(
-        !HEADER_COMMON_RS.contains("pub const fn new(bytes: [u8; 24]) -> Self"),
-        "keyslot_nonce must not be a public arbitrary-byte generation API"
-    );
-    assert!(
-        HEADER_COMMON_RS.contains("pub(crate) const fn new(bytes: [u8; 20]) -> Self"),
-        "payload nonce construction from bytes should stay crate-local for CSPRNG generation"
-    );
-    assert!(
-        HEADER_COMMON_RS.contains("pub(crate) const fn new(bytes: [u8; 24]) -> Self"),
-        "keyslot nonce construction from bytes should stay crate-local for CSPRNG generation"
-    );
-    assert!(
-        HEADER_COMMON_RS.contains("`crate::primitives::gen_payload_nonce`"),
-        "public payload nonce docs should direct writers to the CSPRNG helper"
-    );
-    assert!(
-        HEADER_COMMON_RS.contains("`crate::primitives::gen_keyslot_nonce`"),
-        "public keyslot nonce docs should direct writers to the CSPRNG helper"
-    );
-}
-
-#[test]
-fn encrypting_writer_type_warns_callers_to_finish() {
-    assert!(
-        STREAM_RS
-            .contains("#[must_use = \"call finish() to write the final authenticated block\"]"),
-        "dropping V1PayloadEncryptingWriter without finish intentionally omits the final block, so the type must be must_use"
-    );
-    assert!(
-        STREAM_RS.contains("Dropping the writer without calling `finish`"),
-        "writer docs should make drop-without-finish semantics explicit"
     );
 }

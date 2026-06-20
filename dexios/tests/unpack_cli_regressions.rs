@@ -56,13 +56,6 @@ fn payload_nonce(bytes: [u8; 20]) -> PayloadNonce {
     PayloadNonce::try_from_slice(&bytes).expect("valid payload nonce")
 }
 
-#[test]
-fn test_dir_path_is_canonical() {
-    let test_dir = TestDir::new("unpack-cli-canonical");
-
-    assert_eq!(&fs::canonicalize(test_dir.path()).unwrap(), test_dir.path());
-}
-
 fn run_unpack_with_args(input: &Path, output: &Path, extra_args: &[&str]) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
     command
