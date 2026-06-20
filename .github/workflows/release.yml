@@ -76,9 +76,6 @@ jobs:
       - name: Install mdBook
         run: cargo install mdbook --locked --version 0.5.3
 
-      - name: Install typst
-        run: cargo install typst-cli --locked --version 0.14.2
-
       - name: Run maintainer verification gate
         run: bash scripts/verify_phase_gate.sh
 

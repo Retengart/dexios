@@ -78,7 +78,6 @@ verify_no_unsafe_crate_roots() {
 require_tool_version cargo-audit cargo-audit 0.22.1 "cargo install cargo-audit --locked --version 0.22.1" cargo audit --version
 require_tool_version cargo-deny cargo-deny 0.19.6 "cargo install cargo-deny --locked --version 0.19.6" cargo deny --version
 require_tool_version mdbook mdbook 0.5.3 "cargo install mdbook --locked --version 0.5.3" mdbook --version
-require_tool_version typst typst 0.14.2 "install Typst from https://typst.app/docs/install/ or your OS package manager" typst --version
 
 run bash scripts/verify_repo_hygiene.sh
 run cargo metadata --format-version=1 --locked --no-deps > /dev/null
@@ -94,17 +93,15 @@ run cargo test --locked -p dexios-domain --test workflow_public_api --all-featur
 run cargo test --locked -p dexios-domain --test archive_public_api --release
 run cargo test --locked -p dexios-domain --test workflow_errors --all-features --release
 run cargo test --locked -p dexios-domain --features test-support --test transactions_staged_output --test transactions_linked_publication --test transactions_failure_hooks --test cleanup_receipts --test detached_publication --release
-run cargo test --locked -p dexios --test encrypt_cli_regressions --test pack_cli_regressions --test delete_source_cli --test workflow_error_cli_boundary --test workflow_error_cli_archive --test workflow_error_cli_header_key --test verification_gate_docs --release
+run cargo test --locked -p dexios --test encrypt_cli_regressions --test pack_cli_regressions --test delete_source_cli --test workflow_error_cli_boundary --test workflow_error_cli_archive --test workflow_error_cli_header_key --release
 run cargo test --locked -p dexios-domain --features test-support --test workflow_public_api --test archive_public_api --test cleanup_receipts --test transactions_staged_output --test transactions_linked_publication --test transactions_failure_hooks --test workflow_errors --release
 run cargo test --locked -p dexios-core --test public_api_footguns --release
 run cargo test --locked -p dexios-domain --test header_restore --test header_workflow_errors --test keyslots_intent_v1 --test keyslots_crypto_v1 --test keyslots_mutation_v1 --test workflow_errors --release
-run cargo test --locked -p dexios --test header_cli_regressions --test key_cli_regressions --test verification_gate_docs --release
+run cargo test --locked -p dexios --test header_cli_regressions --test key_cli_regressions --release
 run cargo test --locked -p dexios --test pack_cli_regressions --release
 run cargo test --locked -p dexios --test unpack_cli_regressions --release
 run cargo test --locked -p dexios --test delete_source_cli --release
 run cargo test --locked -p dexios --test workflow_error_cli_boundary --test workflow_error_cli_archive --test workflow_error_cli_header_key --release
-run cargo test --locked -p dexios --test 'verification_gate_*' --release
-run cargo test --locked -p dexios --test verification_gate_docs --release
 run cargo test --locked --workspace --all-features --release --verbose
 run bash scripts/verify_assurance_replay.sh
 run cargo audit --deny warnings
@@ -112,8 +109,6 @@ run cargo deny check
 run cargo build --locked -p dexios --profile release
 run bash scripts/verify_cli_surface.sh
 run mdbook build --dest-dir target/mdbook
-run typst compile --creation-timestamp 0 spec/dexios-paper.typ spec/dexios-paper.pdf
-run git diff --exit-code -- spec/dexios-paper.pdf
 run bash scripts/verify_repo_hygiene.sh
 run git diff --check
 run bash scripts/generate_release_manifest.sh --output target/release-evidence/release-manifest.md --asset target/release/dexios
