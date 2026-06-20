@@ -649,42 +649,18 @@ fn release_workflow_expects_sigstore_bundles_for_all_platforms() {
         "windows-amd64.exe.sigstore.json",
         "windows-amd64.exe.cdx.json.sigstore.json",
     ] {
-        assert_contains(
-            ".github/workflows/release.yml",
-            RELEASE_WORKFLOW,
-            suffix,
-        );
+        assert_contains(".github/workflows/release.yml", RELEASE_WORKFLOW, suffix);
     }
 }
 
 #[test]
 fn signing_documentation_exists_and_covers_cosign() {
     assert_contains("SIGNING.md", SIGNING_MD, "# Verifying Dexios Releases");
-    assert_contains(
-        "SIGNING.md",
-        SIGNING_MD,
-        "cosign verify-blob",
-    );
-    assert_contains(
-        "SIGNING.md",
-        SIGNING_MD,
-        "certificate-identity",
-    );
-    assert_contains(
-        "SIGNING.md",
-        SIGNING_MD,
-        "certificate-oidc-issuer",
-    );
-    assert_contains(
-        "SIGNING.md",
-        SIGNING_MD,
-        "gh attestation verify",
-    );
-    assert_contains(
-        "SIGNING.md",
-        SIGNING_MD,
-        ".sigstore.json",
-    );
+    assert_contains("SIGNING.md", SIGNING_MD, "cosign verify-blob");
+    assert_contains("SIGNING.md", SIGNING_MD, "certificate-identity");
+    assert_contains("SIGNING.md", SIGNING_MD, "certificate-oidc-issuer");
+    assert_contains("SIGNING.md", SIGNING_MD, "gh attestation verify");
+    assert_contains("SIGNING.md", SIGNING_MD, ".sigstore.json");
 }
 
 #[test]

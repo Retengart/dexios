@@ -1074,7 +1074,11 @@ fn crate_roots_keep_the_no_unsafe_compiler_baseline() {
     }
     // The binary crate uses deny (not forbid) so that the DEXIOS_KEY scrub
     // can use a targeted #[allow(unsafe_code)] for std::env::remove_var.
-    assert_contains("dexios/src/main.rs", DEXIOS_MAIN_RS, "#![deny(unsafe_code)]");
+    assert_contains(
+        "dexios/src/main.rs",
+        DEXIOS_MAIN_RS,
+        "#![deny(unsafe_code)]",
+    );
 }
 
 #[test]

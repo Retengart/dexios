@@ -75,8 +75,7 @@ pub(crate) const MEASURE_PERFORMANCE_GATE: &str =
     include_str!("../../../scripts/measure_performance_gate.sh");
 pub(crate) const GENERATE_RELEASE_MANIFEST: &str =
     include_str!("../../../scripts/generate_release_manifest.sh");
-pub(crate) const GEN_RELEASE_BODY: &str =
-    include_str!("../../../scripts/gen-release-body.sh");
+pub(crate) const GEN_RELEASE_BODY: &str = include_str!("../../../scripts/gen-release-body.sh");
 pub(crate) const DEXIOS_CORE_STREAM_V1_TESTS: &str =
     include_str!("../../../dexios-core/tests/stream_v1.rs");
 pub(crate) const DEXIOS_CORE_V1_HEADER_TESTS: &str =
