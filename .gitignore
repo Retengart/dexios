@@ -16,3 +16,5 @@
 # Local editor/tool scratch - not project work
 .antigravitycli/
 .fresh/
+.gsd/
+.mimocode/

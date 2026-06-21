@@ -24,6 +24,8 @@
         reason = "integration tests assert exact behavior and may panic on failure"
     )
 )]
+#[path = "support/keyfile_cli.rs"]
+mod keyfile_cli;
 #[expect(dead_code, reason = "shared tempdir test helper")]
 #[path = "support/tempdir.rs"]
 mod tempdir;
@@ -58,11 +60,8 @@ fn payload_nonce(bytes: [u8; 20]) -> PayloadNonce {
 
 fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
-    command
-        .current_dir(current_dir)
-        .env("DEXIOS_KEY", PASSWORD)
-        .arg("--env-key")
-        .args(args);
+    command.current_dir(current_dir);
+    keyfile_cli::append_keyed_args(&mut command, current_dir, PASSWORD, args);
     command.output().unwrap()
 }
 
@@ -267,19 +266,20 @@ fn decrypt_delete_input_waits_for_commit_success() {
     fs::write(&output, b"existing output").unwrap();
 
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
-    let decrypt_cmd = command
-        .current_dir(test_dir.path())
-        .env("DEXIOS_KEY", "wrong-password")
-        .arg("--env-key")
-        .args([
+    command.current_dir(test_dir.path());
+    keyfile_cli::append_keyed_args(
+        &mut command,
+        test_dir.path(),
+        "wrong-password",
+        &[
             "decrypt",
             "-f",
             "--delete-input",
             encrypted.to_str().unwrap(),
             output.to_str().unwrap(),
-        ])
-        .output()
-        .unwrap();
+        ],
+    );
+    let decrypt_cmd = command.output().unwrap();
 
     assert!(
         !decrypt_cmd.status.success(),
@@ -533,8 +533,7 @@ fn pack_delete_source_reports_partial_cleanup_failure() {
         "cleanup failure must not print normal-output success text: stdout={}",
         String::from_utf8_lossy(&pack_cmd.stdout)
     );
-    // stderr also carries the env-key exposure warning (DEXIOS_KEY is used by run_cli);
-    // assert the cleanup-failure line is reported without leaking a debug/source chain.
+    // Assert the cleanup-failure line is reported without leaking a debug/source chain.
     let pack_stderr = String::from_utf8_lossy(&pack_cmd.stderr);
     assert!(
         pack_stderr

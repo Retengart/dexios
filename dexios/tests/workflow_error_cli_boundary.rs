@@ -120,18 +120,14 @@ fn wrong_key_decrypt_default_stderr_is_display_only() {
     );
     assert!(!wrong_key_output.status.success());
     let wrong_key_stderr = stderr(&wrong_key_output);
-    // The Key::Env path emits a one-time exposure warning (mem-1/cli-1); the workflow
-    // error itself must still render Display-only. Verify the error line(s), excluding
-    // that benign warning, are exactly the sanitized message.
     let error_lines = wrong_key_stderr
         .lines()
-        .filter(|line| !line.contains("Using DEXIOS_KEY from the environment"))
         .filter(|line| !line.trim().is_empty())
         .collect::<Vec<_>>();
     assert_eq!(
         error_lines,
         ["Authentication failed"],
-        "default workflow stderr should be the sanitized Display message only (excluding the env-key warning): {wrong_key_stderr}"
+        "default workflow stderr should be the sanitized Display message only: {wrong_key_stderr}"
     );
     assert_no_default_source_chain(&wrong_key_stderr);
     assert_no_default_debug_rendering(&wrong_key_stderr);

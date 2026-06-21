@@ -52,12 +52,34 @@ run() {
     "$@"
 }
 
-verify_no_unsafe_crate_roots() {
+verify_no_unsafe_policy() {
     local crate_root
-    # Library crates must use #![forbid(unsafe_code)] — no override allowed.
+    if ! grep -Fxq 'unsafe_code = "forbid"' Cargo.toml; then
+        echo 'Missing required workspace lint in Cargo.toml: unsafe_code = "forbid"' >&2
+        exit 1
+    fi
+
+    local package_manifest
+    local package_manifests=(
+        "dexios/Cargo.toml"
+        "dexios-core/Cargo.toml"
+        "dexios-domain/Cargo.toml"
+        "dexios-gui/Cargo.toml"
+    )
+
+    for package_manifest in "${package_manifests[@]}"; do
+        if ! grep -Fxq 'workspace = true' "$package_manifest"; then
+            echo "Missing required workspace lint opt-in in $package_manifest: workspace = true" >&2
+            exit 1
+        fi
+    done
+
+    # Workspace lint inheritance plus crate-root guards must both forbid unsafe code.
     local forbid_crate_roots=(
+        "dexios/src/main.rs"
         "dexios-core/src/lib.rs"
         "dexios-domain/src/lib.rs"
+        "dexios-gui/src/main.rs"
     )
 
     for crate_root in "${forbid_crate_roots[@]}"; do
@@ -66,13 +88,6 @@ verify_no_unsafe_crate_roots() {
             exit 1
         fi
     done
-
-    # The binary crate uses #![deny(unsafe_code)] (overridable with
-    # #[allow(unsafe_code)]) for the DEXIOS_KEY scrub unsafe block.
-    if ! grep -Fxq '#![deny(unsafe_code)]' "dexios/src/main.rs"; then
-        echo "Missing required crate-root guard in dexios/src/main.rs: #![deny(unsafe_code)]" >&2
-        exit 1
-    fi
 }
 
 require_tool_version cargo-audit cargo-audit 0.22.1 "cargo install cargo-audit --locked --version 0.22.1" cargo audit --version
@@ -80,7 +95,7 @@ require_tool_version cargo-deny cargo-deny 0.19.6 "cargo install cargo-deny --lo
 
 run bash scripts/verify_repo_hygiene.sh
 run cargo metadata --format-version=1 --locked --no-deps > /dev/null
-run verify_no_unsafe_crate_roots
+run verify_no_unsafe_policy
 run cargo fmt --all --check
 run cargo clippy --workspace --all-targets --all-features --no-deps --locked
 run cargo test --locked -p dexios-core --test stream_v1 --release

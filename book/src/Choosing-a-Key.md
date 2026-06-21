@@ -1,11 +1,10 @@
 ## Choosing a Key
 
-Dexios supports four practical key sources:
+Dexios supports three practical key sources:
 
 - an interactively entered passphrase
 - a keyfile via `--keyfile`
 - a generated passphrase via `--auto`
-- the `DEXIOS_KEY` environment variable
 
 If you lose the key material for an encrypted file, Dexios cannot recover the plaintext.
 
@@ -29,14 +28,13 @@ When multiple key sources are available, the current CLI resolves them in this o
 
 1. explicit keyfile
 2. explicit `--auto`
-3. `DEXIOS_KEY` with `--env-key`
-4. interactive password entry
+3. interactive password entry
 
-That means an explicit `--auto` or `--keyfile` overrides `DEXIOS_KEY`, and an inherited `DEXIOS_KEY` is ignored unless the command also passes `--env-key`.
+Dexios does not accept key material from environment variables. For noninteractive automation, use a keyfile or pass `--keyfile -` and supply the key bytes on standard input.
 
 ## Keyfiles
 
-`--keyfile <path>` reads raw bytes from the given file. The keyfile must be non-empty.
+`--keyfile <path>` reads raw bytes from the given file. The keyfile must be non-empty and no larger than 1 MiB.
 
 For advanced scripted use, passing `-` as the keyfile path reads the key bytes from standard input.
 

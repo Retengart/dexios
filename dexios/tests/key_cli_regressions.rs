@@ -24,6 +24,8 @@
         reason = "integration tests assert exact behavior and may panic on failure"
     )
 )]
+#[path = "support/keyfile_cli.rs"]
+mod keyfile_cli;
 #[expect(dead_code, reason = "shared tempdir test helper")]
 #[path = "support/tempdir.rs"]
 mod tempdir;
@@ -47,16 +49,11 @@ const KEY_SUBCOMMAND_SOURCE: &str = include_str!("../src/subcommands/key.rs");
 
 fn run_cli(current_dir: &Path, args: &[&str], key: Option<&str>) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
-    command
-        .current_dir(current_dir)
-        .stdin(Stdio::null())
-        .args(args);
+    command.current_dir(current_dir).stdin(Stdio::null());
     match key {
-        Some(key) => {
-            command.env("DEXIOS_KEY", key).arg("--env-key");
-        }
+        Some(key) => keyfile_cli::append_keyed_args(&mut command, current_dir, key, args),
         None => {
-            command.env_remove("DEXIOS_KEY");
+            command.args(args);
         }
     }
 
@@ -69,7 +66,6 @@ fn run_cli_with_stdin(current_dir: &Path, args: &[&str], stdin: &[u8]) -> std::p
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .env_remove("DEXIOS_KEY")
         .args(args)
         .spawn()
         .unwrap();
@@ -308,7 +304,7 @@ fn key_add_reads_new_key_after_old_key_verification_succeeds() {
 }
 
 #[test]
-fn key_add_uses_dexios_key_for_old_key_when_old_keyfile_is_absent() {
+fn key_add_uses_provided_old_keyfile_when_old_keyfile_arg_is_absent() {
     let test_dir = TestDir::new("add-old-env");
     let encrypted = encrypt_fixture(test_dir.path(), "plain");
     let new_keyfile = write_keyfile(test_dir.path(), "new.key", "new-pass");
@@ -327,7 +323,7 @@ fn key_add_uses_dexios_key_for_old_key_when_old_keyfile_is_absent() {
 
     assert!(
         output.status.success(),
-        "key add did not use DEXIOS_KEY as the old key fallback: stdout={}\nstderr={}",
+        "key add did not use the provided old keyfile fallback: stdout={}\nstderr={}",
         stdout(&output),
         stderr(&output)
     );
@@ -644,7 +640,7 @@ fn key_change_reads_new_key_after_old_key_verification_succeeds() {
 }
 
 #[test]
-fn key_change_uses_dexios_key_for_old_key_when_old_keyfile_is_absent() {
+fn key_change_uses_provided_old_keyfile_when_old_keyfile_arg_is_absent() {
     let test_dir = TestDir::new("change-old-env");
     let encrypted = encrypt_fixture(test_dir.path(), "plain");
     let new_keyfile = write_keyfile(test_dir.path(), "new.key", "new-pass");
@@ -664,7 +660,7 @@ fn key_change_uses_dexios_key_for_old_key_when_old_keyfile_is_absent() {
 
     assert!(
         output.status.success(),
-        "key change did not use DEXIOS_KEY as the old key fallback: stdout={}\nstderr={}",
+        "key change did not use the provided old keyfile fallback: stdout={}\nstderr={}",
         stdout(&output),
         stderr(&output)
     );

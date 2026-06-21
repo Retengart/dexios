@@ -24,6 +24,8 @@
         reason = "integration tests assert exact behavior and may panic on failure"
     )
 )]
+#[path = "support/keyfile_cli.rs"]
+mod keyfile_cli;
 #[expect(dead_code, reason = "shared tempdir test helper")]
 #[path = "support/tempdir.rs"]
 mod tempdir;
@@ -40,21 +42,16 @@ const PASSWORD: &str = "correct-password";
 
 fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
-    command
-        .current_dir(current_dir)
-        .env("DEXIOS_KEY", PASSWORD)
-        .arg("--env-key")
-        .args(args)
-        .output()
-        .unwrap()
+    command.current_dir(current_dir);
+    keyfile_cli::append_keyed_args(&mut command, current_dir, PASSWORD, args);
+    command.output().unwrap()
 }
 
 fn run_cli_with_stdin(current_dir: &Path, args: &[&str], stdin: &[u8]) -> std::process::Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_dexios"))
-        .current_dir(current_dir)
-        .env("DEXIOS_KEY", PASSWORD)
-        .arg("--env-key")
-        .args(args)
+    let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
+    command.current_dir(current_dir);
+    keyfile_cli::append_keyed_args(&mut command, current_dir, PASSWORD, args);
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

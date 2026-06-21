@@ -2,7 +2,7 @@
 
 Dexios represents secrets with `Protected<>` values where possible. In practice, key material is read, normalized into bytes, wrapped, and then passed to the selected hashing flow.
 
-The CLI rejects empty key material.
+The CLI rejects empty key material. Keyfile and standard-input key material are capped at 1 MiB before wrapping.
 
 ## Autogenerating a Key
 
@@ -45,7 +45,7 @@ If the keyfile path is `-`, Dexios reads the key material from standard input in
 
 ## Reading from Environment Variables
 
-If `DEXIOS_KEY` is available, `--env-key` is passed, and no higher-priority key source is selected, Dexios reads it, converts it to bytes, and wraps it in `Protected<Vec<u8>>`. Without `--env-key`, an inherited `DEXIOS_KEY` is ignored.
+Dexios does not read key material from environment variables. Use `--keyfile <path>` or `--keyfile -` for noninteractive automation.
 
 ## V1 Key Workflows
 

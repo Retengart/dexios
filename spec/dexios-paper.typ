@@ -221,15 +221,13 @@ Dexios currently accepts key material from:
 
 - an interactively entered passphrase,
 - a keyfile,
-- a generated passphrase,
-- or the `DEXIOS_KEY` environment variable.
+- or a generated passphrase.
 
 The current CLI resolves these sources in this order:
 
 1. explicit keyfile,
 2. explicit generated passphrase request,
-3. environment variable,
-4. interactive prompt.
+3. interactive prompt.
 
 === Passphrase Autogeneration
 

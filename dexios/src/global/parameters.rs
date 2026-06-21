@@ -151,7 +151,6 @@ pub(crate) fn key_manipulation_params(sub_matches: &ArgMatches) -> Result<KeyMan
         sub_matches,
         &KeyParams {
             user: true,
-            env: true,
             autogenerate: false,
             keyfile: true,
         },
@@ -162,7 +161,6 @@ pub(crate) fn key_manipulation_params(sub_matches: &ArgMatches) -> Result<KeyMan
         sub_matches,
         &KeyParams {
             user: true,
-            env: false,
             autogenerate: true,
             keyfile: true,
         },
@@ -291,7 +289,6 @@ mod tests {
             sub_matches,
             &KeyParams {
                 user: true,
-                env: false,
                 autogenerate: true,
                 keyfile: true,
             },
@@ -364,7 +361,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_autogenerate_beats_environment_key() {
+    fn explicit_autogenerate_is_selected_as_key_source() {
         let matches = build_cli()
             .try_get_matches_from(["dexios", "encrypt", "--auto=7", "in.bin", "out.enc"])
             .expect("CLI should parse");
@@ -381,8 +378,6 @@ mod tests {
                 .ok()
                 .flatten()
                 .map(String::as_str),
-            true,
-            true,
             &KeyParams::default(),
         )
         .expect("key selection");

@@ -51,6 +51,8 @@ use core::stream::V1PayloadStream;
 use domain::storage::identity::{OverwritePolicy, PathIdentityGraph, PathRole};
 use domain::storage::transaction::{LinkedOutputTransaction, TransactionError};
 
+#[path = "keyfile_cli.rs"]
+mod keyfile_cli;
 #[path = "tempdir.rs"]
 #[expect(dead_code, reason = "shared tempdir test helper")]
 mod tempdir;
@@ -70,13 +72,9 @@ fn payload_nonce(bytes: [u8; 20]) -> PayloadNonce {
 
 pub(crate) fn run_cli(current_dir: &Path, key: &str, args: &[&str]) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
-    command
-        .current_dir(current_dir)
-        .env("DEXIOS_KEY", key)
-        .arg("--env-key")
-        .args(args)
-        .output()
-        .unwrap()
+    command.current_dir(current_dir);
+    keyfile_cli::append_keyed_args(&mut command, current_dir, key, args);
+    command.output().unwrap()
 }
 
 pub(crate) fn stderr(output: &std::process::Output) -> String {

@@ -28,10 +28,10 @@ Or with an explicit number of words:
 dexios encrypt --auto=5 secret.txt secret.enc
 ```
 
-## Use `DEXIOS_KEY`
+## Use Standard Input for Automation
 
 ```bash
-DEXIOS_KEY='correct horse battery staple' dexios --env-key encrypt secret.txt secret.enc
+printf '%s' 'correct horse battery staple' | dexios encrypt --keyfile - secret.txt secret.enc
 ```
 
 ## Write the Header Separately

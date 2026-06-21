@@ -58,7 +58,7 @@ unused = { level = "warn", priority = -1 }
 nonstandard_style = { level = "warn", priority = -1 }
 unreachable_pub = "warn"
 unused_qualifications = "warn"
-unsafe_code = "deny"
+unsafe_code = "forbid"
 non_ascii_idents = "deny"
 
 [workspace.lints.clippy]

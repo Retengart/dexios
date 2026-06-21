@@ -122,7 +122,6 @@ fn shared_arg_factories_are_source_gated() {
         "output_arg",
         "keyfile_arg",
         "keyfile_arg_with_help",
-        "env_key_arg",
         "force_arg",
         "hash_arg",
         "delete_input_arg",
@@ -903,30 +902,50 @@ fn shared_options_parse_across_command_families() {
 }
 
 #[test]
-fn env_key_global_flag_is_visible_to_keyed_subcommands() {
+fn env_key_global_flag_is_rejected_for_keyed_subcommands() {
+    assert_unknown_argument_is_rejected(
+        [
+            "dexios",
+            "--env-key",
+            "encrypt",
+            "-f",
+            "plain.txt",
+            "plain.enc",
+        ],
+        "--env-key",
+    );
+
+    assert_unknown_argument_is_rejected(
+        [
+            "dexios",
+            "key",
+            "--env-key",
+            "add",
+            "--keyfile-new",
+            "new.key",
+            "cipher.enc",
+        ],
+        "--env-key",
+    );
+}
+
+#[test]
+fn stdin_keyfile_remains_the_noninteractive_key_input_path() {
     let matches = parse_ok([
         "dexios",
-        "--env-key",
         "encrypt",
+        "--keyfile",
+        "-",
         "-f",
         "plain.txt",
         "plain.enc",
     ]);
     let (_, encrypt) = matches.subcommand().expect("encrypt subcommand");
-    assert!(encrypt.get_flag("env-key"));
 
-    let matches = parse_ok([
-        "dexios",
-        "key",
-        "--env-key",
-        "add",
-        "--keyfile-new",
-        "new.key",
-        "cipher.enc",
-    ]);
-    let (_, key) = matches.subcommand().expect("key subcommand");
-    let (_, add) = key.subcommand().expect("key add subcommand");
-    assert!(add.get_flag("env-key"));
+    assert_eq!(
+        encrypt.get_one::<String>("keyfile").map(String::as_str),
+        Some("-")
+    );
 }
 
 #[test]

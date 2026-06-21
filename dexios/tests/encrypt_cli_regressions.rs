@@ -24,6 +24,8 @@
         reason = "integration tests assert exact behavior and may panic on failure"
     )
 )]
+#[path = "support/keyfile_cli.rs"]
+mod keyfile_cli;
 #[expect(dead_code, reason = "shared tempdir test helper")]
 #[path = "support/tempdir.rs"]
 mod tempdir;
@@ -39,19 +41,14 @@ const PASSWORD: &str = "correct-password";
 
 fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
-    command
-        .current_dir(current_dir)
-        .env("DEXIOS_KEY", PASSWORD)
-        .arg("--env-key")
-        .args(args)
-        .output()
-        .unwrap()
+    command.current_dir(current_dir);
+    keyfile_cli::append_keyed_args(&mut command, current_dir, PASSWORD, args);
+    command.output().unwrap()
 }
 
 fn run_cli_with_stdin(current_dir: &Path, args: &[&str], stdin: &[u8]) -> std::process::Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_dexios"))
         .current_dir(current_dir)
-        .env_remove("DEXIOS_KEY")
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -113,14 +110,18 @@ fn encrypt_auto_generated_passphrase_disclosure_uses_stderr_not_stdout() {
         .expect("stderr should include generated passphrase disclosure")
         .to_owned();
 
-    let mut decrypt_command = Command::new(env!("CARGO_BIN_EXE_dexios"));
-    let decrypt_output = decrypt_command
-        .current_dir(test_dir.path())
-        .env("DEXIOS_KEY", generated_passphrase)
-        .arg("--env-key")
-        .args(["decrypt", "--force", "plain.enc", "plain.out"])
-        .output()
-        .unwrap();
+    let decrypt_output = run_cli_with_stdin(
+        test_dir.path(),
+        &[
+            "decrypt",
+            "--keyfile",
+            "-",
+            "--force",
+            "plain.enc",
+            "plain.out",
+        ],
+        generated_passphrase.as_bytes(),
+    );
 
     assert!(
         decrypt_output.status.success(),
@@ -131,30 +132,6 @@ fn encrypt_auto_generated_passphrase_disclosure_uses_stderr_not_stdout() {
     assert_eq!(
         fs::read(test_dir.path().join("plain.out")).unwrap(),
         plaintext
-    );
-}
-
-#[test]
-fn encrypt_with_dexios_key_env_warns_about_environment_exposure() {
-    let test_dir = TestDir::new("encrypt-env-key-warn");
-    fs::write(test_dir.path().join("plain.txt"), b"env key plaintext").unwrap();
-
-    // run_cli sets DEXIOS_KEY, so this exercises the Key::Env path (mem-1/cli-1).
-    let output = run_cli(
-        test_dir.path(),
-        &["encrypt", "--force", "plain.txt", "plain.enc"],
-    );
-
-    assert!(
-        output.status.success(),
-        "encrypt failed: stdout={}\nstderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("Using DEXIOS_KEY from the environment"),
-        "env-key exposure warning must be emitted on stderr: stderr={stderr}"
     );
 }
 

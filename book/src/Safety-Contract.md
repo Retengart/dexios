@@ -107,11 +107,14 @@ evidence.
 
 ## No-Unjustified-Unsafe Policy
 
-`dexios/src/main.rs`, `dexios-core/src/lib.rs`, and
-`dexios-domain/src/lib.rs` must keep `#![forbid(unsafe_code)]`. The Rust
-Reference describes `forbid` as identical to `deny`, with the additional
-effect that later code cannot change the lint level. That makes the crate-root
-lint the compiler-backed baseline for SAFE-03.
+The root `Cargo.toml` must keep `[workspace.lints.rust] unsafe_code = "forbid"`,
+and every package manifest must inherit workspace lints with `[lints] workspace =
+true`. `dexios/src/main.rs`, `dexios-core/src/lib.rs`, `dexios-domain/src/lib.rs`,
+and `dexios-gui/src/main.rs` must also keep `#![forbid(unsafe_code)]`. Cargo
+applies the workspace lint to every opted-in package, and the Rust Reference
+describes `forbid` as identical to `deny`, with the additional effect that later
+code cannot change the lint level. That makes the workspace lint plus crate-root
+guards the compiler-backed baseline for SAFE-03.
 
 Any future exception requires all of these before acceptance:
 
@@ -134,7 +137,7 @@ For local verification, use:
 
 VERI-04 broad-gate rule: the minimum maintainer gate includes:
 
-- no-unsafe crate-root checks for `dexios/src/main.rs`, `dexios-core/src/lib.rs`, and `dexios-domain/src/lib.rs`
+- workspace `unsafe_code = "forbid"` inheritance checks and no-unsafe crate-root checks for `dexios/src/main.rs`, `dexios-core/src/lib.rs`, `dexios-domain/src/lib.rs`, and `dexios-gui/src/main.rs`
 - `cargo metadata --format-version=1 --locked --no-deps`
 - `cargo fmt --all --check`
 - `cargo clippy --workspace --all-targets --all-features --no-deps --locked`
@@ -212,4 +215,4 @@ Phase 3 closes with an additional KDF/stream/secret gate:
 
 - stale normal Argon2id wording is rejected, while explicit historical unsupported Argon2id wording is allowed;
 - targeted KDF, V1 header, V1 stream, protected wrapper, domain keyslot, CLI header-details, and CLI parser/prompt tests pass;
-- workspace release and debug checks, rustfmt, clippy, full release tests, and no-unsafe crate-root checks pass.
+- workspace release and debug checks, rustfmt, clippy, full release tests, workspace `unsafe_code = "forbid"` inheritance checks, and no-unsafe crate-root checks pass.

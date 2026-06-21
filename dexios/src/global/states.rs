@@ -1,12 +1,16 @@
 use anyhow::{Context, Result};
 use clap::ArgMatches;
-use clap::parser::MatchesError;
 use core::protected::Protected;
+use std::io::Read;
+use zeroize::Zeroize;
 
 use crate::cli::prompt::get_password;
 use crate::global::parameters::get_optional_param;
 use crate::warn;
 use core::key::{PassphraseWordCount, generate_passphrase};
+
+const MAX_KEY_MATERIAL_BYTES: usize = 1_048_576;
+const MAX_KEY_MATERIAL_READ_BYTES: u64 = 1_048_577;
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub(crate) enum DirectoryMode {
@@ -52,7 +56,6 @@ pub(crate) enum ForceMode {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Key {
     Keyfile(String),
-    Env,
     Generate(PassphraseWordCount),
     User,
 }
@@ -63,11 +66,19 @@ pub(crate) enum PasswordState {
     Direct,
 }
 
-fn get_bytes<R: std::io::Read>(reader: &mut R) -> Result<Protected<Vec<u8>>> {
-    let mut data = Vec::new();
-    reader
+fn get_bytes<R: Read>(reader: &mut R) -> Result<Protected<Vec<u8>>> {
+    let mut data = Vec::with_capacity(MAX_KEY_MATERIAL_BYTES + 1);
+    if let Err(error) = reader
+        .take(MAX_KEY_MATERIAL_READ_BYTES)
         .read_to_end(&mut data)
-        .context("Unable to read data")?;
+    {
+        data.zeroize();
+        return Err(error).context("Unable to read data");
+    }
+    if data.len() > MAX_KEY_MATERIAL_BYTES {
+        data.zeroize();
+        anyhow::bail!("key material exceeds 1 MiB limit");
+    }
     Ok(Protected::new(data))
 }
 
@@ -111,20 +122,12 @@ impl Key {
     pub(crate) fn resolve_key_source(
         keyfile: Option<&str>,
         autogenerate: Option<&str>,
-        env_available: bool,
-        env_requested: bool,
         params: &KeyParams,
     ) -> Result<Self> {
         let key = if let (Some(path), true) = (keyfile, params.keyfile) {
             Self::Keyfile(path.to_owned())
         } else if let (Some(words), true) = (autogenerate, params.autogenerate) {
             Self::Generate(parse_generated_passphrase_word_count(words)?)
-        } else if env_requested && params.env && env_available {
-            Self::Env
-        } else if env_requested && params.env {
-            return Err(anyhow::anyhow!(
-                "DEXIOS_KEY was requested with --env-key but is not set"
-            ));
         } else if params.user {
             Self::User
         } else {
@@ -155,25 +158,6 @@ impl Key {
                 }
                 secret
             }
-            Self::Env => {
-                let value = std::env::var("DEXIOS_KEY")
-                    .context("Unable to read DEXIOS_KEY from environment variable")?;
-                // Scrub the key from the process environment immediately after
-                // reading. SAFETY: Dexios is single-threaded at this point (early
-                // in CLI dispatch, before any worker threads or crypto operations).
-                // std::env::remove_var is safe in single-threaded programs per its
-                // safety contract. This prevents the key from leaking to child
-                // processes or via /proc/<pid>/environ.
-                #[expect(unsafe_code, reason = "scrub DEXIOS_KEY from process environment")]
-                unsafe {
-                    std::env::remove_var("DEXIOS_KEY");
-                }
-                warn!(
-                    "Using DEXIOS_KEY from the environment: prefer an interactive \
-                     prompt or a keyfile on shared hosts."
-                );
-                Protected::new(value.into_bytes())
-            }
             Self::User => get_password(pass_state)?,
             Self::Generate(i) => generated_passphrase_secret(*i, |message| warn!("{message}")),
         };
@@ -192,35 +176,13 @@ impl Key {
     ) -> Result<Self> {
         let keyfile = get_optional_param(keyfile_descriptor, sub_matches)?;
         let autogenerate = get_optional_param("autogenerate", sub_matches)?;
-        let env_requested = env_key_requested(sub_matches)?;
 
-        Self::resolve_key_source(
-            keyfile,
-            autogenerate,
-            std::env::var("DEXIOS_KEY").is_ok(),
-            env_requested,
-            params,
-        )
+        Self::resolve_key_source(keyfile, autogenerate, params)
     }
 }
 
-fn env_key_requested(sub_matches: &ArgMatches) -> Result<bool> {
-    match sub_matches.try_get_one::<bool>("env-key") {
-        Ok(Some(requested)) => Ok(*requested),
-        Ok(None) | Err(MatchesError::UnknownArgument { .. }) => Ok(false),
-        Err(_) => Err(anyhow::anyhow!(
-            "internal CLI adapter error: optional flag 'env-key' unreadable after clap validation"
-        )),
-    }
-}
-
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "each bool is an independent CLI key-source flag, not a state machine"
-)]
 pub(crate) struct KeyParams {
     pub user: bool,
-    pub env: bool,
     pub autogenerate: bool,
     pub keyfile: bool,
 }
@@ -229,7 +191,6 @@ impl Default for KeyParams {
     fn default() -> Self {
         Self {
             user: true,
-            env: true,
             autogenerate: true,
             keyfile: true,
         }
@@ -239,7 +200,7 @@ impl Default for KeyParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::{Arg, ArgAction, Command, value_parser};
+    use clap::{Arg, Command, value_parser};
     use core::key::PassphraseWordCount;
 
     const DISCLOSURE_PREFIX: &str = "Your generated passphrase is intentionally shown here and may be captured by terminal scrollback or logs: ";
@@ -303,43 +264,86 @@ mod tests {
 
     #[test]
     fn autogenerate_key_source_accepts_positive_word_count() {
-        let key =
-            Key::resolve_key_source(None, Some("7"), true, false, &KeyParams::default()).unwrap();
+        let key = Key::resolve_key_source(None, Some("7"), &KeyParams::default()).unwrap();
 
         assert_eq!(key, Key::Generate(PassphraseWordCount::try_new(7).unwrap()));
     }
 
     #[test]
-    fn environment_key_requires_explicit_env_key_source() {
-        let key = Key::resolve_key_source(None, None, true, false, &KeyParams::default()).unwrap();
+    fn absent_explicit_key_source_uses_user_prompt_fallback() {
+        let key = Key::resolve_key_source(None, None, &KeyParams::default()).unwrap();
 
         assert_eq!(key, Key::User);
     }
 
     #[test]
-    fn explicit_environment_key_source_uses_available_env_key() {
-        let key = Key::resolve_key_source(None, None, true, true, &KeyParams::default()).unwrap();
+    fn key_resolution_without_user_prompt_fails_closed() {
+        let error = Key::resolve_key_source(
+            None,
+            None,
+            &KeyParams {
+                user: false,
+                autogenerate: true,
+                keyfile: true,
+            },
+        )
+        .expect_err("key resolution without any enabled source must fail");
 
-        assert_eq!(key, Key::Env);
+        assert!(
+            error
+                .to_string()
+                .contains("No key sources found with the parameters/arguments provided"),
+            "error should explain that no key source is available: {error}"
+        );
     }
 
     #[test]
-    fn explicit_environment_key_source_without_env_var_fails_before_prompt() {
-        let error = Key::resolve_key_source(None, None, false, true, &KeyParams::default())
-            .expect_err("explicit env-key request must not silently fall back to a prompt");
+    fn key_material_larger_than_one_mib_is_rejected_before_wrapping() {
+        let mut reader = std::io::Cursor::new(vec![b'x'; 1_048_577]);
+
+        let error = get_bytes(&mut reader)
+            .expect_err("oversized key material must be rejected before it is wrapped");
 
         assert!(
-            error.to_string().contains("DEXIOS_KEY"),
-            "error should name the missing env key: {error}"
+            error.to_string().contains("key material exceeds 1 MiB"),
+            "error should name the key material limit: {error}"
+        );
+    }
+
+    #[test]
+    fn partial_key_material_read_error_fails_before_wrapping() {
+        struct PartialThenError {
+            emitted: bool,
+        }
+
+        impl Read for PartialThenError {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                if self.emitted {
+                    return Err(std::io::Error::other("synthetic partial key read failure"));
+                }
+
+                self.emitted = true;
+                buf[..6].copy_from_slice(b"secret");
+                Ok(6)
+            }
+        }
+
+        let mut reader = PartialThenError { emitted: false };
+
+        let error = get_bytes(&mut reader)
+            .expect_err("partial key material read failure must not produce a wrapped secret");
+
+        assert!(
+            error.to_string().contains("Unable to read data"),
+            "error should keep the key-read context: {error}"
         );
     }
 
     #[test]
     fn invalid_explicit_autogenerate_word_counts_are_rejected() {
         for words in ["0", "-1", "abc"] {
-            let error =
-                Key::resolve_key_source(None, Some(words), true, false, &KeyParams::default())
-                    .expect_err("invalid explicit generated-passphrase count should fail");
+            let error = Key::resolve_key_source(None, Some(words), &KeyParams::default())
+                .expect_err("invalid explicit generated-passphrase count should fail");
             let error = error.to_string();
 
             assert!(
@@ -358,11 +362,6 @@ mod tests {
         let matches = Command::new("synthetic")
             .arg(Arg::new("keyfile").long("keyfile"))
             .arg(Arg::new("autogenerate").long("auto"))
-            .arg(
-                Arg::new("env-key")
-                    .long("env-key")
-                    .action(ArgAction::SetTrue),
-            )
             .try_get_matches_from(["synthetic"])
             .expect("synthetic matches should parse");
 
@@ -370,7 +369,6 @@ mod tests {
             &matches,
             &KeyParams {
                 user: true,
-                env: false,
                 autogenerate: true,
                 keyfile: true,
             },
@@ -397,7 +395,6 @@ mod tests {
             &matches,
             &KeyParams {
                 user: true,
-                env: true,
                 autogenerate: true,
                 keyfile: true,
             },
@@ -429,7 +426,6 @@ mod tests {
             &matches,
             &KeyParams {
                 user: true,
-                env: true,
                 autogenerate: true,
                 keyfile: true,
             },

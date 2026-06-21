@@ -24,6 +24,8 @@
         reason = "integration tests assert exact behavior and may panic on failure"
     )
 )]
+#[path = "support/keyfile_cli.rs"]
+mod keyfile_cli;
 #[expect(dead_code, reason = "shared tempdir test helper")]
 #[path = "support/tempdir.rs"]
 mod tempdir;
@@ -39,13 +41,9 @@ const PASSWORD: &str = "12345678";
 
 fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
-    command
-        .current_dir(current_dir)
-        .env("DEXIOS_KEY", PASSWORD)
-        .arg("--env-key")
-        .args(args)
-        .output()
-        .unwrap()
+    command.current_dir(current_dir);
+    keyfile_cli::append_keyed_args(&mut command, current_dir, PASSWORD, args);
+    command.output().unwrap()
 }
 
 #[test]
@@ -96,13 +94,14 @@ fn decrypt_wrong_key_failure_preserves_existing_output() {
 
     fs::write(&output_path, b"existing output").unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
-    let decrypt_output = command
-        .current_dir(test_dir.path())
-        .env("DEXIOS_KEY", "wrong-password")
-        .arg("--env-key")
-        .args(["decrypt", "--force", "plain.enc", "plain.out"])
-        .output()
-        .unwrap();
+    command.current_dir(test_dir.path());
+    keyfile_cli::append_keyed_args(
+        &mut command,
+        test_dir.path(),
+        "wrong-password",
+        &["decrypt", "--force", "plain.enc", "plain.out"],
+    );
+    let decrypt_output = command.output().unwrap();
 
     assert!(
         !decrypt_output.status.success(),

@@ -17,9 +17,8 @@
 - Redesigned the canonical V1 archive payload as Dexios-owned manifest-first
   `DXAR` framing with ordered `DXBF` body frames. ZIP bytes and ZIP crate types
   are no longer part of the canonical archive format surface.
-- `DEXIOS_KEY` is no longer an implicit fallback key source. Commands must pass
-  `--env-key` before Dexios reads `DEXIOS_KEY`; explicit `--keyfile` and `--auto`
-  still take precedence.
+- Environment-variable key input has been removed. Use `--keyfile <path>` or
+  `--keyfile -` for noninteractive automation.
 
 ### Security
 

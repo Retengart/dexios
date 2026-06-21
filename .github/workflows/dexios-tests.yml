@@ -173,15 +173,17 @@ jobs:
         test -f "$DEXIOS_BIN"
         chmod +x "$DEXIOS_BIN"
     - name: Generate stream fixture
-      run: printf 'delete-after-success stream\n' > stream.txt
+      run: |
+        printf 'delete-after-success stream\n' > stream.txt
+        printf '12345678' > smoke.key
     - name: Encrypt and delete plaintext input
       run: |
-        DEXIOS_KEY=12345678 "$DEXIOS_BIN" --env-key encrypt -f --delete-input stream.txt stream.enc
+        "$DEXIOS_BIN" encrypt -f -k smoke.key --delete-input stream.txt stream.enc
         test ! -e stream.txt
         test -f stream.enc
     - name: Decrypt and delete encrypted input
       run: |
-        DEXIOS_KEY=12345678 "$DEXIOS_BIN" --env-key decrypt -f --delete-input stream.enc stream.out
+        "$DEXIOS_BIN" decrypt -f -k smoke.key --delete-input stream.enc stream.out
         test ! -e stream.enc
         grep -F 'delete-after-success stream' stream.out
     - name: Generate pack fixture
@@ -190,12 +192,12 @@ jobs:
         printf 'delete-after-success pack\n' > pack-src/nested/file.txt
     - name: Pack and delete source directory
       run: |
-        DEXIOS_KEY=12345678 "$DEXIOS_BIN" --env-key pack -f --delete-source pack-src archive.enc
+        "$DEXIOS_BIN" pack -f -k smoke.key --delete-source pack-src archive.enc
         test ! -e pack-src
         test -f archive.enc
     - name: Unpack and delete archive input
       run: |
-        DEXIOS_KEY=12345678 "$DEXIOS_BIN" --env-key unpack -f --delete-input archive.enc pack-out
+        "$DEXIOS_BIN" unpack -f -k smoke.key --delete-input archive.enc pack-out
         test ! -e archive.enc
         grep -F 'delete-after-success pack' pack-out/pack-src/nested/file.txt
 

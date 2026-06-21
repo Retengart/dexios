@@ -24,6 +24,8 @@
         reason = "integration tests assert exact behavior and may panic on failure"
     )
 )]
+#[path = "support/keyfile_cli.rs"]
+mod keyfile_cli;
 #[expect(dead_code, reason = "shared tempdir test helper")]
 #[path = "support/tempdir.rs"]
 mod tempdir;
@@ -44,8 +46,9 @@ const PASSWORD: &str = "12345678";
 
 fn run_cli(current_dir: &Path, args: &[&str]) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
-    command.current_dir(current_dir).env("DEXIOS_KEY", PASSWORD);
-    command.arg("--env-key").args(args).output().unwrap()
+    command.current_dir(current_dir);
+    keyfile_cli::append_keyed_args(&mut command, current_dir, PASSWORD, args);
+    command.output().unwrap()
 }
 
 fn encrypt_fixture(input_path: &Path, output_path: &Path) {

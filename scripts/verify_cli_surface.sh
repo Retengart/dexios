@@ -134,20 +134,21 @@ expect_rejected() {
 }
 
 case_removed_token_source_gate() {
-    awk 'BEGIN { bad = 0 } /^[[:space:]]*#/ { next } /--aes|--argon|--zstd|--erase|"\$BIN"[[:space:]]+erase/ { if ($0 !~ /expect_rejected/) { print; bad = 1 } } END { exit bad }' "$0"
+    awk 'BEGIN { bad = 0 } /^[[:space:]]*#/ { next } /--aes|--argon|--zstd|--erase|--env-key|"\$BIN"[[:space:]]+erase/ { if ($0 !~ /expect_rejected/) { print; bad = 1 } } END { exit bad }' "$0"
 }
 
-case_encrypt_decrypt_env_hash_delete_input() {
+case_encrypt_decrypt_keyfile_hash_delete_input() {
     local dir="$ROOT/enc"
     mkdir -p "$dir"
     printf 'alpha\nbeta\n' > "$dir/plain.txt"
+    printf '12345678' > "$dir/key.bin"
 
-    DEXIOS_KEY=12345678 "$BIN" --env-key encrypt -f --hash --delete-input "$dir/plain.txt" "$dir/plain.enc" > "$dir/encrypt.stdout" || return 1
+    "$BIN" encrypt -f -k "$dir/key.bin" --hash --delete-input "$dir/plain.txt" "$dir/plain.enc" > "$dir/encrypt.stdout" || return 1
     not_exists "$dir/plain.txt" "encrypt should remove plaintext input after success" || return 1
     exists "$dir/plain.enc" "encrypt should create cipher file" || return 1
     contains_file "$dir/encrypt.stdout" "$dir/plain.enc:" "encrypt --hash should print output hash" || return 1
 
-    DEXIOS_KEY=12345678 "$BIN" --env-key decrypt -f --hash --delete-input "$dir/plain.enc" "$dir/plain.out" > "$dir/decrypt.stdout" || return 1
+    "$BIN" decrypt -f -k "$dir/key.bin" --hash --delete-input "$dir/plain.enc" "$dir/plain.out" > "$dir/decrypt.stdout" || return 1
     not_exists "$dir/plain.enc" "decrypt should remove encrypted input after success" || return 1
     exists "$dir/plain.out" "decrypt should create plaintext output" || return 1
     contains_file "$dir/decrypt.stdout" "$dir/plain.enc:" "decrypt --hash should print input hash" || return 1
@@ -191,7 +192,8 @@ case_encrypt_auto_generated_passphrase() {
         return 1
     fi
 
-    DEXIOS_KEY="$auto_key" "$BIN" --env-key decrypt -f "$dir/plain.enc" "$dir/plain.out" || return 1
+    printf '%s' "$auto_key" > "$dir/auto.key"
+    "$BIN" decrypt -f -k "$dir/auto.key" "$dir/plain.enc" "$dir/plain.out" || return 1
     file_eq "$dir/plain.txt" "$dir/plain.out" "auto-generated passphrase decrypt should round-trip" || return 1
 }
 
@@ -233,8 +235,9 @@ case_header_subcommands() {
     local dir="$ROOT/header"
     mkdir -p "$dir"
     printf 'header-body\n' > "$dir/plain.txt"
+    printf '12345678' > "$dir/key.bin"
 
-    DEXIOS_KEY=12345678 "$BIN" --env-key encrypt -f "$dir/plain.txt" "$dir/plain.enc" || return 1
+    "$BIN" encrypt -f -k "$dir/key.bin" "$dir/plain.txt" "$dir/plain.enc" || return 1
 
     "$BIN" header details "$dir/plain.enc" > "$dir/details-enc.stdout" || return 1
     contains_file "$dir/details-enc.stdout" "Header version:" "header details should describe encrypted file" || return 1
@@ -247,12 +250,12 @@ case_header_subcommands() {
 
     cp "$dir/plain.enc" "$dir/stripped.enc"
     "$BIN" header strip -f --header "$dir/plain.hdr" "$dir/stripped.enc" || return 1
-    DEXIOS_KEY=12345678 "$BIN" --env-key decrypt -f --header "$dir/plain.hdr" "$dir/stripped.enc" "$dir/stripped-via-header.out" || return 1
+    "$BIN" decrypt -f -k "$dir/key.bin" --header "$dir/plain.hdr" "$dir/stripped.enc" "$dir/stripped-via-header.out" || return 1
     file_eq "$dir/plain.txt" "$dir/stripped-via-header.out" "decrypt with dumped header after strip should work" || return 1
 
     cp "$dir/stripped.enc" "$dir/restored.enc"
     "$BIN" header restore -f "$dir/plain.hdr" "$dir/restored.enc" || return 1
-    DEXIOS_KEY=12345678 "$BIN" --env-key decrypt -f "$dir/restored.enc" "$dir/restored.out" || return 1
+    "$BIN" decrypt -f -k "$dir/key.bin" "$dir/restored.enc" "$dir/restored.out" || return 1
     file_eq "$dir/plain.txt" "$dir/restored.out" "header restore should make file decryptable again without detached header" || return 1
 }
 
@@ -316,11 +319,12 @@ case_unpack_delete_input_removes_archive() {
     local dir="$ROOT/unpack-delete-input"
     mkdir -p "$dir/src" "$dir/out"
     printf 'delete-input archive\n' > "$dir/src/file.txt"
+    printf '12345678' > "$dir/key.bin"
 
     (
         cd "$dir" &&
-        DEXIOS_KEY=12345678 "$BIN" --env-key pack -f src archive.enc > /dev/null &&
-        DEXIOS_KEY=12345678 "$BIN" --env-key unpack -f --delete-input archive.enc out > /dev/null
+        "$BIN" pack -f -k key.bin src archive.enc > /dev/null &&
+        "$BIN" unpack -f -k key.bin --delete-input archive.enc out > /dev/null
     ) || return 1
 
     not_exists "$dir/archive.enc" "unpack should remove archive input after success" || return 1
@@ -332,13 +336,14 @@ case_pack_recursive_flag_compatibility_alias() {
     mkdir -p "$dir/src/nested/deeper" "$dir/out-no" "$dir/out-rec"
     printf 'top\n' > "$dir/src/top.txt"
     printf 'deep\n' > "$dir/src/nested/deeper/deep.txt"
+    printf '12345678' > "$dir/key.bin"
 
     (
         cd "$dir" &&
-        DEXIOS_KEY=12345678 "$BIN" --env-key pack -f src no_recursive.enc > no_recursive.stdout &&
-        DEXIOS_KEY=12345678 "$BIN" --env-key pack -f -r src recursive.enc > recursive.stdout &&
-        DEXIOS_KEY=12345678 "$BIN" --env-key unpack -f no_recursive.enc out-no > /dev/null &&
-        DEXIOS_KEY=12345678 "$BIN" --env-key unpack -f recursive.enc out-rec > /dev/null
+        "$BIN" pack -f -k key.bin src no_recursive.enc > no_recursive.stdout &&
+        "$BIN" pack -f -k key.bin -r src recursive.enc > recursive.stdout &&
+        "$BIN" unpack -f -k key.bin no_recursive.enc out-no > /dev/null &&
+        "$BIN" unpack -f -k key.bin recursive.enc out-rec > /dev/null
     ) || return 1
 
     exists "$dir/out-no/src/nested/deeper/deep.txt" "default pack should include deeply nested file" || return 1
@@ -350,10 +355,11 @@ case_pack_verbose_emits_output() {
     mkdir -p "$dir/src/sub"
     printf 'x\n' > "$dir/src/a.txt"
     printf 'y\n' > "$dir/src/sub/b.txt"
+    printf '12345678' > "$dir/key.bin"
 
     (
         cd "$dir" &&
-        DEXIOS_KEY=12345678 "$BIN" --env-key pack -f -v src verbose.enc > verbose.stdout
+        "$BIN" pack -f -k key.bin -v src verbose.enc > verbose.stdout
     ) || return 1
 
     if [[ "$(wc -c < "$dir/verbose.stdout")" -eq 0 ]]; then
@@ -378,6 +384,7 @@ case_removed_cli_surface_rejected() {
     expect_rejected "decrypt removed erase flag" "unexpected argument" "$BIN" decrypt --erase "$dir/plain.enc" "$dir/plain.out" || return 1
     expect_rejected "pack removed erase flag" "unexpected argument" "$BIN" pack --erase "$dir" "$dir/archive.enc" || return 1
     expect_rejected "unpack removed erase flag" "unexpected argument" "$BIN" unpack --erase "$dir/archive.enc" "$dir/out" || return 1
+    expect_rejected "removed env-key global flag" "unexpected argument" "$BIN" --env-key encrypt "$dir/plain.txt" "$dir/plain.enc" || return 1
     expect_rejected "removed top level erase subcommand" "unrecognized subcommand" "$BIN" erase "$dir/plain.txt" || return 1
 }
 
@@ -385,7 +392,7 @@ echo "Using binary: $BIN"
 echo "Working root: $ROOT"
 
 run_case "source gate rejects stale positive CLI tokens" case_removed_token_source_gate
-run_case "encrypt/decrypt env+hash+delete-input" case_encrypt_decrypt_env_hash_delete_input
+run_case "encrypt/decrypt keyfile+hash+delete-input" case_encrypt_decrypt_keyfile_hash_delete_input
 run_case "encrypt/decrypt keyfile+detached defaults" case_encrypt_decrypt_keyfile_detached_defaults
 run_case "encrypt --auto" case_encrypt_auto_generated_passphrase
 run_case "invalid encrypt --auto does not disclose" case_encrypt_auto_invalid_values_do_not_disclose

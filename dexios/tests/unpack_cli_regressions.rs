@@ -24,6 +24,8 @@
         reason = "integration tests assert exact behavior and may panic on failure"
     )
 )]
+#[path = "support/keyfile_cli.rs"]
+mod keyfile_cli;
 #[expect(dead_code, reason = "shared tempdir test helper")]
 #[path = "support/tempdir.rs"]
 mod tempdir;
@@ -58,17 +60,21 @@ fn payload_nonce(bytes: [u8; 20]) -> PayloadNonce {
 
 fn run_unpack_with_args(input: &Path, output: &Path, extra_args: &[&str]) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
-    command
-        .env("DEXIOS_KEY", PASSWORD)
-        .arg("--env-key")
-        .arg("unpack")
-        .arg("-f");
+    let current_dir = input
+        .parent()
+        .expect("test archive should have a parent directory");
+    command.current_dir(current_dir);
+
+    let mut args = vec!["unpack", "-f"];
 
     for arg in extra_args {
-        command.arg(arg);
+        args.push(arg);
     }
 
-    command.arg(input).arg(output).output().unwrap()
+    args.push(input.to_str().expect("test input path should be UTF-8"));
+    args.push(output.to_str().expect("test output path should be UTF-8"));
+    keyfile_cli::append_keyed_args(&mut command, current_dir, PASSWORD, &args);
+    command.output().unwrap()
 }
 
 fn run_unpack(input: &Path, output: &Path) -> std::process::Output {
@@ -78,7 +84,6 @@ fn run_unpack(input: &Path, output: &Path) -> std::process::Output {
 fn run_cli_with_stdin(current_dir: &Path, args: &[&str], stdin: &[u8]) -> std::process::Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_dexios"))
         .current_dir(current_dir)
-        .env_remove("DEXIOS_KEY")
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

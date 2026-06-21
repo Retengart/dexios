@@ -24,6 +24,8 @@
         reason = "integration tests assert exact behavior and may panic on failure"
     )
 )]
+#[path = "support/keyfile_cli.rs"]
+mod keyfile_cli;
 #[expect(dead_code, reason = "shared tempdir test helper")]
 #[path = "support/tempdir.rs"]
 mod tempdir;
@@ -48,28 +50,26 @@ fn run_pack(
     output_name: &str,
 ) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dexios"));
-    command
-        .current_dir(current_dir)
-        .env("DEXIOS_KEY", PASSWORD)
-        .arg("--env-key")
-        .arg("pack")
-        .arg("-f");
+    command.current_dir(current_dir);
+
+    let mut args = vec!["pack", "-f"];
 
     for arg in extra_args {
-        command.arg(arg);
+        args.push(arg);
     }
 
     for input in inputs {
-        command.arg(input);
+        args.push(input);
     }
 
-    command.arg(output_name).output().unwrap()
+    args.push(output_name);
+    keyfile_cli::append_keyed_args(&mut command, current_dir, PASSWORD, &args);
+    command.output().unwrap()
 }
 
 fn run_cli_with_stdin(current_dir: &Path, args: &[&str], stdin: &[u8]) -> std::process::Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_dexios"))
         .current_dir(current_dir)
-        .env_remove("DEXIOS_KEY")
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

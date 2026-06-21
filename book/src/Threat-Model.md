@@ -15,22 +15,19 @@ conscious decisions, not oversights.
 
 ## Out of scope (conscious decisions)
 
-- **Memory locking (mlock / VirtualLock).** Every Dexios crate is `#![forbid(unsafe_code)]`.
+- **Memory locking (mlock / VirtualLock).** The workspace lint and every Dexios
+  crate root use `forbid(unsafe_code)`.
   Locking pages requires `unsafe` FFI (directly or via a crate), which we deliberately do
   not introduce into the cryptographic core. Consequently, live secrets may be paged to
   swap or captured in a hibernation image or core dump, where `zeroize` cannot reach them.
 - **Allocator / OS / terminal / crash-dump sanitization.** `zeroize` clears the buffers we
   own; it cannot clear copies made by the allocator, the kernel, the terminal scrollback,
   or third-party AEAD internals.
-- **Environment-variable key residue (`DEXIOS_KEY`).** When a key is supplied via the
-  `DEXIOS_KEY` environment variable, Dexios scrubs it from the process environment
-  immediately after reading (via `std::env::remove_var`). This prevents inheritance by
-  child processes and removal from `/proc/<pid>/environ` for the current process.
-  However, the value may still persist in shell history, CI logs, or process-launch
-  tooling that captures the environment before Dexios starts. Dexios ignores
-  `DEXIOS_KEY` unless `--env-key` is passed, and emits a one-time warning whenever
-  the environment key is used. Prefer an interactive prompt or a keyfile on shared
-  hosts.
+- **Environment-variable key input.** Dexios does not accept key material from
+  environment variables. Environment-based secrets can be captured by shells,
+  process launchers, CI logs, crash reports, and host inspection tooling before
+  an application can scrub them. Use an interactive prompt, a keyfile, or
+  `--keyfile -` on standard input for automation.
 
 ## Output file permissions
 
@@ -45,4 +42,4 @@ intended.
 
 - Encrypt your swap device, or use a swapless / encrypted-hibernation configuration.
 - Disable core dumps for sensitive runs (`ulimit -c 0`).
-- Prefer interactive prompts or keyfiles over `DEXIOS_KEY` on shared or multi-user hosts.
+- Prefer interactive prompts or keyfiles on shared or multi-user hosts.

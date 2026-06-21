@@ -29,14 +29,6 @@ pub(super) fn keyfile_arg() -> Arg {
     keyfile_arg_with_help("Use a keyfile instead of a password")
 }
 
-pub(super) fn env_key_arg() -> Arg {
-    Arg::new("env-key")
-        .long("env-key")
-        .global(true)
-        .action(ArgAction::SetTrue)
-        .help("Use DEXIOS_KEY as the key source when no explicit keyfile or generated key is supplied")
-}
-
 pub(super) fn force_arg() -> Arg {
     Arg::new("force")
         .short('f')
